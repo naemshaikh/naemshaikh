@@ -6,3 +6,4 @@ requests
 schedule
 pycryptodome
 google-generativeai
+beautifulsoup4
