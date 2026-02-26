@@ -1,1 +1,7 @@
+flask
+web3
+openai
 gunicorn
+requests
+schedule
+pycryptodome
