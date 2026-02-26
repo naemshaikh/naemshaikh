@@ -1,13 +1,9 @@
 from flask import Flask, render_template_string, request, jsonify
 import os
-from openai import OpenAI
 
 app = Flask(__name__)
 
-# OpenAI client (Render pe environment variable se key le rahe hain)
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# ==================== Beautiful Chat Interface ====================
+# ==================== Beautiful Chat Interface with Puter.js ====================
 CHAT_HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -28,6 +24,7 @@ CHAT_HTML = """
         #send-btn:hover { background:#004d40; }
         #typing { font-style:italic; color:#777; padding-left:16px; display:none; }
     </style>
+    <script src="https://js.puter.com/v2/"></script>
 </head>
 <body>
     <div id="header">MrBlack AI Chat 🚀</div>
@@ -64,15 +61,14 @@ CHAT_HTML = """
             typing.style.display = "block";
 
             try {
-                const res = await fetch("/chat", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ message: text })
+                const reply = await puter.ai.chat(text, {
+                    model: "gpt-5-nano",
+                    systemPrompt: "You are MrBlack, a cool, friendly and helpful AI assistant. Reply in Hindi-English mix, casual style like a friend.",
+                    temperature: 0.8,
+                    max_tokens: 300
                 });
-
-                const data = await res.json();
                 typing.style.display = "none";
-                addMessage(data.reply || "Sorry, kuch samajh nahi aaya...");
+                addMessage(reply);
             } catch (err) {
                 typing.style.display = "none";
                 addMessage("Error: " + err.message);
@@ -91,31 +87,6 @@ CHAT_HTML = """
 @app.route("/")
 def home():
     return render_template_string(CHAT_HTML)
-
-@app.route("/chat", methods=["POST"])
-def chat():
-    try:
-        data = request.get_json()
-        user_message = data.get("message", "").strip()
-
-        if not user_message:
-            return jsonify({"reply": "Kuch to bol bhai... 😅"})
-
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are MrBlack, a cool, friendly and helpful AI assistant. Reply in Hindi-English mix, casual style like a friend."},
-                {"role": "user", "content": user_message}
-            ],
-            max_tokens=300,
-            temperature=0.8
-        )
-
-        reply = response.choices[0].message.content.strip()
-        return jsonify({"reply": reply})
-
-    except Exception as e:
-        return jsonify({"reply": f"Oops! Error aa gaya: {str(e)}"})
 
 @app.route("/health")
 def health():
