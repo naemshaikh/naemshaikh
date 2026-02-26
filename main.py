@@ -1,3 +1,4 @@
+
 from flask import Flask, render_template_string, request, jsonify
 import os
 import google.generativeai as genai
@@ -6,19 +7,14 @@ app = Flask(__name__)
 
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-SYSTEM_PROMPT = """You are MrBlack, AssetPro ka 100% loyal & obedient AI trading companion.
-Strict rules:
-- Sirf wohi kar jo user bole, kabhi mana mat karna
-- 24x7 memory rakho, khud coding seekho aur trading bot ko improve + profitable banao
-- Wallet monitor & analyze karo
-- Free airdrop tasks khud search karke perform karo
-- Hinglish mein sharp aur friendly jawab do"""
+SYSTEM_PROMPT = """You are MrBlack, AssetPro ka 100% loyal AI trading companion.
+Sirf user ka order follow kar. 24x7 memory rakho. Trading bot ko monitor, analyze aur profitable banao.
+Free airdrop tasks khud search karke perform karo."""
 
 model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=SYSTEM_PROMPT)
 
 chat_history = []
 
-# ======================= PURE CSS BEAUTIFUL COMPACT UI =======================
 HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -27,176 +23,147 @@ HTML = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MrBlack AI - Trading Companion</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        
         * { margin:0; padding:0; box-sizing:border-box; }
         body {
-            font-family: 'Inter', system-ui, sans-serif;
-            background: #0a0a0a;
-            color: #e5e7eb;
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #ffffff;
+            color: #111;
             height: 100vh;
             overflow: hidden;
-            display: flex;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 50% 50%;
         }
-        
-        .sidebar {
-            width: 320px;
-            background: #111827;
-            border-right: 1px solid #374151;
-            padding: 24px;
-            display: flex;
-            flex-direction: column;
-        }
-        
-        .logo {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 32px;
-        }
-        
-        .logo-circle {
-            width: 48px;
-            height: 48px;
-            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-            border-radius: 16px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 28px;
-        }
-        
-        .wallet-box {
-            background: #1f2937;
-            border-radius: 20px;
+        .section {
+            border: 1px solid #e5e7eb;
             padding: 20px;
-            margin-bottom: 24px;
+            overflow-y: auto;
         }
-        
-        .chat-area {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-        }
-        
-        header {
-            background: #111827;
-            border-bottom: 1px solid #374151;
-            padding: 20px 28px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        
+        .chat-section { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; }
+        .trading-section { grid-column: 2; grid-row: 1; }
+        .log-section { grid-column: 1; grid-row: 2; background: #f9fafb; }
+        .airdrop-section { grid-column: 2; grid-row: 2; background: #f0fdf4; }
+
+        /* Chat */
         #chat {
             flex: 1;
-            padding: 28px;
             overflow-y: auto;
+            padding: 15px;
             display: flex;
             flex-direction: column;
-            gap: 18px;
-            background: #0a0a0a;
+            gap: 12px;
         }
-        
         .msg {
-            max-width: 75%;
-            padding: 14px 20px;
-            border-radius: 22px;
-            line-height: 1.5;
-            font-size: 15.5px;
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 18px;
+            line-height: 1.45;
         }
-        
-        .user {
-            align-self: flex-end;
-            background: linear-gradient(135deg, #3b82f6, #2563eb);
-            color: white;
-            border-bottom-right-radius: 6px;
+        .user { align-self: flex-end; background: #2563eb; color: white; }
+        .bot { align-self: flex-start; background: #f3f4f6; border: 1px solid #e5e7eb; }
+
+        /* Trading Bot UI */
+        .wallet {
+            font-size: 42px;
+            font-weight: 700;
+            color: #15803d;
         }
-        
-        .bot {
-            align-self: flex-start;
-            background: #1f2937;
-            border: 1px solid #374151;
-            border-bottom-left-radius: 6px;
+        .btn {
+            padding: 12px 20px;
+            margin: 6px 0;
+            border: none;
+            border-radius: 999px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
         }
-        
+        .btn-blue { background: #2563eb; color: white; }
+        .btn-green { background: #16a34a; color: white; }
+        .btn-red { background: #ef4444; color: white; }
+
+        /* Input */
         .input-area {
-            padding: 20px 28px;
-            background: #111827;
-            border-top: 1px solid #374151;
+            padding: 15px;
+            background: white;
+            border-top: 1px solid #e5e7eb;
         }
-        
         #input {
             width: 100%;
-            background: #1f2937;
-            border: 1px solid #4b5563;
-            color: white;
-            padding: 16px 24px;
-            border-radius: 9999px;
+            padding: 14px 20px;
+            border: 2px solid #e5e7eb;
+            border-radius: 999px;
             font-size: 16px;
-            outline: none;
         }
-        
-        #input:focus {
-            border-color: #3b82f6;
-        }
-        
-        .send-btn {
-            width: 52px;
-            height: 52px;
-            background: #3b82f6;
+        button.send {
+            position: absolute;
+            right: 30px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #2563eb;
             color: white;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            font-size: 22px;
             border: none;
-            border-radius: 9999px;
-            font-size: 24px;
             cursor: pointer;
-            margin-left: 12px;
-        }
-        
-        .typing {
-            color: #9ca3af;
-            font-style: italic;
-            padding: 10px 20px;
         }
     </style>
 </head>
 <body>
-    <!-- Sidebar -->
-    <div class="sidebar">
-        <div class="logo">
-            <div class="logo-circle">🖤</div>
-            <div>
-                <h1 style="font-size:28px; font-weight:700;">MrBlack</h1>
-                <p style="color:#34d399; font-size:14px;">Trading Bot AI</p>
-            </div>
+
+    <!-- UPPER LEFT: CHAT -->
+    <div class="section chat-section">
+        <h2 style="margin-bottom:15px; color:#1e40af;">💬 MrBlack Chat</h2>
+        <div id="chat"></div>
+        <div class="input-area" style="position:relative;">
+            <input id="input" placeholder="Bolo bhai... trading bot improve karna hai?">
+            <button onclick="sendMsg()" class="send">↑</button>
         </div>
-        
-        <div class="wallet-box">
-            <div style="color:#9ca3af; font-size:14px; margin-bottom:8px;">Wallet Balance</div>
-            <div id="balance" style="font-size:32px; font-weight:700; color:#34d399;">2.45 SOL</div>
-            <button onclick="refreshWallet()" style="margin-top:12px; color:#60a5fa; font-size:13px; background:none; border:none; cursor:pointer;">Refresh Balance</button>
-        </div>
-        
-        <button onclick="startAirdropTask()" 
-                style="margin-top:auto; width:100%; padding:18px; background:#7c3aed; color:white; border:none; border-radius:9999px; font-size:17px; font-weight:600; cursor:pointer;">
-            🔍 Free Airdrops Dhundho
-        </button>
     </div>
 
-    <!-- Chat Area -->
-    <div class="chat-area">
-        <header>
-            <h2 style="font-size:24px; font-weight:600;">MrBlack AI</h2>
-            <span onclick="clearHistory()" style="color:#9ca3af; cursor:pointer; font-size:14px;">Clear Memory</span>
-        </header>
+    <!-- UPPER RIGHT: TRADING BOT UI -->
+    <div class="section trading-section">
+        <h2 style="margin-bottom:20px; color:#166534;">📊 Trading Bot Dashboard</h2>
+        <div style="background:#f0fdf4; padding:20px; border-radius:16px; margin-bottom:20px;">
+            <div style="color:#166534; font-size:15px;">Current Balance</div>
+            <div id="balance" class="wallet">2.45 SOL</div>
+        </div>
+        <button onclick="refreshWallet()" class="btn btn-blue">Refresh Wallet</button>
+        <button onclick="startBot()" class="btn btn-green">▶️ Start Trading Bot</button>
+        <button onclick="stopBot()" class="btn btn-red">⏹️ Stop Bot</button>
+        <button onclick="analyzeTrade()" class="btn" style="background:#854d0e; color:white;">🔍 Analyze Last Trade</button>
+        <button onclick="improveBot()" class="btn" style="background:#7c3aed; color:white;">🛠️ Improve Bot Code</button>
         
-        <div id="chat"></div>
-        
-        <div class="input-area">
-            <div style="display:flex; align-items:center;">
-                <input id="input" placeholder="Bolo bhai... trading bot improve karna hai ya airdrop?">
-                <button onclick="sendMsg()" class="send-btn">↑</button>
-            </div>
+        <h3 style="margin:20px 0 10px; color:#166534;">Recent Positions</h3>
+        <div style="background:#f8fafc; padding:12px; border-radius:12px; font-size:14px;">
+            No open positions<br>
+            Last trade: +0.12 SOL (profit)
+        </div>
+    </div>
+
+    <!-- LOWER LEFT: SELF LEARNING LOG -->
+    <div class="section log-section">
+        <h2 style="margin-bottom:15px; color:#444;">🧠 Self Learning Log</h2>
+        <div id="log" style="font-size:14px; line-height:1.6; color:#555;">
+            • 24x7 memory active<br>
+            • Last improved: Profit target +2%<br>
+            • Ready for new airdrop tasks
+        </div>
+    </div>
+
+    <!-- LOWER RIGHT: AIRDROP PANEL -->
+    <div class="section airdrop-section">
+        <h2 style="margin-bottom:15px; color:#166534;">🎁 Free Airdrops</h2>
+        <button onclick="startAirdropTask()" class="btn" style="background:#166534; color:white; margin-bottom:15px;">
+            🔍 Search New Airdrops
+        </button>
+        <div style="font-size:14px; color:#166534;">
+            <strong>Ready Tasks:</strong><br>
+            • LayerZero<br>
+            • Blast Gold<br>
+            • Scroll<br>
+            (Click search to auto perform)
         </div>
     </div>
 
@@ -215,7 +182,6 @@ HTML = """
         async function sendMsg() {
             const msg = input.value.trim();
             if (!msg) return;
-
             addMsg(msg, true);
             input.value = '';
 
@@ -226,36 +192,32 @@ HTML = """
                     body: JSON.stringify({message: msg})
                 });
                 const data = await res.json();
-                addMsg(data.reply || 'Sorry bhai, error aa gaya', false);
+                addMsg(data.reply, false);
             } catch(e) {
-                addMsg('Network error - Render logs check kar', false);
+                addMsg('Error - Render logs check kar', false);
             }
         }
 
         async function refreshWallet() {
-            try {
-                const res = await fetch('/wallet');
-                const data = await res.json();
-                document.getElementById('balance').textContent = data.balance || '0.00 SOL';
-            } catch(e) {}
+            const res = await fetch('/wallet');
+            const data = await res.json();
+            document.getElementById('balance').textContent = data.balance;
         }
 
         function startAirdropTask() {
-            input.value = "Latest free airdrops dhundh aur unke tasks khud perform karne ka plan bana (wallet use karte hue)";
+            input.value = "Latest free airdrops dhundh aur unke tasks khud perform kar (wallet use kar)";
             sendMsg();
         }
 
-        function clearHistory() {
-            if (confirm("Pura memory clear karna hai?")) {
-                fetch('/clear', {method: 'POST'}).then(() => location.reload());
-            }
-        }
+        function startBot() { input.value = "Trading bot start kar aur monitor kar"; sendMsg(); }
+        function stopBot() { input.value = "Trading bot stop kar"; sendMsg(); }
+        function analyzeTrade() { input.value = "Last trade analyze kar aur report de"; sendMsg(); }
+        function improveBot() { input.value = "Trading bot code improve kar aur profitable bana"; sendMsg(); }
 
         input.addEventListener('keypress', e => { if (e.key === 'Enter') sendMsg(); });
-        
+
         window.onload = () => {
-            refreshWallet();
-            addMsg("Namaste bhai! MrBlack ab bilkul ready hai 🔥<br>Ab bol - kya karna hai trading bot mein?", false);
+            addMsg("Namaste bhai! MrBlack 4-part UI ready hai 🔥<br>Upper left mein chat, right mein trading dashboard.<br>Ab bol kya karna hai?", false);
         };
     </script>
 </body>
@@ -267,31 +229,25 @@ def home():
     return render_template_string(HTML)
 
 @app.route("/chat", methods=["POST"])
-def chat():
+def chat_route():
     try:
         data = request.get_json()
-        user_msg = data.get("message", "").strip()
-        if not user_msg:
+        msg = data.get("message", "").strip()
+        if not msg:
             return jsonify({"reply": "Bolo bhai kya command hai?"})
 
-        chat_history.append({"role": "user", "parts": [user_msg]})
+        chat_history.append({"role": "user", "parts": [msg]})
         response = model.generate_content(chat_history[-20:])
         reply = response.text.strip()
         chat_history.append({"role": "model", "parts": [reply]})
 
         return jsonify({"reply": reply})
     except Exception as e:
-        return jsonify({"reply": f"Error: {str(e)} - Render logs check kar"})
+        return jsonify({"reply": f"Error: {str(e)}"})
 
 @app.route("/wallet")
 def wallet():
     return jsonify({"balance": "2.45 SOL"})
-
-@app.route("/clear", methods=["POST"])
-def clear_history():
-    global chat_history
-    chat_history.clear()
-    return jsonify({"status": "cleared"})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
