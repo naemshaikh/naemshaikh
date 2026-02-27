@@ -1,12 +1,16 @@
 import os
 from flask import Flask, render_template_string, request, jsonify
-from google import genai   # ← NAYA SDK
+from openai import OpenAI   # ← Grok ke liye
 
 app = Flask(__name__)
 
-# Gemini setup (NEW SDK)
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-MODEL_NAME = "gemini-2.5-flash"
+# ==================== GROK (xAI) SETUP ====================
+client = OpenAI(
+    api_key=os.getenv("XAI_API_KEY"),          # ← Render se aayega
+    base_url="https://api.x.ai/v1"
+)
+
+MODEL_NAME = "grok-4"   # best model abhi
 
 # Simple chat UI
 HTML = """
@@ -31,7 +35,7 @@ header { background:#007bff; color:white; padding:15px; text-align:center; font-
 </style>
 </head>
 <body>
-<header>MrBlack Chat 🚀</header>
+<header>MrBlack Chat 🚀 (Powered by Grok)</header>
 <div id="chat"></div>
 <div id="input-area">
 <input id="input" placeholder="Type message..." autocomplete="off"/>
@@ -92,17 +96,22 @@ def chat():
     user_message = data.get("message", "").strip()
 
     try:
-        response = client.models.generate_content(
+        response = client.chat.completions.create(
             model=MODEL_NAME,
-            contents=user_message
+            messages=[
+                {"role": "system", "content": "You are MrBlack, a smart, witty and helpful Indian trading + general assistant. Baat karte time thoda Hindi-English mix karo aur mazedaar rehna."},
+                {"role": "user", "content": user_message}
+            ],
+            temperature=0.75,
+            max_tokens=900
         )
-        reply = response.text.strip()
+        reply = response.choices[0].message.content.strip()
     except Exception as e:
         reply = f"Error: {str(e)}"
 
     return jsonify({"reply": reply})
 
-# ==================== TRADING BOT ====================
+# ==================== TRADING BOT (same rakha) ====================
 from datetime import datetime
 from flask import Blueprint
 
@@ -143,5 +152,7 @@ app.register_blueprint(trading_bot_bp)
 def health():
     return jsonify({"health": "good"})
 
+# ==================== Render ke liye PORT fix ====================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
