@@ -1,14 +1,14 @@
-from flask import Flask, render_template_string, request, jsonify
 import os
-from google import genai   # ← NAYA SDK IMPORT
+from flask import Flask, render_template_string, request, jsonify
+from google import genai   # ← NAYA SDK
 
 app = Flask(__name__)
 
-# Gemini setup (NEW SDK - google-genai 1.65+)
+# Gemini setup (NEW SDK)
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-MODEL_NAME = "gemini-1.5-flash"   # ← FREE MODEL (best for free tier)
+MODEL_NAME = "gemini-1.5-flash"   # FREE MODEL
 
-# Simple chat UI (tera purana wala, bilkul same)
+# Simple chat UI (bilkul same)
 HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -92,7 +92,6 @@ def chat():
     user_message = data.get("message", "").strip()
 
     try:
-        # NEW SDK CALL
         response = client.models.generate_content(
             model=MODEL_NAME,
             contents=user_message
