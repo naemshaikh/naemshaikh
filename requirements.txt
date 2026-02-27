@@ -1,7 +1,5 @@
-flask==2.3.3
-openai==1.12.0
-supabase==1.2.0
-gunicorn==21.2.0
-python-dotenv==1.0.0
-httpx==0.26.0
-httpcore==1.0.2
+flask
+openai
+supabase
+gunicorn
+python-dotenv
