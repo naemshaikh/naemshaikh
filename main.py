@@ -1,12 +1,15 @@
 import os
 from flask import Flask, render_template_string, request, jsonify
-from google import genai   # ← NAYA SDK
-
-app = Flask(__name__)
-
-# Gemini setup (NEW SDK)
+from google import genai
+import os
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-MODEL_NAME = "gemini-1.5-flash"   # FREE MODEL
+
+response = client.models.generate_content(
+    model="gemini-1.5-flash-latest",
+    contents="Hello bhai"
+)
+
+print(response.text)
 
 # Simple chat UI (bilkul same)
 HTML = """
