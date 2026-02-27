@@ -3,5 +3,6 @@ supabase==1.2.0
 gunicorn==21.2.0
 python-dotenv==1.0.0
 requests==2.31.0
-freeflow-llm
 httpx==0.24.1
+httpcore==0.17.3
+freeflow-llm==0.1.0
