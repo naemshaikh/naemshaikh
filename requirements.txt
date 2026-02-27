@@ -1,8 +1,4 @@
 flask
-web3
 openai
+supabase
 gunicorn
-requests
-schedule
-pycryptodome
-beautifulsoup4
