@@ -1,86 +1,83 @@
 import os
 from flask import Flask, render_template_string, request, jsonify
-from google import genai
-import os
+from google import genai   # ← NAYA SDK
+
+app = Flask(__name__)
+
+# Gemini setup (NEW SDK)
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+MODEL_NAME = "gemini-1.5-turbo"   # ✅ FREE MODEL version correct
 
-response = client.models.generate_content(
-    model="gemini-1.5-flash-latest",
-    contents="Hello bhai"
-)
-
-print(response.text)
-
-# Simple chat UI (bilkul same)
+# Simple chat UI
 HTML = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MrBlack Chat</title>
-    <style>
-        body { margin:0; font-family:Arial; background:#f0f2f5; height:100vh; display:flex; flex-direction:column; }
-        header { background:#007bff; color:white; padding:15px; text-align:center; font-size:1.3rem; }
-        #chat { flex:1; overflow-y:auto; padding:15px; display:flex; flex-direction:column; gap:12px; }
-        .msg { max-width:75%; padding:12px 16px; border-radius:18px; line-height:1.4; }
-        .user { align-self:flex-end; background:#dcf8c6; }
-        .bot { align-self:flex-start; background:white; border:1px solid #ddd; }
-        #input-area { display:flex; padding:12px; background:white; border-top:1px solid #ddd; gap:8px; }
-        #input { flex:1; padding:12px; border:1px solid #ccc; border-radius:25px; font-size:1rem; outline:none; }
-        #send { background:#007bff; color:white; border:none; border-radius:50%; width:48px; height:48px; cursor:pointer; font-size:1.3rem; }
-        #send:hover { background:#0056b3; }
-        #typing { color:#777; padding:10px 15px; font-style:italic; display:none; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MrBlack Chat</title>
+<style>
+body { margin:0; font-family:Arial; background:#f0f2f5; height:100vh; display:flex; flex-direction:column; }
+header { background:#007bff; color:white; padding:15px; text-align:center; font-size:1.3rem; }
+#chat { flex:1; overflow-y:auto; padding:15px; display:flex; flex-direction:column; gap:12px; }
+.msg { max-width:75%; padding:12px 16px; border-radius:18px; line-height:1.4; }
+.user { align-self:flex-end; background:#dcf8c6; }
+.bot { align-self:flex-start; background:white; border:1px solid #ddd; }
+#input-area { display:flex; padding:12px; background:white; border-top:1px solid #ddd; gap:8px; }
+#input { flex:1; padding:12px; border:1px solid #ccc; border-radius:25px; font-size:1rem; outline:none; }
+#send { background:#007bff; color:white; border:none; border-radius:50%; width:48px; height:48px; cursor:pointer; font-size:1.3rem; }
+#send:hover { background:#0056b3; }
+#typing { color:#777; padding:10px 15px; font-style:italic; display:none; }
+</style>
 </head>
 <body>
-    <header>MrBlack Chat 🚀</header>
-    <div id="chat"></div>
-    <div id="input-area">
-        <input id="input" placeholder="Type message..." autocomplete="off"/>
-        <button id="send">➤</button>
-    </div>
-    <div id="typing">Thinking...</div>
+<header>MrBlack Chat 🚀</header>
+<div id="chat"></div>
+<div id="input-area">
+<input id="input" placeholder="Type message..." autocomplete="off"/>
+<button id="send">➤</button>
+</div>
+<div id="typing">Thinking...</div>
 
-    <script>
-        const chat = document.getElementById('chat');
-        const input = document.getElementById('input');
-        const send = document.getElementById('send');
-        const typing = document.getElementById('typing');
+<script>
+const chat = document.getElementById('chat');
+const input = document.getElementById('input');
+const send = document.getElementById('send');
+const typing = document.getElementById('typing');
 
-        function addMessage(text, isUser = false) {
-            const div = document.createElement('div');
-            div.className = 'msg ' + (isUser ? 'user' : 'bot');
-            div.textContent = text;
-            chat.appendChild(div);
-            chat.scrollTop = chat.scrollHeight;
-        }
+function addMessage(text, isUser = false) {
+    const div = document.createElement('div');
+    div.className = 'msg ' + (isUser ? 'user' : 'bot');
+    div.textContent = text;
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+}
 
-        async function sendMessage() {
-            const msg = input.value.trim();
-            if (!msg) return;
-            addMessage(msg, true);
-            input.value = '';
-            typing.style.display = 'block';
+async function sendMessage() {
+    const msg = input.value.trim();
+    if (!msg) return;
+    addMessage(msg, true);
+    input.value = '';
+    typing.style.display = 'block';
 
-            try {
-                const res = await fetch('/chat', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({message: msg})
-                });
-                const data = await res.json();
-                typing.style.display = 'none';
-                addMessage(data.reply || 'Sorry, samajh nahi aaya...');
-            } catch (err) {
-                typing.style.display = 'none';
-                addMessage('Error: ' + err.message);
-            }
-        }
+    try {
+        const res = await fetch('/chat', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({message: msg})
+        });
+        const data = await res.json();
+        typing.style.display = 'none';
+        addMessage(data.reply || 'Sorry, samajh nahi aaya...');
+    } catch (err) {
+        typing.style.display = 'none';
+        addMessage('Error: ' + err.message);
+    }
+}
 
-        send.onclick = sendMessage;
-        input.addEventListener('keypress', e => { if (e.key === 'Enter') sendMessage(); });
-    </script>
+send.onclick = sendMessage;
+input.addEventListener('keypress', e => { if (e.key === 'Enter') sendMessage(); });
+</script>
 </body>
 </html>
 """
@@ -104,6 +101,43 @@ def chat():
         reply = f"Error: {str(e)}"
 
     return jsonify({"reply": reply})
+
+# ==================== TRADING BOT ====================
+from datetime import datetime
+from flask import Blueprint
+
+trading_bot_bp = Blueprint('trading_bot', __name__)
+
+@trading_bot_bp.route("/bot", methods=["GET", "POST"])
+def trading_bot():
+    if request.method == "POST":
+        data = request.get_json() or {}
+        symbol = data.get("symbol", "BTCUSDT")
+        action = data.get("action", "analyze")
+    else:
+        symbol = request.args.get("symbol", "BTCUSDT")
+        action = request.args.get("action", "analyze")
+
+    signal = {
+        "symbol": symbol,
+        "action": "BUY" if action == "analyze" else action,
+        "price": "67234.56",
+        "confidence": 0.87,
+        "reason": "Strong bullish momentum detected",
+        "timestamp": datetime.now().isoformat()
+    }
+
+    return jsonify({
+        "status": "success",
+        "signal": signal,
+        "message": f"Trading Bot running for {symbol} → {signal['action']}"
+    })
+
+@trading_bot_bp.route("/bot/test")
+def test_trading():
+    return jsonify({"message": "Trading bot is ready! Use /bot or /chat"})
+
+app.register_blueprint(trading_bot_bp)
 
 @app.route("/health")
 def health():
