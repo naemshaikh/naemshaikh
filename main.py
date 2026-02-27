@@ -25,7 +25,7 @@ if SUPABASE_URL and SUPABASE_KEY:
 else:
     print("⚠️ Supabase env missing → memory off")
 
-# ORIGINAL UI
+# ORIGINAL UI (same as yours)
 HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -118,14 +118,18 @@ def chat():
         return jsonify({"reply": "Kuch likho bhai!", "session_id": session_id})
 
     try:
+        print(f"[DEBUG] New request | Session: {session_id} | Message: {user_message}")
+
         messages = [
             {"role": "system", "content": "You are MrBlack, a smart, witty and helpful Indian trading + general assistant. Baat karte time thoda Hindi-English mix karo aur mazedaar rehna."}
         ]
 
         if supabase:
+            print("[DEBUG] Fetching history from Supabase...")
             hist = supabase.table("memory").select("role,content") \
                 .eq("session_id", session_id) \
                 .order("created_at", desc=False).limit(30).execute()
+            print(f"[DEBUG] Loaded {len(hist.data)} previous messages")
             for m in hist.data:
                 messages.append({"role": m["role"], "content": m["content"]})
 
@@ -140,12 +144,15 @@ def chat():
         reply = response.choices[0].message.content.strip()
 
         if supabase:
+            print("[DEBUG] Saving memory to Supabase...")
             supabase.table("memory").insert([
                 {"session_id": session_id, "role": "user", "content": user_message, "user_id": None, "metadata": {}},
                 {"session_id": session_id, "role": "assistant", "content": reply, "user_id": None, "metadata": {}}
             ]).execute()
+            print(f"[DEBUG] ✅ Memory saved for session {session_id}")
 
     except Exception as e:
+        print(f"[ERROR] {str(e)}")
         reply = f"Error: {str(e)}"
 
     return jsonify({"reply": reply, "session_id": session_id})
