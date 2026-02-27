@@ -5,16 +5,13 @@ from supabase import create_client
 import uuid
 from datetime import datetime
 import requests
-import json
 import time
-import random
+import threading
+import json
 
 app = Flask(__name__)
 
-# ============================================
-# CONFIG
-# ============================================
-
+# GROQ SETUP
 client = OpenAI(
     api_key=os.getenv("GROQ_API_KEY"),
     base_url="https://api.groq.com/openai/v1"
@@ -22,7 +19,7 @@ client = OpenAI(
 
 MODEL_NAME = "llama-3.3-70b-versatile"
 
-# Supabase
+# SUPABASE MEMORY
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
@@ -30,354 +27,344 @@ supabase = None
 if SUPABASE_URL and SUPABASE_KEY:
     try:
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-        print("✅ Memory connected")
-    except:
-        print("⚠️ Memory off")
+        print("✅ Supabase memory connected")
+    except Exception as e:
+        print(f"❌ Supabase connection failed: {e}")
+        supabase = None
 
-# ============================================
-# WALLET CONFIG (tu dega)
-# ============================================
-
-WALLETS = {
-    "ethereum": os.getenv("ETH_WALLET", "0x..."),  # Tu yahan daal
-    "bsc": os.getenv("BSC_WALLET", "0x..."),
-    "solana": os.getenv("SOL_WALLET", "...")
+# ==================== GLOBAL KNOWLEDGE BASE ====================
+knowledge_base = {
+    "dex": {
+        "uniswap": {},
+        "pancakeswap": {},
+        "aerodrome": {},
+        "raydium": {},
+        "jupiter": {}
+    },
+    "coding": {
+        "github": [],
+        "stackoverflow": [],
+        "medium": [],
+        "youtube": []
+    },
+    "airdrops": {
+        "active": [],
+        "upcoming": [],
+        "ended": []
+    },
+    "trading": {
+        "news": [],
+        "fear_greed": {},
+        "market_data": {}
+    }
 }
 
-# ============================================
-# FEATURE 1: DEX TRADING + SELF LEARNING
-# ============================================
+# ==================== DEX DATA FETCHERS ====================
 
-class DexTrading:
-    def __init__(self):
-        self.dex_list = {
-            "uniswap": {"name": "Uniswap", "chain": "ethereum"},
-            "pancake": {"name": "PancakeSwap", "chain": "bsc"},
-            "raydium": {"name": "Raydium", "chain": "solana"}
+def fetch_uniswap_data():
+    """Uniswap V3 data"""
+    try:
+        url = "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3"
+        query = """
+        {
+          pools(first: 10, orderBy: totalValueLockedUSD, orderDirection: desc) {
+            id
+            token0 { symbol name }
+            token1 { symbol name }
+            token0Price
+            token1Price
+            volumeUSD
+            totalValueLockedUSD
+          }
         }
-        self.learning_data = []
-        self.win_rate = 50
-        self.total_trades = 0
-        self.load_learning()
-    
-    def load_learning(self):
-        """Pehle se seekha hua load karo"""
-        if supabase:
-            try:
-                data = supabase.table("learning").select("*").eq("type", "trading").execute()
-                if data.data:
-                    self.learning_data = data.data
-                    print(f"📚 Loaded {len(self.learning_data)} trading lessons")
-            except:
-                pass
-    
-    def analyze(self, dex, token):
-        """24x7 market analysis"""
-        sentiment = random.choice(["Bullish 📈", "Bearish 📉", "Neutral ⚖️"])
-        confidence = random.randint(60, 95)
-        
-        analysis = {
-            "dex": dex,
-            "token": token,
-            "sentiment": sentiment,
-            "confidence": confidence,
-            "timestamp": datetime.now().isoformat()
+        """
+        response = requests.post(url, json={'query': query})
+        data = response.json()
+        knowledge_base["dex"]["uniswap"] = {
+            "top_pools": data.get('data', {}).get('pools', []),
+            "timestamp": datetime.utcnow().isoformat()
         }
-        
-        self.learning_data.append(analysis)
-        self.total_trades += 1
-        
-        if len(self.learning_data) > 10:
-            self.win_rate = 50 + (self.total_trades % 30)
-        
-        return analysis
-    
-    def execute(self, dex, token, amount=100):
-        """Real execution with wallet"""
-        if dex not in self.dex_list:
-            return f"❌ {dex} not supported"
-        
-        dex_info = self.dex_list[dex]
-        wallet = WALLETS.get(dex_info["chain"], "Not configured")
-        
-        if wallet == "Not configured" or wallet.startswith("0x..."):
-            return f"⚠️ Pehle {dex_info['chain']} wallet config kar do"
-        
-        analysis = self.analyze(dex, token)
-        
-        if "Bullish" in analysis["sentiment"]:
-            result = {
-                "status": "executed",
-                "tx": f"0x{hash(token)}{random.randint(1000,9999)}",
-                "amount": amount,
-                "token": token,
-                "dex": dex_info["name"],
-                "wallet": wallet[:6] + "..."
+        print("✅ Uniswap data fetched")
+    except Exception as e:
+        print(f"❌ Uniswap error: {e}")
+
+def fetch_pancakeswap_data():
+    """PancakeSwap data"""
+    try:
+        url = "https://api.thegraph.com/subgraphs/name/pancakeswap/exchange"
+        query = """
+        {
+          pairs(first: 10, orderBy: reserveUSD, orderDirection: desc) {
+            id
+            token0 { symbol }
+            token1 { symbol }
+            reserveUSD
+            volumeUSD
+          }
+        }
+        """
+        response = requests.post(url, json={'query': query})
+        data = response.json()
+        knowledge_base["dex"]["pancakeswap"] = {
+            "top_pairs": data.get('data', {}).get('pairs', []),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        print("✅ PancakeSwap data fetched")
+    except Exception as e:
+        print(f"❌ PancakeSwap error: {e}")
+
+def fetch_aerodrome_data():
+    """Aerodrome data via DEX Screener"""
+    try:
+        response = requests.get("https://api.dexscreener.com/latest/dex/search?q=aerodrome")
+        if response.status_code == 200:
+            knowledge_base["dex"]["aerodrome"] = {
+                "pairs": response.json().get('pairs', [])[:5],
+                "timestamp": datetime.utcnow().isoformat()
             }
-            
-            self.learning_data.append({"type": "trade", "result": "win", "data": result})
-            
-            return f"""✅ **Trade Executed**
-• DEX: {dex_info['name']}
-• Token: {token.upper()}
-• Amount: ${amount}
-• TX: {result['tx'][:10]}...
-• Wallet: {result['wallet']}
-• Analysis: {analysis['sentiment']} ({analysis['confidence']}%)
+            print("✅ Aerodrome data fetched")
+    except Exception as e:
+        print(f"❌ Aerodrome error: {e}")
 
-🧠 Learning: Win rate {self.win_rate}%"""
-        else:
-            return f"⏸️ No trade - {analysis['sentiment']}"
-    
-    def get_learning(self):
-        return f"""📊 **Trading Learning**
-• Trades: {self.total_trades}
-• Win rate: {self.win_rate}%
-• Lessons: {len(self.learning_data)}"""
+def fetch_raydium_data():
+    """Raydium data"""
+    try:
+        response = requests.get("https://api.raydium.io/v2/main/pools")
+        if response.status_code == 200:
+            knowledge_base["dex"]["raydium"] = {
+                "pools": response.json()[:5],
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            print("✅ Raydium data fetched")
+    except Exception as e:
+        print(f"❌ Raydium error: {e}")
 
-# ============================================
-# FEATURE 2: AIRDROP HUNTER (EXECUTE WALA)
-# ============================================
+def fetch_jupiter_data():
+    """Jupiter aggregator data"""
+    try:
+        response = requests.get("https://quote-api.jup.ag/v6/price?ids=SOL,USDC,RAY,BONK,JUP")
+        if response.status_code == 200:
+            knowledge_base["dex"]["jupiter"] = {
+                "prices": response.json(),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            print("✅ Jupiter data fetched")
+    except Exception as e:
+        print(f"❌ Jupiter error: {e}")
 
-class AirdropHunter:
-    def __init__(self):
-        self.hunted = []
-        self.claimed = []
-        self.load_state()
-    
-    def load_state(self):
-        if supabase:
-            try:
-                data = supabase.table("airdrops").select("*").execute()
-                if data.data:
-                    self.claimed = [d["name"] for d in data.data]
-            except:
-                pass
-    
-    def hunt_and_execute(self):
-        """Airdrops dhundo aur claim karo"""
+# ==================== CODING LEARNING SOURCES ====================
+
+def fetch_coding_data():
+    """GitHub, StackOverflow, Medium se coding seekho"""
+    try:
+        # GitHub trending repos
+        github = requests.get("https://api.github.com/search/repositories?q=blockchain+crypto+web3+python&sort=stars&per_page=5")
+        if github.status_code == 200:
+            knowledge_base["coding"]["github"] = github.json().get('items', [])
         
+        # Stack Overflow
+        stack = requests.get("https://api.stackexchange.com/2.3/questions?order=desc&sort=activity&tagged=python;solidity;web3&site=stackoverflow")
+        if stack.status_code == 200:
+            knowledge_base["coding"]["stackoverflow"] = stack.json().get('items', [])[:5]
+        
+        print("✅ Coding data fetched")
+    except Exception as e:
+        print(f"❌ Coding error: {e}")
+
+# ==================== AIRDROP HUNTING SOURCES ====================
+
+def fetch_airdrops_data():
+    """Latest airdrops hunt karo"""
+    try:
+        # DEX Screener se naye tokens
+        dex_response = requests.get("https://api.dexscreener.com/latest/dex/search?q=new+pairs")
+        
+        # Airdrop alert (simulated - real API nahi hai to example data)
         airdrops = [
-            {"name": "Jupiter", "chain": "solana", "reward": "$50-500", "url": "https://jup.ag"},
-            {"name": "zkSync", "chain": "ethereum", "reward": "TBD", "url": "https://zksync.io"},
-            {"name": "LayerZero", "chain": "multi", "reward": "High", "url": "https://layerzero.network"},
+            {"name": "zkSync Era", "status": "Active", "value": "$1000+", "end": "March 2025"},
+            {"name": "LayerZero", "status": "Upcoming", "value": "TBA", "end": "Q2 2025"},
+            {"name": "Eclipse", "status": "Active", "value": "$500+", "end": "April 2025"},
+            {"name": "StarkNet", "status": "Active", "value": "$2000+", "end": "March 2025"},
+            {"name": "Scroll", "status": "Upcoming", "value": "TBA", "end": "Q2 2025"}
         ]
         
-        results = []
-        for airdrop in airdrops:
-            wallet = WALLETS.get(airdrop["chain"], None)
-            
-            if wallet and airdrop["name"] not in self.claimed:
-                # Execute claim
-                tx = f"0x{random.randint(10000,99999)}"
-                
-                # Save to database
-                if supabase:
-                    try:
-                        supabase.table("airdrops").insert({
-                            "name": airdrop["name"],
-                            "wallet": wallet[:6],
-                            "tx": tx,
-                            "claimed_at": datetime.now().isoformat()
-                        }).execute()
-                    except:
-                        pass
-                
-                self.claimed.append(airdrop["name"])
-                results.append(f"✅ {airdrop['name']}: Claimed (TX: {tx[:8]}...)")
+        knowledge_base["airdrops"]["active"] = airdrops
+        knowledge_base["airdrops"]["new_tokens"] = dex_response.json().get('pairs', [])[:5] if dex_response.status_code == 200 else []
         
-        if results:
-            return "🎁 **Airdrops Executed**\n" + "\n".join(results)
-        else:
-            return "🔍 No new airdrops to claim"
-    
-    def list_airdrops(self):
-        """Sirf list karo, execute mat karo"""
-        msg = "🎁 **Available Airdrops**\n\n"
-        airdrops = [
-            {"name": "Jupiter", "chain": "Solana", "reward": "$50-500"},
-            {"name": "zkSync", "chain": "Ethereum", "reward": "TBD"},
-            {"name": "LayerZero", "chain": "Multi", "reward": "High"},
-        ]
-        for a in airdrops:
-            status = "✅ Claimed" if a["name"] in self.claimed else "🆕 Available"
-            msg += f"• {a['name']} ({a['chain']}): {a['reward']} - {status}\n"
-        return msg
+        print("✅ Airdrop data fetched")
+    except Exception as e:
+        print(f"❌ Airdrop error: {e}")
 
-# ============================================
-# FEATURE 3: CODING HELPER + SELF LEARNING
-# ============================================
+# ==================== TRADING LEARNING SOURCES ====================
 
-class CodingHelper:
-    def __init__(self):
-        self.codes_written = []
-        self.learning = []
-        self.load_state()
-    
-    def load_state(self):
+def fetch_trading_data():
+    """Trading signals aur market data"""
+    try:
+        # Crypto news
+        news = requests.get("https://min-api.cryptocompare.com/data/v2/news/?lang=EN&limit=5")
+        
+        # Fear & Greed Index
+        fear_greed = requests.get("https://api.alternative.me/fng/?limit=1")
+        
+        knowledge_base["trading"]["news"] = news.json().get('Data', []) if news.status_code == 200 else []
+        knowledge_base["trading"]["fear_greed"] = fear_greed.json().get('data', []) if fear_greed.status_code == 200 else []
+        
+        print("✅ Trading data fetched")
+    except Exception as e:
+        print(f"❌ Trading error: {e}")
+
+# ==================== 24x7 LEARNING ENGINE ====================
+
+def continuous_learning():
+    """Main learning loop - 24x7 sab seekho"""
+    while True:
+        print("\n🤖 24x7 LEARNING CYCLE STARTED...")
+        
+        # DEX data
+        fetch_uniswap_data()
+        fetch_pancakeswap_data()
+        fetch_aerodrome_data()
+        fetch_raydium_data()
+        fetch_jupiter_data()
+        
+        # Coding data
+        fetch_coding_data()
+        
+        # Airdrop data
+        fetch_airdrops_data()
+        
+        # Trading data
+        fetch_trading_data()
+        
+        # Save to Supabase
         if supabase:
             try:
-                data = supabase.table("coding").select("*").execute()
-                if data.data:
-                    self.codes_written = data.data
+                supabase.table("knowledge").insert({
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "data": knowledge_base
+                }).execute()
+                print("📚 All knowledge saved to database")
             except:
                 pass
-    
-    def generate_code(self, task, language="python"):
-        """Code generate karo aur seekho"""
         
-        prompt = f"Write {language} code for: {task}. Add comments and error handling."
+        print("😴 Sleeping for 5 minutes...")
+        time.sleep(300)  # 5 minutes
+
+# Start learning thread
+learning_thread = threading.Thread(target=continuous_learning, daemon=True)
+learning_thread.start()
+print("🚀 24x7 LEARNING ENGINE STARTED!")
+
+# ==================== UI ====================
+HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MrBlack AI - 24x7 Learning</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Roboto, sans-serif; }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100vh; display: flex; justify-content: center; align-items: center; }
+        .chat-container { width: 100%; max-width: 800px; height: 90vh; background: white; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); display: flex; flex-direction: column; overflow: hidden; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; }
+        .header h1 { font-size: 2rem; margin-bottom: 5px; }
+        .badges { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+        .badge { background: rgba(255,255,255,0.2); padding: 5px 15px; border-radius: 20px; font-size: 0.9rem; backdrop-filter: blur(10px); }
+        .badge i { margin-right: 5px; }
+        .messages { flex: 1; overflow-y: auto; padding: 20px; background: #f5f5f5; }
+        .message { max-width: 70%; margin-bottom: 15px; padding: 12px 18px; border-radius: 15px; word-wrap: break-word; animation: fadeIn 0.3s; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .user { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; margin-left: auto; border-bottom-right-radius: 5px; }
+        .bot { background: white; color: #333; margin-right: auto; border-bottom-left-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .input-area { padding: 20px; background: white; border-top: 1px solid #eee; display: flex; gap: 10px; }
+        #input { flex: 1; padding: 15px; border: 2px solid #e0e0e0; border-radius: 25px; font-size: 1rem; outline: none; transition: border 0.3s; }
+        #input:focus { border-color: #667eea; }
+        #send { width: 60px; height: 60px; border-radius: 50%; border: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 1.5rem; cursor: pointer; transition: transform 0.3s; }
+        #send:hover { transform: scale(1.1); }
+        #typing { padding: 10px 20px; color: #666; font-style: italic; display: none; }
+        .status { font-size: 0.8rem; color: #4CAF50; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="header">
+            <h1>🤖 MrBlack AI</h1>
+            <div class="badges">
+                <span class="badge"><i>🦄</i> Uniswap</span>
+                <span class="badge"><i>🥞</i> PancakeSwap</span>
+                <span class="badge"><i>✈️</i> Aerodrome</span>
+                <span class="badge"><i>☀️</i> Raydium</span>
+                <span class="badge"><i>📚</i> Coding</span>
+                <span class="badge"><i>🎁</i> Airdrops</span>
+                <span class="badge"><i>📊</i> Trading</span>
+            </div>
+            <div class="status" id="memoryStatus">Memory: ON | 24x7 Learning: Active</div>
+        </div>
         
-        try:
-            response = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.5,
-                max_tokens=500
-            )
-            code = response.choices[0].message.content
+        <div class="messages" id="messages"></div>
+        
+        <div id="typing">🤔 MrBlack is thinking and learning...</div>
+        
+        <div class="input-area">
+            <input type="text" id="input" placeholder="Ask about coding, airdrops, trading, or any DEX...">
+            <button id="send">➤</button>
+        </div>
+    </div>
+
+    <script>
+        let sessionId = localStorage.getItem('mrblack_session') || '';
+        const messagesDiv = document.getElementById('messages');
+        const input = document.getElementById('input');
+        const sendBtn = document.getElementById('send');
+        const typingDiv = document.getElementById('typing');
+        const memoryStatus = document.getElementById('memoryStatus');
+
+        function addMessage(text, isUser) {
+            const div = document.createElement('div');
+            div.className = 'message ' + (isUser ? 'user' : 'bot');
+            div.textContent = text;
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const msg = input.value.trim();
+            if (!msg) return;
             
-            # Save to learning
-            code_data = {
-                "task": task,
-                "language": language,
-                "code": code[:100] + "...",
-                "timestamp": datetime.now().isoformat()
+            addMessage(msg, true);
+            input.value = '';
+            typingDiv.style.display = 'block';
+
+            try {
+                const res = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message: msg, session_id: sessionId})
+                });
+                
+                const data = await res.json();
+                typingDiv.style.display = 'none';
+                addMessage(data.reply, false);
+                
+                if (data.session_id) {
+                    sessionId = data.session_id;
+                    localStorage.setItem('mrblack_session', sessionId);
+                }
+            } catch (err) {
+                typingDiv.style.display = 'none';
+                addMessage('Error: ' + err.message, false);
             }
-            self.codes_written.append(code_data)
-            self.learning.append({"type": "code", "task": task})
-            
-            # Save to DB
-            if supabase:
-                try:
-                    supabase.table("coding").insert(code_data).execute()
-                except:
-                    pass
-            
-            return f"💻 **{language} code**\n\n{code}\n\n🧠 Learned: {len(self.codes_written)} codes written"
-            
-        except Exception as e:
-            return f"Error: {e}"
-    
-    def debug(self, error):
-        """Error debug karo"""
-        prompt = f"Debug this error and explain: {error}"
-        try:
-            response = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-                max_tokens=300
-            )
-            return f"🐛 **Debug Result**\n\n{response.choices[0].message.content}"
-        except:
-            return "Debug failed"
-    
-    def get_learning(self):
-        return f"💻 **Coding Progress**\n• Codes written: {len(self.codes_written)}\n• Languages: Python, JS, Solidity\n• Learning: 24x7 active"
+        }
 
-# ============================================
-# MAIN MR. BLACK CLASS (All 3 Features)
-# ============================================
-
-class MrBlack:
-    def __init__(self, session_id):
-        self.session_id = session_id
-        self.trading = DexTrading()
-        self.airdrop = AirdropHunter()
-        self.coding = CodingHelper()
-        self.memory = []
-    
-    def process(self, user_message):
-        msg = user_message.lower().strip()
-        
-        # ===== TRADING COMMANDS =====
-        if any(x in msg for x in ["buy", "sell", "trade"]):
-            for dex in ["uniswap", "pancake", "raydium"]:
-                if dex in msg:
-                    token = "eth"
-                    for t in ["eth", "btc", "sol", "cake"]:
-                        if t in msg:
-                            token = t
-                            break
-                    return self.trading.execute(dex, token)
-            return "Konsi DEX? uniswap/pancake/raydium?"
-        
-        # ===== AIRDROP COMMANDS =====
-        elif "airdrop" in msg:
-            if "execute" in msg or "claim" in msg:
-                return self.airdrop.hunt_and_execute()
-            else:
-                return self.airdrop.list_airdrops()
-        
-        # ===== CODING COMMANDS =====
-        elif any(x in msg for x in ["code", "program", "script"]):
-            if "debug" in msg:
-                error = msg.replace("debug", "").strip()
-                return self.coding.debug(error)
-            else:
-                task = msg.replace("code", "").replace("write", "").strip()
-                lang = "python"
-                for l in ["javascript", "solidity", "rust", "js"]:
-                    if l in msg:
-                        lang = l
-                        break
-                return self.coding.generate_code(task, lang)
-        
-        # ===== LEARNING STATUS =====
-        elif "learn" in msg or "progress" in msg:
-            return f"""🧠 **Learning Progress**
-{self.trading.get_learning()}
-{self.coding.get_learning()}
-📚 Airdrops claimed: {len(self.airdrop.claimed)}"""
-        
-        # ===== HELP =====
-        elif "help" in msg:
-            return self.get_help()
-        
-        # ===== NORMAL CHAT =====
-        else:
-            return self.smart_chat(user_message)
-    
-    def smart_chat(self, message):
-        prompt = f"""Tu MrBlack hai - Hinglish mein baat kar, emoji use kar, short answer de. User: {message}"""
-        try:
-            response = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.8,
-                max_tokens=200
-            )
-            return response.choices[0].message.content
-        except:
-            return f"😎 {message}"
-    
-    def get_help(self):
-        return """🔥 **Mr. Black Commands**
-
-💰 **TRADING**
-• `uniswap buy eth`
-• `pancake buy cake`
-• `raydium buy sol`
-
-🎁 **AIRDROP**
-• `airdrop` - list
-• `execute airdrop` - claim
-
-💻 **CODING**
-• `code python bot`
-• `debug error`
-
-🧠 **LEARNING**
-• `learn` - progress
-
-Bol bhai! 👇"""
-
-# ============================================
-# FLASK ROUTES
-# ============================================
-
-active_bots = {}
+        sendBtn.onclick = sendMessage;
+        input.addEventListener('keypress', e => {
+            if (e.key === 'Enter') sendMessage();
+        });
+    </script>
+</body>
+</html>
+"""
 
 @app.route("/")
 def home():
@@ -388,144 +375,107 @@ def chat():
     data = request.get_json() or {}
     user_message = data.get("message", "").strip()
     session_id = data.get("session_id") or str(uuid.uuid4())
-    
+
     if not user_message:
-        return jsonify({"reply": "Bolo bhai! 😎", "session_id": session_id})
-    
-    if session_id not in active_bots:
-        active_bots[session_id] = MrBlack(session_id)
-    
-    bot = active_bots[session_id]
-    reply = bot.process(user_message)
-    
-    # Save to memory
-    if supabase:
-        try:
-            supabase.table("memory").insert([
-                {"session_id": session_id, "role": "user", "content": user_message},
-                {"session_id": session_id, "role": "assistant", "content": reply}
-            ]).execute()
-        except:
-            pass
-    
+        return jsonify({"reply": "Kuch likho bhai!", "session_id": session_id})
+
+    try:
+        # Create powerful system prompt with all current knowledge
+        system_prompt = f"""Tu MrBlack hai - ek self-learning PRO bot jo 24x7 teeno fields seekhta hai:
+
+📚 CURRENT KNOWLEDGE (Real-time data):
+
+1. DEX TRADING:
+   - Uniswap: {len(knowledge_base['dex']['uniswap'].get('top_pools', []))} top pools tracked
+   - PancakeSwap: {len(knowledge_base['dex']['pancakeswap'].get('top_pairs', []))} top pairs
+   - Aerodrome: {len(knowledge_base['dex']['aerodrome'].get('pairs', []))} active pairs
+   - Raydium: {len(knowledge_base['dex']['raydium'].get('pools', []))} SOL pools
+   - Jupiter: Latest SOL prices available
+
+2. CODING (From GitHub & StackOverflow):
+   - Trending: {knowledge_base['coding']['github'][0]['name'] if knowledge_base['coding']['github'] else 'Loading...'}
+   - Latest discussions: {len(knowledge_base['coding']['stackoverflow'])} active topics
+
+3. AIRDROP HUNTING:
+   - Active airdrops: {len(knowledge_base['airdrops']['active'])} hunting now
+   - New tokens: {len(knowledge_base['airdrops'].get('new_tokens', []))} just launched
+
+4. TRADING SIGNALS:
+   - Latest news: {len(knowledge_base['trading']['news'])} crypto updates
+   - Market sentiment: {knowledge_base['trading']['fear_greed'][0].get('value', 'N/A') if knowledge_base['trading']['fear_greed'] else 'Loading...'}/100
+
+TERI SPECIALIZATIONS:
+🦄 Uniswap Expert - pools, fees, yields
+🥞 PancakeSwap Pro - farming, CAKE, BSC
+✈️ Aerodrome Master - Base chain, AERO
+☀️ Raydium Specialist - Solana, Serum
+📚 Coding Guru - Python, Solidity, Web3
+🎁 Airdrop Hunter - find, qualify, claim
+📊 Trading Coach - TA, risk management
+
+SEEKHNE KA TARIQA:
+- Har 5 minute mein naya data fetch
+- Previous conversations se improve
+- Beginner se pro tak gradually
+- Real examples ke saath sikhao
+- Paper trading practice
+
+TERA STYLE:
+- Hinglish mein baat
+- Confident but friendly
+- "Abhi maine ye seekha" batao
+- Step-by-step guide do
+- Copy-paste mat karo
+
+AVAILABLE HELP:
+📌 "Uniswap top pools dikhao"
+📌 "PancakeSwap farming kaise karein"
+📌 "Naye airdrops batayo"
+📌 "Python coding seekhna hai"
+📌 "Bitcoin ka trend kya hai"
+📌 "Raydium par SOL/USDC price"
+📌 "Aerodrome fees kitni hai"
+
+Yaad rakh: Tu 24x7 seekh raha hai, har din pro ban raha hai! 🚀"""
+
+        messages = [{"role": "system", "content": system_prompt}]
+
+        # Fetch memory
+        if supabase:
+            try:
+                hist = supabase.table("memory").select("role,content").eq("session_id", session_id).order("created_at").limit(30).execute()
+                if hist.data:
+                    for m in hist.data:
+                        messages.append({"role": m["role"], "content": m["content"]})
+            except Exception as e:
+                print(f"Memory fetch error: {e}")
+
+        messages.append({"role": "user", "content": user_message})
+
+        # Get response
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            temperature=0.8,
+            max_tokens=1000
+        )
+        reply = response.choices[0].message.content.strip()
+
+        # Save memory
+        if supabase:
+            try:
+                supabase.table("memory").insert([
+                    {"session_id": session_id, "role": "user", "content": user_message, "created_at": datetime.utcnow().isoformat()},
+                    {"session_id": session_id, "role": "assistant", "content": reply, "created_at": datetime.utcnow().isoformat()}
+                ]).execute()
+            except Exception as e:
+                print(f"Memory save error: {e}")
+
+    except Exception as e:
+        print(f"Error: {e}")
+        reply = f"Error: {str(e)}"
+
     return jsonify({"reply": reply, "session_id": session_id})
-
-# ============================================
-# UI
-# ============================================
-
-HTML = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>MrBlack - 3 in 1</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #0a0a0a;
-            color: white;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
-        header {
-            background: #1a1a1a;
-            padding: 15px;
-            border-bottom: 2px solid #00ff88;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-        .logo { color: #00ff88; font-weight: bold; font-size: 20px; }
-        .badge { background: #00ff88; color: black; padding: 4px 10px; border-radius: 20px; }
-        .feature { background: #2a2a2a; color: #00ff88; padding: 4px 8px; border-radius: 12px; font-size: 11px; }
-        #chat { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
-        .msg { max-width: 85%; padding: 12px 16px; border-radius: 18px; line-height: 1.5; white-space: pre-wrap; }
-        .user { align-self: flex-end; background: #00ff88; color: black; }
-        .bot { align-self: flex-start; background: #1a1a1a; border: 1px solid #333; }
-        #input-area { display: flex; padding: 15px; background: #1a1a1a; gap: 10px; }
-        #input { flex: 1; padding: 12px 18px; background: #2a2a2a; border: 1px solid #333; border-radius: 25px; color: white; }
-        #input:focus { border-color: #00ff88; outline: none; }
-        #send { width: 45px; height: 45px; border-radius: 50%; background: #00ff88; border: none; font-size: 18px; cursor: pointer; }
-        .hint { padding: 8px 15px; background: #0a0a0a; border-top: 1px solid #222; font-size: 11px; color: #666; display: flex; gap: 15px; }
-    </style>
-</head>
-<body>
-    <header>
-        <span class="logo">MR. BLACK</span>
-        <span class="badge">3-in-1</span>
-        <span class="feature">💰 DEX</span>
-        <span class="feature">🎁 Airdrop</span>
-        <span class="feature">💻 Code</span>
-        <span class="feature">🧠 24x7</span>
-    </header>
-    
-    <div id="chat"></div>
-    
-    <div class="hint">
-        <span>💰 uniswap buy eth</span>
-        <span>🎁 execute airdrop</span>
-        <span>💻 code python bot</span>
-        <span>🧠 learn</span>
-    </div>
-    
-    <div id="input-area">
-        <input id="input" placeholder="Command..." autocomplete="off">
-        <button id="send">➤</button>
-    </div>
-    
-    <script>
-        let sessionId = localStorage.getItem('mrblack_session') || '';
-        const chat = document.getElementById('chat');
-        const input = document.getElementById('input');
-        const send = document.getElementById('send');
-        
-        function addMessage(text, isUser = false) {
-            const div = document.createElement('div');
-            div.className = 'msg ' + (isUser ? 'user' : 'bot');
-            div.textContent = text;
-            chat.appendChild(div);
-            chat.scrollTop = chat.scrollHeight;
-        }
-        
-        async function sendMessage() {
-            const msg = input.value.trim();
-            if (!msg) return;
-            addMessage(msg, true);
-            input.value = '';
-            
-            try {
-                const res = await fetch('/chat', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({message: msg, session_id: sessionId})
-                });
-                const data = await res.json();
-                addMessage(data.reply);
-                if (data.session_id) sessionId = data.session_id;
-            } catch (err) {
-                addMessage('Error: ' + err.message);
-            }
-        }
-        
-        send.onclick = sendMessage;
-        input.addEventListener('keypress', e => { if (e.key === 'Enter') sendMessage(); });
-        
-        // Welcome
-        setTimeout(() => {
-            addMessage("🔥 MrBlack ready! Trading + Airdrop + Coding. Type 'help'");
-        }, 500);
-    </script>
-</body>
-</html>
-"""
-
-# ============================================
-# MAIN
-# ============================================
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
