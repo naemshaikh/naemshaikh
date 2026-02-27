@@ -1,5 +1,6 @@
-flask
-openai
-supabase
-gunicorn
-python-dotenv
+flask==2.3.3
+openai==1.12.0
+supabase==1.2.0
+gunicorn==21.2.0
+python-dotenv==1.0.0
+requests==2.31.0
