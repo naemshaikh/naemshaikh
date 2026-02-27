@@ -15,21 +15,23 @@ client = OpenAI(
 
 MODEL_NAME = "llama-3.3-70b-versatile"
 
-# SUPABASE MEMORY
+# SUPABASE MEMORY - FIXED VERSION
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 supabase = None
 if SUPABASE_URL and SUPABASE_KEY:
     try:
+        # Purane version ka tarika
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
         print("✅ Supabase memory connected")
     except Exception as e:
         print(f"❌ Supabase connection failed: {e}")
+        supabase = None
 else:
     print("⚠️ Supabase env missing → memory off")
 
-# HTML UI (same as before)
+# UI
 HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -49,10 +51,11 @@ HTML = """
         #send { background:#007bff; color:white; border:none; border-radius:50%; width:48px; height:48px; cursor:pointer; font-size:1.3rem; }
         #send:hover { background:#0056b3; }
         #typing { color:#777; padding:10px 15px; font-style:italic; display:none; }
+        .memory-status { padding:2px 8px; border-radius:12px; font-size:0.8rem; margin-left:10px; background:#28a745; color:white; }
     </style>
 </head>
 <body>
-    <header>MrBlack Chat</header>
+    <header>MrBlack Chat <span class="memory-status" id="memoryStatus">Memory ON</span></header>
     <div id="chat"></div>
     <div id="input-area">
         <input id="input" placeholder="Type message..." autocomplete="off"/>
@@ -66,6 +69,7 @@ HTML = """
         const input = document.getElementById('input');
         const send = document.getElementById('send');
         const typing = document.getElementById('typing');
+        const memoryStatus = document.getElementById('memoryStatus');
 
         function addMessage(text, isUser = false) {
             const div = document.createElement('div');
@@ -95,6 +99,9 @@ HTML = """
                     sessionId = data.session_id;
                     localStorage.setItem('mrblack_session', sessionId);
                 }
+                if (data.memory_status) {
+                    memoryStatus.textContent = data.memory_status;
+                }
             } catch (err) {
                 typing.style.display = 'none';
                 addMessage('Error: ' + err.message);
@@ -119,14 +126,18 @@ def chat():
     session_id = data.get("session_id") or str(uuid.uuid4())
 
     if not user_message:
-        return jsonify({"reply": "Kuch likho bhai!", "session_id": session_id})
+        return jsonify({
+            "reply": "Kuch likho bhai!", 
+            "session_id": session_id,
+            "memory_status": "Memory ON" if supabase else "Memory OFF"
+        })
 
     try:
         messages = [
             {"role": "system", "content": "You are MrBlack, a smart, witty and helpful Indian trading + general assistant. Baat karte time thoda Hindi-English mix karo aur mazedaar rehna."}
         ]
 
-        # Fetch memory if supabase connected
+        # Fetch memory
         if supabase:
             try:
                 hist = supabase.table("memory").select("role,content").eq("session_id", session_id).order("created_at").limit(30).execute()
@@ -138,7 +149,7 @@ def chat():
 
         messages.append({"role": "user", "content": user_message})
 
-        # Get response from Groq
+        # Get response
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=messages,
@@ -147,10 +158,10 @@ def chat():
         )
         reply = response.choices[0].message.content.strip()
 
-        # Save to memory if supabase connected
+        # Save memory
         if supabase:
             try:
-                # Save user message
+                # User message
                 supabase.table("memory").insert({
                     "session_id": session_id,
                     "role": "user",
@@ -158,7 +169,7 @@ def chat():
                     "created_at": datetime.utcnow().isoformat()
                 }).execute()
                 
-                # Save bot reply
+                # Bot reply
                 supabase.table("memory").insert({
                     "session_id": session_id,
                     "role": "assistant",
@@ -172,7 +183,11 @@ def chat():
         print(f"Error: {e}")
         reply = f"Error: {str(e)}"
 
-    return jsonify({"reply": reply, "session_id": session_id})
+    return jsonify({
+        "reply": reply, 
+        "session_id": session_id,
+        "memory_status": "Memory ON" if supabase else "Memory OFF"
+    })
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
