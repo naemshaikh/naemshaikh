@@ -9,7 +9,7 @@ import threading
 import json
 import socket
 
-# ========== FREEFLOW LLM (MULTI-PROVIDER AUTO FALLBACK) ==========
+# ========== FREEFLOW LLM (MULTI-KEY AUTO FALLBACK) ==========
 from freeflow_llm import FreeFlowClient, NoProvidersAvailableError
 
 # ========== PATCH HTTPX VERSION TO AVOID CONFLICT ==========
@@ -61,7 +61,85 @@ knowledge_base = {
     }
 }
 
-# ==================== FIXED JUPITER FETCHER ====================
+# ==================== DEX DATA FETCHERS (ALL ORIGINAL) ====================
+def fetch_uniswap_data():
+    """Uniswap V3 data"""
+    try:
+        url = "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3"
+        query = """
+        {
+          pools(first: 10, orderBy: totalValueLockedUSD, orderDirection: desc) {
+            id
+            token0 { symbol name }
+            token1 { symbol name }
+            token0Price
+            token1Price
+            volumeUSD
+            totalValueLockedUSD
+          }
+        }
+        """
+        response = requests.post(url, json={'query': query})
+        data = response.json()
+        knowledge_base["dex"]["uniswap"] = {
+            "top_pools": data.get('data', {}).get('pools', []),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        print("✅ Uniswap data fetched")
+    except Exception as e:
+        print(f"❌ Uniswap error: {e}")
+
+def fetch_pancakeswap_data():
+    """PancakeSwap data"""
+    try:
+        url = "https://api.thegraph.com/subgraphs/name/pancakeswap/exchange"
+        query = """
+        {
+          pairs(first: 10, orderBy: reserveUSD, orderDirection: desc) {
+            id
+            token0 { symbol }
+            token1 { symbol }
+            reserveUSD
+            volumeUSD
+          }
+        }
+        """
+        response = requests.post(url, json={'query': query})
+        data = response.json()
+        knowledge_base["dex"]["pancakeswap"] = {
+            "top_pairs": data.get('data', {}).get('pairs', []),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        print("✅ PancakeSwap data fetched")
+    except Exception as e:
+        print(f"❌ PancakeSwap error: {e}")
+
+def fetch_aerodrome_data():
+    """Aerodrome data via DEX Screener"""
+    try:
+        response = requests.get("https://api.dexscreener.com/latest/dex/search?q=aerodrome")
+        if response.status_code == 200:
+            knowledge_base["dex"]["aerodrome"] = {
+                "pairs": response.json().get('pairs', [])[:5],
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            print("✅ Aerodrome data fetched")
+    except Exception as e:
+        print(f"❌ Aerodrome error: {e}")
+
+def fetch_raydium_data():
+    """Raydium data"""
+    try:
+        response = requests.get("https://api.raydium.io/v2/main/pools")
+        if response.status_code == 200:
+            knowledge_base["dex"]["raydium"] = {
+                "pools": response.json()[:5],
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            print("✅ Raydium data fetched")
+    except Exception as e:
+        print(f"❌ Raydium error: {e}")
+
 def fetch_jupiter_data():
     """Jupiter aggregator data - Fixed version"""
     try:
@@ -95,7 +173,56 @@ def fetch_jupiter_data():
     except Exception as e:
         print(f"❌ Jupiter error: {e}")
 
-# [ALL OTHER FETCHERS REMAIN EXACTLY THE SAME - Uniswap, PancakeSwap, Aerodrome, Raydium, Coding, Airdrops, Trading]
+# ==================== CODING LEARNING SOURCES ====================
+def fetch_coding_data():
+    """GitHub, StackOverflow, Medium se coding seekho"""
+    try:
+        github = requests.get("https://api.github.com/search/repositories?q=blockchain+crypto+web3+python&sort=stars&per_page=5")
+        if github.status_code == 200:
+            knowledge_base["coding"]["github"] = github.json().get('items', [])
+        
+        stack = requests.get("https://api.stackexchange.com/2.3/questions?order=desc&sort=activity&tagged=python;solidity;web3&site=stackoverflow")
+        if stack.status_code == 200:
+            knowledge_base["coding"]["stackoverflow"] = stack.json().get('items', [])[:5]
+        
+        print("✅ Coding data fetched")
+    except Exception as e:
+        print(f"❌ Coding error: {e}")
+
+# ==================== AIRDROP HUNTING SOURCES ====================
+def fetch_airdrops_data():
+    """Latest airdrops hunt karo"""
+    try:
+        dex_response = requests.get("https://api.dexscreener.com/latest/dex/search?q=new+pairs")
+        
+        airdrops = [
+            {"name": "zkSync Era", "status": "Active", "value": "$1000+", "end": "March 2025"},
+            {"name": "LayerZero", "status": "Upcoming", "value": "TBA", "end": "Q2 2025"},
+            {"name": "Eclipse", "status": "Active", "value": "$500+", "end": "April 2025"},
+            {"name": "StarkNet", "status": "Active", "value": "$2000+", "end": "March 2025"},
+            {"name": "Scroll", "status": "Upcoming", "value": "TBA", "end": "Q2 2025"}
+        ]
+        
+        knowledge_base["airdrops"]["active"] = airdrops
+        knowledge_base["airdrops"]["new_tokens"] = dex_response.json().get('pairs', [])[:5] if dex_response.status_code == 200 else []
+        
+        print("✅ Airdrop data fetched")
+    except Exception as e:
+        print(f"❌ Airdrop error: {e}")
+
+# ==================== TRADING LEARNING SOURCES ====================
+def fetch_trading_data():
+    """Trading signals aur market data"""
+    try:
+        news = requests.get("https://min-api.cryptocompare.com/data/v2/news/?lang=EN&limit=5")
+        fear_greed = requests.get("https://api.alternative.me/fng/?limit=1")
+        
+        knowledge_base["trading"]["news"] = news.json().get('Data', []) if news.status_code == 200 else []
+        knowledge_base["trading"]["fear_greed"] = fear_greed.json().get('data', []) if fear_greed.status_code == 200 else []
+        
+        print("✅ Trading data fetched")
+    except Exception as e:
+        print(f"❌ Trading error: {e}")
 
 # ==================== 24x7 LEARNING ENGINE ====================
 def continuous_learning():
@@ -103,20 +230,13 @@ def continuous_learning():
     while True:
         print("\n🤖 24x7 LEARNING CYCLE STARTED...")
         
-        # DEX data
         fetch_uniswap_data()
         fetch_pancakeswap_data()
         fetch_aerodrome_data()
         fetch_raydium_data()
         fetch_jupiter_data()
-        
-        # Coding data
         fetch_coding_data()
-        
-        # Airdrop data
         fetch_airdrops_data()
-        
-        # Trading data
         fetch_trading_data()
         
         if supabase:
@@ -132,13 +252,120 @@ def continuous_learning():
         print("😴 Sleeping for 5 minutes...")
         time.sleep(300)
 
-# Start learning thread
 learning_thread = threading.Thread(target=continuous_learning, daemon=True)
 learning_thread.start()
 print("🚀 24x7 LEARNING ENGINE STARTED!")
 
 # ==================== UI ====================
-HTML = """  """  # 👈 Your original HTML - exactly same
+HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MrBlack AI - 24x7 Learning</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Roboto, sans-serif; }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100vh; display: flex; justify-content: center; align-items: center; }
+        .chat-container { width: 100%; max-width: 800px; height: 90vh; background: white; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); display: flex; flex-direction: column; overflow: hidden; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; }
+        .header h1 { font-size: 2rem; margin-bottom: 5px; }
+        .badges { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+        .badge { background: rgba(255,255,255,0.2); padding: 5px 15px; border-radius: 20px; font-size: 0.9rem; backdrop-filter: blur(10px); }
+        .badge i { margin-right: 5px; }
+        .messages { flex: 1; overflow-y: auto; padding: 20px; background: #f5f5f5; }
+        .message { max-width: 70%; margin-bottom: 15px; padding: 12px 18px; border-radius: 15px; word-wrap: break-word; animation: fadeIn 0.3s; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .user { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; margin-left: auto; border-bottom-right-radius: 5px; }
+        .bot { background: white; color: #333; margin-right: auto; border-bottom-left-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .input-area { padding: 20px; background: white; border-top: 1px solid #eee; display: flex; gap: 10px; }
+        #input { flex: 1; padding: 15px; border: 2px solid #e0e0e0; border-radius: 25px; font-size: 1rem; outline: none; transition: border 0.3s; }
+        #input:focus { border-color: #667eea; }
+        #send { width: 60px; height: 60px; border-radius: 50%; border: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 1.5rem; cursor: pointer; transition: transform 0.3s; }
+        #send:hover { transform: scale(1.1); }
+        #typing { padding: 10px 20px; color: #666; font-style: italic; display: none; }
+        .status { font-size: 0.8rem; color: #4CAF50; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="header">
+            <h1>🤖 MrBlack AI</h1>
+            <div class="badges">
+                <span class="badge"><i>🦄</i> Uniswap</span>
+                <span class="badge"><i>🥞</i> PancakeSwap</span>
+                <span class="badge"><i>✈️</i> Aerodrome</span>
+                <span class="badge"><i>☀️</i> Raydium</span>
+                <span class="badge"><i>📚</i> Coding</span>
+                <span class="badge"><i>🎁</i> Airdrops</span>
+                <span class="badge"><i>📊</i> Trading</span>
+            </div>
+            <div class="status" id="memoryStatus">Memory: ON | 24x7 Learning: Active</div>
+        </div>
+        
+        <div class="messages" id="messages"></div>
+        
+        <div id="typing">🤔 MrBlack is thinking and learning...</div>
+        
+        <div class="input-area">
+            <input type="text" id="input" placeholder="Ask about coding, airdrops, trading, or any DEX...">
+            <button id="send">➤</button>
+        </div>
+    </div>
+
+    <script>
+        let sessionId = localStorage.getItem('mrblack_session') || '';
+        const messagesDiv = document.getElementById('messages');
+        const input = document.getElementById('input');
+        const sendBtn = document.getElementById('send');
+        const typingDiv = document.getElementById('typing');
+        const memoryStatus = document.getElementById('memoryStatus');
+
+        function addMessage(text, isUser) {
+            const div = document.createElement('div');
+            div.className = 'message ' + (isUser ? 'user' : 'bot');
+            div.textContent = text;
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const msg = input.value.trim();
+            if (!msg) return;
+            
+            addMessage(msg, true);
+            input.value = '';
+            typingDiv.style.display = 'block';
+
+            try {
+                const res = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message: msg, session_id: sessionId})
+                });
+                
+                const data = await res.json();
+                typingDiv.style.display = 'none';
+                addMessage(data.reply, false);
+                
+                if (data.session_id) {
+                    sessionId = data.session_id;
+                    localStorage.setItem('mrblack_session', sessionId);
+                }
+            } catch (err) {
+                typingDiv.style.display = 'none';
+                addMessage('Error: ' + err.message, false);
+            }
+        }
+
+        sendBtn.onclick = sendMessage;
+        input.addEventListener('keypress', e => {
+            if (e.key === 'Enter') sendMessage();
+        });
+    </script>
+</body>
+</html>
+"""
 
 @app.route("/")
 def home():
@@ -224,7 +451,6 @@ Yaad rakh: Tu 24x7 seekh raha hai, har din pro ban raha hai! 🚀"""
 
         messages.append({"role": "user", "content": user_message})
 
-        # ========== ULTIMATE GOD MODE WITH ALL 2026 MODELS ==========
         with FreeFlowClient() as ffc:
             try:
                 response = ffc.chat(
@@ -236,22 +462,21 @@ Yaad rakh: Tu 24x7 seekh raha hai, har din pro ban raha hai! 🚀"""
                 reply = response.content
                 print(f"✅ Provider used: {response.provider} - ULTIMATE GOD MODE")
                 
-                # Track which god mode is active
                 provider_lower = str(response.provider).lower()
                 if "cerebras" in provider_lower:
                     print("🧠 Cerebras Qwen3 235B - Speed God!")
                 elif "gemini" in provider_lower:
-                    print("🧠 Gemini 3.1 Flash - 2M Context God! [citation:1]")
+                    print("🧠 Gemini 3.1 Flash - 2M Context God!")
                 elif "mistral" in provider_lower:
                     print("🧠 Mistral Large - Code God!")
                 elif "groq" in provider_lower:
                     if "deepseek" in str(response.model).lower():
-                        print("🧠 DeepSeek-R1 - Reasoning God! [citation:2]")
+                        print("🧠 DeepSeek-R1 - Reasoning God!")
                     else:
                         print("⚡ Groq Llama 3.3 - Fast God!")
                 elif "github" in provider_lower:
                     if "claude" in str(response.model).lower():
-                        print("🧠 Claude 4.6 Sonnet - Creative God! [citation:5]")
+                        print("🧠 Claude 4.6 Sonnet - Creative God!")
                     else:
                         print("🐙 GitHub Models - Backup God!")
                     
