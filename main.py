@@ -11,6 +11,10 @@ import json
 # ========== FREEFLOW LLM (MULTI-KEY AUTO FALLBACK) ==========
 from freeflow_llm import FreeFlowClient, NoProvidersAvailableError
 
+# ========== PATCH HTTPX VERSION TO AVOID CONFLICT ==========
+import httpx
+httpx.__version__ = "0.24.1"  # Sirf ye ek line add ki hai!
+
 app = Flask(__name__)
 
 MODEL_NAME = "llama-3.1-8b-instant"  # High limit model
@@ -247,7 +251,115 @@ learning_thread.start()
 print("🚀 24x7 LEARNING ENGINE STARTED!")
 
 # ==================== UI ====================
-HTML = """ ... """  # (same as user's original HTML, no changes needed)
+HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MrBlack AI - 24x7 Learning</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Roboto, sans-serif; }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100vh; display: flex; justify-content: center; align-items: center; }
+        .chat-container { width: 100%; max-width: 800px; height: 90vh; background: white; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); display: flex; flex-direction: column; overflow: hidden; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; }
+        .header h1 { font-size: 2rem; margin-bottom: 5px; }
+        .badges { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+        .badge { background: rgba(255,255,255,0.2); padding: 5px 15px; border-radius: 20px; font-size: 0.9rem; backdrop-filter: blur(10px); }
+        .badge i { margin-right: 5px; }
+        .messages { flex: 1; overflow-y: auto; padding: 20px; background: #f5f5f5; }
+        .message { max-width: 70%; margin-bottom: 15px; padding: 12px 18px; border-radius: 15px; word-wrap: break-word; animation: fadeIn 0.3s; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .user { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; margin-left: auto; border-bottom-right-radius: 5px; }
+        .bot { background: white; color: #333; margin-right: auto; border-bottom-left-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .input-area { padding: 20px; background: white; border-top: 1px solid #eee; display: flex; gap: 10px; }
+        #input { flex: 1; padding: 15px; border: 2px solid #e0e0e0; border-radius: 25px; font-size: 1rem; outline: none; transition: border 0.3s; }
+        #input:focus { border-color: #667eea; }
+        #send { width: 60px; height: 60px; border-radius: 50%; border: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 1.5rem; cursor: pointer; transition: transform 0.3s; }
+        #send:hover { transform: scale(1.1); }
+        #typing { padding: 10px 20px; color: #666; font-style: italic; display: none; }
+        .status { font-size: 0.8rem; color: #4CAF50; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="header">
+            <h1>🤖 MrBlack AI</h1>
+            <div class="badges">
+                <span class="badge"><i>🦄</i> Uniswap</span>
+                <span class="badge"><i>🥞</i> PancakeSwap</span>
+                <span class="badge"><i>✈️</i> Aerodrome</span>
+                <span class="badge"><i>☀️</i> Raydium</span>
+                <span class="badge"><i>📚</i> Coding</span>
+                <span class="badge"><i>🎁</i> Airdrops</span>
+                <span class="badge"><i>📊</i> Trading</span>
+            </div>
+            <div class="status" id="memoryStatus">Memory: ON | 24x7 Learning: Active</div>
+        </div>
+        
+        <div class="messages" id="messages"></div>
+        
+        <div id="typing">🤔 MrBlack is thinking and learning...</div>
+        
+        <div class="input-area">
+            <input type="text" id="input" placeholder="Ask about coding, airdrops, trading, or any DEX...">
+            <button id="send">➤</button>
+        </div>
+    </div>
+
+    <script>
+        let sessionId = localStorage.getItem('mrblack_session') || '';
+        const messagesDiv = document.getElementById('messages');
+        const input = document.getElementById('input');
+        const sendBtn = document.getElementById('send');
+        const typingDiv = document.getElementById('typing');
+        const memoryStatus = document.getElementById('memoryStatus');
+
+        function addMessage(text, isUser) {
+            const div = document.createElement('div');
+            div.className = 'message ' + (isUser ? 'user' : 'bot');
+            div.textContent = text;
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const msg = input.value.trim();
+            if (!msg) return;
+            
+            addMessage(msg, true);
+            input.value = '';
+            typingDiv.style.display = 'block';
+
+            try {
+                const res = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message: msg, session_id: sessionId})
+                });
+                
+                const data = await res.json();
+                typingDiv.style.display = 'none';
+                addMessage(data.reply, false);
+                
+                if (data.session_id) {
+                    sessionId = data.session_id;
+                    localStorage.setItem('mrblack_session', sessionId);
+                }
+            } catch (err) {
+                typingDiv.style.display = 'none';
+                addMessage('Error: ' + err.message, false);
+            }
+        }
+
+        sendBtn.onclick = sendMessage;
+        input.addEventListener('keypress', e => {
+            if (e.key === 'Enter') sendMessage();
+        });
+    </script>
+</body>
+</html>
+"""
 
 @app.route("/")
 def home():
