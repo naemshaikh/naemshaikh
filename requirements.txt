@@ -5,5 +5,5 @@ gunicorn
 requests
 schedule
 pycryptodome
-google-generativeai
+google-genai
 beautifulsoup4
