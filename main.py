@@ -16,7 +16,7 @@ MODEL_NAME = "llama-3.3-70b-versatile"
 
 # SUPABASE MEMORY
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 supabase = None
 if SUPABASE_URL and SUPABASE_KEY:
