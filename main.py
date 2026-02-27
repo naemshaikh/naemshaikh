@@ -3,6 +3,7 @@ from flask import Flask, render_template_string, request, jsonify
 from openai import OpenAI
 from supabase import create_client
 import uuid
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -20,12 +21,15 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 supabase = None
 if SUPABASE_URL and SUPABASE_KEY:
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-    print("✅ Supabase memory connected")
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        print("✅ Supabase memory connected")
+    except Exception as e:
+        print(f"❌ Supabase connection failed: {e}")
 else:
     print("⚠️ Supabase env missing → memory off")
 
-# ORIGINAL UI (same as yours)
+# HTML UI (same as before)
 HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -48,7 +52,7 @@ HTML = """
     </style>
 </head>
 <body>
-    <header>MrBlack Chat (Memory ON)</header>
+    <header>MrBlack Chat</header>
     <div id="chat"></div>
     <div id="input-area">
         <input id="input" placeholder="Type message..." autocomplete="off"/>
@@ -118,23 +122,23 @@ def chat():
         return jsonify({"reply": "Kuch likho bhai!", "session_id": session_id})
 
     try:
-        print(f"[DEBUG] New request | Session: {session_id} | Message: {user_message}")
-
         messages = [
             {"role": "system", "content": "You are MrBlack, a smart, witty and helpful Indian trading + general assistant. Baat karte time thoda Hindi-English mix karo aur mazedaar rehna."}
         ]
 
+        # Fetch memory if supabase connected
         if supabase:
-            print("[DEBUG] Fetching history from Supabase...")
-            hist = supabase.table("memory").select("role,content") \
-                .eq("session_id", session_id) \
-                .order("created_at", desc=False).limit(30).execute()
-            print(f"[DEBUG] Loaded {len(hist.data)} previous messages")
-            for m in hist.data:
-                messages.append({"role": m["role"], "content": m["content"]})
+            try:
+                hist = supabase.table("memory").select("role,content").eq("session_id", session_id).order("created_at").limit(30).execute()
+                if hist.data:
+                    for m in hist.data:
+                        messages.append({"role": m["role"], "content": m["content"]})
+            except Exception as e:
+                print(f"Memory fetch error: {e}")
 
         messages.append({"role": "user", "content": user_message})
 
+        # Get response from Groq
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=messages,
@@ -143,20 +147,32 @@ def chat():
         )
         reply = response.choices[0].message.content.strip()
 
+        # Save to memory if supabase connected
         if supabase:
-            print("[DEBUG] Saving memory to Supabase...")
-            supabase.table("memory").insert([
-                {"session_id": session_id, "role": "user", "content": user_message, "user_id": None, "metadata": {}},
-                {"session_id": session_id, "role": "assistant", "content": reply, "user_id": None, "metadata": {}}
-            ]).execute()
-            print(f"[DEBUG] ✅ Memory saved for session {session_id}")
+            try:
+                # Save user message
+                supabase.table("memory").insert({
+                    "session_id": session_id,
+                    "role": "user",
+                    "content": user_message,
+                    "created_at": datetime.utcnow().isoformat()
+                }).execute()
+                
+                # Save bot reply
+                supabase.table("memory").insert({
+                    "session_id": session_id,
+                    "role": "assistant",
+                    "content": reply,
+                    "created_at": datetime.utcnow().isoformat()
+                }).execute()
+            except Exception as e:
+                print(f"Memory save error: {e}")
 
     except Exception as e:
-        print(f"[ERROR] {str(e)}")
+        print(f"Error: {e}")
         reply = f"Error: {str(e)}"
 
     return jsonify({"reply": reply, "session_id": session_id})
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
