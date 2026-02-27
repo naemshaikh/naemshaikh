@@ -6,7 +6,7 @@ app = Flask(__name__)
 
 # Gemini setup (NEW SDK)
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-MODEL_NAME = "gemini-1.5-turbo"   # ✅ FREE MODEL version correct
+MODEL_NAME = "gemini-2.5-flash"
 
 # Simple chat UI
 HTML = """
