@@ -1,16 +1,16 @@
 import os
 from flask import Flask, render_template_string, request, jsonify
-from openai import OpenAI   # ← Grok ke liye
+from openai import OpenAI
 
 app = Flask(__name__)
 
-# ==================== GROK (xAI) SETUP ====================
+# ==================== GROQ SETUP (Free + High Limit) ====================
 client = OpenAI(
-    api_key=os.getenv("XAI_API_KEY"),          # ← Render se aayega
-    base_url="https://api.x.ai/v1"
+    api_key=os.getenv("GROQ_API_KEY"),          # ← Ab Groq key
+    base_url="https://api.groq.com/openai/v1"
 )
 
-MODEL_NAME = "grok-4"   # best model abhi
+MODEL_NAME = "llama-3.3-70b-versatile"   # Best free + fast model (high limit wala)
 
 # Simple chat UI
 HTML = """
@@ -35,7 +35,7 @@ header { background:#007bff; color:white; padding:15px; text-align:center; font-
 </style>
 </head>
 <body>
-<header>MrBlack Chat 🚀 (Powered by Grok)</header>
+<header>MrBlack Chat 🚀 (Powered by Groq - Fast & Free)</header>
 <div id="chat"></div>
 <div id="input-area">
 <input id="input" placeholder="Type message..." autocomplete="off"/>
@@ -152,7 +152,7 @@ app.register_blueprint(trading_bot_bp)
 def health():
     return jsonify({"health": "good"})
 
-# ==================== Render ke liye PORT fix ====================
+# Render PORT fix
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
