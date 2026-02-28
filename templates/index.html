@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
     <title>MrBlack AI Pro</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
 
         body {
@@ -18,16 +18,16 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            padding: 16px;
+            padding: 10px;
         }
 
         .terminal {
             width: 100%;
-            max-width: 1400px;
-            height: 90vh;
+            max-width: 500px;  /* Mobile friendly width */
+            height: 95vh;
             background: #0a0b0e;
-            border-radius: 28px;
-            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+            border-radius: 24px;
+            box-shadow: 0 20px 40px -10px rgba(0,0,0,0.5);
             display: flex;
             flex-direction: column;
             overflow: hidden;
@@ -36,18 +36,17 @@
 
         /* HEADER */
         .header {
-            height: 70px;
+            height: 60px;
             background: #111216;
             border-bottom: 1px solid #2a2c33;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 0 24px;
+            padding: 0 16px;
         }
 
-        .logo h1 {
-            color: white;
-            font-size: 22px;
+        .logo {
+            font-size: 18px;
             font-weight: 600;
             background: linear-gradient(135deg, #667eea, #764ba2);
             -webkit-background-clip: text;
@@ -56,95 +55,96 @@
 
         .header-icons {
             display: flex;
-            gap: 20px;
+            gap: 16px;
             color: #8f9bb3;
-            font-size: 20px;
-            cursor: pointer;
+            font-size: 18px;
         }
 
         /* MODE SELECTOR */
         .mode-selector {
-            padding: 16px 24px;
+            padding: 12px 16px;
             background: #111216;
             border-bottom: 1px solid #2a2c33;
             display: flex;
-            gap: 12px;
+            gap: 8px;
+            overflow-x: auto;
+            white-space: nowrap;
         }
 
         .mode-btn {
-            padding: 8px 20px;
-            border-radius: 30px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
             background: #1a1c23;
             color: #8f9bb3;
             border: 1px solid #2a2c33;
+            cursor: pointer;
+            flex-shrink: 0;
         }
 
         .mode-btn.active {
             background: linear-gradient(135deg, #667eea, #764ba2);
             color: white;
+            border: none;
         }
 
-        /* MAIN CONTENT - 60/40 SPLIT */
-        .main-content {
-            flex: 1;
-            display: flex;
-            min-height: 0;
-            overflow: hidden;
-        }
-
-        /* TRADING SECTION (60%) */
+        /* TRADING SECTION - UPAR */
         .trading-section {
-            width: 60%;
             background: #111216;
-            border-right: 1px solid #2a2c33;
-            padding: 20px;
-            overflow-y: auto;
+            padding: 16px;
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            gap: 16px;
+            border-bottom: 1px solid #2a2c33;
         }
 
-        /* BALANCE CARD - छोटा किया */
-        .balance-card {
-            background: #1a1c23;
-            border-radius: 16px;
-            padding: 16px;
-            border: 1px solid #2a2c33;
-            max-width: 300px;
-        }
-
+        /* BALANCE ROW - HORIZONTAL */
         .balance-row {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 8px;
+            align-items: center;
+            background: #1a1c23;
+            padding: 12px 16px;
+            border-radius: 12px;
+            border: 1px solid #2a2c33;
+        }
+
+        .balance-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+        }
+
+        .balance-label {
             color: #8f9bb3;
-            font-size: 14px;
+            font-size: 11px;
+            margin-bottom: 2px;
         }
 
         .balance-value {
             color: white;
             font-weight: 600;
+            font-size: 14px;
         }
 
         .balance-value.positive {
             color: #4caf50;
         }
 
-        /* POSITIONS GRID */
-        .section-title {
+        /* POSITIONS - 2 CARDS SIDE BY SIDE */
+        .positions-title {
             color: #8f9bb3;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 600;
-            margin-bottom: 12px;
+            margin-bottom: 8px;
         }
 
         .positions-grid {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
         }
 
         .position-card {
@@ -157,6 +157,7 @@
         .position-header {
             display: flex;
             justify-content: space-between;
+            align-items: center;
             margin-bottom: 6px;
         }
 
@@ -167,7 +168,7 @@
         }
 
         .position-pnl {
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 600;
         }
 
@@ -178,55 +179,65 @@
             display: flex;
             justify-content: space-between;
             color: #8f9bb3;
-            font-size: 12px;
+            font-size: 11px;
         }
 
-        /* QUICK ACTIONS */
+        /* QUICK ACTIONS - 4 BUTTONS */
+        .actions-title {
+            color: #8f9bb3;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
         .quick-actions {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 8px;
+            gap: 6px;
         }
 
         .action-btn {
             background: #1a1c23;
             border: 1px solid #2a2c33;
             color: white;
-            padding: 10px;
-            border-radius: 10px;
-            font-size: 13px;
+            padding: 8px 0;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 500;
             cursor: pointer;
             transition: all 0.2s;
         }
 
         .action-btn:hover {
             background: linear-gradient(135deg, #667eea, #764ba2);
+            border-color: transparent;
         }
 
-        /* CHAT SECTION (40%) - चौड़ा किया */
+        /* CHAT SECTION - NICHE */
         .chat-section {
-            width: 40%;
+            flex: 1;
             background: #111216;
             display: flex;
             flex-direction: column;
+            min-height: 0;
         }
 
-        .chat-history {
+        .chat-messages {
             flex: 1;
-            padding: 20px;
+            padding: 16px;
             overflow-y: auto;
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 8px;
         }
 
         .message {
-            max-width: 90%;  /* चौड़ा किया */
-            padding: 12px 16px;
-            border-radius: 18px;
+            max-width: 85%;
+            padding: 8px 12px;
+            border-radius: 16px;
+            font-size: 13px;
+            line-height: 1.4;
             word-wrap: break-word;
-            font-size: 14px;
-            line-height: 1.5;
         }
 
         .message.bot {
@@ -242,50 +253,23 @@
             align-self: flex-end;
         }
 
-        /* TYPING INDICATOR */
-        .typing-indicator {
-            display: flex;
-            gap: 4px;
-            padding: 8px 12px;
-            background: #1a1c23;
-            border-radius: 18px;
-            width: fit-content;
-            margin-bottom: 8px;
-        }
-
-        .typing-dot {
-            width: 6px;
-            height: 6px;
-            background: #8f9bb3;
-            border-radius: 50%;
-            animation: typing 1.4s infinite;
-        }
-
-        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
-        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
-
-        @keyframes typing {
-            0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-            30% { transform: translateY(-4px); opacity: 1; }
-        }
-
-        .chat-input-area {
-            height: 70px;
-            border-top: 1px solid #2a2c33;
-            padding: 12px 15px;
-            display: flex;
-            gap: 10px;
+        /* INPUT AREA - WITH SEND BUTTON */
+        .input-area {
             background: #111216;
+            border-top: 1px solid #2a2c33;
+            padding: 12px;
+            display: flex;
+            gap: 8px;
         }
 
         .chat-input {
             flex: 1;
             background: #1a1c23;
             border: 1px solid #2a2c33;
-            border-radius: 25px;
-            padding: 0 15px;
+            border-radius: 20px;
+            padding: 10px 15px;
             color: white;
-            font-size: 14px;
+            font-size: 13px;
             outline: none;
         }
 
@@ -294,31 +278,42 @@
         }
 
         .send-btn {
-            width: 46px;
-            height: 46px;
+            width: 40px;
+            height: 40px;
             background: linear-gradient(135deg, #667eea, #764ba2);
             border: none;
-            border-radius: 23px;
+            border-radius: 20px;
             color: white;
-            font-size: 18px;
+            font-size: 16px;
             cursor: pointer;
-            transition: transform 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
-        .send-btn:hover {
-            transform: scale(1.1);
-        }
-
+        /* FOOTER */
         .footer {
-            height: 40px;
+            height: 36px;
             background: #111216;
             border-top: 1px solid #2a2c33;
             display: flex;
             align-items: center;
-            padding: 0 24px;
+            justify-content: space-between;
+            padding: 0 16px;
             color: #8f9bb3;
-            font-size: 13px;
-            gap: 30px;
+            font-size: 11px;
+        }
+
+        /* SCROLLBAR */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1a1c23;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #2a2c33;
+            border-radius: 2px;
         }
     </style>
 </head>
@@ -326,9 +321,7 @@
     <div class="terminal">
         <!-- HEADER -->
         <div class="header">
-            <div class="logo">
-                <h1>🤖 MrBlack AI Pro</h1>
-            </div>
+            <span class="logo">🤖 MrBlack AI Pro</span>
             <div class="header-icons">
                 <span>🛠️</span>
                 <span>👤</span>
@@ -342,70 +335,58 @@
             <button class="mode-btn" onclick="setMode('stats')">📊 STATS</button>
         </div>
 
-        <!-- MAIN CONTENT -->
-        <div class="main-content">
-            <!-- TRADING SECTION -->
-            <div class="trading-section">
-                <!-- BALANCE CARD - छोटा -->
-                <div class="balance-card">
-                    <div class="balance-row">
-                        <span>Paper</span>
-                        <span class="balance-value" id="paperBalance">1.245 BNB</span>
-                    </div>
-                    <div class="balance-row">
-                        <span>Real</span>
-                        <span class="balance-value" id="realBalance">0.000 BNB</span>
-                    </div>
-                    <div class="balance-row">
-                        <span>PnL</span>
-                        <span class="balance-value positive" id="pnl">+0.078 (6%)</span>
-                    </div>
+        <!-- TRADING SECTION (UPAR) -->
+        <div class="trading-section">
+            <!-- BALANCE ROW -->
+            <div class="balance-row">
+                <div class="balance-item">
+                    <span class="balance-label">PAPER</span>
+                    <span class="balance-value" id="paperBalance">1.245</span>
                 </div>
-
-                <!-- POSITIONS -->
-                <div>
-                    <div class="section-title">📊 OPEN POSITIONS</div>
-                    <div class="positions-grid" id="positionsGrid"></div>
+                <div class="balance-item">
+                    <span class="balance-label">REAL</span>
+                    <span class="balance-value" id="realBalance">0.000</span>
                 </div>
-
-                <!-- QUICK ACTIONS -->
-                <div>
-                    <div class="section-title">⚡ QUICK ACTIONS</div>
-                    <div class="quick-actions">
-                        <button class="action-btn" onclick="quickAction('scan')">🔍 SCAN</button>
-                        <button class="action-btn" onclick="quickAction('buy')">💰 BUY</button>
-                        <button class="action-btn" onclick="quickAction('sell')">💸 SELL</button>
-                        <button class="action-btn" onclick="quickAction('stats')">📊 STATS</button>
-                    </div>
+                <div class="balance-item">
+                    <span class="balance-label">PNL</span>
+                    <span class="balance-value positive" id="pnl">+0.078</span>
                 </div>
             </div>
 
-            <!-- CHAT SECTION - चौड़ा -->
-            <div class="chat-section">
-                <div class="chat-history" id="chatHistory">
-                    <div class="message bot">🤖 Bot: Paper trading started!</div>
+            <!-- POSITIONS -->
+            <div>
+                <div class="positions-title">📊 POSITIONS</div>
+                <div class="positions-grid" id="positionsGrid"></div>
+            </div>
+
+            <!-- QUICK ACTIONS -->
+            <div>
+                <div class="actions-title">⚡ QUICK ACTIONS</div>
+                <div class="quick-actions">
+                    <button class="action-btn" onclick="quickAction('scan')">🔍 SCAN</button>
+                    <button class="action-btn" onclick="quickAction('buy')">💰 BUY</button>
+                    <button class="action-btn" onclick="quickAction('sell')">💸 SELL</button>
+                    <button class="action-btn" onclick="quickAction('stats')">📊 STATS</button>
                 </div>
-                
-                <!-- TYPING INDICATOR (hidden by default) -->
-                <div class="typing-indicator" id="typingIndicator" style="display: none; margin-left: 20px;">
-                    <div class="typing-dot"></div>
-                    <div class="typing-dot"></div>
-                    <div class="typing-dot"></div>
-                </div>
-                
-                <div class="chat-input-area">
-                    <input type="text" class="chat-input" id="chatInput" placeholder="Type message..." onkeypress="handleKeyPress(event)">
-                    <button class="send-btn" onclick="sendMessage()">➤</button>
-                </div>
+            </div>
+        </div>
+
+        <!-- CHAT SECTION (NICHE) -->
+        <div class="chat-section">
+            <div class="chat-messages" id="chatMessages"></div>
+            
+            <!-- INPUT AREA WITH SEND BUTTON -->
+            <div class="input-area">
+                <input type="text" class="chat-input" id="chatInput" placeholder="Type message..." onkeypress="handleKeyPress(event)">
+                <button class="send-btn" onclick="sendMessage()">➤</button>
             </div>
         </div>
 
         <!-- FOOTER -->
         <div class="footer">
-            <span>📍 Paper Trading</span>
+            <span>📍 Paper Mode</span>
             <span>📊 2 Positions</span>
             <span>⛽ 5 Gwei</span>
-            <span>🔷 Block: 34567890</span>
         </div>
     </div>
 
@@ -420,7 +401,7 @@
             { text: 'Paper trading started!', isBot: true }
         ];
 
-        let isTyping = false;
+        let currentMode = 'paper';
 
         function updatePositions() {
             const grid = document.getElementById('positionsGrid');
@@ -443,24 +424,16 @@
         }
 
         function updateChat() {
-            const chatDiv = document.getElementById('chatHistory');
+            const chatDiv = document.getElementById('chatMessages');
             chatDiv.innerHTML = '';
             messages.forEach(msg => {
                 chatDiv.innerHTML += `
                     <div class="message ${msg.isBot ? 'bot' : 'user'}">
-                        ${msg.isBot ? '🤖 Bot:' : '🙋 You:'} ${msg.text}
+                        ${msg.isBot ? '🤖' : '👤'} ${msg.text}
                     </div>
                 `;
             });
             chatDiv.scrollTop = chatDiv.scrollHeight;
-        }
-
-        function showTyping() {
-            document.getElementById('typingIndicator').style.display = 'flex';
-        }
-
-        function hideTyping() {
-            document.getElementById('typingIndicator').style.display = 'none';
         }
 
         function sendMessage() {
@@ -473,28 +446,36 @@
             updateChat();
             input.value = '';
 
-            // Show typing indicator
-            showTyping();
-
-            // Simulate bot response
+            // Bot response based on message
             setTimeout(() => {
-                hideTyping();
                 let response = '';
                 const lowerText = text.toLowerCase();
                 
                 if (lowerText.includes('buy')) {
-                    response = '✅ Bought successfully! +5% profit';
+                    response = '✅ Bought successfully! Check positions.';
                 } else if (lowerText.includes('sell')) {
                     response = '✅ Sold with 5% profit!';
                 } else if (lowerText.includes('scan')) {
-                    response = '🔍 Scanning token... SAFE: 16/16 boxes';
+                    response = '🔍 Scanning... ✅ SAFE: 16/16 boxes';
+                } else if (lowerText.includes('price')) {
+                    response = '📈 BNB: $607 (+1.2%) | CAKE: $1.98 (-1%)';
+                } else if (lowerText.includes('balance')) {
+                    if (currentMode === 'paper') {
+                        response = '📊 Paper Balance: 1.245 BNB';
+                    } else {
+                        response = '💰 Real Balance: 0.000 BNB';
+                    }
+                } else if (lowerText.includes('hello') || lowerText.includes('hi')) {
+                    response = '👋 Hello! How can I help you trade?';
+                } else if (lowerText.includes('who are you')) {
+                    response = '🤖 I am MrBlack AI - your trading assistant!';
                 } else {
-                    response = `Processing: "${text}"`;
+                    response = `🤔 I got: "${text}". Try: buy, sell, scan, price, balance`;
                 }
                 
                 messages.push({ text: response, isBot: true });
                 updateChat();
-            }, 1500);
+            }, 800);
         }
 
         function handleKeyPress(e) {
@@ -514,6 +495,7 @@
             } else if (action === 'stats') {
                 messages.push({ text: '📊 Loading statistics...', isBot: true });
                 updateChat();
+                return;
             }
             input.focus();
         }
@@ -524,12 +506,15 @@
             
             if (mode === 'paper') {
                 buttons[0].classList.add('active');
-                document.getElementById('paperBalance').innerText = '1.245 BNB';
+                document.getElementById('paperBalance').innerText = '1.245';
+                currentMode = 'paper';
             } else if (mode === 'real') {
                 buttons[1].classList.add('active');
-                document.getElementById('paperBalance').innerText = '0.000 BNB';
+                document.getElementById('paperBalance').innerText = '0.000';
+                currentMode = 'real';
             } else if (mode === 'stats') {
                 buttons[2].classList.add('active');
+                currentMode = 'stats';
             }
             
             messages.push({ text: `Switched to ${mode.toUpperCase()} mode`, isBot: true });
