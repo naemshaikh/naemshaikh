@@ -43,9 +43,17 @@
         /* Chat Section */
         .chat { flex: 1; background: #111216; display: flex; flex-direction: column; min-height: 0; }
         .messages { flex: 1; padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
-        .message { padding: 8px 12px; border-radius: 12px; max-width: 85%; font-size: 13px; }
+        .message { padding: 8px 12px; border-radius: 12px; max-width: 85%; font-size: 13px; animation: fadeIn 0.3s; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .bot { background: #1a1c23; color: white; align-self: flex-start; border: 1px solid #2a2c33; }
         .user { background: linear-gradient(135deg, #667eea, #764ba2); color: white; align-self: flex-end; }
+        
+        /* Typing Indicator */
+        .typing { display: flex; gap: 4px; padding: 8px 12px; background: #1a1c23; border-radius: 12px; width: fit-content; margin-bottom: 5px; border: 1px solid #2a2c33; }
+        .typing-dot { width: 6px; height: 6px; background: #8f9bb3; border-radius: 50%; animation: typing 1.4s infinite; }
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes typing { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-4px); opacity: 1; } }
         
         /* Input Area */
         .input-area { height: 60px; background: #111216; border-top: 1px solid #2a2c33; padding: 10px; display: flex; gap: 8px; }
@@ -107,7 +115,7 @@
             </div>
             
             <div class="input-area">
-                <input type="text" class="chat-input" id="chatInput" placeholder="Type message...">
+                <input type="text" class="chat-input" id="chatInput" placeholder="Type message..." autocomplete="off">
                 <button class="send-btn" id="sendBtn">➤</button>
             </div>
         </div>
@@ -121,8 +129,28 @@
     </div>
 
     <script>
+        // Chat memory
         let messages = [{ text: 'Paper trading started!', isBot: true }];
         let balance = 1.245;
+        let positions = [
+            { token: 'BNB', amount: 0.1, price: 600, pnl: 5.2 },
+            { token: 'CAKE', amount: 0.05, price: 2, pnl: -2.1 }
+        ];
+        
+        // Typing indicator
+        const typingHTML = '<div class="typing" id="typing"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>';
+        
+        function showTyping() {
+            if (!document.getElementById('typing')) {
+                document.getElementById('messages').insertAdjacentHTML('beforeend', typingHTML);
+                document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+            }
+        }
+        
+        function hideTyping() {
+            const typing = document.getElementById('typing');
+            if (typing) typing.remove();
+        }
         
         function updateChat() {
             let html = '';
@@ -142,46 +170,103 @@
             updateChat();
             input.value = '';
             
+            // Show typing indicator
+            showTyping();
+            
+            // Think time
             setTimeout(() => {
+                hideTyping();
+                
                 let reply = '';
                 let t = text.toLowerCase();
                 
-                if (t.includes('buy')) reply = '✅ Bought 0.1 BNB for $600';
-                else if (t.includes('sell')) reply = '✅ Sold with 5% profit!';
-                else if (t.includes('balance')) reply = '📊 Balance: ' + balance.toFixed(3) + ' BNB';
-                else if (t.includes('scan')) reply = '🔍 Scanning... ✅ SAFE';
-                else if (t.includes('hello') || t.includes('hi')) reply = '👋 Hello! Try: buy, sell, balance';
-                else reply = '🤔 Command not recognized';
+                // Memory check
+                let lastBotMsg = messages.filter(m => m.isBot).pop()?.text || '';
+                
+                // Commands
+                if (t.includes('buy')) {
+                    if (t.includes('bnb')) {
+                        balance -= 0.1;
+                        reply = '✅ Bought 0.1 BNB for $600';
+                    } else {
+                        reply = '💰 Available: BNB (0.1 BNB), CAKE (0.05 BNB)';
+                    }
+                }
+                else if (t.includes('sell')) {
+                    if (t.includes('bnb')) {
+                        balance += 0.105;
+                        reply = '✅ Sold BNB! Profit: 0.005 BNB';
+                    } else {
+                        reply = '💸 Your positions: BNB (+5.2%), CAKE (-2.1%)';
+                    }
+                }
+                else if (t.includes('balance')) {
+                    reply = `📊 Paper balance: ${balance.toFixed(3)} BNB | PnL: +6%`;
+                }
+                else if (t.includes('scan')) {
+                    reply = '🔍 Scanning token... ✅ SAFE: 16/16 boxes';
+                }
+                else if (t.includes('position') || t.includes('portfolio')) {
+                    let posList = positions.map(p => `${p.token} ${p.pnl>0?'+':''}${p.pnl}%`).join(', ');
+                    reply = `📈 Positions: ${posList}`;
+                }
+                else if (t.includes('hello') || t.includes('hi') || t.includes('hey')) {
+                    reply = '👋 Hello! How can I help you trade today?';
+                }
+                else if (t.includes('memory') || t.includes('remember')) {
+                    reply = '🧠 I remember our conversation! You said: ' + messages.slice(-3).filter(m => !m.isBot).map(m => m.text).join(', ');
+                }
+                else if (t.includes('who are you')) {
+                    reply = '🤖 I am MrBlack AI, your trading assistant!';
+                }
+                else if (t.includes('thank')) {
+                    reply = '🙏 You're welcome! Happy trading!';
+                }
+                else {
+                    reply = '🤔 Command not recognized. Try: buy BNB, balance, scan, positions';
+                }
                 
                 messages.push({ text: reply, isBot: true });
                 updateChat();
-            }, 500);
+            }, 1200); // Think time
         }
         
+        // Event listeners
         document.getElementById('sendBtn').onclick = sendMessage;
         document.getElementById('chatInput').onkeypress = (e) => {
             if (e.key === 'Enter') sendMessage();
         };
         
+        // Mode switching
         document.querySelectorAll('.mode-btn').forEach((btn, i) => {
             btn.onclick = () => {
                 document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                messages.push({ text: `Switched to ${btn.textContent} mode`, isBot: true });
-                updateChat();
+                showTyping();
+                setTimeout(() => {
+                    hideTyping();
+                    let msg = '';
+                    if (i === 0) msg = 'Switched to PAPER mode. Paper balance: 1.245 BNB';
+                    else if (i === 1) msg = 'Switched to REAL mode. Connect wallet to start!';
+                    else msg = '📊 Stats: Win Rate 68% | Total Trades: 24';
+                    messages.push({ text: msg, isBot: true });
+                    updateChat();
+                }, 800);
             };
         });
         
+        // Quick actions
         document.querySelectorAll('.action-btn').forEach(btn => {
             btn.onclick = () => {
                 let txt = btn.textContent;
                 if (txt.includes('BUY')) document.getElementById('chatInput').value = 'buy BNB';
                 else if (txt.includes('SELL')) document.getElementById('chatInput').value = 'sell BNB';
-                else if (txt.includes('SCAN')) document.getElementById('chatInput').value = 'scan 0x123';
+                else if (txt.includes('SCAN')) document.getElementById('chatInput').value = 'scan 0x1234...';
                 else if (txt.includes('STATS')) document.getElementById('chatInput').value = 'balance';
             };
         });
         
+        // Initial update
         updateChat();
     </script>
 </body>
