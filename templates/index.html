@@ -1,200 +1,123 @@
 <!DOCTYPE html>
-<html>
+<html lang="hi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MrBlack AI</title>
+    <title>MrBlack AI • Premium</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, sans-serif; }
-        body { background: #0a0a0f; min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 10px; color: #ffffff; }
-        .container { width: 100%; max-width: 400px; height: 700px; background: #111116; border-radius: 24px; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #2a2a33; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
-        
-        /* Header */
-        .header { height: 50px; background: #1a1a22; border-bottom: 1px solid #333; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; }
-        .logo { color: #fff; font-weight: 600; font-size: 17px; }
-        .icons { color: #888; display: flex; gap: 15px; font-size: 18px; }
-        
-        /* Mode Selector */
-        .mode { display: flex; gap: 5px; padding: 10px; background: #1a1a22; border-bottom: 1px solid #333; }
-        .mode-btn { flex: 1; padding: 9px; background: #22222a; color: #ccc; border: 1px solid #444; border-radius: 20px; font-size: 12px; cursor: pointer; text-align: center; transition: 0.2s; }
-        .mode-btn.active { background: #33333a; color: #ffffff; border-color: #666; }
-        
-        /* Trading Section */
-        .trading { padding: 12px; background: #111116; border-bottom: 1px solid #333; }
-        .balance { background: #1a1a22; border-radius: 12px; padding: 12px; display: flex; justify-content: space-between; margin-bottom: 12px; border: 1px solid #333; }
-        .balance-item { text-align: center; }
-        .balance-label { color: #888; font-size: 11px; }
-        .balance-value { color: #fff; font-weight: 600; font-size: 15px; }
-        .positive { color: #4caf50; }
-        
-        .section-title { color: #aaa; font-size: 12px; margin: 12px 0 8px; }
-        .positions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
-        .position-card { background: #1a1a22; border-radius: 10px; padding: 10px; border: 1px solid #333; }
-        .pos-header { display: flex; justify-content: space-between; font-size: 13px; }
-        .pos-name { color: #fff; }
-        .pos-pnl { font-weight: 600; }
-        .pos-details { color: #888; font-size: 11px; margin-top: 4px; }
-        
-        .actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-        .action-btn { background: #22222a; border: 1px solid #444; color: #ddd; padding: 9px 4px; border-radius: 8px; font-size: 11px; cursor: pointer; text-align: center; transition: 0.2s; }
-        .action-btn:hover { background: #33333a; color: #fff; }
-        
-        /* Chat */
-        .chat { flex: 2; background: #111116; display: flex; flex-direction: column; }
-        .messages { flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
-        .message { padding: 10px 14px; border-radius: 14px; max-width: 85%; font-size: 14px; line-height: 1.4; }
-        .bot { background: #1a1a22; color: #ddd; align-self: flex-start; border: 1px solid #333; }
-        .user { background: #2a2a33; color: #fff; align-self: flex-end; }
-        
-        .typing { display: flex; gap: 5px; padding: 10px 14px; background: #1a1a22; border-radius: 14px; width: fit-content; border: 1px solid #333; }
-        .typing-dot { width: 6px; height: 6px; background: #777; border-radius: 50%; animation: typing 1.4s infinite; }
-        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
-        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes typing { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-5px); } }
-        
-        /* Input */
-        .input-area { height: 62px; background: #1a1a22; border-top: 1px solid #333; padding: 10px; display: flex; gap: 8px; }
-        .chat-input { flex: 1; background: #22222a; border: 1px solid #444; border-radius: 25px; padding: 0 16px; color: #ffffff; font-size: 14.5px; outline: none; }
-        .send-btn { width: 44px; height: 44px; background: #33333a; border: none; border-radius: 50%; color: #fff; font-size: 18px; cursor: pointer; transition: 0.2s; }
-        .send-btn:hover { background: #555; transform: scale(1.05); }
-        
-        /* Footer */
-        .footer { height: 32px; background: #1a1a22; border-top: 1px solid #333; display: flex; align-items: center; padding: 0 12px; color: #888; font-size: 10.5px; gap: 15px; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', system-ui; background: radial-gradient(circle at center, #0f0f1a, #000000); }
+        .glass { background: rgba(255,255,255,0.05); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); }
+        .neon-purple { box-shadow: 0 0 25px rgba(168, 85, 247, 0.6); }
+        .chat-bubble-bot { background: linear-gradient(135deg, #4f46e5, #7c3aed); }
     </style>
 </head>
-<body>
-    <div class="container">
-        <div class="header">
-            <span class="logo">🤖 MrBlack AI</span>
-            <div class="icons"><span>⚙️</span><span>👤</span></div>
-        </div>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-md h-[720px] glass rounded-3xl overflow-hidden shadow-2xl neon-purple border border-purple-500/30 flex flex-col">
         
-        <div class="mode">
-            <div class="mode-btn active">📝 PAPER</div>
-            <div class="mode-btn">🔴 REAL</div>
-            <div class="mode-btn">📊 STATS</div>
-        </div>
-        
-        <div class="trading">
-            <div class="balance">
-                <div class="balance-item"><span class="balance-label">PAPER</span><span class="balance-value">1.245</span></div>
-                <div class="balance-item"><span class="balance-label">REAL</span><span class="balance-value">0.000</span></div>
-                <div class="balance-item"><span class="balance-label">PNL</span><span class="balance-value positive">+6%</span></div>
-            </div>
-            <div class="section-title">📊 POSITIONS</div>
-            <div class="positions">
-                <div class="position-card">
-                    <div class="pos-header"><span class="pos-name">BNB</span><span class="pos-pnl positive">+5.2%</span></div>
-                    <div class="pos-details"><span>0.1 BNB</span><span>$600</span></div>
-                </div>
-                <div class="position-card">
-                    <div class="pos-header"><span class="pos-name">CAKE</span><span class="pos-pnl" style="color:#f44336;">-2.1%</span></div>
-                    <div class="pos-details"><span>0.05 BNB</span><span>$2</span></div>
+        <!-- Header -->
+        <div class="bg-black/80 px-6 py-4 flex items-center justify-between border-b border-purple-500/30">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 bg-gradient-to-br from-purple-500 to-indigo-500 rounded-2xl flex items-center justify-center text-2xl">🤖</div>
+                <div>
+                    <h1 class="text-white font-bold text-2xl tracking-tighter">MrBlack</h1>
+                    <p class="text-emerald-400 text-xs font-medium flex items-center gap-1"><span class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span>24×7 LEARNING ACTIVE</p>
                 </div>
             </div>
-            <div class="section-title">⚡ QUICK ACTIONS</div>
-            <div class="actions">
-                <div class="action-btn">🔍 SCAN</div>
-                <div class="action-btn">💰 BUY</div>
-                <div class="action-btn">💸 SELL</div>
-                <div class="action-btn">📊 STATS</div>
+            <div class="flex gap-4 text-xl text-white/70">
+                <i class="fas fa-cog hover:text-white cursor-pointer"></i>
+                <i class="fas fa-user-circle hover:text-white cursor-pointer"></i>
             </div>
         </div>
-        
-        <div class="chat">
-            <div class="messages" id="messages">
-                <div class="message bot">🤖 Paper trading started!</div>
+
+        <!-- Trading Bar -->
+        <div class="bg-zinc-950/80 px-6 py-3 flex justify-between text-sm border-b border-white/10">
+            <div class="text-center">
+                <div class="text-emerald-400 text-xs">PAPER</div>
+                <div class="text-white font-semibold">1.87 BNB</div>
             </div>
-            <div class="input-area">
-                <input type="text" class="chat-input" id="chatInput" placeholder="Type message..." autocomplete="off">
-                <button class="send-btn" id="sendBtn">➤</button>
+            <div class="text-center">
+                <div class="text-rose-400 text-xs">REAL</div>
+                <div class="text-white font-semibold">0.00</div>
+            </div>
+            <div class="text-center">
+                <div class="text-amber-400 text-xs">PNL</div>
+                <div class="text-emerald-400 font-semibold">+12.4%</div>
             </div>
         </div>
-        
-        <div class="footer">
-            <span>📍 Paper Mode</span>
-            <span>📊 2 Positions</span>
-            <span>⛽ 5 Gwei</span>
+
+        <!-- Chat Area -->
+        <div id="messages" class="flex-1 p-5 overflow-y-auto space-y-4 bg-black/40">
+            <!-- messages JS se aayenge -->
+        </div>
+
+        <!-- Input -->
+        <div class="p-4 border-t border-white/10 bg-black/80">
+            <div class="flex gap-2">
+                <input id="chatInput" type="text" 
+                       class="flex-1 bg-zinc-900 border border-purple-500/30 focus:border-purple-500 rounded-3xl px-6 py-3 text-white placeholder-zinc-500 outline-none"
+                       placeholder="Bhai scan kar... ya buy bol">
+                <button id="sendBtn"
+                        class="w-14 h-14 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-3xl flex items-center justify-center text-2xl hover:scale-110 transition-all">
+                    ➤
+                </button>
+            </div>
         </div>
     </div>
 
     <script>
-        let messages = [{ text: 'Paper trading started!', isBot: true }];
-        let balance = 1.245;
-        let positions = [{ token: 'BNB', amount: 0.1, price: 600, pnl: 5.2 }, { token: 'CAKE', amount: 0.05, price: 2, pnl: -2.1 }];
-        
-        const typingHTML = '<div class="typing" id="typing"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>';
-        
-        function showTyping() {
-            if (!document.getElementById('typing')) {
-                document.getElementById('messages').insertAdjacentHTML('beforeend', typingHTML);
-                document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
-            }
+        let sessionId = localStorage.getItem('mrblack_session') || crypto.randomUUID();
+        localStorage.setItem('mrblack_session', sessionId);
+
+        const messagesDiv = document.getElementById('messages');
+        const input = document.getElementById('chatInput');
+        const sendBtn = document.getElementById('sendBtn');
+
+        function addMessage(text, isBot) {
+            const div = document.createElement('div');
+            div.className = `flex ${isBot ? 'justify-start' : 'justify-end'}`;
+            div.innerHTML = `
+                <div class="${isBot ? 'chat-bubble-bot text-white' : 'bg-zinc-800 text-white'} max-w-[80%] px-5 py-3 rounded-3xl rounded-${isBot ? 'tl' : 'tr'}-none">
+                    ${isBot ? '🤖 ' : ''}${text}
+                </div>
+            `;
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
-        
-        function hideTyping() {
-            const typing = document.getElementById('typing');
-            if (typing) typing.remove();
-        }
-        
-        function updateChat() {
-            let html = '';
-            messages.forEach(msg => {
-                html += `<div class="message ${msg.isBot ? 'bot' : 'user'}">${msg.isBot ? '🤖' : '👤'} ${msg.text}</div>`;
-            });
-            document.getElementById('messages').innerHTML = html;
-            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
-        }
-        
-        function sendMessage() {
-            let input = document.getElementById('chatInput');
-            let text = input.value.trim();
+
+        async function sendMessage() {
+            const text = input.value.trim();
             if (!text) return;
-            
-            messages.push({ text, isBot: false });
-            updateChat();
+
+            addMessage(text, false);
             input.value = '';
-            showTyping();
-            
-            setTimeout(() => {
-                hideTyping();
-                let reply = '';
-                let t = text.toLowerCase();
-                
-                if (t.includes('buy')) reply = '✅ Bought 0.1 BNB for $600';
-                else if (t.includes('sell')) reply = '✅ Sold BNB! Profit: 0.005 BNB';
-                else if (t.includes('balance')) reply = `📊 Paper balance: ${balance.toFixed(3)} BNB | PnL: +6%`;
-                else if (t.includes('scan')) reply = '🔍 Scanning token... ✅ SAFE: 16/16 boxes';
-                else if (t.includes('position') || t.includes('portfolio')) reply = '📈 Positions: BNB +5.2%, CAKE -2.1%';
-                else if (t.includes('hello') || t.includes('hi')) reply = '👋 Hello! How can I help you trade today?';
-                else reply = '🤔 Try: buy BNB, balance, scan, positions';
-                
-                messages.push({ text: reply, isBot: true });
-                updateChat();
-            }, 1200);
+
+            // Show typing
+            const typing = document.createElement('div');
+            typing.id = 'typing';
+            typing.className = 'flex justify-start';
+            typing.innerHTML = `<div class="bg-zinc-800 px-5 py-3 rounded-3xl">🤖 typing<span class="animate-pulse">...</span></div>`;
+            messagesDiv.appendChild(typing);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+            const res = await fetch('/chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ message: text, session_id: sessionId, user_name: "Bhai" })
+            });
+            const data = await res.json();
+
+            typing.remove();
+            addMessage(data.reply, true);
         }
-        
-        // Clean & Strong Button + Enter Fix
-        document.addEventListener("DOMContentLoaded", function() {
-            console.log("%c✅ MrBlack Dark Theme + Button Fixed v4", "color:#aaa;font-weight:bold");
-            const sendBtn = document.getElementById("sendBtn");
-            const chatInput = document.getElementById("chatInput");
-            if (sendBtn) sendBtn.onclick = sendMessage;
-            if (chatInput) chatInput.addEventListener("keypress", e => { if (e.key === "Enter") { e.preventDefault(); sendMessage(); } });
-        });
-        
-        updateChat();
-        
-        // Quick actions
-        document.querySelectorAll('.action-btn').forEach(btn => {
-            btn.onclick = () => {
-                let txt = btn.textContent;
-                if (txt.includes('BUY')) document.getElementById('chatInput').value = 'buy BNB';
-                else if (txt.includes('SELL')) document.getElementById('chatInput').value = 'sell BNB';
-                else if (txt.includes('SCAN')) document.getElementById('chatInput').value = 'scan';
-                else if (txt.includes('STATS')) document.getElementById('chatInput').value = 'balance';
-            };
-        });
+
+        sendBtn.addEventListener('click', sendMessage);
+        input.addEventListener('keypress', e => { if (e.key === 'Enter') sendMessage(); });
+
+        // Welcome
+        addMessage('Arre bhai! MrBlack ready hai 🔥 Kya scan karna hai aaj?', true);
     </script>
 </body>
 </html>
