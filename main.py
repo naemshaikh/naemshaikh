@@ -1,5 +1,5 @@
 import os
-from flask import Flask, render_template_string, request, jsonify
+from flask import Flask, render_template, request, jsonify
 from supabase import create_client
 import uuid
 from datetime import datetime, timedelta
@@ -880,7 +880,6 @@ learning_thread.start()
 print("✅ 24x7 LEARNING ENGINE STARTED!")
 
 # ========== UI ==========
-HTML = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1001,7 +1000,7 @@ HTML = """
 """
 @app.route("/")
 def home():
-    return render_template_string(HTML)
+    return render_template("index.html")
 
 @app.route("/chat", methods=["POST"])
 def chat():
