@@ -133,7 +133,9 @@ def fetch_pancakeswap_data():
 # ========== LEARNING ENGINE ==========
 def continuous_learning():
     while True:
+        time.sleep(5)  # MrBlack Safety Sleep
         print("🤖 Learning cycle...")
+        time.sleep(8)  # MrBlack Stability Fix - CPU safe
         time.sleep(300)
 
 threading.Thread(target=continuous_learning, daemon=True).start()
