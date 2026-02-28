@@ -269,5 +269,38 @@
         // Initial update
         updateChat();
     </script>
+
+<!-- MrBlackFix2026 - Send Button + Enter Auto Fix -->
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    console.log("✅ MrBlack Send Fix Loaded Successfully!");
+
+    // Send Button Fix (id ya class dono se dhundhega)
+    let sendBtn = document.getElementById("sendBtn") || 
+                  document.querySelector(".send-btn") || 
+                  document.querySelector("button:contains('➤')");
+    
+    if (sendBtn) {
+        sendBtn.onclick = function() {
+            if (typeof sendMessage === "function") sendMessage();
+            else console.log("sendMessage function nahi mila");
+        };
+        console.log("Send button fixed");
+    }
+
+    // Enter Key Fix (chatInput ya koi bhi input/textarea)
+    let inputs = document.querySelectorAll("#chatInput, input, textarea");
+    inputs.forEach(input => {
+        input.addEventListener("keypress", function(e) {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                if (typeof sendMessage === "function") sendMessage();
+            }
+        });
+    });
+
+    console.log("Enter key bhi fixed!");
+});
+</script>
 </body>
 </html>
