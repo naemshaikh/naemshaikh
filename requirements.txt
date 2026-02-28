@@ -1,8 +1,9 @@
 flask
-supabase
 gunicorn
-python-dotenv
-requests
-httpx
-httpcore
+web3
+supabase
 freeflow-llm
+requests
+python-dotenv
+httpx
+cryptography
