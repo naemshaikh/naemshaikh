@@ -1,407 +1,118 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MrBlack AI Pro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MrBlack AI</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        }
-
-        body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 10px;
-            position: fixed;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-        }
-
-        .terminal {
-            width: 100%;
-            max-width: 500px;
-            height: 95vh;
-            background: #0a0b0e;
-            border-radius: 24px;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            border: 1px solid #2a2c33;
-            box-shadow: 0 20px 40px -10px rgba(0,0,0,0.5);
-        }
-
-        /* HEADER */
-        .header {
-            height: 60px;
-            background: #111216;
-            border-bottom: 1px solid #2a2c33;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 16px;
-            flex-shrink: 0;
-        }
-
-        .logo {
-            font-size: 18px;
-            font-weight: 600;
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .header-icons {
-            display: flex;
-            gap: 16px;
-            color: #8f9bb3;
-            font-size: 18px;
-        }
-
-        /* MODE SELECTOR */
-        .mode-selector {
-            padding: 12px 16px;
-            background: #111216;
-            border-bottom: 1px solid #2a2c33;
-            display: flex;
-            gap: 8px;
-            flex-shrink: 0;
-        }
-
-        .mode-btn {
-            padding: 6px 16px;
-            border-radius: 20px;
-            font-size: 13px;
-            font-weight: 500;
-            background: #1a1c23;
-            color: #8f9bb3;
-            border: 1px solid #2a2c33;
-            cursor: pointer;
-            flex: 1;
-        }
-
-        .mode-btn.active {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
-            border: none;
-        }
-
-        /* TRADING SECTION - FIXED HEIGHT */
-        .trading-section {
-            background: #111216;
-            padding: 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-            border-bottom: 1px solid #2a2c33;
-            flex-shrink: 0;
-        }
-
-        /* BALANCE CARD */
-        .balance-card {
-            background: #1a1c23;
-            border-radius: 12px;
-            padding: 12px 16px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border: 1px solid #2a2c33;
-        }
-
-        .balance-item {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        .balance-label {
-            color: #8f9bb3;
-            font-size: 11px;
-            margin-bottom: 2px;
-        }
-
-        .balance-value {
-            color: white;
-            font-weight: 600;
-            font-size: 14px;
-        }
-
-        .balance-value.positive {
-            color: #4caf50;
-        }
-
-        /* POSITIONS */
-        .positions-title {
-            color: #8f9bb3;
-            font-size: 13px;
-            font-weight: 600;
-            margin-bottom: 8px;
-        }
-
-        .positions-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-        }
-
-        .position-card {
-            background: #1a1c23;
-            border-radius: 10px;
-            padding: 10px;
-            border: 1px solid #2a2c33;
-        }
-
-        .position-header {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 4px;
-        }
-
-        .position-token {
-            color: white;
-            font-weight: 600;
-            font-size: 13px;
-        }
-
-        .position-pnl {
-            font-size: 12px;
-            font-weight: 600;
-        }
-
-        .position-pnl.positive { color: #4caf50; }
-        .position-pnl.negative { color: #f44336; }
-
-        .position-details {
-            display: flex;
-            justify-content: space-between;
-            color: #8f9bb3;
-            font-size: 11px;
-        }
-
-        /* QUICK ACTIONS */
-        .actions-title {
-            color: #8f9bb3;
-            font-size: 13px;
-            font-weight: 600;
-            margin-bottom: 8px;
-        }
-
-        .quick-actions {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 6px;
-        }
-
-        .action-btn {
-            background: #1a1c23;
-            border: 1px solid #2a2c33;
-            color: white;
-            padding: 8px 0;
-            border-radius: 8px;
-            font-size: 12px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .action-btn:hover {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            border-color: transparent;
-        }
-
-        /* CHAT SECTION - TAKES REMAINING SPACE */
-        .chat-section {
-            flex: 1;
-            background: #111216;
-            display: flex;
-            flex-direction: column;
-            min-height: 0;
-            overflow: hidden;
-        }
-
-        .chat-messages {
-            flex: 1;
-            padding: 16px;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .message {
-            max-width: 85%;
-            padding: 8px 12px;
-            border-radius: 16px;
-            font-size: 13px;
-            line-height: 1.4;
-            word-wrap: break-word;
-        }
-
-        .message.bot {
-            background: #1a1c23;
-            color: white;
-            align-self: flex-start;
-            border: 1px solid #2a2c33;
-        }
-
-        .message.user {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
-            align-self: flex-end;
-        }
-
-        /* INPUT AREA - ALWAYS VISIBLE AT BOTTOM */
-        .input-area {
-            background: #111216;
-            border-top: 1px solid #2a2c33;
-            padding: 12px;
-            display: flex;
-            gap: 8px;
-            flex-shrink: 0;
-            height: 70px;
-        }
-
-        .chat-input {
-            flex: 1;
-            background: #1a1c23;
-            border: 1px solid #2a2c33;
-            border-radius: 20px;
-            padding: 0 15px;
-            color: white;
-            font-size: 14px;
-            outline: none;
-            height: 46px;
-        }
-
-        .chat-input:focus {
-            border-color: #667eea;
-        }
-
-        .send-btn {
-            width: 46px;
-            height: 46px;
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            border: none;
-            border-radius: 23px;
-            color: white;
-            font-size: 18px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-        }
-
-        /* FOOTER */
-        .footer {
-            height: 36px;
-            background: #111216;
-            border-top: 1px solid #2a2c33;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 16px;
-            color: #8f9bb3;
-            font-size: 11px;
-            flex-shrink: 0;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, sans-serif; }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 10px; }
+        .container { width: 100%; max-width: 400px; height: 700px; background: #0a0b0e; border-radius: 24px; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #2a2c33; }
+        
+        /* Header */
+        .header { height: 50px; background: #111216; border-bottom: 1px solid #2a2c33; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; }
+        .logo { color: white; font-weight: 600; }
+        .icons { color: #8f9bb3; display: flex; gap: 15px; }
+        
+        /* Mode Selector */
+        .mode { display: flex; gap: 5px; padding: 10px; background: #111216; border-bottom: 1px solid #2a2c33; }
+        .mode-btn { flex: 1; padding: 8px; background: #1a1c23; color: #8f9bb3; border: 1px solid #2a2c33; border-radius: 20px; font-size: 12px; cursor: pointer; text-align: center; }
+        .mode-btn.active { background: linear-gradient(135deg, #667eea, #764ba2); color: white; }
+        
+        /* Trading Section */
+        .trading { padding: 10px; background: #111216; border-bottom: 1px solid #2a2c33; }
+        .balance { background: #1a1c23; border-radius: 10px; padding: 10px; display: flex; justify-content: space-between; margin-bottom: 10px; }
+        .balance-item { text-align: center; }
+        .balance-label { color: #8f9bb3; font-size: 11px; }
+        .balance-value { color: white; font-weight: 600; font-size: 14px; }
+        .positive { color: #4caf50; }
+        
+        /* Positions */
+        .section-title { color: #8f9bb3; font-size: 12px; margin-bottom: 8px; }
+        .positions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+        .position-card { background: #1a1c23; border-radius: 8px; padding: 8px; }
+        .pos-header { display: flex; justify-content: space-between; font-size: 12px; }
+        .pos-name { color: white; }
+        .pos-pnl { font-weight: 600; }
+        .pos-details { color: #8f9bb3; font-size: 10px; margin-top: 4px; display: flex; justify-content: space-between; }
+        
+        /* Quick Actions */
+        .actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-top: 10px; }
+        .action-btn { background: #1a1c23; border: 1px solid #2a2c33; color: white; padding: 8px; border-radius: 6px; font-size: 11px; cursor: pointer; text-align: center; }
+        
+        /* Chat Section */
+        .chat { flex: 1; background: #111216; display: flex; flex-direction: column; min-height: 0; }
+        .messages { flex: 1; padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
+        .message { padding: 8px 12px; border-radius: 12px; max-width: 85%; font-size: 13px; }
+        .bot { background: #1a1c23; color: white; align-self: flex-start; border: 1px solid #2a2c33; }
+        .user { background: linear-gradient(135deg, #667eea, #764ba2); color: white; align-self: flex-end; }
+        
+        /* Input Area */
+        .input-area { height: 60px; background: #111216; border-top: 1px solid #2a2c33; padding: 10px; display: flex; gap: 8px; }
+        .chat-input { flex: 1; background: #1a1c23; border: 1px solid #2a2c33; border-radius: 20px; padding: 0 12px; color: white; font-size: 13px; outline: none; }
+        .send-btn { width: 40px; height: 40px; background: linear-gradient(135deg, #667eea, #764ba2); border: none; border-radius: 20px; color: white; font-size: 16px; cursor: pointer; }
+        
+        /* Footer */
+        .footer { height: 30px; background: #111216; border-top: 1px solid #2a2c33; display: flex; align-items: center; padding: 0 10px; color: #8f9bb3; font-size: 10px; gap: 15px; }
     </style>
 </head>
 <body>
-    <div class="terminal">
-        <!-- HEADER -->
+    <div class="container">
+        <!-- Header -->
         <div class="header">
             <span class="logo">🤖 MrBlack AI</span>
-            <div class="header-icons">
-                <span>🛠️</span>
-                <span>👤</span>
+            <div class="icons"><span>⚙️</span><span>👤</span></div>
+        </div>
+        
+        <!-- Mode Selector -->
+        <div class="mode">
+            <div class="mode-btn active">📝 PAPER</div>
+            <div class="mode-btn">🔴 REAL</div>
+            <div class="mode-btn">📊 STATS</div>
+        </div>
+        
+        <!-- Trading Section -->
+        <div class="trading">
+            <div class="balance">
+                <div class="balance-item"><span class="balance-label">PAPER</span><span class="balance-value">1.245</span></div>
+                <div class="balance-item"><span class="balance-label">REAL</span><span class="balance-value">0.000</span></div>
+                <div class="balance-item"><span class="balance-label">PNL</span><span class="balance-value positive">+6%</span></div>
+            </div>
+            
+            <div class="section-title">📊 POSITIONS</div>
+            <div class="positions">
+                <div class="position-card">
+                    <div class="pos-header"><span class="pos-name">BNB</span><span class="pos-pnl positive">+5.2%</span></div>
+                    <div class="pos-details"><span>0.1 BNB</span><span>$600</span></div>
+                </div>
+                <div class="position-card">
+                    <div class="pos-header"><span class="pos-name">CAKE</span><span class="pos-pnl negative" style="color:#f44336;">-2.1%</span></div>
+                    <div class="pos-details"><span>0.05 BNB</span><span>$2</span></div>
+                </div>
+            </div>
+            
+            <div class="section-title">⚡ QUICK ACTIONS</div>
+            <div class="actions">
+                <div class="action-btn">🔍 SCAN</div>
+                <div class="action-btn">💰 BUY</div>
+                <div class="action-btn">💸 SELL</div>
+                <div class="action-btn">📊 STATS</div>
             </div>
         </div>
-
-        <!-- MODE SELECTOR -->
-        <div class="mode-selector">
-            <button class="mode-btn active" onclick="setMode('paper')">📝 PAPER</button>
-            <button class="mode-btn" onclick="setMode('real')">🔴 REAL</button>
-            <button class="mode-btn" onclick="setMode('stats')">📊 STATS</button>
-        </div>
-
-        <!-- TRADING SECTION -->
-        <div class="trading-section">
-            <!-- BALANCE -->
-            <div class="balance-card">
-                <div class="balance-item">
-                    <span class="balance-label">PAPER</span>
-                    <span class="balance-value" id="paperBalance">1.245</span>
-                </div>
-                <div class="balance-item">
-                    <span class="balance-label">REAL</span>
-                    <span class="balance-value" id="realBalance">0.000</span>
-                </div>
-                <div class="balance-item">
-                    <span class="balance-label">PNL</span>
-                    <span class="balance-value positive" id="pnl">+6%</span>
-                </div>
-            </div>
-
-            <!-- POSITIONS -->
-            <div>
-                <div class="positions-title">📊 POSITIONS</div>
-                <div class="positions-grid" id="positionsGrid">
-                    <div class="position-card">
-                        <div class="position-header">
-                            <span class="position-token">BNB</span>
-                            <span class="position-pnl positive">+5.2%</span>
-                        </div>
-                        <div class="position-details">
-                            <span>0.1 BNB</span>
-                            <span>$600</span>
-                        </div>
-                    </div>
-                    <div class="position-card">
-                        <div class="position-header">
-                            <span class="position-token">CAKE</span>
-                            <span class="position-pnl negative">-2.1%</span>
-                        </div>
-                        <div class="position-details">
-                            <span>0.05 BNB</span>
-                            <span>$2</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- QUICK ACTIONS -->
-            <div>
-                <div class="actions-title">⚡ QUICK ACTIONS</div>
-                <div class="quick-actions">
-                    <button class="action-btn" onclick="quickAction('scan')">🔍 SCAN</button>
-                    <button class="action-btn" onclick="quickAction('buy')">💰 BUY</button>
-                    <button class="action-btn" onclick="quickAction('sell')">💸 SELL</button>
-                    <button class="action-btn" onclick="quickAction('stats')">📊 STATS</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- CHAT SECTION -->
-        <div class="chat-section">
-            <div class="chat-messages" id="chatMessages">
+        
+        <!-- Chat Section -->
+        <div class="chat">
+            <div class="messages" id="messages">
                 <div class="message bot">🤖 Paper trading started!</div>
             </div>
             
-            <!-- INPUT AREA WITH SEND BUTTON - ALWAYS VISIBLE -->
             <div class="input-area">
-                <input type="text" class="chat-input" id="chatInput" placeholder="Type message..." autocomplete="off">
-                <button class="send-btn" onclick="sendMessage()">➤</button>
+                <input type="text" class="chat-input" id="chatInput" placeholder="Type message...">
+                <button class="send-btn" id="sendBtn">➤</button>
             </div>
         </div>
-
-        <!-- FOOTER -->
+        
+        <!-- Footer -->
         <div class="footer">
             <span>📍 Paper Mode</span>
             <span>📊 2 Positions</span>
@@ -410,113 +121,67 @@
     </div>
 
     <script>
-        let messages = [
-            { text: 'Paper trading started!', isBot: true }
-        ];
+        let messages = [{ text: 'Paper trading started!', isBot: true }];
+        let balance = 1.245;
         
-        let balance = {
-            paper: 1.245,
-            real: 0.0,
-            pnl: 6
-        };
-        
-        let positions = [
-            { token: 'BNB', amount: 0.1, price: 600, pnl: 5.2 },
-            { token: 'CAKE', amount: 0.05, price: 2, pnl: -2.1 }
-        ];
-        
-        let currentMode = 'paper';
-
         function updateChat() {
-            const chatDiv = document.getElementById('chatMessages');
-            chatDiv.innerHTML = '';
+            let html = '';
             messages.forEach(msg => {
-                chatDiv.innerHTML += `
-                    <div class="message ${msg.isBot ? 'bot' : 'user'}">
-                        ${msg.isBot ? '🤖' : '👤'} ${msg.text}
-                    </div>
-                `;
+                html += `<div class="message ${msg.isBot ? 'bot' : 'user'}">${msg.isBot ? '🤖' : '👤'} ${msg.text}</div>`;
             });
-            chatDiv.scrollTop = chatDiv.scrollHeight;
+            document.getElementById('messages').innerHTML = html;
+            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
         }
-
+        
         function sendMessage() {
-            const input = document.getElementById('chatInput');
-            const text = input.value.trim();
+            let input = document.getElementById('chatInput');
+            let text = input.value.trim();
             if (!text) return;
-
+            
             messages.push({ text, isBot: false });
             updateChat();
             input.value = '';
-
+            
             setTimeout(() => {
-                let response = '';
-                const lower = text.toLowerCase();
+                let reply = '';
+                let t = text.toLowerCase();
                 
-                if (lower.includes('buy')) {
-                    if (lower.includes('bnb')) {
-                        balance.paper -= 0.1;
-                        response = '✅ Bought 0.1 BNB for $600';
-                        document.getElementById('paperBalance').innerText = balance.paper.toFixed(3);
-                    } else {
-                        response = '💰 Available: BNB (0.1 BNB), CAKE (0.05 BNB)';
-                    }
-                } else if (lower.includes('sell')) {
-                    if (lower.includes('bnb')) {
-                        balance.paper += 0.105;
-                        response = '✅ Sold BNB! Profit: 0.005 BNB';
-                        document.getElementById('paperBalance').innerText = balance.paper.toFixed(3);
-                    } else {
-                        response = '💸 Positions: BNB (+5.2%), CAKE (-2.1%)';
-                    }
-                } else if (lower.includes('balance')) {
-                    response = `📊 Paper: ${balance.paper.toFixed(3)} BNB | PnL: +${balance.pnl}%`;
-                } else if (lower.includes('scan')) {
-                    response = '🔍 Scanning token... ✅ SAFE: 16/16 boxes';
-                } else if (lower.includes('hello') || lower.includes('hi')) {
-                    response = '👋 Hello! Try: buy BNB, balance, scan';
-                } else {
-                    response = `🤔 You said: "${text}"`;
-                }
+                if (t.includes('buy')) reply = '✅ Bought 0.1 BNB for $600';
+                else if (t.includes('sell')) reply = '✅ Sold with 5% profit!';
+                else if (t.includes('balance')) reply = '📊 Balance: ' + balance.toFixed(3) + ' BNB';
+                else if (t.includes('scan')) reply = '🔍 Scanning... ✅ SAFE';
+                else if (t.includes('hello') || t.includes('hi')) reply = '👋 Hello! Try: buy, sell, balance';
+                else reply = '🤔 Command not recognized';
                 
-                messages.push({ text: response, isBot: true });
+                messages.push({ text: reply, isBot: true });
                 updateChat();
             }, 500);
         }
-
-        function quickAction(action) {
-            const input = document.getElementById('chatInput');
-            if (action === 'scan') input.value = 'scan 0x1234...';
-            else if (action === 'buy') input.value = 'buy BNB';
-            else if (action === 'sell') input.value = 'sell BNB';
-            else if (action === 'stats') input.value = 'balance';
-            input.focus();
-        }
-
-        function setMode(mode) {
-            const buttons = document.querySelectorAll('.mode-btn');
-            buttons.forEach(btn => btn.classList.remove('active'));
-            
-            if (mode === 'paper') {
-                buttons[0].classList.add('active');
-                messages.push({ text: 'Switched to PAPER mode', isBot: true });
-            } else if (mode === 'real') {
-                buttons[1].classList.add('active');
-                messages.push({ text: 'Switched to REAL mode', isBot: true });
-            } else if (mode === 'stats') {
-                buttons[2].classList.add('active');
-                messages.push({ text: '📊 Stats: Win Rate 68%', isBot: true });
-            }
-            updateChat();
-        }
-
-        document.getElementById('chatInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                sendMessage();
-            }
+        
+        document.getElementById('sendBtn').onclick = sendMessage;
+        document.getElementById('chatInput').onkeypress = (e) => {
+            if (e.key === 'Enter') sendMessage();
+        };
+        
+        document.querySelectorAll('.mode-btn').forEach((btn, i) => {
+            btn.onclick = () => {
+                document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                messages.push({ text: `Switched to ${btn.textContent} mode`, isBot: true });
+                updateChat();
+            };
         });
-
+        
+        document.querySelectorAll('.action-btn').forEach(btn => {
+            btn.onclick = () => {
+                let txt = btn.textContent;
+                if (txt.includes('BUY')) document.getElementById('chatInput').value = 'buy BNB';
+                else if (txt.includes('SELL')) document.getElementById('chatInput').value = 'sell BNB';
+                else if (txt.includes('SCAN')) document.getElementById('chatInput').value = 'scan 0x123';
+                else if (txt.includes('STATS')) document.getElementById('chatInput').value = 'balance';
+            };
+        });
+        
         updateChat();
     </script>
 </body>
