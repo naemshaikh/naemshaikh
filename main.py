@@ -1072,28 +1072,70 @@ def chat():
 
 **Bot SKIP karega agar koi bhi critical fail ho!**"""
             return jsonify({"reply": reply, "session_id": session_id})
-
-        # Handle paper trading commands
-        if "paper trading" in user_message or "paper mode" in user_message:
-            if "start" in user_message:
-                bsc_engine.mode.mode = TradingMode.PAPER
-                reply = "📝 **Paper Trading Mode ACTIVE!**\n\nStart practicing with 1 BNB virtual balance."
-            elif "stats" in user_message:
-                stats = bsc_engine.paper_stats
-                reply = f"📊 **Paper Trading Stats:**\n"
-                reply += f"Trades: {stats.trades_completed}\n"
-                reply += f"Win Rate: {stats.win_rate:.1f}%\n"
-                reply += f"Last 20 Profitable: {'✅' if stats.last_20_trades_profitable else '❌'}\n"
-                reply += f"Emotional Trades: {stats.emotional_trades}"
-            else:
-                can_switch, reqs = bsc_engine.can_switch_to_real()
-                reply = "📝 **Paper Trading Mode**\n"
-                reply += f"Ready for Real: {'✅ YES' if can_switch else '❌ NO'}\n"
-                if not can_switch:
-                    reply += "\nRequirements:\n"
-                    for k, v in reqs.items():
-                        reply += f"{'✅' if v else '❌'} {k}\n"
-            return jsonify({"reply": reply, "session_id": session_id})
+            # ===== PAPER TRADING ENGINE =====
+if "paper" in user_message or user_message.startswith(("buy ", "sell ")):
+    parts = user_message.split()
+    
+    # Paper trading class
+    class PaperTradingEngine:
+        def __init__(self):
+            self.balance = 1.0
+            self.positions = {}
+            self.trades = []
+        def buy(self, token, amount_bnb, price):
+            if amount_bnb > self.balance:
+                return False, "Insufficient balance"
+            tokens_bought = amount_bnb / price
+            self.positions[token] = {'amount': tokens_bought, 'entry_price': price, 'bnb_spent': amount_bnb}
+            self.balance -= amount_bnb
+            return True, f"Bought for {amount_bnb} BNB"
+        def sell(self, token, price):
+            if token not in self.positions:
+                return False, "No position"
+            pos = self.positions[token]
+            proceeds = pos['amount'] * price
+            profit = proceeds - pos['bnb_spent']
+            self.balance += proceeds
+            self.trades.append({'token': token, 'profit': profit})
+            del self.positions[token]
+            return True, f"Sold! Profit: {profit:.4f} BNB"
+        def get_stats(self):
+            return {'balance': self.balance, 'positions': len(self.positions), 'trades': len(self.trades)}
+    
+    # Create engine if not exists
+    if not hasattr(self, 'paper_engine'):
+        self.paper_engine = PaperTradingEngine()
+    
+    if parts[0] == "paper" and len(parts) > 1:
+        if parts[1] == "start":
+            self.paper_engine = PaperTradingEngine()
+            reply = "📝 **PAPER TRADING STARTED!**\n💰 Balance: 1 BNB\nTry: `buy 0x... 0.01`"
+        elif parts[1] == "stats":
+            s = self.paper_engine.get_stats()
+            reply = f"📊 **Paper Stats**\nBalance: {s['balance']:.4f} BNB\nPositions: {s['positions']}\nTrades: {s['trades']}"
+        else:
+            reply = "Commands: paper start | paper stats | buy 0x... 0.01 | sell 0x..."
+    
+    elif parts[0] == "buy" and len(parts) == 3:
+        token = parts[1]
+        try:
+            amount = float(parts[2])
+            price = 0.0001  # Simulated
+            success, msg = self.paper_engine.buy(token, amount, price)
+            reply = f"{'✅' if success else '❌'} {msg}"
+        except:
+            reply = "Usage: buy 0x... 0.01"
+    
+    elif parts[0] == "sell" and len(parts) == 2:
+        token = parts[1]
+        price = 0.00015  # Simulated higher
+        success, msg = self.paper_engine.sell(token, price)
+        reply = f"{'✅' if success else '❌'} {msg}"
+    
+    else:
+        reply = "📝 Paper Trading:\n• paper start\n• paper stats\n• buy 0x... 0.01\n• sell 0x..."
+    
+    return jsonify({"reply": reply, "session_id": session_id})
 
         # Regular chat with AI
         system_prompt = f"""Tu MrBlack hai - ek self-learning PRO bot jo 24x7 teeno fields seekhta hai:
