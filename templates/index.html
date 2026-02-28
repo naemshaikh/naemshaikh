@@ -3,16 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MrBlack AI Pro Terminal</title>
+    <title>MrBlack AI Pro</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
         body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%%);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             display: flex;
             justify-content: center;
@@ -20,11 +20,11 @@
             padding: 16px;
         }
         .terminal {
-            width: 100%%;
-            max-width: 1400px;
-            height: 90vh;
+            width: 100%;
+            max-width: 1200px;
+            height: 85vh;
             background: #0a0b0e;
-            border-radius: 28px;
+            border-radius: 24px;
             box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
             display: flex;
             flex-direction: column;
@@ -32,70 +32,233 @@
             border: 1px solid #2a2c33;
         }
         .header {
-            height: 70px;
+            height: 60px;
             background: #111216;
             border-bottom: 1px solid #2a2c33;
             display: flex;
             align-items: center;
             justify-content: space-between;
             padding: 0 24px;
-            flex-shrink: 0;
-        }
-        .logo h1 {
             color: white;
-            font-size: 22px;
+        }
+        .logo {
+            font-size: 20px;
             font-weight: 600;
             background: linear-gradient(135deg, #667eea, #764ba2);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
+        .mode-selector {
+            padding: 12px 24px;
+            background: #111216;
+            border-bottom: 1px solid #2a2c33;
+            display: flex;
+            gap: 12px;
+        }
+        .mode-btn {
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            background: #1a1c23;
+            color: #8f9bb3;
+            border: 1px solid #2a2c33;
+            cursor: pointer;
+        }
+        .mode-btn.active {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
         .main-content {
             flex: 1;
             display: flex;
             min-height: 0;
-            overflow: hidden;
         }
         .trading-section {
-            width: 60%%;
+            width: 60%;
             background: #111216;
             border-right: 1px solid #2a2c33;
             padding: 20px;
             overflow-y: auto;
+            color: white;
         }
         .chat-section {
-            width: 40%%;
+            width: 40%;
             background: #111216;
             display: flex;
             flex-direction: column;
         }
-        .footer {
+        .balance-card {
+            background: #1a1c23;
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid #2a2c33;
+        }
+        .balance-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            color: #8f9bb3;
+        }
+        .balance-value {
+            color: white;
+            font-weight: 600;
+        }
+        .positions-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .position-card {
+            background: #1a1c23;
+            border-radius: 12px;
+            padding: 15px;
+            border: 1px solid #2a2c33;
+        }
+        .chat-history {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        .message {
+            margin-bottom: 12px;
+            padding: 10px 15px;
+            border-radius: 12px;
+            max-width: 85%;
+            word-wrap: break-word;
+        }
+        .message.bot {
+            background: #1a1c23;
+            color: white;
+            border: 1px solid #2a2c33;
+            align-self: flex-start;
+        }
+        .message.user {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            margin-left: auto;
+        }
+        .chat-input-area {
+            height: 70px;
+            border-top: 1px solid #2a2c33;
+            padding: 15px;
+            display: flex;
+            gap: 10px;
+            background: #111216;
+        }
+        .chat-input {
+            flex: 1;
+            background: #1a1c23;
+            border: 1px solid #2a2c33;
+            border-radius: 20px;
+            padding: 0 15px;
+            color: white;
+            outline: none;
+        }
+        .send-btn {
+            width: 45px;
             height: 45px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border: none;
+            border-radius: 22px;
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+        }
+        .footer {
+            height: 40px;
             background: #111216;
             border-top: 1px solid #2a2c33;
             display: flex;
             align-items: center;
             padding: 0 24px;
             color: #8f9bb3;
+            font-size: 13px;
         }
     </style>
 </head>
 <body>
     <div class="terminal">
         <div class="header">
-            <div class="logo">
-                <h1>🤖 MrBlack AI Pro</h1>
-            </div>
+            <span class="logo">🤖 MrBlack AI Pro</span>
+            <span>⚙️ 👤</span>
         </div>
+        
+        <div class="mode-selector">
+            <span class="mode-btn active">📝 PAPER</span>
+            <span class="mode-btn">🔴 REAL</span>
+            <span class="mode-btn">📊 STATS</span>
+        </div>
+        
         <div class="main-content">
+            <!-- Trading Section (60%) -->
             <div class="trading-section">
-                <h3 style="color:white;">Trading Panel</h3>
+                <div class="balance-card">
+                    <div class="balance-row">
+                        <span>Paper Balance</span>
+                        <span class="balance-value">1.245 BNB</span>
+                    </div>
+                    <div class="balance-row">
+                        <span>Real Balance</span>
+                        <span class="balance-value">0.000 BNB</span>
+                    </div>
+                    <div class="balance-row">
+                        <span>PnL</span>
+                        <span class="balance-value" style="color:#4caf50">+0.078 (+6%)</span>
+                    </div>
+                </div>
+
+                <h3 style="color:#8f9bb3; font-size:14px; margin-bottom:12px;">📊 OPEN POSITIONS</h3>
+                <div class="positions-grid">
+                    <div class="position-card">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:8px">
+                            <span style="color:white; font-weight:600">BNB</span>
+                            <span style="color:#4caf50">+5.2%</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; color:#8f9bb3; font-size:13px">
+                            <span>0.1 BNB</span>
+                            <span>$600</span>
+                        </div>
+                    </div>
+                    <div class="position-card">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:8px">
+                            <span style="color:white; font-weight:600">CAKE</span>
+                            <span style="color:#f44336">-2.1%</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; color:#8f9bb3; font-size:13px">
+                            <span>0.05 BNB</span>
+                            <span>$2</span>
+                        </div>
+                    </div>
+                </div>
+
+                <h3 style="color:#8f9bb3; font-size:14px; margin:20px 0 12px;">⚡ QUICK ACTIONS</h3>
+                <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px">
+                    <button style="background:#1a1c23; color:white; border:1px solid #2a2c33; padding:10px; border-radius:10px; cursor:pointer">🔍 SCAN</button>
+                    <button style="background:#1a1c23; color:white; border:1px solid #2a2c33; padding:10px; border-radius:10px; cursor:pointer">💰 BUY</button>
+                    <button style="background:#1a1c23; color:white; border:1px solid #2a2c33; padding:10px; border-radius:10px; cursor:pointer">💸 SELL</button>
+                    <button style="background:#1a1c23; color:white; border:1px solid #2a2c33; padding:10px; border-radius:10px; cursor:pointer">📊 STATS</button>
+                </div>
             </div>
+
+            <!-- Chat Section (40%) -->
             <div class="chat-section">
-                <h3 style="color:white;">Chat Panel</h3>
+                <div class="chat-history">
+                    <div class="message bot">🤖 Bot: Paper trading started!</div>
+                    <div class="message user">🙋 You: buy BNB 0.1</div>
+                    <div class="message bot">🤖 Bot: ✅ Bought BNB for 0.1 BNB</div>
+                </div>
+                
+                <div class="chat-input-area">
+                    <input type="text" class="chat-input" placeholder="Type message...">
+                    <button class="send-btn">➤</button>
+                </div>
             </div>
         </div>
+
         <div class="footer">
-            <span>📍 Paper Trading | 4 Positions</span>
+            <span>📍 Paper Trading | 2 Positions | Gas: 5 Gwei</span>
         </div>
     </div>
 </body>
