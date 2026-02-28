@@ -1072,70 +1072,57 @@ def chat():
 
 **Bot SKIP karega agar koi bhi critical fail ho!**"""
             return jsonify({"reply": reply, "session_id": session_id})
-            # ===== PAPER TRADING ENGINE =====
-if "paper" in user_message or user_message.startswith(("buy ", "sell ")):
-    parts = user_message.split()
-    
-    # Paper trading class
-    class PaperTradingEngine:
-        def __init__(self):
-            self.balance = 1.0
-            self.positions = {}
-            self.trades = []
-        def buy(self, token, amount_bnb, price):
-            if amount_bnb > self.balance:
-                return False, "Insufficient balance"
-            tokens_bought = amount_bnb / price
-            self.positions[token] = {'amount': tokens_bought, 'entry_price': price, 'bnb_spent': amount_bnb}
-            self.balance -= amount_bnb
-            return True, f"Bought for {amount_bnb} BNB"
-        def sell(self, token, price):
-            if token not in self.positions:
-                return False, "No position"
-            pos = self.positions[token]
-            proceeds = pos['amount'] * price
-            profit = proceeds - pos['bnb_spent']
-            self.balance += proceeds
-            self.trades.append({'token': token, 'profit': profit})
-            del self.positions[token]
-            return True, f"Sold! Profit: {profit:.4f} BNB"
-        def get_stats(self):
-            return {'balance': self.balance, 'positions': len(self.positions), 'trades': len(self.trades)}
-    
-    # Create engine if not exists
-    if not hasattr(self, 'paper_engine'):
-        self.paper_engine = PaperTradingEngine()
-    
-    if parts[0] == "paper" and len(parts) > 1:
-        if parts[1] == "start":
-            self.paper_engine = PaperTradingEngine()
-            reply = "📝 **PAPER TRADING STARTED!**\n💰 Balance: 1 BNB\nTry: `buy 0x... 0.01`"
-        elif parts[1] == "stats":
-            s = self.paper_engine.get_stats()
-            reply = f"📊 **Paper Stats**\nBalance: {s['balance']:.4f} BNB\nPositions: {s['positions']}\nTrades: {s['trades']}"
-        else:
-            reply = "Commands: paper start | paper stats | buy 0x... 0.01 | sell 0x..."
-    
-    elif parts[0] == "buy" and len(parts) == 3:
-        token = parts[1]
-        try:
-            amount = float(parts[2])
-            price = 0.0001  # Simulated
-            success, msg = self.paper_engine.buy(token, amount, price)
-            reply = f"{'✅' if success else '❌'} {msg}"
-        except:
-            reply = "Usage: buy 0x... 0.01"
-    
-    elif parts[0] == "sell" and len(parts) == 2:
-        token = parts[1]
-        price = 0.00015  # Simulated higher
-        success, msg = self.paper_engine.sell(token, price)
-        reply = f"{'✅' if success else '❌'} {msg}"
-    
-    else:
-        reply = "📝 Paper Trading:\n• paper start\n• paper stats\n• buy 0x... 0.01\n• sell 0x..."
-    
-    return jsonify({"reply": reply, "session_id": session_id})
+            
+        # ===== SIMPLE PAPER TRADING =====
+        if "paper" in user_message or "buy " in user_message or "sell " in user_message:
+            
+            # Paper variables
+            if not hasattr(self, 'paper_balance'):
+                self.paper_balance = 1.0
+                self.paper_positions = {}
+                self.paper_trades = []
+            
+            parts = user_message.split()
+            
+            if parts[0] == "paper":
+                if parts[1] == "start":
+                    self.paper_balance = 1.0
+                    self.paper_positions = {}
+                    self.paper_trades = []
+                    reply = "📝 Paper trading started! Balance: 1 BNB"
+                
+                elif parts[1] == "stats":
+                    reply = f"📊 Balance: {self.paper_balance:.3f} BNB | Trades: {len(self.paper_trades)}"
+            
+            elif parts[0] == "buy" and len(parts) == 3:
+                token = parts[1]
+                amount = float(parts[2])
+                
+                if amount > self.paper_balance:
+                    reply = "❌ Insufficient balance!"
+                else:
+                    self.paper_balance -= amount
+                    self.paper_positions[token] = amount
+                    reply = f"✅ Bought {token} for {amount} BNB"
+            
+            elif parts[0] == "sell" and len(parts) == 2:
+                token = parts[1]
+                
+                if token not in self.paper_positions:
+                    reply = "❌ No position found!"
+                else:
+                    amount = self.paper_positions[token]
+                    profit = amount * 0.05
+                    self.paper_balance += amount + profit
+                    del self.paper_positions[token]
+                    self.paper_trades.append(f"Sold {token}")
+                    reply = f"✅ Sold {token}! Profit: {profit:.3f} BNB"
+            
+            else:
+                reply = "Commands: paper start | paper stats | buy TOKEN 0.1 | sell TOKEN"
+            
+            return jsonify({"reply": reply, "session_id": session_id})
+
 
         # Regular chat with AI
         system_prompt = f"""Tu MrBlack hai - ek self-learning PRO bot jo 24x7 teeno fields seekhta hai:
