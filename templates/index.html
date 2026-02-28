@@ -2,72 +2,159 @@
 <html lang="hi">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MrBlack AI • Premium</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MrBlack • Pro Mobile</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        body { font-family: 'Inter', system-ui; background: radial-gradient(circle at center, #0f0f1a, #000000); }
-        .glass { background: rgba(255,255,255,0.05); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); }
-        .neon-purple { box-shadow: 0 0 25px rgba(168, 85, 247, 0.6); }
-        .chat-bubble-bot { background: linear-gradient(135deg, #4f46e5, #7c3aed); }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        * { font-family: 'Inter', sans-serif; }
+        body {
+            background: radial-gradient(circle at top, #0b0b15, #000000);
+            height: 100vh;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+        }
+        .glass-card {
+            background: rgba(20, 20, 30, 0.6);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(168, 85, 247, 0.2);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        }
+        .neon-glow {
+            box-shadow: 0 0 20px rgba(168, 85, 247, 0.5);
+        }
+        .stat-value {
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+        .chat-messages {
+            scroll-behavior: smooth;
+            padding-bottom: 10px;
+        }
+        .chat-messages::-webkit-scrollbar {
+            width: 4px;
+        }
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: #7c3aed;
+            border-radius: 20px;
+        }
+        .message-bot {
+            background: linear-gradient(145deg, #2e1a4a, #1e1e3f);
+            border-radius: 20px 20px 20px 5px;
+        }
+        .message-user {
+            background: #2a2a3a;
+            border-radius: 20px 20px 5px 20px;
+        }
+        .trading-card {
+            transition: all 0.2s ease;
+        }
+        .trading-card:active {
+            transform: scale(0.98);
+        }
     </style>
 </head>
-<body class="min-h-screen flex items-center justify-center p-4">
-    <div class="w-full max-w-md h-[720px] glass rounded-3xl overflow-hidden shadow-2xl neon-purple border border-purple-500/30 flex flex-col">
-        
-        <!-- Header -->
-        <div class="bg-black/80 px-6 py-4 flex items-center justify-between border-b border-purple-500/30">
-            <div class="flex items-center gap-3">
-                <div class="w-9 h-9 bg-gradient-to-br from-purple-500 to-indigo-500 rounded-2xl flex items-center justify-center text-2xl">🤖</div>
-                <div>
-                    <h1 class="text-white font-bold text-2xl tracking-tighter">MrBlack</h1>
-                    <p class="text-emerald-400 text-xs font-medium flex items-center gap-1"><span class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span>24×7 LEARNING ACTIVE</p>
+<body class="h-screen flex flex-col text-white">
+
+    <!-- Header -->
+    <div class="glass-card px-5 py-3 flex items-center justify-between border-b border-purple-500/30 z-10">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 bg-purple-600 rounded-xl flex items-center justify-center text-xl">🤖</div>
+            <div>
+                <span class="font-bold text-lg tracking-tight">MrBlack</span>
+                <span class="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full ml-2">LIVE</span>
+            </div>
+        </div>
+        <div class="flex gap-4 text-white/70 text-lg">
+            <i class="fas fa-chart-line"></i>
+            <i class="fas fa-sliders-h"></i>
+        </div>
+    </div>
+
+    <!-- Trading Dashboard (Top 40%) -->
+    <div class="flex-1 overflow-y-auto p-4" style="max-height: 40vh;" id="tradingSection">
+        <div class="space-y-3">
+            <!-- Quick Stats Grid -->
+            <div class="grid grid-cols-3 gap-2">
+                <div class="glass-card rounded-2xl p-3 text-center trading-card">
+                    <div class="text-emerald-400 text-xs mb-1">PAPER</div>
+                    <div class="stat-value text-lg" id="paperBalance">1.87 BNB</div>
+                    <div class="text-[10px] text-white/40">≈ $487</div>
+                </div>
+                <div class="glass-card rounded-2xl p-3 text-center trading-card">
+                    <div class="text-rose-400 text-xs mb-1">REAL</div>
+                    <div class="stat-value text-lg" id="realBalance">0.00 BNB</div>
+                    <div class="text-[10px] text-white/40">≈ $0</div>
+                </div>
+                <div class="glass-card rounded-2xl p-3 text-center trading-card">
+                    <div class="text-amber-400 text-xs mb-1">PNL (24h)</div>
+                    <div class="stat-value text-emerald-400 text-lg" id="pnl">+12.4%</div>
+                    <div class="text-[10px] text-white/40">+$53.20</div>
                 </div>
             </div>
-            <div class="flex gap-4 text-xl text-white/70">
-                <i class="fas fa-cog hover:text-white cursor-pointer"></i>
-                <i class="fas fa-user-circle hover:text-white cursor-pointer"></i>
-            </div>
-        </div>
 
-        <!-- Trading Bar -->
-        <div class="bg-zinc-950/80 px-6 py-3 flex justify-between text-sm border-b border-white/10">
-            <div class="text-center">
-                <div class="text-emerald-400 text-xs">PAPER</div>
-                <div class="text-white font-semibold">1.87 BNB</div>
+            <!-- Market Trend + Positions -->
+            <div class="glass-card rounded-2xl p-4">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm font-semibold text-white/80"><i class="fas fa-fire text-orange-400 mr-1"></i> Hot Pairs</span>
+                    <span class="text-xs bg-purple-500/30 px-2 py-1 rounded-full">BNB Chain</span>
+                </div>
+                <div class="flex gap-2 overflow-x-auto pb-1 hide-scrollbar">
+                    <div class="bg-white/5 px-3 py-1.5 rounded-full text-xs whitespace-nowrap">CAKE/BNB 🔥</div>
+                    <div class="bg-white/5 px-3 py-1.5 rounded-full text-xs whitespace-nowrap">XRP/BNB</div>
+                    <div class="bg-white/5 px-3 py-1.5 rounded-full text-xs whitespace-nowrap">DOGE/BNB</div>
+                    <div class="bg-white/5 px-3 py-1.5 rounded-full text-xs whitespace-nowrap">PEPE/BNB 🚀</div>
+                </div>
+                <div class="mt-3 flex justify-between text-xs text-white/50">
+                    <span>Positions: 2</span>
+                    <span>Exposure: 22%</span>
+                    <span class="text-emerald-400">Limit: 65%</span>
+                </div>
             </div>
-            <div class="text-center">
-                <div class="text-rose-400 text-xs">REAL</div>
-                <div class="text-white font-semibold">0.00</div>
-            </div>
-            <div class="text-center">
-                <div class="text-amber-400 text-xs">PNL</div>
-                <div class="text-emerald-400 font-semibold">+12.4%</div>
-            </div>
-        </div>
 
-        <!-- Chat Area -->
-        <div id="messages" class="flex-1 p-5 overflow-y-auto space-y-4 bg-black/40">
-            <!-- messages JS se aayenge -->
-        </div>
-
-        <!-- Input -->
-        <div class="p-4 border-t border-white/10 bg-black/80">
-            <div class="flex gap-2">
-                <input id="chatInput" type="text" 
-                       class="flex-1 bg-zinc-900 border border-purple-500/30 focus:border-purple-500 rounded-3xl px-6 py-3 text-white placeholder-zinc-500 outline-none"
-                       placeholder="Bhai scan kar... ya buy bol">
-                <button id="sendBtn"
-                        class="w-14 h-14 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-3xl flex items-center justify-center text-2xl hover:scale-110 transition-all">
-                    ➤
+            <!-- Quick Action Buttons -->
+            <div class="grid grid-cols-2 gap-2">
+                <button class="glass-card py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 active:bg-purple-600/20" onclick="quickTrade('scan')">
+                    <i class="fas fa-search text-purple-400"></i> Scan Token
+                </button>
+                <button class="glass-card py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 active:bg-purple-600/20" onclick="quickTrade('buy')">
+                    <i class="fas fa-shopping-cart text-emerald-400"></i> Quick Buy
                 </button>
             </div>
         </div>
     </div>
 
+    <!-- Divider with handle (optional) -->
+    <div class="h-1 bg-gradient-to-r from-transparent via-purple-500 to-transparent"></div>
+
+    <!-- Chat Area (Bottom 60%) -->
+    <div class="flex-1 flex flex-col bg-black/40" style="max-height: 60vh;">
+        <!-- Chat Messages -->
+        <div id="messages" class="flex-1 overflow-y-auto p-4 space-y-3 chat-messages">
+            <!-- Messages will be injected here -->
+        </div>
+
+        <!-- Input Bar (Sticky) -->
+        <div class="glass-card p-3 border-t border-purple-500/30">
+            <div class="flex items-center gap-2">
+                <input id="chatInput" type="text" 
+                    class="flex-1 bg-zinc-900/80 border border-purple-500/30 focus:border-purple-500 rounded-full px-5 py-3.5 text-sm text-white placeholder-zinc-500 outline-none"
+                    placeholder="Type 'scan 0x...' or ask anything...">
+                <button id="sendBtn" 
+                    class="w-12 h-12 bg-purple-600 rounded-full flex items-center justify-center text-xl active:scale-90 transition-transform">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+            <div class="flex mt-2 gap-1 text-xs text-white/30 px-2">
+                <span>💡 Try: "scan 0x..." or "paper balance"</span>
+            </div>
+        </div>
+    </div>
+
     <script>
+        // Session
         let sessionId = localStorage.getItem('mrblack_session') || crypto.randomUUID();
         localStorage.setItem('mrblack_session', sessionId);
 
@@ -75,11 +162,34 @@
         const input = document.getElementById('chatInput');
         const sendBtn = document.getElementById('sendBtn');
 
+        // Trading data placeholders (will be updated via API)
+        function updateTradingUI(data) {
+            if (data.paper) document.getElementById('paperBalance').innerText = data.paper;
+            if (data.real) document.getElementById('realBalance').innerText = data.real;
+            if (data.pnl) document.getElementById('pnl').innerText = data.pnl;
+        }
+
+        // Fetch trading data from backend
+        async function fetchTradingData() {
+            try {
+                const res = await fetch('/trading-data');
+                const data = await res.json();
+                updateTradingUI(data);
+            } catch (e) {
+                console.warn("Using fallback trading data");
+            }
+        }
+
+        // Call every 10 seconds
+        setInterval(fetchTradingData, 10000);
+        fetchTradingData();
+
+        // Message functions
         function addMessage(text, isBot) {
             const div = document.createElement('div');
             div.className = `flex ${isBot ? 'justify-start' : 'justify-end'}`;
             div.innerHTML = `
-                <div class="${isBot ? 'chat-bubble-bot text-white' : 'bg-zinc-800 text-white'} max-w-[80%] px-5 py-3 rounded-3xl rounded-${isBot ? 'tl' : 'tr'}-none">
+                <div class="${isBot ? 'message-bot' : 'message-user'} max-w-[85%] px-4 py-2.5 text-sm">
                     ${isBot ? '🤖 ' : ''}${text}
                 </div>
             `;
@@ -94,30 +204,48 @@
             addMessage(text, false);
             input.value = '';
 
-            // Show typing
-            const typing = document.createElement('div');
-            typing.id = 'typing';
-            typing.className = 'flex justify-start';
-            typing.innerHTML = `<div class="bg-zinc-800 px-5 py-3 rounded-3xl">🤖 typing<span class="animate-pulse">...</span></div>`;
-            messagesDiv.appendChild(typing);
+            // Typing indicator
+            const typingDiv = document.createElement('div');
+            typingDiv.id = 'typing';
+            typingDiv.className = 'flex justify-start';
+            typingDiv.innerHTML = `<div class="message-bot px-4 py-2.5 text-sm">🤖 <span class="animate-pulse">typing...</span></div>`;
+            messagesDiv.appendChild(typingDiv);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
 
-            const res = await fetch('/chat', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ message: text, session_id: sessionId, user_name: "Bhai" })
-            });
-            const data = await res.json();
+            try {
+                const res = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ message: text, session_id: sessionId, user_name: "Bhai" })
+                });
+                const data = await res.json();
+                document.getElementById('typing')?.remove();
+                addMessage(data.reply, true);
 
-            typing.remove();
-            addMessage(data.reply, true);
+                // If trading data updated in response, refresh
+                if (data.trading) updateTradingUI(data.trading);
+            } catch (error) {
+                document.getElementById('typing')?.remove();
+                addMessage("Network error, bhai! Try again.", true);
+            }
         }
 
         sendBtn.addEventListener('click', sendMessage);
         input.addEventListener('keypress', e => { if (e.key === 'Enter') sendMessage(); });
 
-        // Welcome
-        addMessage('Arre bhai! MrBlack ready hai 🔥 Kya scan karna hai aaj?', true);
+        // Quick trade actions
+        window.quickTrade = (action) => {
+            if (action === 'scan') {
+                input.value = 'scan ';
+                input.focus();
+            } else if (action === 'buy') {
+                input.value = 'buy ';
+                input.focus();
+            }
+        };
+
+        // Welcome message
+        addMessage('Bhai! MrBlack Pro ready. Upar trading stats, neeche chat. Kya help chahiye?', true);
     </script>
 </body>
 </html>
