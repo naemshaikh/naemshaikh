@@ -880,13 +880,6 @@ learning_thread.start()
 print("✅ 24x7 LEARNING ENGINE STARTED!")
 
 # ========== UI ==========
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MrBlack AI - 24x7 Learning + BSC Sniper</title>
-    <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Roboto, sans-serif; }
         body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100vh; display: flex; justify-content: center; align-items: center; }
         .chat-container { width: 100%; max-width: 800px; height: 90vh; background: white; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); display: flex; flex-direction: column; overflow: hidden; }
@@ -907,37 +900,10 @@ print("✅ 24x7 LEARNING ENGINE STARTED!")
         #send:hover { transform: scale(1.1); }
         #typing { padding: 10px 20px; color: #666; font-style: italic; display: none; }
         .status { font-size: 0.8rem; color: #4CAF50; margin-top: 5px; }
-    </style>
-</head>
-<body>
-    <div class="chat-container">
-        <div class="header">
-            <h1>🤖 MrBlack AI</h1>
-            <div class="badges">
-                <span class="badge"><i>🦄</i> Uniswap</span>
-                <span class="badge"><i>🥞</i> PancakeSwap</span>
-                <span class="badge"><i>✈️</i> Aerodrome</span>
-                <span class="badge"><i>☀️</i> Raydium</span>
-                <span class="badge"><i>🪐</i> Jupiter</span>
-                <span class="badge"><i>💻</i> Coding</span>
-                <span class="badge"><i>🎁</i> Airdrops</span>
-                <span class="badge"><i>📊</i> Trading</span>
-                <span class="badge"><i>🔷</i> BSC</span>
-            </div>
-            <div class="status" id="memoryStatus">🧠 Memory: ON | 🔄 24x7 Learning: Active | 📋 Checklist: Active</div>
-        </div>
         
-        <div class="messages" id="messages"></div>
         
-        <div id="typing">🤔 MrBlack is thinking and learning...</div>
         
-        <div class="input-area">
-            <input type="text" id="input" placeholder="Ask about coding, airdrops, trading, or scan a BSC token...">
-            <button id="send">➤</button>
-        </div>
-    </div>
 
-    <script>
         let sessionId = localStorage.getItem('mrblack_session') || '';
         const messagesDiv = document.getElementById('messages');
         const input = document.getElementById('input');
@@ -994,9 +960,6 @@ print("✅ 24x7 LEARNING ENGINE STARTED!")
             addMessage('• "checklist kya hai" - See safety checklist', false);
             addMessage('• "paper trading start" - Begin paper mode', false);
         }, 1000);
-    </script>
-</body>
-</html>
 """
 @app.route("/")
 def home():
