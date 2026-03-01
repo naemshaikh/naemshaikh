@@ -8,19 +8,31 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
     <style>
         :root {
-            --bg: #050508;
-            --surface: #0d0d14;
-            --card: #111118;
-            --border: rgba(99, 255, 180, 0.12);
-            --border-bright: rgba(99, 255, 180, 0.35);
-            --green: #63ffb4;
-            --green-dim: rgba(99, 255, 180, 0.15);
-            --red: #ff4d6d;
-            --red-dim: rgba(255, 77, 109, 0.15);
-            --amber: #ffbe0b;
-            --text: #e8e8f0;
-            --muted: rgba(232, 232, 240, 0.4);
-            --purple: #9d4edd;
+            /* ── PREMIUM GREY PALETTE ── */
+            --bg:          #0e0f11;          /* near-black with cool grey tint */
+            --surface:     #161719;          /* header / input bar */
+            --card:        #1c1d20;          /* cards */
+            --card-hover:  #222427;
+            --border:      rgba(180,185,200,0.10);
+            --border-bright: rgba(180,185,200,0.28);
+
+            /* Accent: warm silver-white for primary actions */
+            --accent:      #c8ccd8;
+            --accent-dim:  rgba(200,204,216,0.10);
+            --accent-glow: rgba(200,204,216,0.18);
+
+            /* Status colors — slightly desaturated for the grey palette */
+            --green:       #4de8a0;
+            --green-dim:   rgba(77,232,160,0.10);
+            --red:         #f05068;
+            --red-dim:     rgba(240,80,104,0.10);
+            --amber:       #e8a830;
+            --amber-dim:   rgba(232,168,48,0.10);
+
+            /* Text */
+            --text:        #dde0ea;          /* primary text */
+            --muted:       rgba(200,204,216,0.40);
+            --subtle:      rgba(200,204,216,0.22);
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -35,42 +47,50 @@
             overflow: hidden;
         }
 
+        /* subtle noise texture overlay */
+        body::before {
+            content: '';
+            position: fixed; inset: 0;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+            pointer-events: none; z-index: 0;
+        }
+
         /* ── HEADER ── */
         .header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
+            display: flex; align-items: center; justify-content: space-between;
             padding: 12px 18px;
             background: var(--surface);
             border-bottom: 1px solid var(--border);
-            flex-shrink: 0;
-            z-index: 20;
+            flex-shrink: 0; z-index: 20; position: relative;
         }
         .header-left { display: flex; align-items: center; gap: 10px; }
         .logo-icon {
             width: 34px; height: 34px;
-            background: linear-gradient(135deg, var(--green) 0%, #00b4d8 100%);
+            background: linear-gradient(135deg, #9aa0b4 0%, #c8ccd8 100%);
             border-radius: 10px;
             display: flex; align-items: center; justify-content: center;
-            font-size: 16px; font-weight: 800; color: #000;
+            font-size: 13px; font-weight: 800; color: #0e0f11;
             letter-spacing: -1px;
         }
-        .brand-name { font-size: 17px; font-weight: 800; letter-spacing: -0.5px; }
+        .brand-name { font-size: 17px; font-weight: 800; letter-spacing: -0.5px; color: var(--text); }
         .live-badge {
-            font-size: 9px; background: rgba(99,255,180,0.15);
-            color: var(--green); border: 1px solid rgba(99,255,180,0.3);
-            padding: 2px 7px; border-radius: 20px; font-family: 'Space Mono', monospace;
+            font-size: 9px;
+            background: rgba(77,232,160,0.08);
+            color: var(--green);
+            border: 1px solid rgba(77,232,160,0.25);
+            padding: 2px 7px; border-radius: 20px;
+            font-family: 'Space Mono', monospace;
         }
         .header-icons { display: flex; gap: 18px; color: var(--muted); font-size: 15px; }
         .header-icons i { cursor: pointer; transition: color 0.2s; }
-        .header-icons i:active { color: var(--green); }
+        .header-icons i:active { color: var(--accent); }
 
         /* ── TABS ── */
         .tabs {
             display: flex;
             background: var(--surface);
             border-bottom: 1px solid var(--border);
-            flex-shrink: 0;
+            flex-shrink: 0; position: relative; z-index: 10;
         }
         .tab {
             flex: 1; padding: 10px; text-align: center;
@@ -78,10 +98,10 @@
             cursor: pointer; border-bottom: 2px solid transparent;
             transition: all 0.2s; letter-spacing: 0.5px;
         }
-        .tab.active { color: var(--green); border-bottom-color: var(--green); }
+        .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
         /* ── PANELS ── */
-        .panel { display: none; flex: 1; overflow: hidden; flex-direction: column; }
+        .panel { display: none; flex: 1; overflow: hidden; flex-direction: column; position: relative; z-index: 1; }
         .panel.active { display: flex; }
 
         /* ── DASHBOARD PANEL ── */
@@ -97,19 +117,18 @@
             background: var(--card);
             border: 1px solid var(--border);
             border-radius: 14px;
-            padding: 12px 10px;
-            text-align: center;
+            padding: 12px 10px; text-align: center;
+            transition: border-color 0.2s;
         }
+        .stat-card:hover { border-color: var(--border-bright); }
         .stat-label { font-size: 9px; font-family: 'Space Mono', monospace; color: var(--muted); letter-spacing: 1px; margin-bottom: 5px; }
         .stat-val { font-size: 15px; font-weight: 700; font-family: 'Space Mono', monospace; }
         .stat-sub { font-size: 9px; color: var(--muted); margin-top: 2px; }
 
         /* Mode toggle */
         .mode-toggle {
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            padding: 10px 14px;
+            background: var(--card); border: 1px solid var(--border);
+            border-radius: 14px; padding: 10px 14px;
             display: flex; align-items: center; justify-content: space-between;
         }
         .mode-label { font-size: 12px; font-weight: 600; color: var(--muted); }
@@ -119,10 +138,16 @@
             border: 1px solid var(--border); background: transparent; color: var(--muted);
             cursor: pointer; font-family: 'Space Mono', monospace; transition: all 0.2s;
         }
-        .mode-btn.active-paper { background: rgba(99,255,180,0.12); color: var(--green); border-color: var(--green); }
-        .mode-btn.active-real { background: rgba(255,77,109,0.12); color: var(--red); border-color: var(--red); }
+        .mode-btn.active-paper {
+            background: var(--green-dim); color: var(--green);
+            border-color: rgba(77,232,160,0.45);
+        }
+        .mode-btn.active-real {
+            background: var(--red-dim); color: var(--red);
+            border-color: rgba(240,80,104,0.45);
+        }
 
-        /* Hot pairs */
+        /* Pairs */
         .section-title {
             font-size: 11px; font-family: 'Space Mono', monospace;
             color: var(--muted); letter-spacing: 1.5px; margin-bottom: 8px;
@@ -134,17 +159,19 @@
             background: var(--card); border: 1px solid var(--border);
             border-radius: 20px; padding: 6px 14px; font-size: 11px;
             font-family: 'Space Mono', monospace; white-space: nowrap;
-            cursor: pointer; transition: all 0.15s;
+            cursor: pointer; transition: all 0.15s; color: var(--muted);
         }
-        .pair-chip:active { border-color: var(--green); color: var(--green); }
-        .pair-chip.hot { border-color: rgba(255,190,11,0.4); color: var(--amber); }
+        .pair-chip:active { border-color: var(--accent); color: var(--accent); }
+        .pair-chip.hot { border-color: rgba(232,168,48,0.35); color: var(--amber); }
 
         /* Positions */
         .position-card {
             background: var(--card); border: 1px solid var(--border);
             border-radius: 14px; padding: 12px 14px;
             display: flex; align-items: center; justify-content: space-between;
+            transition: border-color 0.2s;
         }
+        .position-card:hover { border-color: var(--border-bright); }
         .pos-token { font-weight: 700; font-size: 13px; }
         .pos-meta { font-size: 10px; color: var(--muted); margin-top: 2px; font-family: 'Space Mono', monospace; }
         .pos-pnl { text-align: right; font-family: 'Space Mono', monospace; font-weight: 700; }
@@ -156,12 +183,11 @@
         .action-btn {
             background: var(--card); border: 1px solid var(--border);
             border-radius: 12px; padding: 12px; font-size: 12px; font-weight: 700;
-            color: var(--text); cursor: pointer; display: flex;
-            align-items: center; justify-content: center; gap: 8px;
+            color: var(--text); cursor: pointer;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
             transition: all 0.15s; font-family: 'Syne', sans-serif;
         }
-        .action-btn:active { transform: scale(0.97); border-color: var(--green); }
-        .action-btn .icon { font-size: 14px; }
+        .action-btn:active { transform: scale(0.97); border-color: var(--accent); }
 
         /* ── CHAT PANEL ── */
         .chat-panel {
@@ -169,24 +195,26 @@
         }
 
         .messages {
-            flex: 1; overflow-y: auto; padding: 14px;
+            flex: 1; overflow-y: auto; padding: 14px 14px 8px;
             display: flex; flex-direction: column; gap: 10px;
         }
         .messages::-webkit-scrollbar { width: 3px; }
-        .messages::-webkit-scrollbar-thumb { background: var(--green-dim); border-radius: 10px; }
+        .messages::-webkit-scrollbar-thumb { background: var(--subtle); border-radius: 10px; }
 
         .msg-row { display: flex; }
         .msg-row.user { justify-content: flex-end; }
-        .msg-row.bot { justify-content: flex-start; }
+        .msg-row.bot  { justify-content: flex-start; }
 
         .bubble {
-            max-width: 82%; padding: 10px 14px; font-size: 13px; line-height: 1.5;
+            max-width: 82%; padding: 10px 14px;
+            font-size: 13px; line-height: 1.55;
             border-radius: 18px; word-break: break-word;
         }
         .bubble.user {
-            background: linear-gradient(135deg, #1a2f22, #112218);
-            border: 1px solid rgba(99,255,180,0.2);
+            background: linear-gradient(135deg, #242629, #1c1d20);
+            border: 1px solid rgba(180,185,200,0.18);
             border-bottom-right-radius: 5px;
+            color: var(--text);
         }
         .bubble.bot {
             background: var(--card);
@@ -195,27 +223,27 @@
         }
         .bot-name {
             font-size: 9px; font-family: 'Space Mono', monospace;
-            color: var(--green); letter-spacing: 1px; margin-bottom: 4px;
+            color: var(--accent); letter-spacing: 1px; margin-bottom: 4px;
+            opacity: 0.7;
         }
 
-        /* Typing animation */
+        /* Typing */
         .typing-dots span {
             display: inline-block; width: 6px; height: 6px;
-            background: var(--green); border-radius: 50%; margin: 0 2px;
-            animation: bounce 1.2s infinite;
+            background: var(--accent); border-radius: 50%; margin: 0 2px;
+            animation: bounce 1.2s infinite; opacity: 0.5;
         }
         .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
         .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
         @keyframes bounce {
-            0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-            30% { transform: translateY(-5px); opacity: 1; }
+            0%,60%,100% { transform: translateY(0); opacity: 0.35; }
+            30%          { transform: translateY(-5px); opacity: 1; }
         }
 
         /* Suggestions */
         .suggestions {
-            padding: 0 14px 8px;
-            display: flex; gap: 6px; overflow-x: auto;
-            flex-shrink: 0;
+            padding: 6px 14px 6px;
+            display: flex; gap: 6px; overflow-x: auto; flex-shrink: 0;
         }
         .suggestions::-webkit-scrollbar { display: none; }
         .suggestion {
@@ -224,34 +252,37 @@
             padding: 6px 12px; font-size: 11px; cursor: pointer;
             transition: all 0.15s; white-space: nowrap; color: var(--muted);
         }
-        .suggestion:active { border-color: var(--green); color: var(--green); }
+        .suggestion:active { border-color: var(--accent); color: var(--accent); }
 
-        /* Input bar */
+        /* ── INPUT BAR — fixed height, NOT pushed to bottom ── */
         .input-bar {
-            padding: 10px 14px 14px;
+            padding: 10px 14px 12px;           /* top / sides / bottom — 12px bottom gap from screen edge */
             background: var(--surface);
             border-top: 1px solid var(--border);
             flex-shrink: 0;
         }
         .input-row { display: flex; gap: 8px; align-items: center; }
         .chat-input {
-            flex: 1; background: var(--card);
+            flex: 1;
+            background: var(--card);
             border: 1px solid var(--border);
-            border-radius: 25px; padding: 12px 18px;
+            border-radius: 25px;
+            padding: 11px 18px;
             font-size: 13px; color: var(--text);
             font-family: 'Syne', sans-serif;
             outline: none; transition: border-color 0.2s;
+            line-height: 1.4;
         }
-        .chat-input:focus { border-color: rgba(99,255,180,0.5); }
+        .chat-input:focus { border-color: rgba(200,204,216,0.40); }
         .chat-input::placeholder { color: var(--muted); }
         .send-btn {
-            width: 46px; height: 46px; border-radius: 50%;
-            background: linear-gradient(135deg, var(--green), #00b4d8);
-            border: none; color: #000; font-size: 16px;
+            width: 44px; height: 44px; border-radius: 50%;
+            background: linear-gradient(135deg, #8b91a8, #c8ccd8);
+            border: none; color: #0e0f11; font-size: 15px;
             cursor: pointer; display: flex; align-items: center; justify-content: center;
-            flex-shrink: 0; transition: transform 0.15s; font-weight: 700;
+            flex-shrink: 0; transition: transform 0.15s, opacity 0.15s;
         }
-        .send-btn:active { transform: scale(0.90); }
+        .send-btn:active { transform: scale(0.88); opacity: 0.8; }
 
         /* ── SCAN PANEL ── */
         .scan-panel {
@@ -267,17 +298,16 @@
             width: 100%; background: var(--bg); border: 1px solid var(--border);
             border-radius: 10px; padding: 11px 14px; font-size: 12px;
             color: var(--text); font-family: 'Space Mono', monospace;
-            outline: none; margin-bottom: 10px;
+            outline: none; margin-bottom: 10px; transition: border-color 0.2s;
         }
-        .scan-addr-input:focus { border-color: rgba(99,255,180,0.5); }
+        .scan-addr-input:focus { border-color: rgba(200,204,216,0.40); }
         .scan-btn {
-            width: 100%; padding: 12px; background: var(--green-dim);
-            border: 1px solid var(--green); border-radius: 10px;
-            color: var(--green); font-size: 13px; font-weight: 700;
-            cursor: pointer; font-family: 'Syne', sans-serif;
-            transition: all 0.2s;
+            width: 100%; padding: 12px; background: var(--accent-dim);
+            border: 1px solid var(--border-bright); border-radius: 10px;
+            color: var(--accent); font-size: 13px; font-weight: 700;
+            cursor: pointer; font-family: 'Syne', sans-serif; transition: all 0.2s;
         }
-        .scan-btn:active { background: rgba(99,255,180,0.25); }
+        .scan-btn:active { background: var(--accent-glow); }
 
         .checklist-grid { display: flex; flex-direction: column; gap: 6px; }
         .check-item {
@@ -285,27 +315,25 @@
             background: var(--card); border: 1px solid var(--border);
             border-radius: 10px; padding: 10px 12px;
         }
-        .check-dot {
-            width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
-            background: var(--muted);
-        }
-        .check-dot.pass { background: var(--green); box-shadow: 0 0 6px var(--green); }
-        .check-dot.fail { background: var(--red); box-shadow: 0 0 6px var(--red); }
+        .check-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; background: var(--muted); }
+        .check-dot.pass { background: var(--green); box-shadow: 0 0 6px rgba(77,232,160,0.5); }
+        .check-dot.fail { background: var(--red);   box-shadow: 0 0 6px rgba(240,80,104,0.5); }
         .check-dot.warn { background: var(--amber); }
         .check-text { font-size: 12px; flex: 1; }
         .check-badge {
             font-size: 9px; font-family: 'Space Mono', monospace;
             padding: 2px 7px; border-radius: 10px; letter-spacing: 0.5px;
         }
-        .badge-pass { background: rgba(99,255,180,0.1); color: var(--green); }
-        .badge-fail { background: rgba(255,77,109,0.1); color: var(--red); }
-        .badge-warn { background: rgba(255,190,11,0.1); color: var(--amber); }
+        .badge-pass { background: var(--green-dim); color: var(--green); }
+        .badge-fail { background: var(--red-dim);   color: var(--red); }
+        .badge-warn { background: var(--amber-dim); color: var(--amber); }
 
         /* Utility */
-        .green { color: var(--green); }
-        .red { color: var(--red); }
-        .amber { color: var(--amber); }
-        .mono { font-family: 'Space Mono', monospace; }
+        .green  { color: var(--green);  }
+        .red    { color: var(--red);    }
+        .amber  { color: var(--amber);  }
+        .silver { color: var(--accent); }
+        .mono   { font-family: 'Space Mono', monospace; }
         .section-card {
             background: var(--card); border: 1px solid var(--border);
             border-radius: 14px; padding: 12px 14px;
@@ -319,7 +347,7 @@
         <div class="header-left">
             <div class="logo-icon">MB</div>
             <div>
-                <span class="brand-name">MrBlack</span>
+                <span class="brand-name">MrBlack</span>&nbsp;
                 <span class="live-badge">● LIVE</span>
             </div>
         </div>
@@ -336,11 +364,10 @@
         <div class="tab" onclick="switchTab('scan')"><i class="fas fa-search"></i> Scan</div>
     </div>
 
-    <!-- ===== DASHBOARD PANEL ===== -->
+    <!-- ===== DASHBOARD ===== -->
     <div class="panel active" id="panel-dashboard">
         <div class="dashboard-scroll">
 
-            <!-- Stats -->
             <div class="stats-row">
                 <div class="stat-card">
                     <div class="stat-label">PAPER</div>
@@ -359,7 +386,6 @@
                 </div>
             </div>
 
-            <!-- Mode Toggle -->
             <div class="mode-toggle">
                 <span class="mode-label">Trading Mode</span>
                 <div class="toggle-btns">
@@ -368,7 +394,6 @@
                 </div>
             </div>
 
-            <!-- Hot Pairs -->
             <div class="section-card">
                 <div class="section-title">🔥 HOT PAIRS — BSC</div>
                 <div class="pairs-scroll">
@@ -380,7 +405,6 @@
                 </div>
             </div>
 
-            <!-- Positions -->
             <div>
                 <div class="section-title">📂 OPEN POSITIONS</div>
                 <div class="checklist-grid" id="positionsList">
@@ -407,36 +431,36 @@
                 </div>
             </div>
 
-            <!-- Exposure bar -->
             <div class="section-card">
                 <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
                     <span style="font-size:11px; color:var(--muted);">Portfolio Exposure</span>
                     <span class="mono" style="font-size:11px;" id="exposureText">22% / 65%</span>
                 </div>
                 <div style="background:var(--bg); border-radius:20px; height:6px; overflow:hidden;">
-                    <div id="exposureBar" style="height:100%; width:33.8%; background:linear-gradient(90deg, var(--green), #00b4d8); border-radius:20px; transition:width 0.5s;"></div>
+                    <div id="exposureBar" style="height:100%; width:33.8%;
+                        background:linear-gradient(90deg, #6b7285, #c8ccd8);
+                        border-radius:20px; transition:width 0.5s;"></div>
                 </div>
             </div>
 
-            <!-- Action buttons -->
             <div class="action-row">
                 <button class="action-btn" onclick="goScan()">
-                    <span class="icon green"><i class="fas fa-search"></i></span> Scan Token
+                    <span class="silver"><i class="fas fa-search"></i></span> Scan Token
                 </button>
                 <button class="action-btn" onclick="prefillChat('Quick buy ')">
-                    <span class="icon green"><i class="fas fa-bolt"></i></span> Quick Buy
+                    <span class="green"><i class="fas fa-bolt"></i></span> Quick Buy
                 </button>
                 <button class="action-btn" onclick="prefillChat('Close all positions')">
-                    <span class="icon red"><i class="fas fa-times-circle"></i></span> Close All
+                    <span class="red"><i class="fas fa-times-circle"></i></span> Close All
                 </button>
                 <button class="action-btn" onclick="prefillChat('Paper trading balance')">
-                    <span class="icon amber"><i class="fas fa-wallet"></i></span> Balance
+                    <span class="amber"><i class="fas fa-wallet"></i></span> Balance
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- ===== CHAT PANEL ===== -->
+    <!-- ===== CHAT ===== -->
     <div class="panel" id="panel-chat">
         <div class="chat-panel">
             <div class="messages" id="messages"></div>
@@ -448,10 +472,11 @@
                 <div class="suggestion" onclick="sendSuggestion('Risk settings batao')">⚙️ Risk Settings</div>
             </div>
 
+            <!-- INPUT BAR — stays just above device's safe area, not forced to very bottom -->
             <div class="input-bar">
                 <div class="input-row">
                     <input id="chatInput" class="chat-input" type="text"
-                        placeholder="Kuch bhi poocho... scan 0x..." autocomplete="off">
+                        placeholder="Kuch bhi poocho..." autocomplete="off">
                     <button class="send-btn" id="sendBtn" onclick="sendMessage()">
                         <i class="fas fa-paper-plane"></i>
                     </button>
@@ -460,7 +485,7 @@
         </div>
     </div>
 
-    <!-- ===== SCAN PANEL ===== -->
+    <!-- ===== SCAN ===== -->
     <div class="panel" id="panel-scan">
         <div class="scan-panel">
             <div class="scan-input-wrap">
@@ -472,23 +497,21 @@
                 </button>
             </div>
 
-            <!-- Checklist Result -->
             <div id="scanResult" style="display:none;">
                 <div class="section-title">✅ CHECKLIST RESULT</div>
                 <div class="checklist-grid" id="checklistItems"></div>
-
                 <div class="section-card" style="margin-top:8px;" id="scanSummaryCard">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <span style="font-size:13px; font-weight:700;">Safety Score</span>
                         <span class="mono green" id="safetyScore" style="font-size:20px; font-weight:700;">16/20</span>
                     </div>
                     <div style="margin-top:8px; background:var(--bg); border-radius:20px; height:6px; overflow:hidden;">
-                        <div id="safetyBar" style="height:100%; width:80%; background:linear-gradient(90deg,var(--green),#00b4d8); border-radius:20px;"></div>
+                        <div id="safetyBar" style="height:100%; width:80%;
+                            background:linear-gradient(90deg,var(--green),#00c8a0); border-radius:20px;"></div>
                     </div>
                 </div>
             </div>
 
-            <!-- Recent scans -->
             <div>
                 <div class="section-title">📋 RECENT SCANS</div>
                 <div id="recentScans" class="checklist-grid">
@@ -501,12 +524,10 @@
     </div>
 
 <script>
-// ===== STATE =====
 let currentMode = 'paper';
 let sessionId = null;
 let recentScans = [];
 
-// Session ID - without localStorage
 async function initSession() {
     try {
         const res = await fetch('/init-session', { method: 'POST' });
@@ -517,39 +538,30 @@ async function initSession() {
     }
 }
 
-// ===== TABS =====
 function switchTab(tab) {
     document.querySelectorAll('.tab').forEach((t, i) => {
-        t.classList.toggle('active', ['dashboard', 'chat', 'scan'][i] === tab);
+        t.classList.toggle('active', ['dashboard','chat','scan'][i] === tab);
     });
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     document.getElementById('panel-' + tab).classList.add('active');
     if (tab === 'chat') document.getElementById('chatInput').focus();
 }
 
-// ===== MODE =====
 function setMode(m) {
     currentMode = m;
     document.getElementById('btnPaper').className = 'mode-btn' + (m === 'paper' ? ' active-paper' : '');
-    document.getElementById('btnReal').className = 'mode-btn' + (m === 'real' ? ' active-real' : '');
+    document.getElementById('btnReal').className  = 'mode-btn' + (m === 'real'  ? ' active-real'  : '');
     addMessage(`Mode switched to ${m.toUpperCase()} trading, bhai!`, 'bot');
     switchTab('chat');
 }
 
-// ===== CHAT =====
 function addMessage(text, who) {
     const msgs = document.getElementById('messages');
     const row = document.createElement('div');
     row.className = 'msg-row ' + who;
-    if (who === 'bot') {
-        row.innerHTML = `
-            <div class="bubble bot">
-                <div class="bot-name">● MRBLACK</div>
-                ${text}
-            </div>`;
-    } else {
-        row.innerHTML = `<div class="bubble user">${text}</div>`;
-    }
+    row.innerHTML = who === 'bot'
+        ? `<div class="bubble bot"><div class="bot-name">● MRBLACK</div>${text}</div>`
+        : `<div class="bubble user">${text}</div>`;
     msgs.appendChild(row);
     msgs.scrollTop = msgs.scrollHeight;
     return row;
@@ -558,13 +570,9 @@ function addMessage(text, who) {
 function addTyping() {
     const msgs = document.getElementById('messages');
     const row = document.createElement('div');
-    row.className = 'msg-row bot';
-    row.id = 'typing-indicator';
-    row.innerHTML = `
-        <div class="bubble bot">
-            <div class="bot-name">● MRBLACK</div>
-            <div class="typing-dots"><span></span><span></span><span></span></div>
-        </div>`;
+    row.className = 'msg-row bot'; row.id = 'typing-indicator';
+    row.innerHTML = `<div class="bubble bot"><div class="bot-name">● MRBLACK</div>
+        <div class="typing-dots"><span></span><span></span><span></span></div></div>`;
     msgs.appendChild(row);
     msgs.scrollTop = msgs.scrollHeight;
 }
@@ -573,110 +581,81 @@ async function sendMessage() {
     const input = document.getElementById('chatInput');
     const text = input.value.trim();
     if (!text) return;
-
     addMessage(text, 'user');
     input.value = '';
     addTyping();
-
     try {
         const res = await fetch('/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                message: text,
-                session_id: sessionId,
-                user_name: 'Bhai',
-                mode: currentMode
-            })
+            body: JSON.stringify({ message: text, session_id: sessionId, user_name: 'Bhai', mode: currentMode })
         });
         const data = await res.json();
         document.getElementById('typing-indicator')?.remove();
         addMessage(data.reply || 'Koi response nahi aaya, bhai.', 'bot');
         if (data.trading) updateStats(data.trading);
-    } catch (e) {
+    } catch {
         document.getElementById('typing-indicator')?.remove();
         addMessage('⚠️ Network error, bhai! Check connection.', 'bot');
     }
 }
 
-function sendSuggestion(text) {
-    document.getElementById('chatInput').value = text;
-    sendMessage();
-}
-
-function prefillChat(text) {
-    switchTab('chat');
-    document.getElementById('chatInput').value = text;
-    document.getElementById('chatInput').focus();
-}
-
-// ===== SCAN =====
+function sendSuggestion(text) { document.getElementById('chatInput').value = text; sendMessage(); }
+function prefillChat(text) { switchTab('chat'); document.getElementById('chatInput').value = text; document.getElementById('chatInput').focus(); }
 function goScan() { switchTab('scan'); }
-
-function scanFromPair(token) {
-    switchTab('scan');
-    document.getElementById('scanAddr').value = token;
-}
+function scanFromPair(token) { switchTab('scan'); document.getElementById('scanAddr').value = token; }
 
 async function runScan() {
     const addr = document.getElementById('scanAddr').value.trim();
     if (!addr) return;
-
     document.getElementById('scanResult').style.display = 'none';
     document.querySelector('.scan-btn').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scanning...';
-
     try {
         const res = await fetch('/scan', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ address: addr, session_id: sessionId })
         });
         const data = await res.json();
         renderChecklist(data);
         addToRecentScans(addr, data);
-    } catch (e) {
-        alert('Scan failed, bhai. Try again.');
-    }
-
+    } catch { alert('Scan failed, bhai. Try again.'); }
     document.querySelector('.scan-btn').innerHTML = '<i class="fas fa-search"></i> Scan Token';
 }
 
 function renderChecklist(data) {
     const items = data.checklist || defaultChecklist();
     const passed = items.filter(i => i.status === 'pass').length;
-    const total = items.length;
-    const pct = Math.round((passed / total) * 100);
+    const total  = items.length;
+    const pct    = Math.round((passed / total) * 100);
 
     document.getElementById('checklistItems').innerHTML = items.map(item => `
         <div class="check-item">
             <div class="check-dot ${item.status}"></div>
             <div class="check-text">${item.label}</div>
             <span class="check-badge badge-${item.status}">${item.value}</span>
-        </div>
-    `).join('');
+        </div>`).join('');
 
     const scoreColor = pct >= 75 ? 'green' : pct >= 50 ? 'amber' : 'red';
     document.getElementById('safetyScore').className = `mono ${scoreColor}`;
     document.getElementById('safetyScore').textContent = `${passed}/${total}`;
     document.getElementById('safetyBar').style.width = pct + '%';
     document.getElementById('safetyBar').style.background =
-        pct >= 75 ? 'linear-gradient(90deg,var(--green),#00b4d8)' :
+        pct >= 75 ? 'linear-gradient(90deg,var(--green),#00c8a0)' :
         pct >= 50 ? 'linear-gradient(90deg,var(--amber),#ff9500)' :
-        'linear-gradient(90deg,var(--red),#ff6b6b)';
-
+                    'linear-gradient(90deg,var(--red),#ff6b6b)';
     document.getElementById('scanResult').style.display = 'block';
 }
 
 function defaultChecklist() {
     return [
-        { label: 'Contract Verified', status: 'pass', value: 'YES' },
-        { label: 'Honeypot Check', status: 'pass', value: 'SAFE' },
-        { label: 'Liquidity Locked', status: 'warn', value: '30 DAYS' },
-        { label: 'Owner Renounced', status: 'pass', value: 'YES' },
-        { label: 'Buy Tax', status: 'pass', value: '3%' },
-        { label: 'Sell Tax', status: 'warn', value: '7%' },
-        { label: 'Holders > 100', status: 'pass', value: '842' },
-        { label: 'Top 10 Holders < 30%', status: 'fail', value: '41%' },
+        { label: 'Contract Verified',    status: 'pass', value: 'YES'     },
+        { label: 'Honeypot Check',        status: 'pass', value: 'SAFE'    },
+        { label: 'Liquidity Locked',      status: 'warn', value: '30 DAYS' },
+        { label: 'Owner Renounced',       status: 'pass', value: 'YES'     },
+        { label: 'Buy Tax',               status: 'pass', value: '3%'      },
+        { label: 'Sell Tax',              status: 'warn', value: '7%'      },
+        { label: 'Holders > 100',         status: 'pass', value: '842'     },
+        { label: 'Top 10 Holders < 30%',  status: 'fail', value: '41%'     },
     ];
 }
 
@@ -684,46 +663,35 @@ function addToRecentScans(addr, data) {
     const short = addr.length > 14 ? addr.slice(0, 8) + '...' + addr.slice(-4) : addr;
     recentScans.unshift({ addr: short, full: addr, data });
     if (recentScans.length > 5) recentScans.pop();
-
     document.getElementById('recentScans').innerHTML = recentScans.map((s, i) => `
-        <div class="check-item" onclick="renderChecklist(${i === 0 ? 'recentScans[0].data' : 'null'})" style="cursor:pointer;">
+        <div class="check-item" onclick="renderChecklist(recentScans[${i}].data)" style="cursor:pointer;">
             <div class="check-dot pass"></div>
             <div class="check-text mono" style="font-size:11px;">${s.addr}</div>
             <span class="check-badge badge-pass">VIEW</span>
-        </div>
-    `).join('');
+        </div>`).join('');
 }
 
-// ===== TRADING DATA UPDATE =====
 function updateStats(d) {
     if (d.paper) document.getElementById('paperBal').textContent = d.paper;
-    if (d.real) document.getElementById('realBal').textContent = d.real;
+    if (d.real)  document.getElementById('realBal').textContent  = d.real;
     if (d.pnl) {
-        document.getElementById('pnlVal').textContent = d.pnl;
-        document.getElementById('pnlVal').className = 'stat-val ' + (d.pnl.includes('-') ? 'red' : 'green');
+        document.getElementById('pnlVal').textContent  = d.pnl;
+        document.getElementById('pnlVal').className    = 'stat-val ' + (d.pnl.includes('-') ? 'red' : 'green');
     }
 }
 
 async function fetchTradingData() {
-    try {
-        const res = await fetch('/trading-data');
-        const data = await res.json();
-        updateStats(data);
-    } catch {}
+    try { const res = await fetch('/trading-data'); const data = await res.json(); updateStats(data); } catch {}
 }
 
-// ===== INIT =====
+document.getElementById('chatInput').addEventListener('keypress', e => { if (e.key === 'Enter') sendMessage(); });
+
 async function init() {
     await initSession();
     addMessage('Bhai! MrBlack Pro ready hai. Dashboard mein stats dekho, Chat mein poocho, ya Scan karo koi bhi token. 🚀', 'bot');
     fetchTradingData();
     setInterval(fetchTradingData, 15000);
 }
-
-document.getElementById('chatInput').addEventListener('keypress', e => {
-    if (e.key === 'Enter') sendMessage();
-});
-
 init();
 </script>
 </body>
