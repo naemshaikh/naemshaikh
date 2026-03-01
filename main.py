@@ -1305,6 +1305,8 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     if entry_price <= 0:
         print(f"Auto-buy skipped: no price for {address[:10]}")
         return
+    # FIX: 0.5% buy slippage simulate karo — real trade jaisa
+    entry_price = entry_price * 1.005
     size_bnb = min(AUTO_BUY_SIZE_BNB, paper_balance * 0.025)
     size_bnb = max(size_bnb, 0.001)
     sess["paper_balance"] = round(paper_balance - size_bnb, 6)
@@ -1349,6 +1351,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     token   = pos.get("token", address[:10])
     if entry <= 0:
         return
+    # FIX: 0.5% sell slippage simulate karo — real trade jaisa
+    current = current * 0.995
     pnl_pct    = ((current - entry) / entry) * 100
     sell_size  = size * (sell_pct / 100.0)
     return_bnb = sell_size * (1 + pnl_pct / 100.0)
