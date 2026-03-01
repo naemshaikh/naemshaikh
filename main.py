@@ -864,12 +864,18 @@ def self_introspect() -> dict:
         return {}
 
 
+_sa_cache = {"context": "", "last_update": 0}
+
 def get_self_awareness_context_for_llm() -> str:
     """
     Rich SA context for every LLM call.
-    Real data — not placeholders.
+    Cached — max har 60s mein update hota hai, har call pe nahi.
     """
+    import time as _t
     try:
+        # Cache check — 60s se kam purana hai to cached return karo
+        if _t.time() - _sa_cache["last_update"] < 60 and _sa_cache["context"]:
+            return _sa_cache["context"]
         update_self_awareness()
         s   = self_awareness
         cs  = s["cognitive_state"]
@@ -918,7 +924,10 @@ def get_self_awareness_context_for_llm() -> str:
         if s["introspection_log"]:
             parts.append(f"LAST_THOUGHT={s['introspection_log'][-1].get('thought','')[:60]}")
 
-        return " | ".join(parts)
+        result = " | ".join(parts)
+        _sa_cache["context"] = result
+        _sa_cache["last_update"] = _t.time()
+        return result
 
     except Exception as e:
         print(f"SA context error: {e}")
