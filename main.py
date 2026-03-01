@@ -36,7 +36,7 @@ MODEL_DEEP      = "llama-3.3-70b-versatile"  # Deep analysis ke liye
 # ========== ENV CONFIG ==========
 BSC_RPC          = "https://bsc-dataseed.binance.org/"
 BSC_SCAN_API     = "https://api.etherscan.io/v2/api"  # Etherscan V2 — BSC chainid=56
-BSC_SCAN_KEY     = os.getenv("BSC_SCAN_KEY", "")
+BSC_SCAN_KEY     = os.getenv("BSC_SCAN_KEY") or os.getenv("BSCSCAN_API_KEY", "")
 PANCAKE_ROUTER   = "0x10ED43C718714eb63d5aA57B78B54704E256024E"
 PANCAKE_FACTORY  = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
 MORALIS_API_KEY  = os.getenv("MORALIS_API_KEY", "")
