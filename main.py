@@ -3403,10 +3403,11 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
         if bl_count > 0:
             memory_facts.append(f"Ab tak {bl_count} dangerous tokens blacklist mein hain")
 
-        # Personal notes
+        # Personal notes — saare recent notes inject karo, sirf last nahi
         notes = user_profile.get("personal_notes", [])
         if notes:
-            memory_facts.append(f"User ke baare mein: {notes[-1][:60]}")
+            for n in notes[-5:]:
+                memory_facts.append(f"User ke baare mein: {n[:80]}")
 
         # Inject as system context — ChatGPT Memory style
         memory_block = ""
