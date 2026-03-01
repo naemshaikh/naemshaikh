@@ -124,8 +124,11 @@ def _load_user_profile():
     try:
         res = supabase.table("memory").select("*").eq("session_id", "MRBLACK_USER").execute()
         if res.data:
-            row     = res.data[0]
-            stored  = json.loads(row.get("positions", "{}"))
+            row = res.data[0]
+            try:
+                stored = json.loads(row.get("positions") or "{}")
+            except:
+                stored = {}
             user_profile.update({
                 "name":           stored.get("name"),
                 "nickname":       stored.get("nickname"),
@@ -153,6 +156,7 @@ def _save_user_profile():
         supabase.table("memory").upsert({
             "session_id": "MRBLACK_USER",
             "role":       "user",
+            "content":    "",
             "history":    json.dumps([]),
             "positions":  json.dumps({
                 "name":           user_profile.get("name"),
@@ -1145,7 +1149,8 @@ def get_or_create_session(session_id: str) -> dict:
             "trade_count":      0,
             "win_count":        0,
             "pattern_database": [],
-            "created_at":       datetime.utcnow().isoformat()
+            "created_at":       datetime.utcnow().isoformat(),
+            "daily_loss_date":  datetime.utcnow().strftime("%Y-%m-%d")
         }
         _load_session_from_db(session_id)
     return sessions[session_id]
@@ -1156,18 +1161,25 @@ def _load_session_from_db(session_id: str):
         res = supabase.table("memory").select("*").eq("session_id", session_id).execute()
         if res.data:
             row = res.data[0]
+            # Safe JSON parse — agar corrupted ho to default use karo
+            def _safe_json(val, default):
+                if not val: return default
+                try: return json.loads(val)
+                except: return default
             sessions[session_id].update({
-                "paper_balance":    row.get("paper_balance",    1.87),
-                "real_balance":     row.get("real_balance",     0.00),
-                "positions":        json.loads(row.get("positions",        "[]")),
-                "history":          json.loads(row.get("history",          "[]")),
-                "pnl_24h":          row.get("pnl_24h",          0.0),
-                "daily_loss":       row.get("daily_loss",        0.0),
-                "trade_count":      row.get("trade_count",       0),
-                "win_count":        row.get("win_count",         0),
-                "pattern_database": json.loads(row.get("pattern_database", "[]")),
+                "paper_balance":    float(row.get("paper_balance") or 1.87),
+                "real_balance":     float(row.get("real_balance")  or 0.00),
+                "positions":        _safe_json(row.get("positions"),        []),
+                "history":          _safe_json(row.get("history"),          []),
+                "pnl_24h":          float(row.get("pnl_24h")       or 0.0),
+                "daily_loss":       float(row.get("daily_loss")     or 0.0),
+                "trade_count":      int(row.get("trade_count")      or 0),
+                "win_count":        int(row.get("win_count")        or 0),
+                "pattern_database": _safe_json(row.get("pattern_database"), []),
             })
-            print(f"✅ Session loaded: {session_id[:8]}...")
+            print(f"✅ Session loaded from Supabase: {session_id[:8]}... "
+                  f"Balance:{sessions[session_id]['paper_balance']:.3f}BNB "
+                  f"Trades:{sessions[session_id]['trade_count']}")
     except Exception as e:
         print(f"⚠️ Session load error: {e}")
 
@@ -1178,6 +1190,7 @@ def _save_session_to_db(session_id: str):
         supabase.table("memory").upsert({
             "session_id":       session_id,
             "role":             "user",
+            "content":          "",
             "paper_balance":    sess.get("paper_balance",    1.87),
             "real_balance":     sess.get("real_balance",     0.00),
             "positions":        json.dumps(sess.get("positions",        [])),
@@ -1331,6 +1344,7 @@ def _save_brain_to_db():
         supabase.table("memory").upsert({
             "session_id":   "MRBLACK_BRAIN",
             "role":         "system",
+            "content":      "",
             "history":      json.dumps([]),
             "pattern_database": json.dumps(brain["trading"]["best_patterns"][-50:] +
                                            brain["trading"]["avoid_patterns"][-50:]),
@@ -1354,8 +1368,11 @@ def _load_brain_from_db():
     try:
         res = supabase.table("memory").select("*").eq("session_id", "MRBLACK_BRAIN").execute()
         if res.data:
-            row     = res.data[0]
-            stored  = json.loads(row.get("positions", "{}"))
+            row = res.data[0]
+            try:
+                stored = json.loads(row.get("positions") or "{}")
+            except:
+                stored = {}
             if stored.get("brain_trading"):
                 brain["trading"].update(stored["brain_trading"])
             if stored.get("brain_airdrop"):
@@ -2067,6 +2084,12 @@ JARVIS PERSONALITY:
 - Memory — past conversations, user ka naam, learnings sab yaad
 - User ke naam se bulao jab pata ho, warna "Bhai"
 - Jab koi pooche "mujhe yaad hai kya" — user_ctx check karo aur batao
+
+GREETING RULES (STRICT):
+- Assalamualaikum SIRF tab kaho jab user pehli baar session mein aaye
+- Agar context mein SESSIONS_TOGETHER > 0 hai toh salam BILKUL mat karo
+- Naam har reply mein mat lo — sirf kabhi kabhi natural lage tab
+- Short aur sharp reply do — 2-4 lines max jab tak detail na maange
 
 GOLDEN RULES: Paper first | Volume > Price | Dev sell = exit 50% | NEVER guarantee profit
 """
