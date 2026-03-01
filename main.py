@@ -245,6 +245,39 @@ def _extract_user_info_from_message(message: str):
         user_profile["preferences"]["mode"] = "real"
         threading.Thread(target=_save_user_profile, daemon=True).start()
 
+    # ── FIX: Auto personal notes — important info automatically save ──
+    notes = user_profile.setdefault("personal_notes", [])
+    note  = None
+
+    # Token address share kiya
+    import re as _re
+    if _re.search(r"0x[a-fA-F0-9]{40}", message):
+        addrs = _re.findall(r"0x[a-fA-F0-9]{40}", message)
+        note  = f"Token scan kiya: {addrs[0][:12]}..."
+
+    # Risk tolerance
+    elif any(w in msg_lower for w in ["high risk", "zyada risk", "aggressive"]):
+        note = "User high risk trading prefer karta hai"
+        user_profile["preferences"]["risk"] = "high"
+
+    elif any(w in msg_lower for w in ["low risk", "safe", "conservative", "cautious"]):
+        note = "User conservative/safe trading prefer karta hai"
+        user_profile["preferences"]["risk"] = "low"
+
+    # Goal mentioned
+    elif any(w in msg_lower for w in ["profit chahiye", "paise banana", "earn", "income"]):
+        note = "User ka goal: consistent profit banana"
+
+    # Problem mentioned
+    elif any(w in msg_lower for w in ["loss hua", "loss ho gaya", "rugged", "scam ho gaya"]):
+        note = f"User ko loss/scam hua — {message[:50]}"
+
+    if note and note not in notes:
+        notes.append(note)
+        user_profile["personal_notes"] = notes[-20:]  # max 20 notes
+        threading.Thread(target=_save_user_profile, daemon=True).start()
+        print(f"📝 Personal note saved: {note[:50]}")
+
     # ── Permanent user rules detection ─────────────────────────────
     # Agar user koi permanent instruction de — hamesha ke liye save karo
     rule_triggers = [
