@@ -129,8 +129,13 @@ def _load_user_profile():
         if res.data:
             row = res.data[0]
             try:
-                stored = json.loads(row.get("positions") or "{}")
-            except:
+                pos_raw = row.get("positions") or "{}"
+                # FIX: handle bytes or string
+                if isinstance(pos_raw, bytes):
+                    pos_raw = pos_raw.decode("utf-8")
+                stored = json.loads(pos_raw) if pos_raw and pos_raw != "null" else {}
+            except Exception as je:
+                print(f"Profile JSON parse error: {je}")
                 stored = {}
             user_profile.update({
                 "name":           stored.get("name"),
@@ -1599,6 +1604,9 @@ market_cache = {
 }
 
 def fetch_market_data():
+    # FIX: Multiple sources for BNB price reliability
+    bnb_fetched = False
+    # Source 1: CoinGecko
     try:
         r = requests.get(
             "https://api.coingecko.com/api/v3/simple/price",
@@ -1606,9 +1614,28 @@ def fetch_market_data():
         )
         if r.status_code == 200:
             price = r.json().get("binancecoin", {}).get("usd", 0)
-            if price: market_cache["bnb_price"] = price
+            if price:
+                market_cache["bnb_price"] = price
+                bnb_fetched = True
     except Exception as e:
-        print(f"⚠️ BNB price error: {e}")
+        print(f"⚠️ BNB CoinGecko error: {e}")
+    # Source 2: Binance API fallback
+    if not bnb_fetched:
+        try:
+            r2 = requests.get(
+                "https://api.binance.com/api/v3/ticker/price",
+                params={"symbol": "BNBUSDT"}, timeout=8
+            )
+            if r2.status_code == 200:
+                price = float(r2.json().get("price", 0))
+                if price:
+                    market_cache["bnb_price"] = price
+                    bnb_fetched = True
+                    print(f"✅ BNB price from Binance: ${price}")
+        except Exception as e:
+            print(f"⚠️ BNB Binance error: {e}")
+    if not bnb_fetched:
+        print("⚠️ BNB price fetch failed — both sources down")
     try:
         r2 = requests.get("https://api.alternative.me/fng/?limit=1", timeout=10)
         if r2.status_code == 200:
@@ -1773,8 +1800,13 @@ def _load_brain_from_db():
         if res.data:
             row = res.data[0]
             try:
-                stored = json.loads(row.get("positions") or "{}")
-            except:
+                pos_raw = row.get("positions") or "{}"
+                # FIX: handle bytes or string
+                if isinstance(pos_raw, bytes):
+                    pos_raw = pos_raw.decode("utf-8")
+                stored = json.loads(pos_raw) if pos_raw and pos_raw != "null" else {}
+            except Exception as je:
+                print(f"Profile JSON parse error: {je}")
                 stored = {}
             if stored.get("brain_trading"):
                 brain["trading"].update(stored["brain_trading"])
@@ -3193,7 +3225,8 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
 
     # Immediate startup fetches
-    fetch_market_data()  # FIXED: blocking startup call
+    threading.Thread(target=fetch_market_data, daemon=True).start()
+    time.sleep(3)  # FIX: 3 sec wait so BNB price loads before auto-buy
     threading.Thread(target=run_airdrop_hunter,   daemon=True).start()
 
     # Feature 1 — Telegram (no thread needed, called on demand)
@@ -3210,8 +3243,9 @@ if __name__ == "__main__":
     threading.Thread(target=track_smart_wallets,   daemon=True).start()
 
     # Load saved brain from Supabase before starting
-    threading.Thread(target=_load_brain_from_db, daemon=True).start()
-    threading.Thread(target=_load_user_profile,  daemon=True).start()  # Load user profile
+    # Brain already loaded above with _load_brain_from_db()
+    _load_user_profile()   # FIX: blocking — naam memory se load hone do startup pe
+    _load_brain_from_db()  # FIX: blocking — brain bhi ready hone do
 
     # 24x7 Self-Learning Engine (market + airdrops + patterns every 5 min)
     threading.Thread(target=continuous_learning,   daemon=True).start()
