@@ -1321,20 +1321,13 @@ def continuous_learning():
                     mood         = "GREED 🟢" if fg > 60 else "FEAR 🔴" if fg < 40 else "NEUTRAL ⚪"
 
                     send_telegram(
-                        f"🧠 <b>MRBLACK SELF-LEARNING REPORT</b>
-"
-                        f"Cycle: #{cycle}
-"
-                        f"BNB: ${bnb:.2f} | Market: {mood}
-"
-                        f"Trading: {wins_count} win patterns | {avoid_count} avoid patterns
-"
-                        f"Airdrops: {drops_count} projects tracked
-"
-                        f"New pairs seen: {len(new_pairs_queue)}
-"
-                        f"🪞 Mood: {sa_state['mood']} | Confidence: {sa_state['confidence_level']}%
-"
+                        f"🧠 <b>MRBLACK SELF-LEARNING REPORT</b>\n"
+                        f"Cycle: #{cycle}\n"
+                        f"BNB: ${bnb:.2f} | Market: {mood}\n"
+                        f"Trading: {wins_count} win patterns | {avoid_count} avoid patterns\n"
+                        f"Airdrops: {drops_count} projects tracked\n"
+                        f"New pairs seen: {len(new_pairs_queue)}\n"
+                        f"🪞 Mood: {sa_state['mood']} | Confidence: {sa_state['confidence_level']}%\n"
                         f"Knowledge growing 24x7 🚀"
                     )
                 except Exception as e:
