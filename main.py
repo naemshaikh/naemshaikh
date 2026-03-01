@@ -1128,6 +1128,9 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
     _now = time.time()
     if _now - discovered_addresses.get(token_address, 0) <= DISCOVERY_TTL:
         return
+    # FIX: Duplicate guard — queue mein already hai to skip karo
+    if any(token_address.lower() == str(q).lower() for q in list(new_pairs_queue)):
+        return
     try:
         token_address = Web3.to_checksum_address(token_address)
     except Exception:
