@@ -589,38 +589,69 @@ def _calculate_trading_iq() -> int:
 
 def _assess_capabilities() -> dict:
     """
-    Measure actual capability in each domain based on real outcomes.
+    Capability scores — real trade outcomes se measure, static nahi.
     """
     cap = self_awareness["capability_map"]
 
-    # Safe access
     _brain = brain if isinstance(brain, dict) else {}
     _trade = _brain.get("trading", {})
 
-    # Rug detection score
-    safe_tokens    = _trade.get("token_whitelist", [])
-    danger_tokens  = _trade.get("token_blacklist", [])
-    total_scanned  = len(safe_tokens) + len(danger_tokens)
+    # ── Rug Detection — kitne dangerous tokens sahi pakde ──────────
+    safe_tokens   = _trade.get("token_whitelist", [])
+    danger_tokens = _trade.get("token_blacklist", [])
+    total_scanned = len(safe_tokens) + len(danger_tokens)
 
     if total_scanned > 0:
         cap["rug_detection"]["tested"]  = total_scanned
         cap["rug_detection"]["correct"] = len(danger_tokens)
-        cap["rug_detection"]["score"]   = min(10, int((len(danger_tokens) / max(total_scanned, 1)) * 10 + 5))
+        # Score: base 3 + danger ratio * 5 + volume bonus
+        danger_ratio = len(danger_tokens) / max(total_scanned, 1)
+        vol_bonus    = min(2, total_scanned // 20)
+        cap["rug_detection"]["score"] = min(10, int(3 + danger_ratio * 5 + vol_bonus))
 
-    # Trading IQ
+    # ── Price Prediction — actual trade win/loss outcomes ──────────
+    all_trades = []
+    _sessions  = sessions if isinstance(sessions, dict) else {}
+    for sess in _sessions.values():
+        all_trades.extend(sess.get("pattern_database", []))
+
+    if all_trades:
+        total  = len(all_trades)
+        wins   = sum(1 for t in all_trades if t.get("win"))
+        wr     = (wins / total) * 100
+        cap["price_prediction"]["tested"]  = total
+        cap["price_prediction"]["correct"] = wins
+        cap["price_prediction"]["score"]   = min(10, int(wr / 10))
+
+        # ── Market Timing — avg profit on wins ──────────────────────
+        win_pnls = [t.get("pnl_pct", 0) for t in all_trades if t.get("win") and t.get("pnl_pct")]
+        avg_win  = sum(win_pnls) / len(win_pnls) if win_pnls else 0
+        cap["market_timing"]["tested"] = total
+        cap["market_timing"]["score"]  = min(10, int(avg_win / 20))  # 200% avg win = 10/10
+
+    # ── Trading IQ se bhi reflect karo ──────────────────────────────
     iq = _calculate_trading_iq()
-    cap["market_timing"]["score"] = int(iq / 10)
+    cap["market_timing"]["score"] = max(cap["market_timing"].get("score", 0), int(iq / 10))
 
-    # User understanding — safe access
+    # ── User Understanding — sessions + name + rules ─────────────────
     _up            = user_profile if isinstance(user_profile, dict) else {}
     sessions_count = _up.get("total_sessions", 0)
     has_name       = bool(_up.get("name"))
-    cap["user_understanding"]["score"] = min(10, (5 if has_name else 2) + min(5, sessions_count // 2))
+    has_rules      = len(_up.get("user_rules", [])) > 0
+    has_prefs      = len(_up.get("preferences", {})) > 0
+    u_score = (3 if has_name else 0) + min(4, sessions_count // 3) + (2 if has_rules else 0) + (1 if has_prefs else 0)
+    cap["user_understanding"]["score"] = min(10, u_score)
 
-    # Airdrop evaluation
-    tracked_drops = len(brain["airdrop"]["active_projects"])
+    # ── Airdrop Evaluation — projects tracked + patterns ─────────────
+    tracked_drops   = len(brain["airdrop"]["active_projects"])
+    success_patterns= len(brain["airdrop"]["success_patterns"])
     cap["airdrop_evaluation"]["tested"] = tracked_drops
-    cap["airdrop_evaluation"]["score"]  = min(10, 3 + tracked_drops // 5)
+    cap["airdrop_evaluation"]["score"]  = min(10, 2 + tracked_drops // 5 + success_patterns // 3)
+
+    # ── Code Debugging — solutions library size ───────────────────────
+    solutions = len(brain["coding"]["solutions_library"])
+    cap["code_debugging"]["tested"] = solutions
+    cap["code_debugging"]["score"]  = min(10, 3 + solutions // 2)
 
     return cap
 
