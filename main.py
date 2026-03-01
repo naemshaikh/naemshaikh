@@ -3086,14 +3086,22 @@ def _startup_once():
             print(f"✅ Brain loaded: cycles={brain.get('total_learning_cycles',0)}")
         except Exception as e:
             print(f"⚠️ Brain error: {e}")
-        threading.Thread(target=fetch_market_data,    daemon=True).start()
-        threading.Thread(target=run_airdrop_hunter,   daemon=True).start()
-        threading.Thread(target=poll_new_pairs,        daemon=True).start()
-        threading.Thread(target=price_monitor_loop,    daemon=True).start()
-        threading.Thread(target=track_smart_wallets,   daemon=True).start()
-        threading.Thread(target=continuous_learning,   daemon=True).start()
-        threading.Thread(target=auto_position_manager, daemon=True).start()
-        threading.Thread(target=self_awareness_loop,   daemon=True).start()
+        import time as _time
+
+        def _delayed(fn, delay):
+            def _wrap():
+                _time.sleep(delay)
+                fn()
+            return _wrap
+
+        threading.Thread(target=fetch_market_data,                   daemon=True).start()
+        threading.Thread(target=_delayed(run_airdrop_hunter,    5),  daemon=True).start()
+        threading.Thread(target=_delayed(poll_new_pairs,        10), daemon=True).start()
+        threading.Thread(target=_delayed(price_monitor_loop,    15), daemon=True).start()
+        threading.Thread(target=_delayed(track_smart_wallets,   20), daemon=True).start()
+        threading.Thread(target=_delayed(continuous_learning,   25), daemon=True).start()
+        threading.Thread(target=_delayed(auto_position_manager, 30), daemon=True).start()
+        threading.Thread(target=_delayed(self_awareness_loop,   35), daemon=True).start()
         print("✅ All background threads started")
 
 @app.route("/")
