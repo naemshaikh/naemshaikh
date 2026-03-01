@@ -35,7 +35,7 @@ MODEL_DEEP      = "llama-3.3-70b-versatile"  # Deep analysis ke liye
 
 # ========== ENV CONFIG ==========
 BSC_RPC          = "https://bsc-dataseed.binance.org/"
-BSC_SCAN_API     = "https://api.etherscan.io/v2/api"  # Etherscan V2 — BSC chainid=56
+BSC_SCAN_API     = "https://api.bscscan.com/api"  # BSCScan direct — free BSC
 BSC_SCAN_KEY     = os.getenv("BSC_SCAN_KEY") or os.getenv("BSCSCAN_API_KEY") or os.getenv("BSC_API_KEY", "") or os.getenv("BSCSCAN_API_KEY", "")
 PANCAKE_ROUTER   = "0x10ED43C718714eb63d5aA57B78B54704E256024E"
 PANCAKE_FACTORY  = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
@@ -972,7 +972,6 @@ def poll_new_pairs():
     while True:
         try:
             r = requests.get(BSC_SCAN_API, params={
-                "chainid":  56,
                 "module":  "logs",
                 "action":  "getLogs",
                 "address": PANCAKE_FACTORY,
@@ -1481,7 +1480,6 @@ def track_smart_wallets():
                 else:
                     # Fallback: BSCScan token transfers
                     r = requests.get(BSC_SCAN_API, params={
-                "chainid":  56,
                         "module": "account", "action": "tokentx",
                         "address": wallet, "sort": "desc",
                         "page": 1, "offset": 20, "apikey": BSC_SCAN_KEY
@@ -2526,7 +2524,6 @@ def run_full_sniper_checklist(address: str) -> Dict:
 
     try:
         bs_res = requests.get(BSC_SCAN_API, params={
-                "chainid":  56,
             "module": "contract", "action": "getsourcecode",
             "address": address, "apikey": BSC_SCAN_KEY
         }, timeout=10)
@@ -2615,7 +2612,6 @@ def run_full_sniper_checklist(address: str) -> Dict:
     if BSC_SCAN_KEY:
         try:
             tx_res = requests.get(BSC_SCAN_API, params={
-                "chainid":  56,
                 "module": "account", "action": "tokentx",
                 "contractaddress": address, "sort": "asc",
                 "page": 1, "offset": 1, "apikey": BSC_SCAN_KEY
@@ -2645,7 +2641,6 @@ def run_full_sniper_checklist(address: str) -> Dict:
     if buys_5m == 0 and sells_5m == 0 and BSC_SCAN_KEY:
         try:
             tx_res2 = requests.get(BSC_SCAN_API, params={
-                "chainid":  56,
                 "module": "account", "action": "tokentx",
                 "contractaddress": address, "sort": "desc",
                 "page": 1, "offset": 30, "apikey": BSC_SCAN_KEY
