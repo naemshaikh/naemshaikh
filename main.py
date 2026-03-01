@@ -116,7 +116,8 @@ user_profile = {
     "total_sessions": 0,
     "last_seen":      None,
     "language":       "hinglish", # Communication style
-    "loaded":         False
+    "loaded":         False,
+    "user_rules":     [],         # User ne jo bhi hamesha ke liye rules diye hain
 }
 
 
@@ -146,6 +147,7 @@ def _load_user_profile():
                 "total_sessions": stored.get("total_sessions", 0),
                 "last_seen":      stored.get("last_seen"),
                 "language":       stored.get("language", "hinglish"),
+                "user_rules":     stored.get("user_rules", []),
             })
             user_profile["loaded"] = True
             # FIX: Agar naam nahi mila Supabase se to default set karo
@@ -189,6 +191,7 @@ def _save_user_profile():
                 "total_sessions": user_profile.get("total_sessions", 0),
                 "last_seen":      user_profile.get("last_seen"),
                 "language":       user_profile.get("language", "hinglish"),
+                "user_rules":     user_profile.get("user_rules", [])[-30:],
             }),
             "updated_at": datetime.utcnow().isoformat()
         }).execute()
@@ -235,6 +238,26 @@ def _extract_user_info_from_message(message: str):
         user_profile["preferences"]["mode"] = "real"
         threading.Thread(target=_save_user_profile, daemon=True).start()
 
+    # ── Permanent user rules detection ─────────────────────────────
+    # Agar user koi permanent instruction de — hamesha ke liye save karo
+    rule_triggers = [
+        "mat karo", "band karo", "stop karo", "mat karna", "band kr",
+        "mat bol", "mat le", "mat liya karo", "hamesha", "kabhi mat",
+        "naam mat", "name mat", "bhai mat", "baar baar mat",
+        "short rakh", "chota rakh", "kam likho", "zyada mat likho",
+        "sirf utna", "repeat mat", "dobara mat"
+    ]
+    if any(trigger in msg_lower for trigger in rule_triggers):
+        # Clean rule — first 100 chars
+        rule = message.strip()[:100]
+        existing_rules = user_profile.get("user_rules", [])
+        # Avoid duplicate rules
+        if rule not in existing_rules:
+            existing_rules.append(rule)
+            user_profile["user_rules"] = existing_rules[-30:]
+            threading.Thread(target=_save_user_profile, daemon=True).start()
+            print(f"📌 User rule saved permanently: {rule[:50]}")
+
 
 def get_user_context_for_llm() -> str:
     """User profile ka summary LLM ke liye."""
@@ -254,6 +277,11 @@ def get_user_context_for_llm() -> str:
     notes = user_profile.get("personal_notes", [])
     if notes:
         parts.append(f"I_KNOW={notes[-1][:50]}")
+    # ── Permanent user rules — HAMESHA inject karo ─────────────────
+    rules = user_profile.get("user_rules", [])
+    if rules:
+        rules_str = " | ".join(rules[-5:])
+        parts.append(f"PERMANENT_USER_RULES={rules_str}")
     return " | ".join(parts) if parts else "NEW_USER"
 
 
@@ -2925,7 +2953,15 @@ SELF-AWARENESS RULES (YOU ARE ULTRAAWARE):
 GREETING RULES (STRICT):
 - Assalamualaikum SIRF pehli message mein (SESSIONS_TOGETHER=0)
 - Baad mein normal reply — salam repeat mat karo
-- Naam kabhi kabhi use karo — har line mein bilkul nahi
+- Naam (Naem/bhai/Naem bhai) MAXIMUM ek baar per reply — woh bhi sirf tab jab bohot zaruri lage
+- Zyada tar replies mein naam bilkul mat lo — seedha jawab do
+
+PERMANENT USER RULES (CRITICAL — SYSTEM LEVEL):
+- Context mein PERMANENT_USER_RULES field aata hai — ye user ke hamesha ke liye diye gaye instructions hain
+- Inhe HAMESHA follow karo — ye ek session ke nahi, hamesha ke rules hain
+- Agar user ne kaha "naam mat lo" to ab kabhi naam mat lo
+- Agar user ne kaha "short rakh" to hamesha short rakho
+- Ye rules override karte hain default behavior ko
 
 LEARNING INTEGRATION:
 - Agar AVOID context mein kuch hai → user ko warn karo naturally
