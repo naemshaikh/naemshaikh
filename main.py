@@ -3459,9 +3459,27 @@ def home():
 
 @app.route("/init-session", methods=["POST"])
 def init_session():
-    session_id = str(uuid.uuid4())
+    data = request.get_json() or {}
+    # FIX: Client apna permanent ID bhejta hai (localStorage se)
+    # Naya user = fresh UUID, returning user = same ID wapas
+    client_id = data.get("client_id", "").strip()
+
+    if client_id and len(client_id) > 10:
+        # Returning user — same session ID use karo
+        session_id = client_id
+    else:
+        # Naya user — UUID generate karo, client save karega localStorage mein
+        session_id = str(uuid.uuid4())
+
     get_or_create_session(session_id)
-    return jsonify({"session_id": session_id, "status": "ok"})
+    sess = sessions.get(session_id, {})
+    return jsonify({
+        "session_id":    session_id,
+        "status":        "ok",
+        "is_returning":  bool(sess.get("trade_count", 0) > 0 or sess.get("history")),
+        "trade_count":   sess.get("trade_count", 0),
+        "paper_balance": sess.get("paper_balance", 1.87),
+    })
 
 @app.route("/trading-data", methods=["GET", "POST"])
 def trading_data():
