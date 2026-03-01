@@ -984,109 +984,192 @@ def telegram_smart_wallet_alert(wallet: str, token_address: str, action: str):
 # We listen via BSC WebSocket + polling fallback.
 
 new_pairs_queue: deque = deque(maxlen=50)
-discovered_addresses: set = set()
+discovered_addresses: dict = {}
+DISCOVERY_TTL = 7200  # 2 hour expiry
 
 PAIR_CREATED_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
 
+
+def _process_new_token(token_address: str, pair_address: str, source: str = "websocket"):
+    """Naya token process karo — name fetch + queue mein daalo."""
+    global discovered_addresses
+    _now = time.time()
+    if _now - discovered_addresses.get(token_address, 0) <= DISCOVERY_TTL:
+        return
+    try:
+        token_address = Web3.to_checksum_address(token_address)
+    except Exception:
+        return
+
+    discovered_addresses[token_address] = _now
+
+    token_name = "Unknown"
+    token_symbol = token_address[:6]
+    liquidity = 0
+    volume_24h = 0
+
+    try:
+        nr = requests.get(
+            f"https://api.dexscreener.com/latest/dex/tokens/{token_address}",
+            timeout=6
+        )
+        if nr.status_code == 200:
+            _nj = nr.json() or {}
+            bsc_p = [p for p in (_nj.get("pairs") or []) if p.get("chainId") == "bsc"]
+            if bsc_p:
+                bsc_p.sort(key=lambda x: float(((x.get("liquidity") or {}).get("usd") or 0)), reverse=True)
+                bt = bsc_p[0].get("baseToken") or {}
+                token_name   = bt.get("name",   token_name)   or token_name
+                token_symbol = bt.get("symbol", token_symbol) or token_symbol
+                liquidity    = float(((bsc_p[0].get("liquidity") or {}).get("usd") or 0))
+                volume_24h   = float(((bsc_p[0].get("volume")    or {}).get("h24") or 0))
+    except Exception:
+        pass
+
+    new_pairs_queue.append({
+        "address":    token_address,
+        "name":       token_name,
+        "symbol":     token_symbol,
+        "discovered": datetime.utcnow().isoformat(),
+        "liquidity":  liquidity,
+        "volume_24h": volume_24h,
+        "source":     source,
+    })
+    print(f"\U0001f195 [{source}] {token_symbol} | {token_name} ({token_address[:10]})")
+    threading.Thread(target=_auto_check_new_pair, args=(token_address,), daemon=True).start()
+
 def poll_new_pairs():
-    """DexScreener se naye BSC tokens — token-boosts + search endpoints."""
-    print("👂 New Pair Listener (DexScreener) started — free!")
+    """
+    WebSocket direct on-chain PairCreated listener — 1-3 sec detection.
+    DexScreener polling fallback har 5 min (backup).
+    Auto-reconnect with 4 free endpoints.
+    """
+    import asyncio
+    import websockets as _ws
+    import json as _json
+
+    FACTORY    = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
+    PAIR_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
+    WBNB       = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c".lower()
+
+    WSS_ENDPOINTS = [
+        "wss://bsc.publicnode.com",
+        "wss://bsc-ws-node.nariox.org:443",
+        "wss://bsc-mainnet.nodereal.io/ws/v1/",
+    ]
+
+    print("\U0001f442 WebSocket Listener ACTIVE — PairCreated on-chain (1-3 sec)!")
+
+    async def _listen(wss_url):
+        try:
+            async with _ws.connect(wss_url, ping_interval=20, ping_timeout=10, close_timeout=5) as ws:
+                await ws.send(_json.dumps({
+                    "id": 1, "method": "eth_subscribe",
+                    "params": ["logs", {"address": FACTORY, "topics": [PAIR_TOPIC]}],
+                    "jsonrpc": "2.0"
+                }))
+                resp = await asyncio.wait_for(ws.recv(), timeout=10)
+                sub_id = _json.loads(resp).get("result", "")
+                print(f"\u2705 WSS OK: {wss_url[:35]} | sub={sub_id[:8]}")
+
+                while True:
+                    msg  = await asyncio.wait_for(ws.recv(), timeout=90)
+                    data = _json.loads(msg)
+                    log  = (data.get("params") or {}).get("result") or {}
+                    if not log:
+                        continue
+
+                    topics   = log.get("topics") or []
+                    raw_data = log.get("data", "0x")
+
+                    # token0, token1 from topics
+                    token0 = ("0x" + topics[1][-40:]) if len(topics) > 1 else ""
+                    token1 = ("0x" + topics[2][-40:]) if len(topics) > 2 else ""
+                    pair_addr = ""
+                    if len(raw_data) >= 66:
+                        pair_addr = "0x" + raw_data[26:66]
+
+                    # New token = jo WBNB nahi hai
+                    new_token = ""
+                    if token0 and token0.lower() != WBNB:
+                        new_token = token0
+                    elif token1 and token1.lower() != WBNB:
+                        new_token = token1
+
+                    if new_token:
+                        threading.Thread(
+                            target=_process_new_token,
+                            args=(new_token, pair_addr, "WebSocket"),
+                            daemon=True
+                        ).start()
+
+        except asyncio.TimeoutError:
+            print(f"\u26a0\ufe0f WSS timeout: {wss_url[:35]}")
+        except Exception as e:
+            print(f"\u26a0\ufe0f WSS error ({wss_url[:35]}): {str(e)[:50]}")
+
+    async def _ws_loop():
+        idx = 0
+        while True:
+            await _listen(WSS_ENDPOINTS[idx % len(WSS_ENDPOINTS)])
+            idx += 1
+            print(f"\U0001f504 WSS reconnecting... endpoint {idx % len(WSS_ENDPOINTS) + 1}/3")
+            await asyncio.sleep(3)
+
+    def _run_ws():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(_ws_loop())
+
+    threading.Thread(target=_run_ws, daemon=True).start()
+    print("\U0001f50c WebSocket thread started!")
+
+    # ── DexScreener fallback — har 5 min ───────────────────────────
+    _cycle = 0
     while True:
         try:
-            all_pairs = []
+            _cycle += 1
+            global discovered_addresses
 
-            # Source 1: Token boosts (trending new tokens)
+            # Cache cleanup har 10 cycles
+            if _cycle % 10 == 0:
+                _nc = time.time()
+                discovered_addresses = {k: v for k, v in discovered_addresses.items() if _nc - v < DISCOVERY_TTL}
+                print(f"\U0001f504 Cache: {len(discovered_addresses)} entries | Queue: {len(new_pairs_queue)}")
+
+            # Token boosts
             try:
-                r1 = requests.get(
-                    "https://api.dexscreener.com/token-boosts/latest/v1",
-                    timeout=12
-                )
-                if r1.status_code == 200:
-                    boosts = r1.json() if isinstance(r1.json(), list) else []
-                    for item in boosts[:30]:
+                rb = requests.get("https://api.dexscreener.com/token-boosts/latest/v1", timeout=10)
+                if rb.status_code == 200:
+                    _rbj = rb.json()
+                    boosts = _rbj if isinstance(_rbj, list) else []
+                    for item in boosts[:20]:
                         if item.get("chainId") == "bsc":
-                            all_pairs.append({
-                                "pairAddress": item.get("tokenAddress", ""),
-                                "baseToken": {
-                                    "name":   item.get("description", "Unknown")[:20],
-                                    "symbol": item.get("tokenAddress", "")[:6],
-                                },
-                                "liquidity": {"usd": 0},
-                                "volume":    {"h24": 0},
-                            })
-            except Exception as e1:
-                print(f"⚠️ Boost fetch error: {e1}")
+                            addr = item.get("tokenAddress", "")
+                            if addr:
+                                threading.Thread(target=_process_new_token, args=(addr, addr, "DexBoost"), daemon=True).start()
+            except Exception:
+                pass
 
-            # Source 2: Top BSC pairs by recent activity
+            # Rotating search
+            queries = ["new", "moon", "pepe", "meme", "inu", "doge", "safe", "baby", "elon", "based"]
+            q = queries[_cycle % len(queries)]
             try:
-                r2 = requests.get(
-                    "https://api.dexscreener.com/latest/dex/search?q=BSC",
-                    timeout=12
-                )
-                if r2.status_code == 200:
-                    pairs2 = r2.json().get("pairs", [])
-                    bsc2 = [p for p in pairs2 if p.get("chainId") == "bsc"]
-                    all_pairs.extend(bsc2[:20])
-            except Exception as e2:
-                print(f"⚠️ Search fetch error: {e2}")
-
-            new_count = 0
-            for pair in all_pairs:
-                pair_addr = pair.get("pairAddress", "") or pair.get("tokenAddress", "")
-                if not pair_addr:
-                    continue
-                try:
-                    pair_addr = Web3.to_checksum_address(pair_addr)
-                except Exception:
-                    continue
-                if pair_addr not in discovered_addresses:
-                    discovered_addresses.add(pair_addr)
-                    token = pair.get("baseToken", {})
-                    token_name   = token.get("name",   "")
-                    token_symbol = token.get("symbol", "")
-
-                    # Agar name "BSC" ya empty hai — real name DexScreener se fetch karo
-                    if not token_name or token_name in ["BSC", "Unknown", ""]:
-                        try:
-                            nr = requests.get(
-                                f"https://api.dexscreener.com/latest/dex/tokens/{pair_addr}",
-                                timeout=6
-                            )
-                            if nr.status_code == 200:
-                                bsc_p = [p for p in nr.json().get("pairs", []) if p.get("chainId") == "bsc"]
-                                if bsc_p:
-                                    bt = bsc_p[0].get("baseToken", {})
-                                    token_name   = bt.get("name",   token_name)   or token_name
-                                    token_symbol = bt.get("symbol", token_symbol) or token_symbol
-                        except Exception:
-                            pass
-
-                    token_name   = token_name   or "Unknown"
-                    token_symbol = token_symbol or pair_addr[:6]
-
-                    new_pairs_queue.append({
-                        "address":    pair_addr,
-                        "name":       token_name,
-                        "symbol":     token_symbol,
-                        "discovered": datetime.utcnow().isoformat(),
-                        "liquidity":  pair.get("liquidity", {}).get("usd", 0),
-                        "volume_24h": pair.get("volume", {}).get("h24", 0),
-                    })
-                    new_count += 1
-                    print(f"🆕 New pair: {token_symbol} | {token_name} ({pair_addr[:10]})")
-                    threading.Thread(
-                        target=_auto_check_new_pair,
-                        args=(pair_addr,), daemon=True
-                    ).start()
-
-            if new_count:
-                print(f"✅ {new_count} naye pairs mila!")
-            else:
-                print(f"ℹ️ Poll cycle done — {len(discovered_addresses)} total discovered")
+                rs = requests.get(f"https://api.dexscreener.com/latest/dex/search?q={q}", timeout=10)
+                if rs.status_code == 200:
+                    _rsj = rs.json() or {}
+                    for p in (_rsj.get("pairs") or [])[:15]:
+                        if p.get("chainId") == "bsc":
+                            addr = (p.get("baseToken") or {}).get("address", "")
+                            if addr:
+                                threading.Thread(target=_process_new_token, args=(addr, p.get("pairAddress",""), "DexSearch"), daemon=True).start()
+            except Exception:
+                pass
 
         except Exception as e:
-            print(f"⚠️ DexScreener polling error: {e}")
-        time.sleep(60)
+            print(f"\u26a0\ufe0f Fallback error: {e}")
+
+        time.sleep(300)
 
 
 def _auto_check_new_pair(pair_address: str):
