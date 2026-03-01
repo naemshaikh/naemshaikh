@@ -961,44 +961,79 @@ discovered_addresses: set = set()
 PAIR_CREATED_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
 
 def poll_new_pairs():
-    """DexScreener se naye BSC pairs — free, no API key needed."""
+    """DexScreener se naye BSC tokens — token-boosts + search endpoints."""
     print("👂 New Pair Listener (DexScreener) started — free!")
     while True:
         try:
-            r = requests.get(
-                "https://api.dexscreener.com/latest/dex/pairs/bsc",
-                timeout=12
-            )
-            if r.status_code == 200:
-                pairs = r.json().get("pairs", [])
-                new_count = 0
-                for pair in pairs[:20]:
-                    pair_addr = pair.get("pairAddress", "")
-                    if not pair_addr:
-                        continue
-                    try:
-                        pair_addr = Web3.to_checksum_address(pair_addr)
-                    except Exception:
-                        continue
-                    if pair_addr not in discovered_addresses:
-                        discovered_addresses.add(pair_addr)
-                        token = pair.get("baseToken", {})
-                        new_pairs_queue.append({
-                            "address":    pair_addr,
-                            "name":       token.get("name", "Unknown"),
-                            "symbol":     token.get("symbol", "???"),
-                            "discovered": datetime.utcnow().isoformat(),
-                            "liquidity":  pair.get("liquidity", {}).get("usd", 0),
-                            "volume_24h": pair.get("volume", {}).get("h24", 0),
-                        })
-                        new_count += 1
-                        print(f"🆕 New pair: {token.get('symbol','?')} ({pair_addr[:10]})")
-                        threading.Thread(
-                            target=_auto_check_new_pair,
-                            args=(pair_addr,), daemon=True
-                        ).start()
-                if new_count:
-                    print(f"✅ {new_count} naye pairs mila!")
+            all_pairs = []
+
+            # Source 1: Token boosts (trending new tokens)
+            try:
+                r1 = requests.get(
+                    "https://api.dexscreener.com/token-boosts/latest/v1",
+                    timeout=12
+                )
+                if r1.status_code == 200:
+                    boosts = r1.json() if isinstance(r1.json(), list) else []
+                    for item in boosts[:30]:
+                        if item.get("chainId") == "bsc":
+                            all_pairs.append({
+                                "pairAddress": item.get("tokenAddress", ""),
+                                "baseToken": {
+                                    "name":   item.get("description", "Unknown")[:20],
+                                    "symbol": item.get("tokenAddress", "")[:6],
+                                },
+                                "liquidity": {"usd": 0},
+                                "volume":    {"h24": 0},
+                            })
+            except Exception as e1:
+                print(f"⚠️ Boost fetch error: {e1}")
+
+            # Source 2: Top BSC pairs by recent activity
+            try:
+                r2 = requests.get(
+                    "https://api.dexscreener.com/latest/dex/search?q=BSC",
+                    timeout=12
+                )
+                if r2.status_code == 200:
+                    pairs2 = r2.json().get("pairs", [])
+                    bsc2 = [p for p in pairs2 if p.get("chainId") == "bsc"]
+                    all_pairs.extend(bsc2[:20])
+            except Exception as e2:
+                print(f"⚠️ Search fetch error: {e2}")
+
+            new_count = 0
+            for pair in all_pairs:
+                pair_addr = pair.get("pairAddress", "") or pair.get("tokenAddress", "")
+                if not pair_addr:
+                    continue
+                try:
+                    pair_addr = Web3.to_checksum_address(pair_addr)
+                except Exception:
+                    continue
+                if pair_addr not in discovered_addresses:
+                    discovered_addresses.add(pair_addr)
+                    token = pair.get("baseToken", {})
+                    new_pairs_queue.append({
+                        "address":    pair_addr,
+                        "name":       token.get("name", "Unknown"),
+                        "symbol":     token.get("symbol", "???"),
+                        "discovered": datetime.utcnow().isoformat(),
+                        "liquidity":  pair.get("liquidity", {}).get("usd", 0),
+                        "volume_24h": pair.get("volume", {}).get("h24", 0),
+                    })
+                    new_count += 1
+                    print(f"🆕 New pair: {token.get('symbol','?')} ({pair_addr[:10]})")
+                    threading.Thread(
+                        target=_auto_check_new_pair,
+                        args=(pair_addr,), daemon=True
+                    ).start()
+
+            if new_count:
+                print(f"✅ {new_count} naye pairs mila!")
+            else:
+                print(f"ℹ️ Poll cycle done — {len(discovered_addresses)} total discovered")
+
         except Exception as e:
             print(f"⚠️ DexScreener polling error: {e}")
         time.sleep(60)
