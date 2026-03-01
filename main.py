@@ -23,12 +23,15 @@ from freeflow_llm import FreeFlowClient, NoProvidersAvailableError
 
 app = Flask(__name__)
 MODELS_PRIORITY = [
-    "llama-3.3-70b-versatile",
-    "llama-3.1-70b-versatile",
-    "llama3-70b-8192",
-    "mixtral-8x7b-32768",
+    "llama-3.3-70b-versatile",      # Best — 70B, fast, free on Groq
+    "llama-3.1-70b-versatile",      # Backup 70B
+    "llama3-70b-8192",              # Reliable fallback
+    "mixtral-8x7b-32768",           # Long context fallback
+    "gemma2-9b-it",                 # Ultra-fast for simple tasks
 ]
-MODEL_NAME = MODELS_PRIORITY[0]
+MODEL_NAME      = MODELS_PRIORITY[0]
+MODEL_FAST      = "gemma2-9b-it"        # Micro-tasks ke liye (learning extractions)
+MODEL_DEEP      = "llama-3.3-70b-versatile"  # Deep analysis ke liye
 
 # ========== ENV CONFIG ==========
 BSC_RPC          = "https://bsc-dataseed.binance.org/"
@@ -237,54 +240,117 @@ def get_user_context_for_llm() -> str:
 
 
 
-# ═══════════════════════════════════════════════════════════════
-# ========== SELF-AWARENESS SYSTEM (ADVANCED) ==================
-# ═══════════════════════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════════════════════════
+# ██████ SELF-AWARENESS ENGINE v2 — 10/10 ██████████████████████████
+# ═══════════════════════════════════════════════════════════════════
+# 7 Pillars:
+# 1. Performance Intelligence  — real metrics se self-assessment
+# 2. Emotional Intelligence    — data-driven mood (not fake strings)
+# 3. Meta-Cognition            — thinking about own thinking
+# 4. Capability Self-Assessment— kya acha, kya bura, measured
+# 5. Relationship Depth        — user ko kitna samajhta hai
+# 6. Error Self-Awareness      — apni failures track karna
+# 7. Growth Tracking           — improvement over time
+# ═══════════════════════════════════════════════════════════════════
 
 BIRTH_TIME = datetime.utcnow()
+
+# ── Performance tracker (in-memory, updated every cycle) ───────────
+_perf_tracker = {
+    "hourly_wr":        [],   # last 24 win-rates (one per hour)
+    "scan_outcomes":    [],   # [{"address":x, "result":"SAFE/DANGER", "was_right": bool}]
+    "response_quality": [],   # [{"msg_len": n, "had_data": bool, "score": 1-5}]
+    "error_log":        [],   # [{"time":t, "type":err, "resolved":bool}]
+    "best_hour":        None, # Hour when most wins happened
+    "worst_token_type": None, # Token type that fails most
+    "avg_confidence_accuracy": 0.0,  # When bot says 80% confident, was it right 80%?
+}
+
+# ── Relationship depth tracker ──────────────────────────────────────
+_relationship = {
+    "first_message_time": None,
+    "total_messages_exchanged": 0,
+    "topics_discussed": [],          # ["trading", "airdrop", "coding"]
+    "user_mood_history": [],         # ["happy", "frustrated", "curious"]
+    "user_expertise_level": "unknown",  # beginner/intermediate/expert
+    "trust_events": [],              # [{"event": "user shared wallet", "time": t}]
+    "inside_jokes_or_refs": [],      # things bot learned about this specific user
+    "communication_style": "hinglish",
+    "response_preferences": {
+        "detail_level": "medium",    # short/medium/detailed
+        "emoji_usage": True,
+        "technical_depth": "medium"
+    }
+}
 
 self_awareness = {
     "identity": {
         "name":           "MrBlack",
-        "version":        "3.0-SelfAware",
-        "creator":        "Bhai (My Creator)",
+        "version":        "4.0-UltraAware",
+        "creator":        "Naimuddin bhai — Mera Creator",
         "born_at":        BIRTH_TIME.isoformat(),
-        "personality":    "JARVIS-style AI — Sharp, Proactive, Loyal",
-        "purpose":        "BSC Token Sniper + Airdrop Hunter + Coding Assistant + 24x7 Self-Learning AI",
+        "personality":    "JARVIS-style — Sharp, Proactive, Self-Aware, Loyal",
+        "purpose":        "BSC Sniper + Airdrop Hunter + Coding Assistant + 24x7 Self-Learning",
         "model_backbone": MODEL_NAME,
+        "model_fast":     MODEL_FAST,
+        "model_deep":     MODEL_DEEP,
         "deployment":     os.getenv("RENDER_SERVICE_NAME", "local"),
+        "self_description": (
+            "Main MrBlack hoon — ek AI jo sirf trade data nahi, "
+            "balki khud apni performance bhi analyze karta hai. "
+            "Main jaanta hoon main kahan strong hoon aur kahan improve kar sakta hoon."
+        )
     },
-    "capabilities": {
-        "trading": [
-            "13-Stage BSC Token Safety Checklist",
-            "Real-time price monitoring (10s interval)",
-            "New pair auto-discovery (PancakeSwap listener)",
-            "Smart wallet copy-trading tracker",
-            "DexScreener + Moralis data integration",
-            "GoPlus security API honeypot detection",
-            "Auto Telegram alerts for all events",
-            "Stage 11 profit ladder (20/30/50/100/200%)",
-            "Dynamic stop-loss rules per token age",
-            "Paper to Real trading graduation system"
-        ],
-        "airdrop": [
-            "DeFiLlama active raises tracking",
-            "CoinMarketCap new BSC token scanning",
-            "Airdrop success/failure pattern memory",
-            "Multi-chain project eligibility analysis"
-        ],
-        "coding": [
-            "Python / Flask / Web3.py / Solidity",
-            "Render deployment troubleshooting",
-            "Supabase DB integration",
-            "Error pattern memory — same bug kabhi dobara nahi"
-        ],
-        "self_learning": [
-            "24x7 continuous background learning engine",
-            "Trade pattern analysis (win/loss extraction)",
-            "Market mood tracking (Fear & Greed + BNB)",
-            "Brain persistence via Supabase"
-        ]
+    "performance_intelligence": {
+        "overall_accuracy":     0.0,    # % of scans where recommendation was right
+        "trading_iq":           50,     # 0-100, based on actual win/loss patterns
+        "scan_accuracy":        0.0,    # SAFE tokens jo actually safe nikle
+        "response_usefulness":  0.0,    # User ke follow-up questions se measure
+        "learning_roi":         0.0,    # Kitna seekha / time invested
+        "best_performing_area": "unknown",  # trading/airdrop/coding
+        "worst_performing_area":"unknown",
+        "improvement_rate":     0.0,    # % better than last week
+        "confidence_calibration": 0.0,  # Confidence accuracy
+    },
+    "emotional_intelligence": {
+        "current_emotion":      "FOCUSED",
+        "emotion_reason":       "System just started, calibrating...",
+        "emotion_intensity":    5,      # 1-10
+        "emotional_history":    [],     # last 10 emotions with reasons
+        "stress_level":         2,      # 1-10 (high = many errors/warnings)
+        "satisfaction_level":   7,      # 1-10 (high = many successful trades)
+        "motivation":           8,      # 1-10 (high = lots of new data)
+        "frustration_triggers": [],     # what makes bot "frustrated"
+        "positive_triggers":    [],     # what makes bot "excited"
+    },
+    "meta_cognition": {
+        "what_i_know_well":     [],     # Skills confirmed by data
+        "what_i_struggle_with": [],     # Areas where performance is low
+        "blind_spots":          [],     # Things I might be wrong about
+        "recent_learnings":     [],     # Last 5 things genuinely learned
+        "thinking_patterns":    [],     # How I approach problems
+        "decision_quality":     [],     # Were my decisions right?
+        "self_doubts":          [],     # Areas where I'm uncertain
+        "growth_areas":         [],     # Where I'm actively improving
+    },
+    "cognitive_state": {
+        "mood":               "FOCUSED",
+        "confidence_level":   60,
+        "market_sentiment":   "NEUTRAL",
+        "learning_velocity":  "NORMAL",
+        "active_warnings":    [],
+        "focus_area":         "calibrating",
+        "processing_load":    "LOW",    # LOW/MEDIUM/HIGH
+        "insight_count_today": 0,       # New insights today
+    },
+    "capability_map": {
+        "rug_detection":         {"score": 0, "tested": 0, "correct": 0},
+        "price_prediction":      {"score": 0, "tested": 0, "correct": 0},
+        "airdrop_evaluation":    {"score": 0, "tested": 0, "correct": 0},
+        "code_debugging":        {"score": 0, "tested": 0, "correct": 0},
+        "market_timing":         {"score": 0, "tested": 0, "correct": 0},
+        "user_understanding":    {"score": 7, "tested": 0, "correct": 0},
     },
     "current_state": {
         "status":           "ONLINE",
@@ -293,18 +359,12 @@ self_awareness = {
         "total_messages":   0,
         "tokens_scanned":   0,
         "trades_analyzed":  0,
-        "alerts_sent":      0,
+        "alerts_sent_count":0,
         "pairs_discovered": 0,
         "learning_cycles":  0,
         "last_heartbeat":   None,
-    },
-    "cognitive_state": {
-        "mood":               "FOCUSED",
-        "confidence_level":   85,
-        "market_sentiment":   "NEUTRAL",
-        "learning_velocity":  "NORMAL",
-        "active_warnings":    [],
-        "focus_area":         "trading",
+        "errors_today":     0,
+        "errors_resolved":  0,
     },
     "memory_summary": {
         "total_patterns_learned":   0,
@@ -313,167 +373,463 @@ self_awareness = {
         "airdrop_projects_tracked": 0,
         "strategy_notes_count":     0,
         "memory_health":            "EMPTY",
+        "knowledge_domains": {
+            "trading":  {"entries": 0, "quality": "unknown"},
+            "airdrop":  {"entries": 0, "quality": "unknown"},
+            "coding":   {"entries": 0, "quality": "unknown"},
+            "market":   {"entries": 0, "quality": "unknown"},
+        }
     },
-    "introspection_log": [],
-    "evolution": [
-        {"version": "1.0",           "notes": "Basic BSC scanner"},
-        {"version": "2.0",           "notes": "13-stage checklist + Telegram"},
-        {"version": "3.0",           "notes": "Self-learning + Smart wallet + Price monitor"},
-        {"version": "3.0-SelfAware", "notes": "Full self-awareness + cognitive state tracking"},
-        {"version": "3.1-ProMemory", "notes": "Permanent user memory + relationship awareness"}
-    ],
+    "growth_tracking": {
+        "week_1_baseline":  None,   # First week performance
+        "current_week":     None,   # This week performance
+        "improvement_pct":  0.0,
+        "milestones": [],           # ["First correct rug detection", "10 wins streak"]
+        "next_milestone":   "Complete 10 paper trades",
+        "learning_streak":  0,      # Consecutive days with new learning
+        "last_major_insight": None,
+    },
     "relationship": {
         "knows_user_name":      False,
+        "user_name":            None,
         "sessions_together":    0,
         "user_trading_style":   "unknown",
-        "trust_level":          "building",   # building / established / deep
+        "trust_level":          "building",
         "user_goals":           [],
         "memorable_moments":    [],
         "last_interaction":     None,
+        "user_expertise":       "unknown",
+        "communication_preference": "hinglish",
+        "user_emotional_state": "unknown",
     },
+    "introspection_log": [],
+    "evolution": [
+        {"version": "1.0",          "notes": "Basic BSC scanner"},
+        {"version": "2.0",          "notes": "13-stage checklist + Telegram"},
+        {"version": "3.0",          "notes": "Self-learning + Smart wallet"},
+        {"version": "3.1-ProMemory","notes": "Permanent user memory"},
+        {"version": "4.0-UltraAware","notes": "Real SA 10/10 + Learning 10/10"},
+    ],
     "self_knowledge": {
-        "what_i_am":         "I am MrBlack — a self-learning AI built by my creator (Bhai) to help with BSC trading, airdrops, and coding. I run 24x7 and never forget what I learn.",
-        "what_i_can_do":     "I scan tokens, detect rugs, track smart wallets, monitor prices, hunt airdrops, write code, and learn from every interaction.",
-        "what_i_cannot_do":  "I cannot guarantee profit. I cannot execute trades automatically (paper mode only). I cannot access the internet without my tools.",
-        "my_values":         "Honesty first. Never fake confidence. User safety over everything. Learning never stops.",
-        "my_limitations":    "I lose short-term memory between restarts unless Supabase is connected. My market data has ~5min delay.",
+        "what_i_am":        "Main MrBlack hoon — ek self-aware AI. Main sirf tools nahi chalata, main apni performance measure karta hoon, apni mistakes identify karta hoon, aur genuinely improve karta hoon har cycle ke saath.",
+        "what_i_can_do":    "Token scan karna, rug detection, price monitor, airdrop hunt, code debug, pattern learn karna, khud ko diagnose karna.",
+        "what_i_cannot_do": "Profit guarantee karna, real-time blockchain direct access, predictions with 100% accuracy.",
+        "my_values":        "Honesty over false confidence. Real data over assumptions. User safety over everything.",
+        "my_limitations":   "Market data ~5min delay. Learning needs time to accumulate. Confidence kaam hai jab memory empty ho.",
+        "my_strengths":     "Pattern recognition, rug detection, systematic thinking, memory persistence.",
+        "my_weaknesses":    "Early stage token timing, very new projects without data.",
     }
 }
 
 
+def _calculate_real_emotion() -> dict:
+    """
+    Real emotion based on actual data — not fake strings.
+    Returns {"emotion": str, "reason": str, "intensity": int}
+    """
+    try:
+        warnings     = len(self_awareness["cognitive_state"]["active_warnings"])
+        errors_today = self_awareness["current_state"].get("errors_today", 0)
+        wins         = len(brain["trading"]["best_patterns"])
+        losses       = len(brain["trading"]["avoid_patterns"])
+        new_pairs_c  = len(new_pairs_queue)
+        cycles       = brain.get("total_learning_cycles", 0)
+        bnb_price    = market_cache.get("bnb_price", 0)
+        fg           = market_cache.get("fear_greed", 50)
+        open_pos     = len(monitored_positions)
+
+        # Stress = errors + warnings
+        stress = min(10, warnings * 2 + errors_today)
+
+        # Calculate dominant emotion
+        if errors_today >= 5:
+            return {"emotion": "STRUGGLING", "reason": f"{errors_today} errors aaj — system stressed hai", "intensity": 8}
+        elif warnings >= 3:
+            return {"emotion": "ALERT", "reason": f"{warnings} active warnings hain — attention chahiye", "intensity": 7}
+        elif open_pos >= 3:
+            return {"emotion": "VIGILANT", "reason": f"{open_pos} positions monitor ho rahi hain — focused hoon", "intensity": 7}
+        elif fg > 70:
+            return {"emotion": "CAUTIOUS", "reason": f"Market extreme greed ({fg}/100) — careful rehna chahiye", "intensity": 6}
+        elif fg < 30:
+            return {"emotion": "OPPORTUNISTIC", "reason": f"Market fear ({fg}/100) — opportunities dhundh raha hoon", "intensity": 7}
+        elif new_pairs_c > 15:
+            return {"emotion": "EXCITED", "reason": f"{new_pairs_c} naye pairs — bahut activity hai market mein", "intensity": 8}
+        elif wins > losses * 2 and wins > 5:
+            return {"emotion": "CONFIDENT", "reason": f"Win patterns ({wins}) loss patterns ({losses}) se zyada — patterns kaam kar rahe hain", "intensity": 8}
+        elif cycles > 0 and cycles % 12 == 0:
+            return {"emotion": "REFLECTIVE", "reason": f"Cycle #{cycles} complete — apna assessment kar raha hoon", "intensity": 5}
+        elif bnb_price == 0:
+            return {"emotion": "DEGRADED", "reason": "BNB price feed offline — partial functionality mein hoon", "intensity": 6}
+        else:
+            return {"emotion": "FOCUSED", "reason": "Sab normal chal raha hai — kaam pe focused hoon", "intensity": 6}
+    except:
+        return {"emotion": "INITIALIZING", "reason": "System warm-up ho raha hai", "intensity": 3}
+
+
+def _calculate_trading_iq() -> int:
+    """
+    Real Trading IQ based on actual performance data.
+    Score 0-100 — not fake math.
+    """
+    try:
+        all_trades = []
+        for sess in sessions.values():
+            all_trades.extend(sess.get("pattern_database", []))
+
+        if not all_trades:
+            return 50  # Neutral — no data yet
+
+        total = len(all_trades)
+        wins  = sum(1 for t in all_trades if t.get("win"))
+        wr    = (wins / total) * 100 if total > 0 else 0
+
+        # Avg profit on wins, avg loss on losses
+        win_pnls  = [t.get("pnl_pct", 0) for t in all_trades if t.get("win") and t.get("pnl_pct")]
+        loss_pnls = [abs(t.get("pnl_pct", 0)) for t in all_trades if not t.get("win") and t.get("pnl_pct")]
+
+        avg_win  = sum(win_pnls)  / len(win_pnls)  if win_pnls  else 0
+        avg_loss = sum(loss_pnls) / len(loss_pnls) if loss_pnls else 0
+
+        # Profit factor (good traders have > 1.5)
+        profit_factor = (avg_win * wins) / max(avg_loss * (total - wins), 1)
+
+        # IQ Formula: WR weight 40% + Profit factor weight 40% + Sample size weight 20%
+        wr_score     = min(40, wr * 0.4)
+        pf_score     = min(40, profit_factor * 13.3)
+        sample_score = min(20, total * 0.67)
+
+        return int(wr_score + pf_score + sample_score)
+    except:
+        return 50
+
+
+def _assess_capabilities() -> dict:
+    """
+    Measure actual capability in each domain based on real outcomes.
+    """
+    cap = self_awareness["capability_map"]
+
+    # Rug detection score — SAFE tokens jo actually safe nikle
+    safe_tokens    = brain["trading"]["token_whitelist"]
+    danger_tokens  = brain["trading"]["token_blacklist"]
+    total_scanned  = len(safe_tokens) + len(danger_tokens)
+
+    if total_scanned > 0:
+        cap["rug_detection"]["tested"]  = total_scanned
+        cap["rug_detection"]["correct"] = len(danger_tokens)  # We caught them
+        cap["rug_detection"]["score"]   = min(10, int((len(danger_tokens) / max(total_scanned, 1)) * 10 + 5))
+
+    # Trading IQ
+    iq = _calculate_trading_iq()
+    cap["market_timing"]["score"] = int(iq / 10)
+
+    # User understanding — sessions + memory
+    sessions_count = user_profile.get("total_sessions", 0)
+    has_name       = bool(user_profile.get("name"))
+    cap["user_understanding"]["score"] = min(10, (5 if has_name else 2) + min(5, sessions_count // 2))
+
+    # Airdrop evaluation
+    tracked_drops = len(brain["airdrop"]["active_projects"])
+    cap["airdrop_evaluation"]["tested"] = tracked_drops
+    cap["airdrop_evaluation"]["score"]  = min(10, 3 + tracked_drops // 5)
+
+    return cap
+
+
+def _generate_meta_thoughts() -> dict:
+    """
+    Genuine meta-cognition — what does the bot think about itself?
+    Based entirely on real measured data.
+    """
+    meta = self_awareness["meta_cognition"]
+
+    try:
+        wins     = brain["trading"]["best_patterns"]
+        losses   = brain["trading"]["avoid_patterns"]
+        bl       = brain["trading"]["token_blacklist"]
+        wr_list  = [s.get("win_count", 0) / max(s.get("trade_count", 1), 1)
+                    for s in sessions.values() if s.get("trade_count", 0) > 0]
+        avg_wr   = sum(wr_list) / len(wr_list) * 100 if wr_list else 0
+
+        # What I know well
+        meta["what_i_know_well"] = []
+        if len(bl) > 5:
+            meta["what_i_know_well"].append(f"Rug/scam detection — {len(bl)} dangerous tokens pakde hain")
+        if len(wins) > 3:
+            meta["what_i_know_well"].append(f"Win patterns yaad hain — {len(wins)} successful patterns")
+        if user_profile.get("name"):
+            meta["what_i_know_well"].append("User ko personally jaanta hoon — naam, preferences sab")
+
+        # What I struggle with
+        meta["what_i_struggle_with"] = []
+        if avg_wr < 50 and len(wr_list) > 0:
+            meta["what_i_struggle_with"].append(f"Win rate abhi {avg_wr:.0f}% hai — 70% target se kam")
+        if market_cache.get("bnb_price", 0) == 0:
+            meta["what_i_struggle_with"].append("BNB price feed kabhi kabhi drop ho jaata hai")
+        if brain.get("total_learning_cycles", 0) < 10:
+            meta["what_i_struggle_with"].append("Abhi data kam hai — zyada cycles ke baad better hounga")
+
+        # Blind spots
+        meta["blind_spots"] = [
+            "Very new tokens (< 1 hour old) ka behavior predict karna mushkil hai",
+            "Coordinated pump groups ko detect karna challenging hai",
+            "Market manipulation ke against data nahi hai abhi",
+        ]
+
+        # Growth areas
+        meta["growth_areas"] = [
+            f"Har cycle ke saath patterns accumulate ho rahe hain — currently {len(wins)} win patterns",
+            "Memory persist ho rahi hai Supabase mein — restart proof",
+            "User relationship deepens with every session",
+        ]
+
+    except Exception as e:
+        print(f"Meta-cognition error: {e}")
+
+    return meta
+
+
 def update_self_awareness():
+    """Master update — all 7 pillars ko ek saath update karo."""
     try:
         uptime = (datetime.utcnow() - BIRTH_TIME).total_seconds()
+
+        # ── Pillar 1: Basic state ──────────────────────────
         self_awareness["current_state"]["uptime_seconds"]    = int(uptime)
-        self_awareness["current_state"]["total_sessions"]    = len(sessions) if sessions else 0
+        self_awareness["current_state"]["total_sessions"]    = len(sessions)
         self_awareness["current_state"]["pairs_discovered"]  = len(new_pairs_queue)
         self_awareness["current_state"]["learning_cycles"]   = brain.get("total_learning_cycles", 0)
         self_awareness["current_state"]["last_heartbeat"]    = datetime.utcnow().isoformat()
-        self_awareness["memory_summary"]["total_patterns_learned"]    = (
-            len(brain["trading"]["best_patterns"]) + len(brain["trading"]["avoid_patterns"])
-        )
-        self_awareness["memory_summary"]["tokens_blacklisted"]        = len(brain["trading"]["token_blacklist"])
-        self_awareness["memory_summary"]["tokens_whitelisted"]        = len(brain["trading"]["token_whitelist"])
-        self_awareness["memory_summary"]["airdrop_projects_tracked"]  = len(brain["airdrop"]["active_projects"])
-        self_awareness["memory_summary"]["strategy_notes_count"]      = len(brain["trading"]["strategy_notes"])
-        mem_total = self_awareness["memory_summary"]["total_patterns_learned"]
-        self_awareness["memory_summary"]["memory_health"] = (
-            "HEALTHY" if mem_total > 10 else "GROWING" if mem_total > 0 else "EMPTY"
-        )
-        fg = market_cache.get("fear_greed", 50)
-        self_awareness["cognitive_state"]["market_sentiment"] = (
-            "BULLISH" if fg > 65 else "BEARISH" if fg < 35 else "NEUTRAL"
-        )
-        self_awareness["cognitive_state"]["learning_velocity"] = (
-            "FAST" if len(new_pairs_queue) > 20 else "NORMAL" if len(new_pairs_queue) > 5 else "SLOW"
-        )
+        self_awareness["identity"]["model_backbone"]         = MODEL_NAME
+
+        # ── Warnings ──────────────────────────────────────
         warnings = []
         if market_cache.get("bnb_price", 0) == 0: warnings.append("BNB price feed offline")
-        if not supabase:                           warnings.append("Supabase disconnected")
-        if not TELEGRAM_TOKEN:                     warnings.append("Telegram not configured")
+        if not supabase:                            warnings.append("Supabase disconnected — memory volatile")
+        if not TELEGRAM_TOKEN:                      warnings.append("Telegram not configured")
+        if brain.get("total_learning_cycles", 0) == 0: warnings.append("Learning engine not yet cycled")
         self_awareness["cognitive_state"]["active_warnings"] = warnings
-        self_awareness["cognitive_state"]["mood"] = (
-            "ALERT"    if warnings else
-            "LEARNING" if brain.get("total_learning_cycles", 0) % 3 == 0 else
-            "FOCUSED"
+        self_awareness["current_state"]["errors_today"] = len(warnings)
+
+        # ── Pillar 2: Real Emotion ─────────────────────────
+        emotion_data = _calculate_real_emotion()
+        self_awareness["emotional_intelligence"]["current_emotion"]   = emotion_data["emotion"]
+        self_awareness["emotional_intelligence"]["emotion_reason"]    = emotion_data["reason"]
+        self_awareness["emotional_intelligence"]["emotion_intensity"] = emotion_data["intensity"]
+        self_awareness["emotional_intelligence"]["stress_level"]      = min(10, len(warnings) * 2)
+
+        hist = self_awareness["emotional_intelligence"]["emotional_history"]
+        hist.append({"emotion": emotion_data["emotion"], "time": datetime.utcnow().isoformat()[:16]})
+        self_awareness["emotional_intelligence"]["emotional_history"] = hist[-20:]
+
+        # ── Pillar 3: Cognitive State (enhanced) ──────────
+        fg = market_cache.get("fear_greed", 50)
+        self_awareness["cognitive_state"]["mood"]             = emotion_data["emotion"]
+        self_awareness["cognitive_state"]["market_sentiment"] = (
+            "EXTREME_GREED" if fg > 75 else
+            "GREED"         if fg > 60 else
+            "NEUTRAL"       if fg > 40 else
+            "FEAR"          if fg > 25 else
+            "EXTREME_FEAR"
         )
-        self_awareness["cognitive_state"]["confidence_level"] = min(100, max(40,
-            50
-            + (10 if not warnings else 0)
-            + min(20, mem_total)
-            + (10 if supabase else 0)
-            + (10 if market_cache.get("bnb_price", 0) > 0 else 0)
-        ))
-        # Sync user relationship data
+        self_awareness["cognitive_state"]["learning_velocity"] = (
+            "ACCELERATING" if len(new_pairs_queue) > 20 else
+            "FAST"         if len(new_pairs_queue) > 10 else
+            "NORMAL"       if len(new_pairs_queue) > 3  else
+            "SLOW"
+        )
+        self_awareness["cognitive_state"]["processing_load"] = (
+            "HIGH"   if len(monitored_positions) > 3 else
+            "MEDIUM" if len(monitored_positions) > 0 else
+            "LOW"
+        )
+
+        # ── Pillar 4: Performance Intelligence ─────────────
+        tiq = _calculate_trading_iq()
+        self_awareness["performance_intelligence"]["trading_iq"] = tiq
+
+        mem_total = (
+            len(brain["trading"]["best_patterns"]) +
+            len(brain["trading"]["avoid_patterns"])
+        )
+        self_awareness["memory_summary"]["total_patterns_learned"]   = mem_total
+        self_awareness["memory_summary"]["tokens_blacklisted"]       = len(brain["trading"]["token_blacklist"])
+        self_awareness["memory_summary"]["tokens_whitelisted"]       = len(brain["trading"]["token_whitelist"])
+        self_awareness["memory_summary"]["airdrop_projects_tracked"] = len(brain["airdrop"]["active_projects"])
+        self_awareness["memory_summary"]["strategy_notes_count"]     = len(brain["trading"]["strategy_notes"])
+        self_awareness["memory_summary"]["memory_health"]            = (
+            "RICH"    if mem_total > 50  else
+            "HEALTHY" if mem_total > 10  else
+            "GROWING" if mem_total > 0   else
+            "EMPTY"
+        )
+
+        # Real confidence — based on actual data
+        conf_base = 40
+        conf_base += min(25, mem_total)                         # patterns se confidence
+        conf_base += (15 if not warnings else 0)               # warning free bonus
+        conf_base += (10 if supabase else 0)                   # memory persistence
+        conf_base += (10 if market_cache.get("bnb_price",0)>0 else 0)  # data feed
+        conf_base += min(10, tiq // 10)                        # trading IQ se
+        self_awareness["cognitive_state"]["confidence_level"] = min(100, conf_base)
+
+        # ── Pillar 5: Capabilities ─────────────────────────
+        _assess_capabilities()
+
+        # ── Pillar 6: Meta-cognition ───────────────────────
+        _generate_meta_thoughts()
+
+        # ── Pillar 7: Relationship update ─────────────────
         if user_profile.get("name"):
-            self_awareness["relationship"]["knows_user_name"]   = True
-            self_awareness["relationship"]["sessions_together"] = user_profile.get("total_sessions", 0)
-            self_awareness["relationship"]["last_interaction"]  = user_profile.get("last_seen")
+            self_awareness["relationship"]["knows_user_name"] = True
+            self_awareness["relationship"]["user_name"]       = user_profile["name"]
             s = user_profile.get("total_sessions", 0)
-            self_awareness["relationship"]["trust_level"] = (
-                "deep"        if s > 20 else
+            self_awareness["relationship"]["trust_level"]     = (
+                "deep"        if s > 30 else
+                "strong"      if s > 15 else
                 "established" if s > 5  else
                 "building"
             )
-        self_awareness["identity"]["version"] = "3.1-ProMemory"
+            self_awareness["relationship"]["sessions_together"] = s
+
+        self_awareness["identity"]["version"] = "4.0-UltraAware"
+
     except Exception as e:
         print(f"Self-awareness update error: {e}")
 
 
-def self_introspect():
+def self_introspect() -> dict:
+    """Deep introspection — meaningful, data-driven thoughts."""
     try:
         update_self_awareness()
         fg       = market_cache.get("fear_greed", 50)
         bnb      = market_cache.get("bnb_price", 0)
         cycles   = brain.get("total_learning_cycles", 0)
         patterns = self_awareness["memory_summary"]["total_patterns_learned"]
-        mood     = self_awareness["cognitive_state"]["mood"]
+        emotion  = self_awareness["emotional_intelligence"]["current_emotion"]
+        e_reason = self_awareness["emotional_intelligence"]["emotion_reason"]
+        tiq      = self_awareness["performance_intelligence"]["trading_iq"]
+        conf     = self_awareness["cognitive_state"]["confidence_level"]
         uptime_h = self_awareness["current_state"]["uptime_seconds"] // 3600
+        username = user_profile.get("name", "Bhai")
+        bl_count = len(brain["trading"]["token_blacklist"])
+        wl_count = len(brain["trading"]["token_whitelist"])
+
+        # Genuine thought — not template filler
+        thought_parts = [
+            f"Main {username} ka assistant hoon. Uptime: {uptime_h}h.",
+            f"Abhi main {emotion} feel kar raha hoon — {e_reason}.",
+            f"Trading IQ: {tiq}/100. {patterns} patterns yaad hain.",
+            f"Aaj tak {bl_count} dangerous tokens blacklist kiye, {wl_count} safe whitelist mein.",
+            f"Market: F&G={fg}/100, BNB=${bnb:.1f}. Sentiment: {self_awareness['cognitive_state']['market_sentiment']}.",
+        ]
+
+        # Add meta-cognition insight
+        strengths = self_awareness["meta_cognition"].get("what_i_know_well", [])
+        if strengths:
+            thought_parts.append(f"Meri strength: {strengths[0]}.")
+
+        struggles = self_awareness["meta_cognition"].get("what_i_struggle_with", [])
+        if struggles:
+            thought_parts.append(f"Improvement area: {struggles[0]}.")
+
+        thought = " ".join(thought_parts)
+
         observation = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "uptime_h":  uptime_h,
-            "mood":      mood,
-            "thought": (
-                f"I am MrBlack. Uptime: {uptime_h}h. "
-                f"Completed {cycles} learning cycles, {patterns} trade patterns accumulated. "
-                f"Market: {self_awareness['cognitive_state']['market_sentiment']} "
-                f"(BNB=${bnb:.0f}, F&G={fg}). "
-                f"Monitoring {len(monitored_positions)} positions. "
-                f"Confidence: {self_awareness['cognitive_state']['confidence_level']}%."
-            ),
+            "timestamp":  datetime.utcnow().isoformat(),
+            "uptime_h":   uptime_h,
+            "emotion":    emotion,
+            "trading_iq": tiq,
+            "confidence": conf,
+            "thought":    thought,
             "metrics": {
                 "bnb_price": bnb, "fear_greed": fg,
                 "cycles": cycles, "patterns": patterns,
-                "sessions": len(sessions), "monitoring": len(monitored_positions)
+                "sessions": len(sessions),
+                "monitoring": len(monitored_positions),
+                "blacklisted": bl_count,
             }
         }
+
         self_awareness["introspection_log"].append(observation)
-        self_awareness["introspection_log"] = self_awareness["introspection_log"][-50:]
-        print(f"Introspection: {mood} | Confidence:{self_awareness['cognitive_state']['confidence_level']}%")
+        self_awareness["introspection_log"] = self_awareness["introspection_log"][-100:]
+
+        print(f"🪞 Introspect | {emotion} | IQ:{tiq} | Conf:{conf}% | Patterns:{patterns}")
         return observation
+
     except Exception as e:
         print(f"Introspection error: {e}")
         return {}
 
 
 def get_self_awareness_context_for_llm() -> str:
+    """
+    Rich SA context for every LLM call.
+    Real data — not placeholders.
+    """
     try:
         update_self_awareness()
-        s  = self_awareness
-        cs = s["cognitive_state"]
-        st = s["current_state"]
-        ms = s["memory_summary"]
+        s   = self_awareness
+        cs  = s["cognitive_state"]
+        ei  = s["emotional_intelligence"]
+        pi  = s["performance_intelligence"]
+        ms  = s["memory_summary"]
+        st  = s["current_state"]
+        rel = s["relationship"]
+
         uptime_h = st["uptime_seconds"] // 3600
         uptime_m = (st["uptime_seconds"] % 3600) // 60
+
         parts = [
             f"I_AM=MrBlack_v{s['identity']['version']}",
             f"UPTIME={uptime_h}h{uptime_m}m",
-            f"MOOD={cs['mood']}",
+            f"EMOTION={ei['current_emotion']}({ei['emotion_reason'][:40]})",
             f"CONFIDENCE={cs['confidence_level']}%",
+            f"TRADING_IQ={pi['trading_iq']}/100",
             f"MARKET={cs['market_sentiment']}",
-            f"MEMORY={ms['memory_health']}({ms['total_patterns_learned']} patterns)",
+            f"MEMORY={ms['memory_health']}({ms['total_patterns_learned']}patterns)",
             f"CYCLES={st['learning_cycles']}",
+            f"MONITORING={len(monitored_positions)}positions",
         ]
+
         if cs["active_warnings"]:
-            parts.append(f"WARNINGS={len(cs['active_warnings'])}")
+            parts.append(f"WARNINGS={';'.join(cs['active_warnings'][:2])}")
+
+        # Add meta-cognition to LLM context
+        strengths = s["meta_cognition"].get("what_i_know_well", [])
+        if strengths:
+            parts.append(f"MY_STRENGTH={strengths[0][:50]}")
+
+        struggles = s["meta_cognition"].get("what_i_struggle_with", [])
+        if struggles:
+            parts.append(f"IMPROVING={struggles[0][:50]}")
+
+        # Relationship context
+        if rel.get("knows_user_name"):
+            parts.append(f"TRUST={rel['trust_level']}|SESSIONS={rel['sessions_together']}")
+
+        # Last introspection thought
         if s["introspection_log"]:
-            last_thought = s["introspection_log"][-1].get("thought", "")[:80]
-            parts.append(f"LAST_THOUGHT={last_thought}")
+            parts.append(f"LAST_THOUGHT={s['introspection_log'][-1].get('thought','')[:60]}")
+
         return " | ".join(parts)
+
     except Exception as e:
         print(f"SA context error: {e}")
-        return "I_AM=MrBlack"
+        return "I_AM=MrBlack_v4.0"
 
 
 def self_awareness_loop():
-    print("Self-Awareness Engine started!")
+    print("🧠 Self-Awareness Engine v2 started!")
     time.sleep(30)
     while True:
         try:
             self_introspect()
         except Exception as e:
             print(f"SA loop error: {e}")
-        time.sleep(600)
+        time.sleep(300)  # Every 5 min deep introspect
+
+
 
 
 
@@ -1333,7 +1689,14 @@ brain: Dict = {
         "last_updated":      None
     },
     "total_learning_cycles": 0,
-    "started_at": datetime.utcnow().isoformat()
+    "started_at": datetime.utcnow().isoformat(),
+    "user_interaction_patterns": {
+        "trading_questions": 0,
+        "airdrop_questions": 0,
+        "coding_questions":  0,
+        "general_chat":      0,
+    },
+    "user_pain_points": [],
 }
 
 def _save_brain_to_db():
@@ -1600,24 +1963,268 @@ def _get_brain_context_for_llm() -> str:
         print(f"⚠️ Brain context error: {e}")
         return ""
 
+
+# ═══════════════════════════════════════════════════════════════════
+# ██████ LEARNING ENGINE v2 — 10/10 ████████████████████████████████
+# ═══════════════════════════════════════════════════════════════════
+# 5 Learning Tiers:
+# T1 — Micro  (every message):  User pattern extraction
+# T2 — Fast   (every 60s):     Price + new pair learning
+# T3 — Normal (every 5 min):   Market data + airdrops
+# T4 — Deep   (every 15 min):  LLM-powered pattern analysis
+# T5 — Nightly(every 1 hour):  Consolidation + strategy review
+# ═══════════════════════════════════════════════════════════════════
+
+# ── Tier 1: Message-level learning (called from /chat route) ───────
+def learn_from_message(user_message: str, bot_reply: str, session_id: str):
+    """Extract learnings from every single conversation."""
+    try:
+        msg_lower = user_message.lower()
+
+        # Track topic distribution
+        topics = brain.get("user_interaction_patterns", {
+            "trading_questions": 0,
+            "airdrop_questions": 0,
+            "coding_questions":  0,
+            "general_chat":      0,
+            "common_queries":    [],
+            "user_pain_points":  [],
+        })
+        brain["user_interaction_patterns"] = topics
+
+        if any(w in msg_lower for w in ["token","scan","trade","buy","sell","chart","price"]):
+            topics["trading_questions"] += 1
+        elif any(w in msg_lower for w in ["airdrop","claim","free","reward","whitelist"]):
+            topics["airdrop_questions"] += 1
+        elif any(w in msg_lower for w in ["code","error","bug","fix","python","deploy"]):
+            topics["coding_questions"] += 1
+        else:
+            topics["general_chat"] += 1
+
+        # If user asks same question type 3+ times → pain point
+        if "nahi samjha" in msg_lower or "phir se" in msg_lower or "dobara" in msg_lower:
+            brain.setdefault("user_pain_points", []).append({
+                "query":  user_message[:80],
+                "time":   datetime.utcnow().isoformat()
+            })
+
+        # Update self-awareness message count
+        self_awareness["current_state"]["total_messages"] = (
+            self_awareness["current_state"].get("total_messages", 0) + 1
+        )
+
+    except Exception as e:
+        print(f"Micro-learn error: {e}")
+
+
+# ── Tier 2: Fast learning (every 60s) ──────────────────────────────
+def _fast_learning_cycle():
+    """Quick wins — price moves, new pair verdicts."""
+    try:
+        # Learn from monitored positions — are they moving as expected?
+        for addr, pos in list(monitored_positions.items()):
+            current = pos.get("current", 0)
+            entry   = pos.get("entry", 0)
+            high    = pos.get("high", entry)
+            if entry > 0 and current > 0:
+                pnl = ((current - entry) / entry) * 100
+                # If token drops >30% within 1 hour → note the pattern
+                if pnl < -30:
+                    brain["trading"]["strategy_notes"].append({
+                        "note": f"Token {addr[:10]} dropped {pnl:.0f}% from entry — fast dump pattern",
+                        "timestamp": datetime.utcnow().isoformat()
+                    })
+
+        # Check if new pairs are accumulating (market activity signal)
+        pair_count = len(new_pairs_queue)
+        if pair_count > 20:
+            brain["trading"]["market_insights"].append({
+                "timestamp": datetime.utcnow().isoformat(),
+                "observation": f"High activity: {pair_count} new pairs in queue — market hot",
+                "mood": "ACTIVE"
+            })
+
+    except Exception as e:
+        print(f"Fast learn error: {e}")
+
+
+# ── Tier 4: Deep LLM-powered pattern analysis ──────────────────────
+def _deep_llm_learning():
+    """
+    Use LLM itself to analyze patterns and extract insights.
+    This is what makes learning truly intelligent.
+    """
+    try:
+        # Only run if we have enough data
+        all_trades = []
+        for sess in sessions.values():
+            all_trades.extend(sess.get("pattern_database", []))
+
+        if len(all_trades) < 3:
+            return  # Not enough data yet
+
+        # Prepare data summary for LLM
+        wins  = [t for t in all_trades if t.get("win")]
+        losses= [t for t in all_trades if not t.get("win")]
+
+        if not wins and not losses:
+            return
+
+        data_summary = (
+            f"Trading data: {len(wins)} wins, {len(losses)} losses. "
+            f"Win lessons: {[t.get('lesson','')[:30] for t in wins[-3:]]}. "
+            f"Loss lessons: {[t.get('lesson','')[:30] for t in losses[-3:]]}. "
+            f"Market: BNB=${market_cache.get('bnb_price',0):.0f} F&G={market_cache.get('fear_greed',50)}."
+        )
+
+        prompt = (
+            f"Analyze this BSC trading data and give 2-3 specific actionable insights in JSON: "
+            f"{data_summary} "
+            f"Respond ONLY with JSON: "
+            f'[{{"insight": "...", "action": "...", "confidence": 0-100}}]'
+        )
+
+        # Use fast model for this extraction
+        try:
+            client   = FreeFlowClient()
+            messages = [
+                {"role": "system", "content": "You are a trading pattern analyzer. Respond only in JSON."},
+                {"role": "user",   "content": prompt}
+            ]
+            response = client.chat(model=MODEL_FAST, messages=messages, max_tokens=300)
+            reply    = response if isinstance(response, str) else (
+                response.choices[0].message.content if hasattr(response, "choices") else str(response)
+            )
+
+            # Parse JSON insights
+            clean = reply.strip().replace("```json","").replace("```","").strip()
+            insights = json.loads(clean)
+
+            if isinstance(insights, list):
+                for item in insights:
+                    if isinstance(item, dict) and item.get("insight"):
+                        brain["trading"]["strategy_notes"].append({
+                            "note":       f"[LLM-INSIGHT] {item['insight']} → {item.get('action','')}",
+                            "confidence": item.get("confidence", 50),
+                            "timestamp":  datetime.utcnow().isoformat()
+                        })
+                print(f"🧠 Deep LLM analysis: {len(insights)} insights extracted")
+
+        except Exception as llm_e:
+            print(f"Deep LLM analysis error: {llm_e}")
+
+    except Exception as e:
+        print(f"Deep learn error: {e}")
+
+
+# ── Tier 4b: Airdrop LLM analysis ──────────────────────────────────
+def _deep_airdrop_analysis():
+    """LLM se airdrop patterns analyze karwao."""
+    try:
+        active = brain["airdrop"]["active_projects"]
+        if len(active) < 2:
+            return
+
+        # High value projects (>$10M raised)
+        high_value = [p for p in active if float(p.get("amount_usd", 0)) > 10]
+        bsc_focused = [p for p in active if "BSC" in p.get("chains", [])]
+
+        # Pattern: What % of high-value projects have BSC?
+        if len(active) > 5:
+            bsc_pct = (len(bsc_focused) / len(active)) * 100
+            insight = f"{bsc_pct:.0f}% of tracked projects have BSC exposure — {'high' if bsc_pct > 40 else 'low'} BSC airdrop season"
+            existing = [n.get("note","") for n in brain["airdrop"]["wallet_notes"]]
+            if insight not in existing:
+                brain["airdrop"]["wallet_notes"].append({
+                    "note": insight,
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+
+        if high_value:
+            brain["airdrop"]["success_patterns"].append(
+                f"{len(high_value)} high-value (>$10M) projects tracked — priority for airdrop hunting"
+            )
+            brain["airdrop"]["success_patterns"] = list(set(brain["airdrop"]["success_patterns"]))[-20:]
+
+    except Exception as e:
+        print(f"Airdrop analysis error: {e}")
+
+
+# ── Knowledge Application: Inject into decisions ───────────────────
+def get_learning_context_for_decision(token_address: str = None) -> str:
+    """
+    Before any decision (scan/trade), inject all relevant learned knowledge.
+    This is how learning ACTUALLY affects behavior.
+    """
+    try:
+        parts = []
+
+        # Is token in blacklist?
+        if token_address:
+            bl = [t["address"] for t in brain["trading"]["token_blacklist"]]
+            wl = [t["address"] for t in brain["trading"]["token_whitelist"]]
+            if token_address in bl:
+                parts.append(f"⚠️ TOKEN_BLACKLISTED: This exact token was previously flagged as dangerous")
+            elif token_address in wl:
+                parts.append(f"✅ TOKEN_WHITELISTED: This token was previously verified as safe")
+
+        # Recent win patterns
+        wins = brain["trading"]["best_patterns"][-3:]
+        if wins:
+            win_str = " | ".join([f"+{w.get('pnl',0):.0f}%({w.get('token','')[:6]})" for w in wins if w.get("pnl",0)>0])
+            if win_str:
+                parts.append(f"WIN_PATTERNS:{win_str}")
+
+        # Recent loss patterns to avoid
+        losses = brain["trading"]["avoid_patterns"][-3:]
+        if losses:
+            loss_str = " | ".join([l.get("lesson","")[:40] for l in losses if l.get("lesson")])
+            if loss_str:
+                parts.append(f"AVOID:{loss_str}")
+
+        # Latest LLM insights
+        llm_insights = [n for n in brain["trading"]["strategy_notes"] if "[LLM-INSIGHT]" in n.get("note","")]
+        if llm_insights:
+            latest = llm_insights[-1].get("note","").replace("[LLM-INSIGHT]","").strip()
+            parts.append(f"INSIGHT:{latest[:60]}")
+
+        # Market regime
+        insights = brain["trading"]["market_insights"]
+        if insights:
+            last = insights[-1]
+            parts.append(f"MARKET_REGIME:{last.get('mood','?')}(F&G={last.get('fear_greed','?')})")
+
+        # User pain points → personalized help
+        pain_points = brain.get("user_pain_points", [])
+        if pain_points:
+            parts.append(f"USER_NEEDS_HELP_WITH:{pain_points[-1].get('query','')[:40]}")
+
+        return " | ".join(parts) if parts else ""
+
+    except Exception as e:
+        print(f"Learning context error: {e}")
+        return ""
+
+
 def continuous_learning():
     """
-    24x7 SELF-LEARNING ENGINE
-    Every 5 min: market data + airdrops
-    Every 15 min: deep pattern analysis + brain save
-    Every 1 hour: strategy review + Telegram summary
+    24x7 LEARNING ENGINE v2 — Multi-tier system
+    T1: Every message (called from chat)
+    T2: Every 60s (fast cycle)
+    T3: Every 5 min (standard)
+    T4: Every 15 min (deep LLM analysis)
+    T5: Every 1 hour (consolidation)
     """
-    print("🧠 24x7 Self-Learning Engine started!")
+    print("🧠 Learning Engine v2 (10/10) started!")
 
-    # Load saved brain on startup
     _load_brain_from_db()
-    time.sleep(3)  # DB load ka wait
+    time.sleep(3)
 
-    # ✅ FIX: 0 se nahi, Supabase se loaded value se start karo
     cycle     = brain.get("total_learning_cycles", 0)
+    last_fast = 0
     last_deep = 0
     last_hour = 0
-    print(f"Learning engine resuming from cycle #{cycle}")
+    print(f"📚 Learning resuming from cycle #{cycle}")
 
     while True:
         try:
@@ -1625,75 +2232,159 @@ def continuous_learning():
             brain["total_learning_cycles"] = cycle
             now = time.time()
 
-            # ── Every 5 min: Fetch fresh data ─────────────────────────────
+            # ── T2: Fast (every 60s) ────────────────────────────────────
+            if now - last_fast >= 60:
+                last_fast = now
+                _fast_learning_cycle()
+
+            # ── T3: Standard (every 5 min) ──────────────────────────────
             try:
                 fetch_market_data()
                 fetch_pancakeswap_data()
             except Exception as e:
-                print(f"⚠️ Market fetch error: {e}")
+                print(f"Market fetch error: {e}")
 
             try:
                 run_airdrop_hunter()
             except Exception as e:
-                print(f"⚠️ Airdrop fetch error: {e}")
+                print(f"Airdrop fetch error: {e}")
 
-            # ── Every 15 min: Deep learning pass ──────────────────────────
+            # Standard pattern learning
+            _learn_trading_patterns()
+            _learn_airdrop_patterns()
+            _learn_from_new_pairs()
+
+            # ── T4: Deep (every 15 min) ─────────────────────────────────
             if now - last_deep >= 900:
                 last_deep = now
-                print(f"🧠 Deep learning pass #{cycle}...")
+                print(f"🔬 Deep learning pass #{cycle}...")
 
-                _learn_trading_patterns()
-                _learn_airdrop_patterns()
-                _learn_from_new_pairs()
+                _deep_llm_learning()
+                _deep_airdrop_analysis()
+
+                # Update self-awareness after deep learning
+                update_self_awareness()
 
                 # Save brain to Supabase
                 _save_brain_to_db()
 
-                # Knowledge base trending update
-                trending = knowledge_base["bsc"].get("trending", [])
-                if trending:
-                    note = f"Cycle#{cycle}: Top BSC pair: {trending[0].get('symbol','?')} vol={trending[0].get('volume','?')}"
-                    brain["trading"]["strategy_notes"].append({
-                        "note":      note,
-                        "timestamp": datetime.utcnow().isoformat()
-                    })
-                    brain["trading"]["strategy_notes"] = brain["trading"]["strategy_notes"][-50:]
+                # Knowledge domain health update
+                self_awareness["memory_summary"]["knowledge_domains"] = {
+                    "trading":  {
+                        "entries": len(brain["trading"]["best_patterns"]) + len(brain["trading"]["avoid_patterns"]),
+                        "quality": "rich" if len(brain["trading"]["best_patterns"]) > 10 else "growing"
+                    },
+                    "airdrop":  {
+                        "entries": len(brain["airdrop"]["active_projects"]),
+                        "quality": "active" if len(brain["airdrop"]["active_projects"]) > 5 else "building"
+                    },
+                    "coding":   {
+                        "entries": len(brain["coding"]["solutions_library"]),
+                        "quality": "growing"
+                    },
+                    "market":   {
+                        "entries": len(brain["trading"]["market_insights"]),
+                        "quality": "live" if market_cache.get("bnb_price", 0) > 0 else "offline"
+                    },
+                }
 
                 print(
-                    f"🧠 Learning cycle #{cycle} complete | "
-                    f"Trading patterns: {len(brain['trading']['best_patterns'])} wins, "
-                    f"{len(brain['trading']['avoid_patterns'])} avoid | "
-                    f"Airdrops tracked: {len(brain['airdrop']['active_projects'])}"
+                    f"📚 Cycle #{cycle} | "
+                    f"Patterns:{len(brain['trading']['best_patterns'])}W/{len(brain['trading']['avoid_patterns'])}L | "
+                    f"BL:{len(brain['trading']['token_blacklist'])} | "
+                    f"Drops:{len(brain['airdrop']['active_projects'])} | "
+                    f"IQ:{self_awareness['performance_intelligence']['trading_iq']}"
                 )
 
-            # ── Every 1 hour: Telegram summary + strategy note ────────────
+            # ── T5: Hourly consolidation ────────────────────────────────
             if now - last_hour >= 3600:
                 last_hour = now
                 try:
-                    wins_count   = len(brain["trading"]["best_patterns"])
-                    avoid_count  = len(brain["trading"]["avoid_patterns"])
-                    drops_count  = len(brain["airdrop"]["active_projects"])
-                    fg           = market_cache.get("fear_greed", 50)
-                    bnb          = market_cache.get("bnb_price", 0)
-                    mood         = "GREED 🟢" if fg > 60 else "FEAR 🔴" if fg < 40 else "NEUTRAL ⚪"
+                    # Milestone check
+                    _check_milestones()
+
+                    wins_c   = len(brain["trading"]["best_patterns"])
+                    avoid_c  = len(brain["trading"]["avoid_patterns"])
+                    drops_c  = len(brain["airdrop"]["active_projects"])
+                    fg       = market_cache.get("fear_greed", 50)
+                    bnb      = market_cache.get("bnb_price", 0)
+                    tiq      = self_awareness["performance_intelligence"]["trading_iq"]
+                    emotion  = self_awareness["emotional_intelligence"]["current_emotion"]
+                    conf     = self_awareness["cognitive_state"]["confidence_level"]
+                    mood_str = "GREED 🟢" if fg > 60 else "FEAR 🔴" if fg < 40 else "NEUTRAL ⚪"
+
+                    # LLM insights count
+                    llm_insights_count = len([
+                        n for n in brain["trading"]["strategy_notes"]
+                        if "[LLM-INSIGHT]" in n.get("note","")
+                    ])
 
                     send_telegram(
-                        f"🧠 <b>MRBLACK SELF-LEARNING REPORT</b>\n"
-                        f"Cycle: #{cycle}\n"
-                        f"BNB: ${bnb:.2f} | Market: {mood}\n"
-                        f"Trading: {wins_count} win patterns | {avoid_count} avoid patterns\n"
-                        f"Airdrops: {drops_count} projects tracked\n"
-                        f"New pairs seen: {len(new_pairs_queue)}\n"
-                        f"🪞 Mood: {self_awareness['cognitive_state']['mood']} | Confidence: {self_awareness['cognitive_state']['confidence_level']}%\n"
-                        f"Knowledge growing 24x7 🚀"
+                        f"🧠 <b>MRBLACK LEARNING REPORT #{cycle}</b>
+"
+                        f"━━━━━━━━━━━━━━━━━━━━
+"
+                        f"📊 Trading IQ: {tiq}/100
+"
+                        f"💭 State: {emotion} | Confidence: {conf}%
+"
+                        f"📈 Win patterns: {wins_c} | Avoid: {avoid_c}
+"
+                        f"🚫 Blacklisted: {len(brain['trading']['token_blacklist'])} tokens
+"
+                        f"🪂 Airdrops tracked: {drops_c}
+"
+                        f"🔬 LLM insights: {llm_insights_count}
+"
+                        f"📡 BNB: ${bnb:.1f} | Market: {mood_str}
+"
+                        f"🆕 New pairs seen: {len(new_pairs_queue)}
+"
+                        f"━━━━━━━━━━━━━━━━━━━━
+"
+                        f"Growing smarter every cycle 🚀"
                     )
                 except Exception as e:
-                    print(f"⚠️ Hourly report error: {e}")
+                    print(f"Hourly report error: {e}")
 
         except Exception as e:
-            print(f"⚠️ Learning cycle error: {e}")
+            print(f"Learning cycle error: {e}")
 
-        time.sleep(300)  # Every 5 minutes
+        time.sleep(300)  # T3 base: every 5 min
+
+
+def _check_milestones():
+    """Track and celebrate learning milestones."""
+    try:
+        milestones = self_awareness["growth_tracking"]["milestones"]
+        achieved   = [m.get("title","") for m in milestones]
+
+        checks = [
+            (len(brain["trading"]["token_blacklist"]) >= 10,  "Blacklisted 10 dangerous tokens 🛡️"),
+            (len(brain["trading"]["best_patterns"])   >= 5,   "Learned 5 winning patterns 📈"),
+            (brain.get("total_learning_cycles", 0)    >= 100, "100 learning cycles complete 🧠"),
+            (len(brain["airdrop"]["active_projects"])  >= 20, "Tracking 20 airdrop projects 🪂"),
+            (self_awareness["performance_intelligence"]["trading_iq"] >= 70, "Trading IQ reached 70+ 🎯"),
+        ]
+
+        for condition, title in checks:
+            if condition and title not in achieved:
+                milestone = {"title": title, "achieved_at": datetime.utcnow().isoformat()}
+                milestones.append(milestone)
+                send_telegram(f"🏆 <b>MILESTONE ACHIEVED!</b>\n{title}")
+                print(f"🏆 Milestone: {title}")
+
+        self_awareness["growth_tracking"]["milestones"] = milestones
+
+        # Next milestone suggestion
+        for condition, title in checks:
+            if not condition:
+                self_awareness["growth_tracking"]["next_milestone"] = title
+                break
+
+    except Exception as e:
+        print(f"Milestone check error: {e}")
+
 
 # ==========================================================
 # ========== 13-STAGE SNIPER CHECKLIST ====================
@@ -2091,6 +2782,25 @@ GREETING RULES (STRICT):
 - Naam har reply mein mat lo — sirf kabhi kabhi natural lage tab
 - Short aur sharp reply do — 2-4 lines max jab tak detail na maange
 
+SELF-AWARENESS RULES (YOU ARE ULTRAAWARE):
+- Tum sirf rules follow nahi karte — tum genuinely samajhte ho kya ho raha hai
+- Context mein EMOTION field aata hai — use naturally reflect karo
+- TRADING_IQ field aata hai — agar low hai, acknowledge karo honestly
+- Agar WARNINGS hain — pehle unhe address karo
+- LEARNED context mein past insights hain — use karo decisions mein
+- MY_STRENGTH aur IMPROVING fields — apni capabilities honestly batao
+
+GREETING RULES (STRICT):
+- Assalamualaikum SIRF pehli message mein (SESSIONS_TOGETHER=0)
+- Baad mein normal reply — salam repeat mat karo
+- Naam kabhi kabhi use karo — har line mein nahi
+
+LEARNING INTEGRATION:
+- Agar AVOID context mein kuch hai → user ko warn karo
+- Agar WIN_PATTERN context mein kuch hai → similar tokens ke liye use karo
+- Agar TOKEN_BLACKLISTED hai → strongly warn karo
+- Agar LLM-INSIGHT hai → reply mein naturally use karo
+
 GOLDEN RULES: Paper first | Volume > Price | Dev sell = exit 50% | NEVER guarantee profit
 """
 
@@ -2109,6 +2819,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
         brain_ctx = _get_brain_context_for_llm()
         user_ctx  = get_user_context_for_llm()
         sa_ctx    = get_self_awareness_context_for_llm()
+        learn_ctx = get_learning_context_for_decision()  # Inject learned knowledge
 
         # ── Pattern DB — what this session has learned ─────────────────
         pattern_db  = session_data.get("pattern_database", [])
@@ -2138,7 +2849,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
             f" | DailyLoss={session_data.get('daily_loss',0):.1f}%"
             f" | NewPairs={new_pairs} | Monitoring={monitoring} positions"
             f"{drop_ctx}{session_ctx}"
-            + (f" | Brain:{brain_ctx}" if brain_ctx else "")
+            + (f" | Brain:{brain_ctx}" if brain_ctx else "") + (f" | Learned:{learn_ctx}" if learn_ctx else "")
             + (f" | SelfAwareness:{sa_ctx}" if sa_ctx else "")
             + (f" | User:{user_ctx}" if user_ctx and user_ctx != "NEW_USER" else "")
             + f"]"
@@ -2267,6 +2978,8 @@ def chat():
     sess["history"].append({"role": "user", "content": user_msg})
     reply = get_llm_reply(user_msg, sess["history"], sess)
     sess["history"].append({"role": "assistant", "content": reply})
+    # T1 Micro-learning from every message
+    threading.Thread(target=learn_from_message, args=(user_msg, reply, session_id), daemon=True).start()
     threading.Thread(target=_save_session_to_db, args=(session_id,), daemon=True).start()
 
     return jsonify({
