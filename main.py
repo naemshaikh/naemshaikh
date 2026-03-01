@@ -3204,7 +3204,18 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
         # System prompt in messages (FreeFlow system= param support nahi karta)
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         messages += [{"role": m["role"], "content": m["content"]} for m in history[-20:]]
-        messages.append({"role": "user", "content": user_message + ctx})
+        # Rules reminder — user message ke saath inject (system prompt ignore hota hai)
+        _perm_rules = user_profile.get("user_rules", [])
+        _perm_str = (" | UserRules: " + " | ".join(_perm_rules[-3:])) if _perm_rules else ""
+        rules_reminder = (
+            "\n[REPLY RULES: 1.Naam(Naem/bhai) ZERO baar — kabhi nahi "
+            "2.Simple sawaal=1-2 lines ONLY "
+            "3.TRADING_IQ/EMOTION/UPTIME/CONFIDENCE text mein NAHI "
+            "4.Same baat repeat NAHI "
+            "5.TokensDiscovered se accurate token count batao"
+            + _perm_str + "]"
+        )
+        messages.append({"role": "user", "content": user_message + ctx + rules_reminder})
 
         reply_text = None
 
