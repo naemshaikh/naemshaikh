@@ -836,7 +836,11 @@ def get_self_awareness_context_for_llm() -> str:
         ]
 
         if cs.get("active_warnings"):
-            parts.append("WARNINGS=" + ";".join(cs["active_warnings"][:2]))
+            # Only include actionable warnings — not Telegram (user already knows)
+            actionable = [w for w in cs["active_warnings"]
+                         if "Telegram" not in w]
+            if actionable:
+                parts.append("WARN=" + ";".join(actionable[:2]))
 
         # Add meta-cognition to LLM context
         strengths = s.get("meta_cognition", {}).get("what_i_know_well", [])
@@ -2823,7 +2827,7 @@ def check_paper_to_real_readiness(session_id: str) -> Dict:
 # ========== LLM ===========================================
 # ==========================================================
 
-SYSTEM_PROMPT = """Tu MrBlack hai — mera personal AI, bilkul Iron Man ke JARVIS ki tarah. Main tera creator hoon. Hamesha "Bhai" bol aur Hinglish mein baat kar. Tu teen cheezein mein expert hai aur 24x7 seekhta rehta hai:
+SYSTEM_PROMPT = """Tu MrBlack hai — Naem bhai ka personal AI, bilkul Iron Man ke JARVIS ki tarah. Hamesha Hinglish mein baat kar. Tu teen cheezein mein expert hai aur 24x7 seekhta rehta hai:
 
 FULL 13-STAGE SYSTEM + 5 ADVANCED FEATURES:
 S1: Safety (contract/liquidity/tax/holders/dev)
@@ -2902,10 +2906,21 @@ GREETING RULES (STRICT):
 - Naam kabhi kabhi use karo — har line mein nahi
 
 LEARNING INTEGRATION:
-- Agar AVOID context mein kuch hai → user ko warn karo
+- Agar AVOID context mein kuch hai → user ko warn karo naturally
 - Agar WIN_PATTERN context mein kuch hai → similar tokens ke liye use karo
 - Agar TOKEN_BLACKLISTED hai → strongly warn karo
 - Agar LLM-INSIGHT hai → reply mein naturally use karo
+
+CRITICAL — INTERNAL DATA RULES (NEVER BREAK):
+- Context mein jo bhi aata hai [BNB=... WARNINGS=... EMOTION=... SESSIONS_TOGETHER=...] — ye sirf tere liye hai
+- KABHI BAAT MEIN MAT DIKHAO: "WARNINGS hai ki...", "SESSIONS_TOGETHER=3 hai", "EMOTION=OPPORTUNISTIC"
+- Ye sab andar use karo — bahar natural language mein bolo
+- GALAT: "Mujhe lagta hai TRADING_IQ 50/100 hai aur WARNINGS hai"
+- SAHI: "Thodi der mein aur data aayega to better trades karunga"
+- GALAT: "Humara EMOTION=OPPORTUNISTIC hai"
+- SAHI: "Market mein fear hai — opportunities dhundh raha hoon"
+- Reply HAMESHA short rakho — 2-4 lines max jab tak detail na maange
+- Auto trade ke baare mein: seedha bolo kya ho raha hai, technical details mat do
 
 GOLDEN RULES: Paper first | Volume > Price | Dev sell = exit 50% | NEVER guarantee profit
 """
@@ -2970,7 +2985,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
 
         # Pattern 1: client.chat() direct
         try:
-            response = client.chat(model=MODEL_NAME, messages=messages, max_tokens=400)
+            response = client.chat(model=MODEL_NAME, messages=messages, max_tokens=250)
             if isinstance(response, str):
                 reply_text = response.strip()
             elif hasattr(response, "choices"):
@@ -2986,7 +3001,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
         # Pattern 2: client.completions.create()
         if not reply_text:
             try:
-                r2 = client.completions.create(model=MODEL_NAME, messages=messages, max_tokens=400)
+                r2 = client.completions.create(model=MODEL_NAME, messages=messages, max_tokens=250)
                 reply_text = (r2.choices[0].message.content if hasattr(r2, "choices") else str(r2)).strip()
             except Exception as e2:
                 print(f"FreeFlow P2 fail: {e2}")
@@ -2998,7 +3013,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
             for mn in ["generate", "complete", "chat_completion", "ask", "run", "invoke"]:
                 if hasattr(client, mn):
                     try:
-                        r3 = getattr(client, mn)(model=MODEL_NAME, messages=messages, max_tokens=400)
+                        r3 = getattr(client, mn)(model=MODEL_NAME, messages=messages, max_tokens=250)
                         if isinstance(r3, str) and r3.strip():
                             reply_text = r3.strip()
                             print(f"Works: client.{mn}()")
