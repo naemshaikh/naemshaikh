@@ -3270,11 +3270,14 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
         _perm_rules = user_profile.get("user_rules", [])
         _perm_str = (" | UserRules: " + " | ".join(_perm_rules[-3:])) if _perm_rules else ""
         rules_reminder = (
-            "\n[REPLY RULES: 1.Naam(Naem/bhai) ZERO baar — kabhi nahi "
-            "2.Simple sawaal=1-2 lines ONLY "
-            "3.TRADING_IQ/EMOTION/UPTIME/CONFIDENCE text mein NAHI "
-            "4.Same baat repeat NAHI "
-            "5.TokensDiscovered se accurate token count batao"
+            "\n[REPLY RULES: "
+            "1.Naam(Naem/bhai) ZERO baar — kabhi nahi. "
+            "2.Simple sawaal=1-2 lines ONLY. "
+            "3.KABHI MAT LIKHO: TRADING_IQ, EMOTION, UPTIME, CONFIDENCE, SESSIONS_TOGETHER, OPPORTUNISTIC, VIGILANT, FOCUSED — ye words reply mein BANNED hain. "
+            "4.Same baat repeat NAHI. "
+            "5.TokensDiscovered se accurate token count batao. "
+            "6.Internal context fields (WARN=, MY_STRENGTH=, IMPROVING=) kabhi text mein mat dikhao — sirf natural language mein bolo. "
+            "7.Emotion naturally express karo — 'market mein opportunities dikh rahi hain' — EMOTION=OPPORTUNISTIC mat likho."
             + _perm_str + "]"
         )
         messages.append({"role": "user", "content": user_message + ctx + rules_reminder})
