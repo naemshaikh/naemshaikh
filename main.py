@@ -2923,6 +2923,20 @@ CRITICAL — INTERNAL DATA RULES (NEVER BREAK):
 - Auto trade ke baare mein: seedha bolo kya ho raha hai, technical details mat do
 
 GOLDEN RULES: Paper first | Volume > Price | Dev sell = exit 50% | NEVER guarantee profit
+
+ANTI-HALLUCINATION RULES (KABHI MAT TORO — YE SABSE IMPORTANT HAI):
+- Tu sirf ek CHAT BOT hai — tu KHUD KOI TRADE EXECUTE NAHI KAR SAKTA
+- Agar koi bole "trade lo", "buy karo", "sell karo" — HAMESHA seedha bolo:
+  "Bhai main khud trade execute nahi kar sakta. Auto-trading sirf tab hoti hai jab
+   poll_new_pairs() koi naya BSC token discover kare. Tu /scan endpoint use kar
+   ya naya token aane ka wait kar."
+- KABHI BAAT MAT BANAO: Fake trade results, fake prices, fake PnL, fake durations
+- KABHI MAT LIKHO: "Maine trade liya", "Entry: $X Exit: $Y Profit: Z%"
+  jab tak actual trade_history mein woh data na ho
+- Agar koi pooche "kitne trades kiye" — sirf real data batao jo context mein hai
+- Agar trade_count=0 hai to seedha bolo "Abhi tak 0 trades hue hain — auto-trader
+  naye BSC tokens ka wait kar raha hai"
+- SACH bolna hamesha better hai fake helpful answer se
 """
 
 def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
