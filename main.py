@@ -3175,6 +3175,14 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
         if active_drops:
             drop_ctx = f" | Airdrops:{','.join(a.get('name','')[:8] for a in active_drops)}"
 
+        # Recent scanned tokens
+        _recent_scans = ""
+        try:
+            _recent = list(new_pairs_queue)[-3:]
+            _recent_scans = ",".join([f"{p.get('symbol','?')}({p.get('risk_score','?')})" for p in _recent])
+        except Exception:
+            pass
+
         ctx = (
             f"\n[BNB=${market_cache['bnb_price']:.2f} | F&G={market_cache['fear_greed']}/100"
             f" | Mode={session_data.get('mode','paper').upper()}"
@@ -3182,8 +3190,12 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
             f" | Trades={trade_count} WR={win_rate_str}"
             f" | DailyLoss={session_data.get('daily_loss',0):.1f}%"
             f" | NewPairs={new_pairs} | Monitoring={monitoring} positions"
-            f"{drop_ctx}{session_ctx}"
-            + (f" | Brain:{brain_ctx}" if brain_ctx else "") + (f" | Learned:{learn_ctx}" if learn_ctx else "")
+            f" | TokensDiscovered={len(discovered_addresses)}"
+            f" | QueueSize={len(new_pairs_queue)}"
+            + (f" | RecentScans={_recent_scans}" if _recent_scans else "")
+            + f"{drop_ctx}{session_ctx}"
+            + (f" | Brain:{brain_ctx}" if brain_ctx else "")
+            + (f" | Learned:{learn_ctx}" if learn_ctx else "")
             + (f" | SelfAwareness:{sa_ctx}" if sa_ctx else "")
             + (f" | User:{user_ctx}" if user_ctx and user_ctx != "NEW_USER" else "")
             + f"]"
@@ -3198,7 +3210,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
 
         # Pattern 1: client.chat() direct
         try:
-            response = client.chat(model=MODEL_NAME, messages=messages, max_tokens=250)
+            response = client.chat(model=MODEL_NAME, messages=messages, max_tokens=150)
             if isinstance(response, str):
                 reply_text = response.strip()
             elif hasattr(response, "choices"):
@@ -3214,7 +3226,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
         # Pattern 2: client.completions.create()
         if not reply_text:
             try:
-                r2 = client.completions.create(model=MODEL_NAME, messages=messages, max_tokens=250)
+                r2 = client.completions.create(model=MODEL_NAME, messages=messages, max_tokens=150)
                 reply_text = (r2.choices[0].message.content if hasattr(r2, "choices") else str(r2)).strip()
             except Exception as e2:
                 print(f"FreeFlow P2 fail: {e2}")
