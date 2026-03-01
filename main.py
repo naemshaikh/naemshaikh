@@ -3061,7 +3061,6 @@ def _startup_once():
     global _startup_done
     if not _startup_done:
         _startup_done = True
-        # FIX: Only load from Supabase here (fast) — BNB price in background thread
         try:
             _load_user_profile()
             print(f"✅ Profile loaded: {user_profile.get('name')}")
@@ -3073,8 +3072,15 @@ def _startup_once():
             print(f"✅ Brain loaded: cycles={brain.get('total_learning_cycles',0)}")
         except Exception as e:
             print(f"⚠️ Brain error: {e}")
-        # BNB price — non-blocking background fetch
-        threading.Thread(target=fetch_market_data, daemon=True).start()
+        threading.Thread(target=fetch_market_data,    daemon=True).start()
+        threading.Thread(target=run_airdrop_hunter,   daemon=True).start()
+        threading.Thread(target=poll_new_pairs,        daemon=True).start()
+        threading.Thread(target=price_monitor_loop,    daemon=True).start()
+        threading.Thread(target=track_smart_wallets,   daemon=True).start()
+        threading.Thread(target=continuous_learning,   daemon=True).start()
+        threading.Thread(target=auto_position_manager, daemon=True).start()
+        threading.Thread(target=self_awareness_loop,   daemon=True).start()
+        print("✅ All background threads started")
 
 @app.route("/")
 def home():
@@ -3325,31 +3331,4 @@ def health():
 # ==========================================================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
-
-    # Immediate startup fetches
-    threading.Thread(target=fetch_market_data, daemon=True).start()
-    time.sleep(3)  # FIX: 3 sec wait so BNB price loads before auto-buy
-    threading.Thread(target=run_airdrop_hunter,   daemon=True).start()
-
-    # Feature 1 — Telegram (no thread needed, called on demand)
-
-    # Feature 2 — New Pair Listener
-    threading.Thread(target=poll_new_pairs,        daemon=True).start()
-
-    # Feature 3 — Real-time Price Monitor
-    threading.Thread(target=price_monitor_loop,    daemon=True).start()
-
-    # Feature 4 — DexScreener/Moralis (called on demand in routes)
-
-    # Feature 5 — Smart Wallet Tracker
-    threading.Thread(target=track_smart_wallets,   daemon=True).start()
-
-    # Profile + brain load on first request via @app.before_request
-    # (non-blocking — gunicorn ke saath compatible)
-
-    # 24x7 Self-Learning Engine (market + airdrops + patterns every 5 min)
-    threading.Thread(target=continuous_learning,   daemon=True).start()
-    threading.Thread(target=auto_position_manager, daemon=True).start()
-    threading.Thread(target=self_awareness_loop,   daemon=True).start()  # Self-Awareness Engine
-
     app.run(host="0.0.0.0", port=port, debug=False)
