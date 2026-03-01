@@ -368,6 +368,8 @@
     <div class="panel active" id="panel-dashboard">
         <div class="dashboard-scroll">
 
+            <!-- Daily Loss Warning -->
+            <div id="dailyLossWarn" style="display:none;background:var(--red-dim);border:1px solid rgba(240,80,104,0.45);border-radius:12px;padding:10px 14px;font-size:12px;color:var(--red);font-weight:700;text-align:center;">🛑 DAILY LOSS LIMIT REACHED — Aaj aur trade mat karo!</div>
             <div class="stats-row">
                 <div class="stat-card">
                     <div class="stat-label">PAPER</div>
@@ -381,8 +383,8 @@
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">PNL 24H</div>
-                    <div class="stat-val green" id="pnlVal">+12.4%</div>
-                    <div class="stat-sub" id="pnlUsd">+$53.20</div>
+                    <div class="stat-val green" id="pnlVal">—</div>
+                    <div class="stat-sub" id="pnlUsd">Loading...</div>
                 </div>
             </div>
 
@@ -408,26 +410,7 @@
             <div>
                 <div class="section-title">📂 OPEN POSITIONS</div>
                 <div class="checklist-grid" id="positionsList">
-                    <div class="position-card">
-                        <div>
-                            <div class="pos-token">CAKE/BNB</div>
-                            <div class="pos-meta">Entry: 0.0041 BNB · Size: 0.18 BNB</div>
-                        </div>
-                        <div class="pos-pnl">
-                            <div class="pct green">+8.3%</div>
-                            <div class="usd">+$14.20</div>
-                        </div>
-                    </div>
-                    <div class="position-card">
-                        <div>
-                            <div class="pos-token">PEPE/BNB</div>
-                            <div class="pos-meta">Entry: 0.0000012 · Size: 0.08 BNB</div>
-                        </div>
-                        <div class="pos-pnl">
-                            <div class="pct red">-2.1%</div>
-                            <div class="usd">-$4.10</div>
-                        </div>
-                    </div>
+                    <div style="font-size:12px;color:var(--muted);text-align:center;padding:16px 0;">Loading positions...</div>
                 </div>
             </div>
 
@@ -675,9 +658,42 @@ function updateStats(d) {
     if (d.paper) document.getElementById('paperBal').textContent = d.paper;
     if (d.real)  document.getElementById('realBal').textContent  = d.real;
     if (d.pnl) {
-        document.getElementById('pnlVal').textContent  = d.pnl;
-        document.getElementById('pnlVal').className    = 'stat-val ' + (d.pnl.includes('-') ? 'red' : 'green');
+        document.getElementById('pnlVal').textContent = d.pnl;
+        document.getElementById('pnlVal').className   = 'stat-val ' + (d.pnl.includes('-') ? 'red' : 'green');
     }
+    if (d.paper_usd) document.getElementById('pnlUsd').textContent = d.paper_usd;
+    if (d.bnb_price) {
+        var sub = document.getElementById('bnbSub');
+        if (sub) sub.textContent = 'BNB = $' + parseFloat(d.bnb_price).toFixed(0);
+    }
+    if (d.fear_greed) {
+        var fg = document.getElementById('fearGreedVal');
+        if (fg) { fg.textContent = d.fear_greed + '/100'; fg.className = 'stat-val ' + (d.fear_greed > 60 ? 'green' : d.fear_greed > 40 ? 'amber' : 'red'); }
+    }
+    if (typeof d.win_rate !== 'undefined') { var wr = document.getElementById('winRateVal'); if (wr) wr.textContent = d.win_rate + '%'; }
+    if (d.new_pairs_found) { var np = document.getElementById('newPairsCount'); if (np) np.textContent = d.new_pairs_found; }
+    if (d.limit_reached) { var w = document.getElementById('dailyLossWarn'); if (w) w.style.display = 'block'; }
+    if (d.positions && Array.isArray(d.positions)) renderPositions(d.positions, d.bnb_price || 300);
+}
+
+function renderPositions(positions, bnbPrice) {
+    var list = document.getElementById('positionsList');
+    if (!list) return;
+    if (!positions || positions.length === 0) {
+        list.innerHTML = '<div style="font-size:12px;color:var(--muted);text-align:center;padding:16px 0;">Koi open position nahi hai abhi</div>';
+        return;
+    }
+    list.innerHTML = positions.map(function(pos) {
+        var pnl   = parseFloat(pos.pnl_pct || 0);
+        var color = pnl >= 0 ? 'green' : 'red';
+        var sign  = pnl >= 0 ? '+' : '';
+        var usd   = Math.abs((pos.size_bnb || 0) * pnl / 100 * bnbPrice).toFixed(2);
+        return '<div class="position-card">'
+            + '<div><div class="pos-token">' + (pos.token || pos.name || 'Token') + '</div>'
+            + '<div class="pos-meta">Entry: ' + (pos.entry_price || '—') + ' · Size: ' + (pos.size_bnb || '—') + ' BNB</div></div>'
+            + '<div class="pos-pnl"><div class="pct ' + color + '">' + sign + pnl.toFixed(1) + '%</div>'
+            + '<div class="usd">' + (pnl >= 0 ? '+' : '-') + '$' + usd + '</div></div></div>';
+    }).join('');
 }
 
 async function fetchTradingData() {

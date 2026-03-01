@@ -1125,14 +1125,54 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
             f"{airdrop_ctx}]"
         )
 
-        messages = [{"role": m["role"], "content": m["content"]} for m in history[-10:]]
+        # System prompt in messages (FreeFlow system= param support nahi karta)
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages += [{"role": m["role"], "content": m["content"]} for m in history[-10:]]
         messages.append({"role": "user", "content": user_message + ctx})
 
-        response = client.chat.completions.create(
-            model=MODEL_NAME, messages=messages,
-            system=SYSTEM_PROMPT, max_tokens=400
-        )
-        return response.choices[0].message.content.strip()
+        reply_text = None
+
+        # Pattern 1: client.chat() direct
+        try:
+            response = client.chat(model=MODEL_NAME, messages=messages, max_tokens=400)
+            if isinstance(response, str):
+                reply_text = response.strip()
+            elif hasattr(response, "choices"):
+                reply_text = response.choices[0].message.content.strip()
+            elif hasattr(response, "content"):
+                reply_text = response.content.strip()
+            elif isinstance(response, dict):
+                reply_text = (response.get("content") or response.get("text") or
+                              response.get("message", {}).get("content", "")).strip()
+        except Exception as e1:
+            print(f"FreeFlow P1 fail: {e1}")
+
+        # Pattern 2: client.completions.create()
+        if not reply_text:
+            try:
+                r2 = client.completions.create(model=MODEL_NAME, messages=messages, max_tokens=400)
+                reply_text = (r2.choices[0].message.content if hasattr(r2, "choices") else str(r2)).strip()
+            except Exception as e2:
+                print(f"FreeFlow P2 fail: {e2}")
+
+        # Pattern 3: Introspect available methods
+        if not reply_text:
+            methods = [m for m in dir(client) if not m.startswith("_")]
+            print(f"FreeFlowClient methods: {methods}")
+            for mn in ["generate", "complete", "chat_completion", "ask", "run", "invoke"]:
+                if hasattr(client, mn):
+                    try:
+                        r3 = getattr(client, mn)(model=MODEL_NAME, messages=messages, max_tokens=400)
+                        if isinstance(r3, str) and r3.strip():
+                            reply_text = r3.strip()
+                            print(f"Works: client.{mn}()")
+                            break
+                    except Exception:
+                        continue
+
+        if reply_text:
+            return reply_text
+        return "AI temporarily unavailable, bhai. Thodi der mein try karo." 
 
     except NoProvidersAvailableError:
         return "⚠️ AI temporarily down, bhai. Thodi der mein try karo."
