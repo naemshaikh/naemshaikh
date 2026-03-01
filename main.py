@@ -148,10 +148,24 @@ def _load_user_profile():
                 "language":       stored.get("language", "hinglish"),
             })
             user_profile["loaded"] = True
-            name_str = user_profile.get("name") or "loading..."
+            # FIX: Agar naam nahi mila Supabase se to default set karo
+            if not user_profile.get("name"):
+                user_profile["name"] = "Naem"
+                user_profile["nickname"] = "Naem bhai"
+                print("ℹ️  Naam Supabase mein nahi tha — Naem set kiya")
+                threading.Thread(target=_save_user_profile, daemon=True).start()
+            name_str = user_profile.get("name") or "Naem"
             print(f"User profile loaded — Name: {name_str}")
     except Exception as e:
         print(f"User profile load error: {e}")
+
+    # FIX: Agar koi bhi data nahi aaya — naam manually set karo
+    if not user_profile.get("loaded") or not user_profile.get("name"):
+        user_profile["name"]     = "Naem"
+        user_profile["nickname"] = "Naem bhai"
+        user_profile["loaded"]   = True
+        print("ℹ️  Profile fresh — Naem set kiya, save kar raha hoon")
+        threading.Thread(target=_save_user_profile, daemon=True).start()
 
 
 def _save_user_profile():
@@ -1610,7 +1624,7 @@ def fetch_market_data():
     try:
         r = requests.get(
             "https://api.coingecko.com/api/v3/simple/price",
-            params={"ids": "binancecoin", "vs_currencies": "usd"}, timeout=10
+            params={"ids": "binancecoin", "vs_currencies": "usd"}, timeout=20
         )
         if r.status_code == 200:
             price = r.json().get("binancecoin", {}).get("usd", 0)
@@ -1624,7 +1638,7 @@ def fetch_market_data():
         try:
             r2 = requests.get(
                 "https://api.binance.com/api/v3/ticker/price",
-                params={"symbol": "BNBUSDT"}, timeout=8
+                params={"symbol": "BNBUSDT"}, timeout=15
             )
             if r2.status_code == 200:
                 price = float(r2.json().get("price", 0))
@@ -1634,8 +1648,40 @@ def fetch_market_data():
                     print(f"✅ BNB price from Binance: ${price}")
         except Exception as e:
             print(f"⚠️ BNB Binance error: {e}")
+    # Source 3: CryptoCompare (no rate limit, very reliable)
     if not bnb_fetched:
-        print("⚠️ BNB price fetch failed — both sources down")
+        try:
+            r3 = requests.get(
+                "https://min-api.cryptocompare.com/data/price",
+                params={"fsym": "BNB", "tsyms": "USD"}, timeout=15
+            )
+            if r3.status_code == 200:
+                price = float(r3.json().get("USD", 0) or 0)
+                if price:
+                    market_cache["bnb_price"] = price
+                    bnb_fetched = True
+                    print(f"✅ BNB price (CryptoCompare): ${price:.2f}")
+        except Exception as e:
+            print(f"⚠️ BNB CryptoCompare error: {e}")
+    if not bnb_fetched:
+        # Last resort: BSC on-chain WBNB/BUSD pool se real price lo
+        try:
+            r4 = requests.get(
+                "https://api.dexscreener.com/latest/dex/pairs/bsc/0x58f876857a02d6762e0101bb5c46a8c1ed44dc16",
+                timeout=15
+            )
+            if r4.status_code == 200:
+                pair = r4.json().get("pair", {})
+                price = float(pair.get("priceUsd", 0) or 0)
+                if price > 0:
+                    # WBNB/BUSD pair — token0 price = BNB price
+                    market_cache["bnb_price"] = price
+                    bnb_fetched = True
+                    print(f"✅ BNB price (DexScreener on-chain): ${price:.2f}")
+        except Exception as e:
+            print(f"⚠️ BNB DexScreener fallback error: {e}")
+    if not bnb_fetched:
+        print("⚠️ BNB price: all 4 sources failed — price remains 0 until next cycle")
     try:
         r2 = requests.get("https://api.alternative.me/fng/?limit=1", timeout=10)
         if r2.status_code == 200:
@@ -2986,21 +3032,20 @@ def _startup_once():
     global _startup_done
     if not _startup_done:
         _startup_done = True
-        try:
-            fetch_market_data()
-            print(f"✅ Startup BNB price: ${market_cache.get('bnb_price', 0)}")
-        except Exception as e:
-            print(f"⚠️ Startup BNB error: {e}")
+        # FIX: Only load from Supabase here (fast) — BNB price in background thread
         try:
             _load_user_profile()
-            print(f"✅ Startup user profile loaded: {user_profile.get('name')}")
+            print(f"✅ Profile loaded: {user_profile.get('name')}")
         except Exception as e:
-            print(f"⚠️ Startup profile error: {e}")
+            print(f"⚠️ Profile error: {e}")
         try:
             _load_brain_from_db()
-            print(f"✅ Startup brain loaded: cycles={brain.get('total_learning_cycles',0)}")
+            _ensure_brain_structure()
+            print(f"✅ Brain loaded: cycles={brain.get('total_learning_cycles',0)}")
         except Exception as e:
-            print(f"⚠️ Startup brain error: {e}")
+            print(f"⚠️ Brain error: {e}")
+        # BNB price — non-blocking background fetch
+        threading.Thread(target=fetch_market_data, daemon=True).start()
 
 @app.route("/")
 def home():
@@ -3270,10 +3315,8 @@ if __name__ == "__main__":
     # Feature 5 — Smart Wallet Tracker
     threading.Thread(target=track_smart_wallets,   daemon=True).start()
 
-    # Load saved brain from Supabase before starting
-    # Brain already loaded above with _load_brain_from_db()
-    _load_user_profile()   # FIX: blocking — naam memory se load hone do startup pe
-    _load_brain_from_db()  # FIX: blocking — brain bhi ready hone do
+    # Profile + brain load on first request via @app.before_request
+    # (non-blocking — gunicorn ke saath compatible)
 
     # 24x7 Self-Learning Engine (market + airdrops + patterns every 5 min)
     threading.Thread(target=continuous_learning,   daemon=True).start()
