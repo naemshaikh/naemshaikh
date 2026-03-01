@@ -2939,9 +2939,18 @@ ANTI-HALLUCINATION RULES (KABHI MAT TORO — YE SABSE IMPORTANT HAI):
 - SACH bolna hamesha better hai fake helpful answer se
 """
 
+# Global FreeFlow client — rotation state persist karne ke liye
+_freeflow_client = None
+
+def _get_freeflow_client():
+    global _freeflow_client
+    if _freeflow_client is None:
+        _freeflow_client = FreeFlowClient()
+    return _freeflow_client
+
 def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
     try:
-        client       = FreeFlowClient()
+        client       = _get_freeflow_client()
         active_drops = knowledge_base["airdrops"]["active"][:3]
         airdrop_ctx  = f" | Airdrops: {','.join(a.get('name','') for a in active_drops)}" if active_drops else ""
         trade_count  = session_data.get("trade_count", 0)
