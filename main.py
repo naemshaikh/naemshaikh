@@ -717,6 +717,9 @@ def _generate_meta_thoughts() -> dict:
         wr_list  = [s.get("win_count", 0) / max(s.get("trade_count", 1), 1)
                     for s in _sessions.values() if s.get("trade_count", 0) > 0]
         avg_wr   = sum(wr_list) / len(wr_list) * 100 if wr_list else 0
+        all_trades = []
+        for s in _sessions.values():
+            all_trades.extend(s.get("pattern_database", []))
         # FIX: all_trades define karo — blind spots calculation ke liye
         all_trades = []
         for s in _sessions.values():
