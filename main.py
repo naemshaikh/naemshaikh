@@ -19,21 +19,20 @@ import hashlib
 
 # ========== FREEFLOW LLM ==========
 from freeflow_llm import FreeFlowClient, NoProvidersAvailableError
-import httpx
-httpx.__version__ = "0.24.1"
+# httpx version pinned in requirements.txt
 
 app = Flask(__name__)
 MODELS_PRIORITY = [
-    "deepseek-r1-distill-llama-70b",
     "llama-3.3-70b-versatile",
     "llama-3.1-70b-versatile",
+    "llama3-70b-8192",
     "mixtral-8x7b-32768",
 ]
 MODEL_NAME = MODELS_PRIORITY[0]
 
 # ========== ENV CONFIG ==========
 BSC_RPC          = "https://bsc-dataseed.binance.org/"
-BSC_SCAN_API     = "https://api.bscscan.com/api"
+BSC_SCAN_API     = "https://api.etherscan.io/v2/api"  # Etherscan V2 — BSC chainid=56
 BSC_SCAN_KEY     = os.getenv("BSC_SCAN_KEY", "")
 PANCAKE_ROUTER   = "0x10ED43C718714eb63d5aA57B78B54704E256024E"
 PANCAKE_FACTORY  = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
@@ -153,6 +152,7 @@ def _save_user_profile():
         user_profile["total_sessions"] = user_profile.get("total_sessions", 0) + 1
         supabase.table("memory").upsert({
             "session_id": "MRBLACK_USER",
+            "role":       "user",
             "history":    json.dumps([]),
             "positions":  json.dumps({
                 "name":           user_profile.get("name"),
@@ -565,6 +565,7 @@ def poll_new_pairs():
     while True:
         try:
             r = requests.get(BSC_SCAN_API, params={
+                "chainid":  56,
                 "module":  "logs",
                 "action":  "getLogs",
                 "address": PANCAKE_FACTORY,
@@ -656,6 +657,7 @@ def _auto_check_new_pair(pair_address: str):
 #              "token": str, "size_bnb": float, "session_id": str,
 #              "stop_loss_pct": float, "last_check": timestamp } }
 monitored_positions: Dict[str, dict] = {}
+monitor_lock = threading.Lock()  # Thread safety fix
 
 # ═══════════════════════════════════════════════
 # AUTO PAPER TRADING ENGINE
@@ -861,7 +863,7 @@ def add_position_to_monitor(session_id: str, token_address: str, token_name: str
         "high":           entry_price,
         "size_bnb":       size_bnb,
         "stop_loss_pct":  stop_loss_pct,
-        "alerts_sent":    set(),  # track which alerts already sent
+        "alerts_sent":    [],  # track which alerts already sent
         "added_at":       datetime.utcnow().isoformat()
     }
     print(f"👁️ Monitoring: {token_name} @ {entry_price:.8f} BNB")
@@ -897,7 +899,7 @@ def price_monitor_loop():
 
                 # ── Stop Loss Hit ──────────────────────────
                 if pnl_pct <= -sl and "stop_loss" not in alerts_sent:
-                    alerts_sent.add("stop_loss")
+                    alerts_sent.append("stop_loss")
                     telegram_price_alert(
                         token, addr,
                         "STOP LOSS HIT",
@@ -906,30 +908,30 @@ def price_monitor_loop():
 
                 # ── Stage 11: Laddered Profit Alerts ──────
                 if pnl_pct >= 200 and "tp_200" not in alerts_sent:
-                    alerts_sent.add("tp_200")
+                    alerts_sent.append("tp_200")
                     telegram_price_alert(token, addr, "TARGET +200%", f"+{pnl_pct:.0f}% | Keep 10% runner only")
                 elif pnl_pct >= 100 and "tp_100" not in alerts_sent:
-                    alerts_sent.add("tp_100")
+                    alerts_sent.append("tp_100")
                     telegram_price_alert(token, addr, "TARGET +100%", f"+{pnl_pct:.0f}% | Sell 25%")
                 elif pnl_pct >= 50 and "tp_50" not in alerts_sent:
-                    alerts_sent.add("tp_50")
+                    alerts_sent.append("tp_50")
                     telegram_price_alert(token, addr, "TARGET +50%", f"+{pnl_pct:.0f}% | Sell 25%")
                 elif pnl_pct >= 30 and "tp_30" not in alerts_sent:
-                    alerts_sent.add("tp_30")
+                    alerts_sent.append("tp_30")
                     telegram_price_alert(token, addr, "TARGET +30%", f"+{pnl_pct:.0f}% | Sell 25%")
                 elif pnl_pct >= 20 and "tp_20" not in alerts_sent:
-                    alerts_sent.add("tp_20")
+                    alerts_sent.append("tp_20")
                     telegram_price_alert(token, addr, "TARGET +20%", f"+{pnl_pct:.0f}% | Move SL to cost")
 
                 # ── Stage 6: Volume / Dump Alerts ─────────
                 if drop_from_high <= -90 and "dump_90" not in alerts_sent:
-                    alerts_sent.add("dump_90")
+                    alerts_sent.append("dump_90")
                     telegram_price_alert(token, addr, "DUMP -90% FROM HIGH", "EXIT FULLY NOW")
                 elif drop_from_high <= -70 and "dump_70" not in alerts_sent:
-                    alerts_sent.add("dump_70")
+                    alerts_sent.append("dump_70")
                     telegram_price_alert(token, addr, "DUMP -70% FROM HIGH", "Exit 75% immediately")
                 elif drop_from_high <= -50 and "dump_50" not in alerts_sent:
-                    alerts_sent.add("dump_50")
+                    alerts_sent.append("dump_50")
                     telegram_price_alert(token, addr, "DUMP -50% FROM HIGH", "Exit 50% now")
 
                 print(f"📊 {token}: {pnl_pct:+.1f}% | High drop: {drop_from_high:.1f}%")
@@ -1066,6 +1068,7 @@ def track_smart_wallets():
                 else:
                     # Fallback: BSCScan token transfers
                     r = requests.get(BSC_SCAN_API, params={
+                "chainid":  56,
                         "module": "account", "action": "tokentx",
                         "address": wallet, "sort": "desc",
                         "page": 1, "offset": 20, "apikey": BSC_SCAN_KEY
@@ -1174,6 +1177,7 @@ def _save_session_to_db(session_id: str):
         sess = sessions.get(session_id, {})
         supabase.table("memory").upsert({
             "session_id":       session_id,
+            "role":             "user",
             "paper_balance":    sess.get("paper_balance",    1.87),
             "real_balance":     sess.get("real_balance",     0.00),
             "positions":        json.dumps(sess.get("positions",        [])),
@@ -1326,6 +1330,7 @@ def _save_brain_to_db():
     try:
         supabase.table("memory").upsert({
             "session_id":   "MRBLACK_BRAIN",
+            "role":         "system",
             "history":      json.dumps([]),
             "pattern_database": json.dumps(brain["trading"]["best_patterns"][-50:] +
                                            brain["trading"]["avoid_patterns"][-50:]),
@@ -1497,7 +1502,7 @@ def _learn_from_new_pairs():
     Build pattern library of what makes a token good/bad.
     """
     try:
-        recent_pairs = list(new_pairs_queue)[-10:]
+        recent_pairs = knowledge_base["bsc"]["new_tokens"][-10:]  # Fix: overall field yahan hoti hai
         for pair in recent_pairs:
             addr    = pair.get("address", "")
             overall = pair.get("overall", "")
@@ -1662,7 +1667,7 @@ def continuous_learning():
                         f"Trading: {wins_count} win patterns | {avoid_count} avoid patterns\n"
                         f"Airdrops: {drops_count} projects tracked\n"
                         f"New pairs seen: {len(new_pairs_queue)}\n"
-                        f"🪞 Mood: {sa_state['mood']} | Confidence: {sa_state['confidence_level']}%\n"
+                        f"🪞 Mood: {self_awareness['cognitive_state']['mood']} | Confidence: {self_awareness['cognitive_state']['confidence_level']}%\n"
                         f"Knowledge growing 24x7 🚀"
                     )
                 except Exception as e:
@@ -1699,6 +1704,7 @@ def run_full_sniper_checklist(address: str) -> Dict:
 
     try:
         bs_res = requests.get(BSC_SCAN_API, params={
+                "chainid":  56,
             "module": "contract", "action": "getsourcecode",
             "address": address, "apikey": BSC_SCAN_KEY
         }, timeout=10)
@@ -1787,6 +1793,7 @@ def run_full_sniper_checklist(address: str) -> Dict:
     if BSC_SCAN_KEY:
         try:
             tx_res = requests.get(BSC_SCAN_API, params={
+                "chainid":  56,
                 "module": "account", "action": "tokentx",
                 "contractaddress": address, "sort": "asc",
                 "page": 1, "offset": 1, "apikey": BSC_SCAN_KEY
@@ -1816,6 +1823,7 @@ def run_full_sniper_checklist(address: str) -> Dict:
     if buys_5m == 0 and sells_5m == 0 and BSC_SCAN_KEY:
         try:
             tx_res2 = requests.get(BSC_SCAN_API, params={
+                "chainid":  56,
                 "module": "account", "action": "tokentx",
                 "contractaddress": address, "sort": "desc",
                 "page": 1, "offset": 30, "apikey": BSC_SCAN_KEY
@@ -2077,7 +2085,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
         # ── Self-learning brain context ────────────────────────────────
         brain_ctx = _get_brain_context_for_llm()
         user_ctx  = get_user_context_for_llm()
-        sa_ctx    = get_self_awareness_context_for_llm() if '_get_brain_context_for_llm' in dir() else ""
+        sa_ctx    = get_self_awareness_context_for_llm()
 
         # ── Pattern DB — what this session has learned ─────────────────
         pattern_db  = session_data.get("pattern_database", [])
