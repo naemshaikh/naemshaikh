@@ -1257,10 +1257,13 @@ def continuous_learning():
 
     # Load saved brain on startup
     _load_brain_from_db()
+    time.sleep(3)  # DB load ka wait
 
-    cycle     = 0
+    # ✅ FIX: 0 se nahi, Supabase se loaded value se start karo
+    cycle     = brain.get("total_learning_cycles", 0)
     last_deep = 0
     last_hour = 0
+    print(f"Learning engine resuming from cycle #{cycle}")
 
     while True:
         try:
