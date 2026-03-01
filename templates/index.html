@@ -840,7 +840,7 @@ async function fetchTradingData() {
     var icon = document.getElementById('refreshIcon');
     if (icon) icon.classList.add('fa-spin');
     try {
-        const r    = await fetch('/trading-data');
+        const r    = await fetch('/trading-data' + (sessionId ? '?session_id=' + sessionId : ''));
         const data = await r.json();
         updateStats(data);
         fetchNewPairs();
