@@ -148,7 +148,7 @@ def _load_user_profile():
                 "language":       stored.get("language", "hinglish"),
             })
             user_profile["loaded"] = True
-            name_str = user_profile.get("name") or "unknown"
+            name_str = user_profile.get("name") or "loading..."
             print(f"User profile loaded — Name: {name_str}")
     except Exception as e:
         print(f"User profile load error: {e}")
@@ -2973,6 +2973,34 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
 # ==========================================================
 # ==================== FLASK ROUTES ========================
 # ==========================================================
+
+
+# ═══════════════════════════════════════════
+# FIX: Guaranteed startup loader for Render
+# Pehli request pe BNB price + user memory load
+# ═══════════════════════════════════════════
+_startup_done = False
+
+@app.before_request
+def _startup_once():
+    global _startup_done
+    if not _startup_done:
+        _startup_done = True
+        try:
+            fetch_market_data()
+            print(f"✅ Startup BNB price: ${market_cache.get('bnb_price', 0)}")
+        except Exception as e:
+            print(f"⚠️ Startup BNB error: {e}")
+        try:
+            _load_user_profile()
+            print(f"✅ Startup user profile loaded: {user_profile.get('name')}")
+        except Exception as e:
+            print(f"⚠️ Startup profile error: {e}")
+        try:
+            _load_brain_from_db()
+            print(f"✅ Startup brain loaded: cycles={brain.get('total_learning_cycles',0)}")
+        except Exception as e:
+            print(f"⚠️ Startup brain error: {e}")
 
 @app.route("/")
 def home():
