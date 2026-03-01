@@ -520,8 +520,8 @@ def _calculate_real_emotion() -> dict:
 
 def _calculate_trading_iq() -> int:
     """
-    Real Trading IQ based on actual performance data.
-    Score 0-100 — not fake math.
+    Real Trading IQ — Win Rate + Profit Factor + Max Drawdown + Consecutive Losses + Sample Size
+    Score 0-100
     """
     try:
         all_trades = []
@@ -530,28 +530,59 @@ def _calculate_trading_iq() -> int:
             all_trades.extend(sess.get("pattern_database", []))
 
         if not all_trades:
-            return 50  # Neutral — no data yet
+            return 50
 
         total = len(all_trades)
         wins  = sum(1 for t in all_trades if t.get("win"))
         wr    = (wins / total) * 100 if total > 0 else 0
 
-        # Avg profit on wins, avg loss on losses
         win_pnls  = [t.get("pnl_pct", 0) for t in all_trades if t.get("win") and t.get("pnl_pct")]
         loss_pnls = [abs(t.get("pnl_pct", 0)) for t in all_trades if not t.get("win") and t.get("pnl_pct")]
 
         avg_win  = sum(win_pnls)  / len(win_pnls)  if win_pnls  else 0
         avg_loss = sum(loss_pnls) / len(loss_pnls) if loss_pnls else 0
 
-        # Profit factor (good traders have > 1.5)
-        profit_factor = (avg_win * wins) / max(avg_loss * (total - wins), 1)
+        # Profit factor (>1.75 = strong, >1.0 = ok)
+        gross_profit = avg_win  * wins
+        gross_loss   = avg_loss * (total - wins)
+        profit_factor = gross_profit / max(gross_loss, 1)
 
-        # IQ Formula: WR weight 40% + Profit factor weight 40% + Sample size weight 20%
-        wr_score     = min(40, wr * 0.4)
-        pf_score     = min(40, profit_factor * 13.3)
-        sample_score = min(20, total * 0.67)
+        # Max Drawdown — peak to trough on cumulative PnL
+        cumulative, peak, max_dd = 0.0, 0.0, 0.0
+        for t in all_trades:
+            cumulative += t.get("pnl_pct", 0)
+            if cumulative > peak:
+                peak = cumulative
+            dd = peak - cumulative
+            if dd > max_dd:
+                max_dd = dd
 
-        return int(wr_score + pf_score + sample_score)
+        # Consecutive losses — max losing streak
+        max_streak, cur_streak = 0, 0
+        for t in all_trades:
+            if not t.get("win"):
+                cur_streak += 1
+                max_streak = max(max_streak, cur_streak)
+            else:
+                cur_streak = 0
+
+        # ── Scoring (100 pts total) ──────────────────────
+        # Win Rate     — 30 pts
+        wr_score = min(30, wr * 0.3)
+
+        # Profit Factor — 25 pts (1.75+ = full marks)
+        pf_score = min(25, (profit_factor / 1.75) * 25)
+
+        # Max Drawdown  — 25 pts (0% dd = 25, 50%+ dd = 0)
+        dd_score = max(0, 25 - (max_dd / 2))
+
+        # Consecutive losses — 10 pts (0 streak = 10, 10+ streak = 0)
+        streak_score = max(0, 10 - max_streak)
+
+        # Sample size   — 10 pts
+        sample_score = min(10, total * 0.33)
+
+        return int(wr_score + pf_score + dd_score + streak_score + sample_score)
     except:
         return 50
 
