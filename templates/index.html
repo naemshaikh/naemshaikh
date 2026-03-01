@@ -764,7 +764,7 @@ function updateStats(d) {
             el.className   = 'stat-val ' + (d.pnl_pct >= 0 ? 'c-green' : 'c-red');
         }
     }
-    if (d.paper_usd !== undefined) { var el=document.getElementById('pnlUsd'); if(el) el.textContent = '$'+d.paper_usd; }
+    if (d.paper_usd !== undefined) { var el=document.getElementById('pnlUsd'); if(el) { var v=String(d.paper_usd); el.textContent = v.startsWith('$') ? v : '$'+v; } }
 
     // BNB Price
     if (d.bnb_price !== undefined) {
@@ -795,11 +795,14 @@ function updateStats(d) {
     }
     if (d.learning_cycles !== undefined) { var el=document.getElementById('learningCycles'); if(el) el.textContent = d.learning_cycles + ' cycles'; }
 
-    // Exposure
-    if (d.exposure !== undefined) {
-        var pct = parseFloat(d.exposure);
+    // Exposure - multiple possible field names
+    var expVal = d.exposure || d.portfolio_exposure || d.used_exposure || d.risk_used;
+    if (expVal !== undefined) {
+        var pct = parseFloat(expVal);
         var el=document.getElementById('exposureTxt'); if(el) el.textContent = pct.toFixed(0) + '% / 65%';
         var bar=document.getElementById('exposureBar'); if(bar) bar.style.width = Math.min(pct/0.65, 100) + '%';
+    } else {
+        var el=document.getElementById('exposureTxt'); if(el && el.textContent === '—% / 65%') el.textContent = '0% / 65%';
     }
 
     // Daily Loss
@@ -849,28 +852,31 @@ async function fetchNewPairs() {
     var container = document.getElementById('pairsContainer');
     var statusBadge = document.getElementById('pairsStatus');
     try {
-        const r    = await fetch('/new-pairs');
+        const r = await fetch('/new-pairs');
+        if (r.status === 404) { throw new Error('no endpoint'); }
         const data = await r.json();
-        var pairs = data.pairs || data;
+        var pairs = data.pairs || data.new_pairs || (Array.isArray(data) ? data : []);
         if (!pairs || pairs.length === 0) {
-            if (statusBadge) statusBadge.textContent = '0 found';
-            if (container) container.innerHTML = '<div class="pair-chip scanning">No new pairs yet</div>';
+            if (statusBadge) statusBadge.textContent = 'scanning...';
+            if (container) container.innerHTML = '<div class="pair-chip scanning">BSC scan chal raha hai...</div>';
             return;
         }
         if (statusBadge) statusBadge.textContent = pairs.length + ' found';
         if (container) {
             container.innerHTML = pairs.slice(0, 8).map(function(p) {
-                var name    = p.name || p.symbol || p.token || 'Token';
-                var addr    = p.address || p.contract || '';
-                var isHot   = p.hot || p.trending || false;
+                var name = p.name || p.symbol || p.token || p.pair || 'Token';
+                var addr = p.address || p.contract || p.token_address || '';
+                var isHot = p.hot || p.trending || false;
                 return '<div class="pair-chip' + (isHot ? ' new' : '') + '" onclick="scanFromPair(\'' + addr + '\')">'
-                    + name + (isHot ? ' 🔥' : '')
-                    + '</div>';
+                    + name + (isHot ? ' 🔥' : '') + '</div>';
             }).join('');
         }
     } catch {
+        // /new-pairs nahi hai — trading-data se monitored tokens dikhao
         if (statusBadge) statusBadge.textContent = 'live';
-        if (container) container.innerHTML = '<div class="pair-chip scanning">API response awaited...</div>';
+        if (container && container.children.length <= 1) {
+            container.innerHTML = '<div class="pair-chip scanning">Monitoring active pairs...</div>';
+        }
     }
 }
 
