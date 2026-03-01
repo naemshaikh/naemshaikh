@@ -352,8 +352,8 @@
             </div>
         </div>
         <div class="header-icons">
+            <span id="bnbPill" style="font-size:11px;font-family:'Space Mono',monospace;color:#e8a830;background:rgba(232,168,48,0.10);border:1px solid rgba(232,168,48,0.2);padding:3px 10px;border-radius:20px;">BNB $—</span>
             <i class="fas fa-bell"></i>
-            <i class="fas fa-cog"></i>
         </div>
     </div>
 
@@ -388,6 +388,25 @@
                 </div>
             </div>
 
+            <!-- Real-time stats row 2 -->
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-label">F&amp;G</div>
+                    <div class="stat-val red" id="fearGreedVal">—</div>
+                    <div class="stat-sub">/100</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">WIN RATE</div>
+                    <div class="stat-val amber" id="winRateVal">—</div>
+                    <div class="stat-sub">% trades</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">TRADES</div>
+                    <div class="stat-val silver" id="tradeCount">—</div>
+                    <div class="stat-sub">total</div>
+                </div>
+            </div>
+
             <div class="mode-toggle">
                 <span class="mode-label">Trading Mode</span>
                 <div class="toggle-btns">
@@ -397,13 +416,12 @@
             </div>
 
             <div class="section-card">
-                <div class="section-title">🔥 HOT PAIRS — BSC</div>
-                <div class="pairs-scroll">
-                    <div class="pair-chip hot" onclick="scanFromPair('CAKE')">CAKE/BNB 🔥</div>
-                    <div class="pair-chip" onclick="scanFromPair('XRP')">XRP/BNB</div>
-                    <div class="pair-chip" onclick="scanFromPair('DOGE')">DOGE/BNB</div>
-                    <div class="pair-chip hot" onclick="scanFromPair('PEPE')">PEPE/BNB 🚀</div>
-                    <div class="pair-chip" onclick="scanFromPair('WIF')">WIF/BNB</div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <span class="section-title" style="margin-bottom:0;">🆕 NEW PAIRS — BSC</span>
+                    <span style="font-size:10px;font-family:'Space Mono',monospace;color:#4de8a0;" id="pairsCount">scanning...</span>
+                </div>
+                <div class="pairs-scroll" id="pairsRow">
+                    <div class="pair-chip" style="color:var(--muted);font-style:italic;">Scanning BSC...</div>
                 </div>
             </div>
 
@@ -654,26 +672,52 @@ function addToRecentScans(addr, data) {
         </div>`).join('');
 }
 
+var _lastBnb = 300;
 function updateStats(d) {
+    if (!d) return;
     if (d.paper) document.getElementById('paperBal').textContent = d.paper;
     if (d.real)  document.getElementById('realBal').textContent  = d.real;
     if (d.pnl) {
         document.getElementById('pnlVal').textContent = d.pnl;
         document.getElementById('pnlVal').className   = 'stat-val ' + (d.pnl.includes('-') ? 'red' : 'green');
     }
-    if (d.paper_usd) document.getElementById('pnlUsd').textContent = d.paper_usd;
-    if (d.bnb_price) {
-        var sub = document.getElementById('bnbSub');
-        if (sub) sub.textContent = 'BNB = $' + parseFloat(d.bnb_price).toFixed(0);
+    if (d.paper_usd) { var pu = document.getElementById('pnlUsd'); if(pu) pu.textContent = d.paper_usd; }
+    if (d.bnb_price && d.bnb_price > 0) {
+        _lastBnb = d.bnb_price;
+        var pill = document.getElementById('bnbPill');
+        if (pill) pill.textContent = 'BNB $' + parseFloat(d.bnb_price).toFixed(0);
     }
-    if (d.fear_greed) {
+    if (typeof d.fear_greed !== 'undefined') {
         var fg = document.getElementById('fearGreedVal');
-        if (fg) { fg.textContent = d.fear_greed + '/100'; fg.className = 'stat-val ' + (d.fear_greed > 60 ? 'green' : d.fear_greed > 40 ? 'amber' : 'red'); }
+        if (fg) { fg.textContent = d.fear_greed; fg.className = 'stat-val ' + (d.fear_greed > 60 ? 'green' : d.fear_greed > 40 ? 'amber' : 'red'); }
     }
     if (typeof d.win_rate !== 'undefined') { var wr = document.getElementById('winRateVal'); if (wr) wr.textContent = d.win_rate + '%'; }
-    if (d.new_pairs_found) { var np = document.getElementById('newPairsCount'); if (np) np.textContent = d.new_pairs_found; }
+    if (typeof d.trade_count !== 'undefined') { var tc = document.getElementById('tradeCount'); if (tc) tc.textContent = d.trade_count; }
     if (d.limit_reached) { var w = document.getElementById('dailyLossWarn'); if (w) w.style.display = 'block'; }
-    if (d.positions && Array.isArray(d.positions)) renderPositions(d.positions, d.bnb_price || 300);
+    if (d.positions && Array.isArray(d.positions)) renderPositions(d.positions, _lastBnb);
+}
+
+async function fetchNewPairs() {
+    try {
+        var r = await fetch('/new-pairs');
+        var d = await r.json();
+        var pairs = d.pairs || [];
+        var count = d.count || 0;
+        var pc = document.getElementById('pairsCount');
+        if (pc) pc.textContent = count + ' found';
+        var row = document.getElementById('pairsRow');
+        if (!row) return;
+        if (pairs.length === 0) {
+            row.innerHTML = '<div class="pair-chip" style="color:var(--muted);">Abhi koi naya pair nahi mila</div>';
+            return;
+        }
+        var show = pairs.slice(-6).reverse();
+        row.innerHTML = show.map(function(p) {
+            var addr  = p.address || '';
+            var short = addr ? addr.slice(0,6)+'...'+addr.slice(-4) : '?';
+            return '<div class="pair-chip hot" onclick="document.getElementById('scanAddr').value=''+addr+'';switchTab('scan');" title="'+addr+'">'+short+'</div>';
+        }).join('');
+    } catch(e) {}
 }
 
 function renderPositions(positions, bnbPrice) {
@@ -706,7 +750,9 @@ async function init() {
     await initSession();
     addMessage('Bhai! MrBlack Pro ready hai. Dashboard mein stats dekho, Chat mein poocho, ya Scan karo koi bhi token. 🚀', 'bot');
     fetchTradingData();
+    fetchNewPairs();
     setInterval(fetchTradingData, 15000);
+    setInterval(fetchNewPairs, 30000);
 }
 init();
 </script>
