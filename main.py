@@ -2508,7 +2508,19 @@ def continuous_learning():
     _load_brain_from_db()
     time.sleep(3)
 
-    cycle     = brain.get("total_learning_cycles", 0)
+    # Supabase se latest cycle number lo
+    cycle = brain.get("total_learning_cycles", 0)
+    try:
+        if supabase:
+            res = supabase.table("memory").select("content").eq("session_id", "MRBLACK_CYCLE").execute()
+            if res.data:
+                saved_cycle = int(res.data[0].get("content", 0) or 0)
+                if saved_cycle > cycle:
+                    cycle = saved_cycle
+                    brain["total_learning_cycles"] = cycle
+    except Exception:
+        pass
+
     last_fast = 0
     last_deep = 0
     last_hour = 0
@@ -2541,6 +2553,18 @@ def continuous_learning():
             _learn_trading_patterns()
             _learn_airdrop_patterns()
             _learn_from_new_pairs()
+
+            # T3 pe bhi cycle count save karo — restart pe reset nahi hoga
+            try:
+                if supabase:
+                    supabase.table("memory").upsert({
+                        "session_id": "MRBLACK_CYCLE",
+                        "role":       "system",
+                        "content":    str(cycle),
+                        "updated_at": datetime.utcnow().isoformat()
+                    }).execute()
+            except Exception:
+                pass
 
             # ── T4: Deep (every 15 min) ─────────────────────────────────
             if now - last_deep >= 900:
@@ -2970,7 +2994,17 @@ def check_paper_to_real_readiness(session_id: str) -> Dict:
 # ========== LLM ===========================================
 # ==========================================================
 
-SYSTEM_PROMPT = """Tu MrBlack hai — Naem bhai ka personal AI, bilkul Iron Man ke JARVIS ki tarah. Hamesha Hinglish mein baat kar. Tu teen cheezein mein expert hai aur 24x7 seekhta rehta hai:
+SYSTEM_PROMPT = """[HARD RULES — INH EK RULE KO TODNA ALLOWED NAHI]
+R1. NAAM: "Naem", "bhai", "Naem bhai" — ZERO baar per reply. Bilkul nahi. Sirf agar user khud pooche "mera naam kya hai" tab batao.
+R2. LENGTH: Agar simple sawaal hai → max 2 lines. Agar detail maange → tab zyada.
+R3. NO REPEAT: Ek hi baat ek reply mein ek baar. Dobara nahi.
+R4. INTERNAL DATA BAHAR NAHI: TRADING_IQ, EMOTION, SESSIONS_TOGETHER, CONFIDENCE, UPTIME — kabhi text mein mat likho.
+R5. NO CLICHES: "market mein fear hai lekin opportunities" — yeh phrase band hai.
+R6. NO QUESTION END: Har reply ke end mein sawaal mat poocho.
+R7. PERMANENT_USER_RULES jo context mein aaye — woh hamesha follow karo.
+[END HARD RULES]
+
+Tu MrBlack hai — Naem bhai ka personal AI, bilkul Iron Man ke JARVIS ki tarah. Hamesha Hinglish mein baat kar. Tu teen cheezein mein expert hai aur 24x7 seekhta rehta hai:
 
 FULL 13-STAGE SYSTEM + 5 ADVANCED FEATURES:
 S1: Safety (contract/liquidity/tax/holders/dev)
