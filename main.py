@@ -1468,18 +1468,8 @@ def track_smart_wallets():
                     holdings = get_moralis_wallet_tokens(wallet)
                     current_tokens = {h.get("token_address", "").lower() for h in holdings}
                 else:
-                    # Fallback: BSCScan token transfers
-                    r = requests.get(BSC_SCAN_API, params={
-                        "module": "account", "action": "tokentx",
-                        "address": wallet, "sort": "desc",
-                        "page": 1, "offset": 20, "apikey": BSC_SCAN_KEY
-                    }, timeout=10)
-                    if r.status_code == 200:
-                        txs = r.json().get("result", [])
-                        for tx in txs:
-                            # Recent buys = tokens received by wallet
-                            if tx.get("to", "").lower() == wallet.lower():
-                                current_tokens.add(tx.get("contractAddress", "").lower())
+                    print(f"ℹ️ Smart wallet {wallet[:10]}: Moralis key nahi — tracking skip")
+                    continue
 
                 prev_tokens = smart_wallet_snapshots.get(wallet, set())
 
@@ -2512,15 +2502,10 @@ def run_full_sniper_checklist(address: str) -> Dict:
     except Exception as e:
         print(f"⚠️ GoPlus error: {e}")
 
-    try:
-        bs_res = requests.get(BSC_SCAN_API, params={
-            "module": "contract", "action": "getsourcecode",
-            "address": address, "apikey": BSC_SCAN_KEY
-        }, timeout=10)
-        if bs_res.status_code == 200:
-            bscscan_source = bs_res.json().get("result", [{}])[0].get("SourceCode", "")
-    except Exception as e:
-        print(f"⚠️ BSCScan error: {e}")
+    bscscan_source = ""
+    if _gp_str(goplus_data, "is_open_source", "0") == "1":
+        bscscan_source = "verified"
+    print("✅ Contract check via GoPlus (no BSCScan needed)")
 
     # DexScreener real-time data
     dex_data = get_dexscreener_token_data(address)
@@ -2599,19 +2584,20 @@ def run_full_sniper_checklist(address: str) -> Dict:
 
     # ── STAGE 3 — Token Age ───────────────────────────────
     token_age_min = 0.0
-    if BSC_SCAN_KEY:
-        try:
-            tx_res = requests.get(BSC_SCAN_API, params={
-                "module": "account", "action": "tokentx",
-                "contractaddress": address, "sort": "asc",
-                "page": 1, "offset": 1, "apikey": BSC_SCAN_KEY
-            }, timeout=10)
-            if tx_res.status_code == 200:
-                txs = tx_res.json().get("result", [])
-                if txs:
-                    token_age_min = (time.time() - int(txs[0].get("timeStamp", 0))) / 60
-        except Exception as e:
-            print(f"⚠️ Token age error: {e}")
+    try:
+        age_r = requests.get(
+            f"https://api.dexscreener.com/latest/dex/tokens/{address}",
+            timeout=10
+        )
+        if age_r.status_code == 200:
+            bsc_pairs = [p for p in age_r.json().get("pairs", []) if p.get("chainId") == "bsc"]
+            if bsc_pairs:
+                created_at = bsc_pairs[0].get("pairCreatedAt", 0)
+                if created_at:
+                    token_age_min = (time.time() - created_at / 1000) / 60
+                    print(f"✅ Token age (DexScreener): {token_age_min:.1f} min")
+    except Exception as e:
+        print(f"⚠️ Token age error: {e}")
 
     add("Token Age ≥ 3 Min",   "pass" if token_age_min >= 3 else "warn",
         f"{token_age_min:.0f} min" if token_age_min > 0 else "Unknown", 3)
@@ -2627,22 +2613,8 @@ def run_full_sniper_checklist(address: str) -> Dict:
     buy_pressure_5m = buys_5m > sells_5m
     buy_pressure_1h = buys_1h > sells_1h
 
-    # Fallback: BSCScan if DexScreener has no data
-    if buys_5m == 0 and sells_5m == 0 and BSC_SCAN_KEY:
-        try:
-            tx_res2 = requests.get(BSC_SCAN_API, params={
-                "module": "account", "action": "tokentx",
-                "contractaddress": address, "sort": "desc",
-                "page": 1, "offset": 30, "apikey": BSC_SCAN_KEY
-            }, timeout=10)
-            if tx_res2.status_code == 200:
-                for tx in tx_res2.json().get("result", []):
-                    if tx.get("to", "").lower() in [PANCAKE_ROUTER.lower(), PANCAKE_FACTORY.lower()]:
-                        sells_5m += 1
-                    else:
-                        buys_5m += 1
-                buy_pressure_5m = buys_5m > sells_5m
-        except: pass
+    if buys_5m == 0 and sells_5m == 0:
+        print(f"ℹ️ No 5m txn data for {address[:10]} — DexScreener may need time")
 
     add("Buy > Sell (5min)",  "pass" if buy_pressure_5m else "warn",
         f"B:{buys_5m} S:{sells_5m}", 4)
