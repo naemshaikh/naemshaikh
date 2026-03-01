@@ -1014,16 +1014,38 @@ def poll_new_pairs():
                 if pair_addr not in discovered_addresses:
                     discovered_addresses.add(pair_addr)
                     token = pair.get("baseToken", {})
+                    token_name   = token.get("name",   "")
+                    token_symbol = token.get("symbol", "")
+
+                    # Agar name "BSC" ya empty hai — real name DexScreener se fetch karo
+                    if not token_name or token_name in ["BSC", "Unknown", ""]:
+                        try:
+                            nr = requests.get(
+                                f"https://api.dexscreener.com/latest/dex/tokens/{pair_addr}",
+                                timeout=6
+                            )
+                            if nr.status_code == 200:
+                                bsc_p = [p for p in nr.json().get("pairs", []) if p.get("chainId") == "bsc"]
+                                if bsc_p:
+                                    bt = bsc_p[0].get("baseToken", {})
+                                    token_name   = bt.get("name",   token_name)   or token_name
+                                    token_symbol = bt.get("symbol", token_symbol) or token_symbol
+                        except Exception:
+                            pass
+
+                    token_name   = token_name   or "Unknown"
+                    token_symbol = token_symbol or pair_addr[:6]
+
                     new_pairs_queue.append({
                         "address":    pair_addr,
-                        "name":       token.get("name", "Unknown"),
-                        "symbol":     token.get("symbol", "???"),
+                        "name":       token_name,
+                        "symbol":     token_symbol,
                         "discovered": datetime.utcnow().isoformat(),
                         "liquidity":  pair.get("liquidity", {}).get("usd", 0),
                         "volume_24h": pair.get("volume", {}).get("h24", 0),
                     })
                     new_count += 1
-                    print(f"🆕 New pair: {token.get('symbol','?')} ({pair_addr[:10]})")
+                    print(f"🆕 New pair: {token_symbol} | {token_name} ({pair_addr[:10]})")
                     threading.Thread(
                         target=_auto_check_new_pair,
                         args=(pair_addr,), daemon=True
