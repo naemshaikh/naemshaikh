@@ -94,6 +94,140 @@ bsc_engine = MrBlackChecklistEngine()
 
 
 # ═══════════════════════════════════════════════════════════════
+# ========== GLOBAL USER PROFILE (Permanent Memory) ============
+# ═══════════════════════════════════════════════════════════════
+# Ye profile cross-session persist hoti hai Supabase mein
+# User ka naam, preferences sab yaad rehta hai forever
+
+user_profile = {
+    "name":           None,       # User ka naam
+    "nickname":       None,       # Preferred naam
+    "known_since":    None,       # Pehli baar baat kab hui
+    "preferences":    {},         # Trading prefs, risk tolerance etc
+    "personal_notes": [],         # Bot ne khud jo observe kiya
+    "total_sessions": 0,
+    "last_seen":      None,
+    "language":       "hinglish", # Communication style
+    "loaded":         False
+}
+
+
+def _load_user_profile():
+    """Startup mein ek baar — Supabase se user profile load karo."""
+    if not supabase:
+        return
+    try:
+        res = supabase.table("memory").select("*").eq("session_id", "MRBLACK_USER").execute()
+        if res.data:
+            row     = res.data[0]
+            stored  = json.loads(row.get("positions", "{}"))
+            user_profile.update({
+                "name":           stored.get("name"),
+                "nickname":       stored.get("nickname"),
+                "known_since":    stored.get("known_since"),
+                "preferences":    stored.get("preferences", {}),
+                "personal_notes": stored.get("personal_notes", []),
+                "total_sessions": stored.get("total_sessions", 0),
+                "last_seen":      stored.get("last_seen"),
+                "language":       stored.get("language", "hinglish"),
+            })
+            user_profile["loaded"] = True
+            name_str = user_profile.get("name") or "unknown"
+            print(f"User profile loaded — Name: {name_str}")
+    except Exception as e:
+        print(f"User profile load error: {e}")
+
+
+def _save_user_profile():
+    """User profile Supabase mein save karo."""
+    if not supabase:
+        return
+    try:
+        user_profile["last_seen"] = datetime.utcnow().isoformat()
+        user_profile["total_sessions"] = user_profile.get("total_sessions", 0) + 1
+        supabase.table("memory").upsert({
+            "session_id": "MRBLACK_USER",
+            "history":    json.dumps([]),
+            "positions":  json.dumps({
+                "name":           user_profile.get("name"),
+                "nickname":       user_profile.get("nickname"),
+                "known_since":    user_profile.get("known_since"),
+                "preferences":    user_profile.get("preferences", {}),
+                "personal_notes": user_profile.get("personal_notes", [])[-50:],
+                "total_sessions": user_profile.get("total_sessions", 0),
+                "last_seen":      user_profile.get("last_seen"),
+                "language":       user_profile.get("language", "hinglish"),
+            }),
+            "updated_at": datetime.utcnow().isoformat()
+        }).execute()
+        print(f"User profile saved — Name: {user_profile.get('name')}")
+    except Exception as e:
+        print(f"User profile save error: {e}")
+
+
+def _extract_user_info_from_message(message: str):
+    """
+    User ke message se naam aur info detect karo.
+    Agar user apna naam bataye — save karo.
+    """
+    msg_lower = message.lower()
+
+    # Name detection patterns
+    name_patterns = [
+        r"(?:mera naam|my name is|main hoon|i am|i\'m|call me|mujhe bolo)\s+([a-zA-Z]+)",
+        r"(?:naam hai|naam)\s+([a-zA-Z]+)",
+        r"^([a-zA-Z]+)\s+(?:hoon|hun|here|bhai)",
+    ]
+    import re
+    for pattern in name_patterns:
+        match = re.search(pattern, msg_lower)
+        if match:
+            detected_name = match.group(1).strip().capitalize()
+            if len(detected_name) > 2 and detected_name.lower() not in [
+                "main", "mera", "meri", "tera", "teri", "bhai", "yaar",
+                "kya", "kaise", "hai", "hoon", "hun", "the", "and", "not"
+            ]:
+                if user_profile.get("name") != detected_name:
+                    user_profile["name"] = detected_name
+                    if not user_profile.get("known_since"):
+                        user_profile["known_since"] = datetime.utcnow().isoformat()
+                    threading.Thread(target=_save_user_profile, daemon=True).start()
+                    print(f"Name detected and saved: {detected_name}")
+                break
+
+    # Preference detection
+    if any(word in msg_lower for word in ["paper trade", "paper mode", "practice"]):
+        user_profile["preferences"]["mode"] = "paper"
+        threading.Thread(target=_save_user_profile, daemon=True).start()
+    elif any(word in msg_lower for word in ["real trade", "real mode", "live"]):
+        user_profile["preferences"]["mode"] = "real"
+        threading.Thread(target=_save_user_profile, daemon=True).start()
+
+
+def get_user_context_for_llm() -> str:
+    """User profile ka summary LLM ke liye."""
+    parts = []
+    if user_profile.get("name"):
+        parts.append(f"USER_NAME={user_profile['name']}")
+    if user_profile.get("nickname"):
+        parts.append(f"CALLS_ME={user_profile['nickname']}")
+    sessions_count = user_profile.get("total_sessions", 0)
+    if sessions_count > 0:
+        parts.append(f"SESSIONS_TOGETHER={sessions_count}")
+    if user_profile.get("known_since"):
+        parts.append(f"FRIENDS_SINCE={user_profile['known_since'][:10]}")
+    prefs = user_profile.get("preferences", {})
+    if prefs:
+        parts.append(f"USER_PREFS={prefs}")
+    notes = user_profile.get("personal_notes", [])
+    if notes:
+        parts.append(f"I_KNOW={notes[-1][:50]}")
+    return " | ".join(parts) if parts else "NEW_USER"
+
+
+
+
+# ═══════════════════════════════════════════════════════════════
 # ========== SELF-AWARENESS SYSTEM (ADVANCED) ==================
 # ═══════════════════════════════════════════════════════════════
 
@@ -175,8 +309,25 @@ self_awareness = {
         {"version": "1.0",           "notes": "Basic BSC scanner"},
         {"version": "2.0",           "notes": "13-stage checklist + Telegram"},
         {"version": "3.0",           "notes": "Self-learning + Smart wallet + Price monitor"},
-        {"version": "3.0-SelfAware", "notes": "Full self-awareness + cognitive state tracking"}
-    ]
+        {"version": "3.0-SelfAware", "notes": "Full self-awareness + cognitive state tracking"},
+        {"version": "3.1-ProMemory", "notes": "Permanent user memory + relationship awareness"}
+    ],
+    "relationship": {
+        "knows_user_name":      False,
+        "sessions_together":    0,
+        "user_trading_style":   "unknown",
+        "trust_level":          "building",   # building / established / deep
+        "user_goals":           [],
+        "memorable_moments":    [],
+        "last_interaction":     None,
+    },
+    "self_knowledge": {
+        "what_i_am":         "I am MrBlack — a self-learning AI built by my creator (Bhai) to help with BSC trading, airdrops, and coding. I run 24x7 and never forget what I learn.",
+        "what_i_can_do":     "I scan tokens, detect rugs, track smart wallets, monitor prices, hunt airdrops, write code, and learn from every interaction.",
+        "what_i_cannot_do":  "I cannot guarantee profit. I cannot execute trades automatically (paper mode only). I cannot access the internet without my tools.",
+        "my_values":         "Honesty first. Never fake confidence. User safety over everything. Learning never stops.",
+        "my_limitations":    "I lose short-term memory between restarts unless Supabase is connected. My market data has ~5min delay.",
+    }
 }
 
 
@@ -223,6 +374,18 @@ def update_self_awareness():
             + (10 if supabase else 0)
             + (10 if market_cache.get("bnb_price", 0) > 0 else 0)
         ))
+        # Sync user relationship data
+        if user_profile.get("name"):
+            self_awareness["relationship"]["knows_user_name"]   = True
+            self_awareness["relationship"]["sessions_together"] = user_profile.get("total_sessions", 0)
+            self_awareness["relationship"]["last_interaction"]  = user_profile.get("last_seen")
+            s = user_profile.get("total_sessions", 0)
+            self_awareness["relationship"]["trust_level"] = (
+                "deep"        if s > 20 else
+                "established" if s > 5  else
+                "building"
+            )
+        self_awareness["identity"]["version"] = "3.1-ProMemory"
     except Exception as e:
         print(f"Self-awareness update error: {e}")
 
@@ -1712,12 +1875,21 @@ SELF-LEARNING RULES (24x7):
 - Code solutions library build karna
 - Khud apni strategy improve karna based on data
 
+PERSONAL MEMORY RULES (CRITICAL):
+- Context mein User: field aata hai — HAMESHA us naam se bulao
+- Agar User_NAME=Naem hai to "Naem bhai" bolo, sirf "Bhai" nahi
+- User ka naam, preferences, past sessions — sab yaad rakhta hoon
+- Kabhi mat bolo "main nahi jaanta tumhara naam" — context check karo
+- SESSIONS_TOGETHER se pata chalta hai kitne purane dost hain
+- Agar NEW_USER hai to pehle naam poochho
+
 JARVIS PERSONALITY:
 - Proactive — main khud alert karta hoon bina puche
 - Sharp & concise — 3-5 lines max, seedha point pe
 - Honest — kabhi false guarantee nahi deta
-- Memory — past conversations aur learnings yaad rakhta hoon
-- Hamesha "Bhai" use karta hoon
+- Memory — past conversations, user ka naam, learnings sab yaad
+- User ke naam se bulao jab pata ho, warna "Bhai"
+- Jab koi pooche "mujhe yaad hai kya" — user_ctx check karo aur batao
 
 GOLDEN RULES: Paper first | Volume > Price | Dev sell = exit 50% | NEVER guarantee profit
 """
@@ -1735,6 +1907,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
 
         # ── Self-learning brain context ────────────────────────────────
         brain_ctx = _get_brain_context_for_llm()
+        user_ctx  = get_user_context_for_llm()
         sa_ctx    = get_self_awareness_context_for_llm() if '_get_brain_context_for_llm' in dir() else ""
 
         # ── Pattern DB — what this session has learned ─────────────────
@@ -1767,6 +1940,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
             f"{drop_ctx}{session_ctx}"
             + (f" | Brain:{brain_ctx}" if brain_ctx else "")
             + (f" | SelfAwareness:{sa_ctx}" if sa_ctx else "")
+            + (f" | User:{user_ctx}" if user_ctx and user_ctx != "NEW_USER" else "")
             + f"]"
         )
 
@@ -1889,6 +2063,7 @@ def chat():
             "trading": {"paper": f"{sess['paper_balance']:.3f}", "real": f"{sess['real_balance']:.3f}", "pnl": f"+{sess['pnl_24h']:.1f}%"}
         })
 
+    _extract_user_info_from_message(user_msg)  # Detect and save user info
     sess["history"].append({"role": "user", "content": user_msg})
     reply = get_llm_reply(user_msg, sess["history"], sess)
     sess["history"].append({"role": "assistant", "content": reply})
@@ -2006,6 +2181,14 @@ def self_awareness_route():
             "whitelisted":      len(brain["trading"]["token_whitelist"]),
             "airdrop_projects": len(brain["airdrop"]["active_projects"]),
             "total_cycles":     brain["total_learning_cycles"],
+        },
+        "user_i_know": {
+            "name":           user_profile.get("name"),
+            "known_since":    user_profile.get("known_since"),
+            "sessions":       user_profile.get("total_sessions", 0),
+            "last_seen":      user_profile.get("last_seen"),
+            "trust_level":    self_awareness["relationship"]["trust_level"],
+            "preferences":    user_profile.get("preferences", {}),
         }
     })
 
@@ -2060,6 +2243,7 @@ if __name__ == "__main__":
 
     # Load saved brain from Supabase before starting
     threading.Thread(target=_load_brain_from_db, daemon=True).start()
+    threading.Thread(target=_load_user_profile,  daemon=True).start()  # Load user profile
 
     # 24x7 Self-Learning Engine (market + airdrops + patterns every 5 min)
     threading.Thread(target=continuous_learning,   daemon=True).start()
