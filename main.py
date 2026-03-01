@@ -36,7 +36,7 @@ MODEL_DEEP      = "llama-3.3-70b-versatile"  # Deep analysis ke liye
 # ========== ENV CONFIG ==========
 BSC_RPC          = "https://bsc-dataseed.binance.org/"
 BSC_SCAN_API     = "https://api.etherscan.io/v2/api"  # Etherscan V2 — BSC chainid=56
-BSC_SCAN_KEY     = os.getenv("BSC_SCAN_KEY") or os.getenv("BSCSCAN_API_KEY", "")
+BSC_SCAN_KEY     = os.getenv("BSC_SCAN_KEY") or os.getenv("BSCSCAN_API_KEY") or os.getenv("BSC_API_KEY", "") or os.getenv("BSCSCAN_API_KEY", "")
 PANCAKE_ROUTER   = "0x10ED43C718714eb63d5aA57B78B54704E256024E"
 PANCAKE_FACTORY  = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
 MORALIS_API_KEY  = os.getenv("MORALIS_API_KEY", "")
@@ -983,6 +983,10 @@ def poll_new_pairs():
             }, timeout=12)
             if r.status_code == 200:
                 logs = r.json().get("result", [])
+                if not isinstance(logs, list):
+                    print(f'⚠️ BSCScan API error: {logs}')
+                    time.sleep(60)
+                    continue
                 for log in logs:
                     # Pair address is in data field (last 32 bytes = pair address)
                     raw_data = log.get("data", "")
