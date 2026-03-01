@@ -3334,8 +3334,58 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
             + f"]"
         )
 
+        # ── Cross-session persistent memory inject karo ──────────────
+        # ChatGPT Memory ka same method — structured facts as system context
+        memory_facts = []
+
+        # User facts
+        if user_profile.get("name"):
+            memory_facts.append(f"User ka naam: {user_profile['name']}")
+        if user_profile.get("known_since"):
+            memory_facts.append(f"Pehli baar mila: {user_profile['known_since'][:10]}")
+        if user_profile.get("total_sessions", 0) > 0:
+            memory_facts.append(f"Saath mein {user_profile['total_sessions']} sessions ho chuke hain")
+        if user_profile.get("preferences"):
+            prefs = user_profile["preferences"]
+            if prefs.get("mode"):
+                memory_facts.append(f"Trading mode preference: {prefs['mode']}")
+        if user_profile.get("user_rules"):
+            for rule in user_profile["user_rules"][-5:]:
+                memory_facts.append(f"User ka permanent rule: {rule[:80]}")
+
+        # Trading memory facts
+        trade_count = session_data.get("trade_count", 0)
+        win_count   = session_data.get("win_count", 0)
+        if trade_count > 0:
+            wr = round(win_count / trade_count * 100, 1)
+            memory_facts.append(f"Ab tak {trade_count} paper trades, win rate {wr}%")
+        if session_data.get("paper_balance", 1.87) != 1.87:
+            memory_facts.append(f"Paper balance: {session_data['paper_balance']:.3f} BNB")
+
+        # Brain learnings
+        best = brain["trading"]["best_patterns"][-2:]
+        if best:
+            memory_facts.append(f"Best trade patterns: {[p.get('lesson','')[:40] for p in best]}")
+        bl_count = len(brain["trading"]["token_blacklist"])
+        if bl_count > 0:
+            memory_facts.append(f"Ab tak {bl_count} dangerous tokens blacklist mein hain")
+
+        # Personal notes
+        notes = user_profile.get("personal_notes", [])
+        if notes:
+            memory_facts.append(f"User ke baare mein: {notes[-1][:60]}")
+
+        # Inject as system context — ChatGPT Memory style
+        memory_block = ""
+        if memory_facts:
+            memory_block = (
+                "\n\n[MRBLACK PERSISTENT MEMORY — YE HAMESHA YAAD RAKHO]\n"
+                + "\n".join(f"- {f}" for f in memory_facts)
+                + "\n[END MEMORY]"
+            )
+
         # System prompt in messages (FreeFlow system= param support nahi karta)
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages = [{"role": "system", "content": SYSTEM_PROMPT + memory_block}]
         messages += [{"role": m["role"], "content": m["content"]} for m in history[-20:]]
         # Rules reminder — user message ke saath inject (system prompt ignore hota hai)
         _perm_rules = user_profile.get("user_rules", [])
