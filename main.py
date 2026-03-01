@@ -428,15 +428,20 @@ def _calculate_real_emotion() -> dict:
     Returns {"emotion": str, "reason": str, "intensity": int}
     """
     try:
-        warnings     = len(self_awareness["cognitive_state"]["active_warnings"])
-        errors_today = self_awareness["current_state"].get("errors_today", 0)
-        wins         = len(brain["trading"]["best_patterns"])
-        losses       = len(brain["trading"]["avoid_patterns"])
-        new_pairs_c  = len(new_pairs_queue)
-        cycles       = brain.get("total_learning_cycles", 0)
-        bnb_price    = market_cache.get("bnb_price", 0)
-        fg           = market_cache.get("fear_greed", 50)
-        open_pos     = len(monitored_positions)
+        # Safe access — vars may not be initialized yet at startup
+        _warnings_list = self_awareness.get("cognitive_state", {}).get("active_warnings", []) if isinstance(self_awareness, dict) else []
+        warnings     = len(_warnings_list)
+        errors_today = self_awareness.get("current_state", {}).get("errors_today", 0) if isinstance(self_awareness, dict) else 0
+        _brain       = brain if isinstance(brain, dict) else {}
+        wins         = len(_brain.get("trading", {}).get("best_patterns", []))
+        losses       = len(_brain.get("trading", {}).get("avoid_patterns", []))
+        new_pairs_c  = len(new_pairs_queue) if isinstance(new_pairs_queue, object) else 0
+        cycles       = _brain.get("total_learning_cycles", 0)
+        _mc          = market_cache if isinstance(market_cache, dict) else {}
+        bnb_price    = _mc.get("bnb_price", 0)
+        fg           = _mc.get("fear_greed", 50)
+        _mon         = monitored_positions if isinstance(monitored_positions, dict) else {}
+        open_pos     = len(_mon)
 
         # Stress = errors + warnings
         stress = min(10, warnings * 2 + errors_today)
@@ -473,7 +478,8 @@ def _calculate_trading_iq() -> int:
     """
     try:
         all_trades = []
-        for sess in sessions.values():
+        _sessions = sessions if isinstance(sessions, dict) else {}
+        for sess in _sessions.values():
             all_trades.extend(sess.get("pattern_database", []))
 
         if not all_trades:
@@ -509,23 +515,28 @@ def _assess_capabilities() -> dict:
     """
     cap = self_awareness["capability_map"]
 
-    # Rug detection score — SAFE tokens jo actually safe nikle
-    safe_tokens    = brain["trading"]["token_whitelist"]
-    danger_tokens  = brain["trading"]["token_blacklist"]
+    # Safe access
+    _brain = brain if isinstance(brain, dict) else {}
+    _trade = _brain.get("trading", {})
+
+    # Rug detection score
+    safe_tokens    = _trade.get("token_whitelist", [])
+    danger_tokens  = _trade.get("token_blacklist", [])
     total_scanned  = len(safe_tokens) + len(danger_tokens)
 
     if total_scanned > 0:
         cap["rug_detection"]["tested"]  = total_scanned
-        cap["rug_detection"]["correct"] = len(danger_tokens)  # We caught them
+        cap["rug_detection"]["correct"] = len(danger_tokens)
         cap["rug_detection"]["score"]   = min(10, int((len(danger_tokens) / max(total_scanned, 1)) * 10 + 5))
 
     # Trading IQ
     iq = _calculate_trading_iq()
     cap["market_timing"]["score"] = int(iq / 10)
 
-    # User understanding — sessions + memory
-    sessions_count = user_profile.get("total_sessions", 0)
-    has_name       = bool(user_profile.get("name"))
+    # User understanding — safe access
+    _up            = user_profile if isinstance(user_profile, dict) else {}
+    sessions_count = _up.get("total_sessions", 0)
+    has_name       = bool(_up.get("name"))
     cap["user_understanding"]["score"] = min(10, (5 if has_name else 2) + min(5, sessions_count // 2))
 
     # Airdrop evaluation
@@ -544,11 +555,14 @@ def _generate_meta_thoughts() -> dict:
     meta = self_awareness["meta_cognition"]
 
     try:
-        wins     = brain["trading"]["best_patterns"]
-        losses   = brain["trading"]["avoid_patterns"]
-        bl       = brain["trading"]["token_blacklist"]
+        _brain   = brain   if isinstance(brain,   dict) else {}
+        _trade   = _brain.get("trading", {})
+        _sessions= sessions if isinstance(sessions, dict) else {}
+        wins     = _trade.get("best_patterns",   [])
+        losses   = _trade.get("avoid_patterns",  [])
+        bl       = _trade.get("token_blacklist",  [])
         wr_list  = [s.get("win_count", 0) / max(s.get("trade_count", 1), 1)
-                    for s in sessions.values() if s.get("trade_count", 0) > 0]
+                    for s in _sessions.values() if s.get("trade_count", 0) > 0]
         avg_wr   = sum(wr_list) / len(wr_list) * 100 if wr_list else 0
 
         # What I know well
@@ -594,20 +608,27 @@ def update_self_awareness():
     try:
         uptime = (datetime.utcnow() - BIRTH_TIME).total_seconds()
 
+        # Safe refs — may not be initialized during import
+        _sessions   = sessions   if isinstance(sessions,   dict)  else {}
+        _brain      = brain      if isinstance(brain,      dict)  else {}
+        _mc         = market_cache if isinstance(market_cache, dict) else {}
+        _mon        = monitored_positions if isinstance(monitored_positions, dict) else {}
+        _npq        = new_pairs_queue if hasattr(new_pairs_queue, '__len__') else []
+
         # ── Pillar 1: Basic state ──────────────────────────
         self_awareness["current_state"]["uptime_seconds"]    = int(uptime)
-        self_awareness["current_state"]["total_sessions"]    = len(sessions)
-        self_awareness["current_state"]["pairs_discovered"]  = len(new_pairs_queue)
-        self_awareness["current_state"]["learning_cycles"]   = brain.get("total_learning_cycles", 0)
+        self_awareness["current_state"]["total_sessions"]    = len(_sessions)
+        self_awareness["current_state"]["pairs_discovered"]  = len(_npq)
+        self_awareness["current_state"]["learning_cycles"]   = __brain.get("total_learning_cycles", 0)
         self_awareness["current_state"]["last_heartbeat"]    = datetime.utcnow().isoformat()
         self_awareness["identity"]["model_backbone"]         = MODEL_NAME
 
         # ── Warnings ──────────────────────────────────────
         warnings = []
-        if market_cache.get("bnb_price", 0) == 0: warnings.append("BNB price feed offline")
+        if _mc.get("bnb_price", 0) == 0: warnings.append("BNB price feed offline")
         if not supabase:                            warnings.append("Supabase disconnected — memory volatile")
         if not TELEGRAM_TOKEN:                      warnings.append("Telegram not configured")
-        if brain.get("total_learning_cycles", 0) == 0: warnings.append("Learning engine not yet cycled")
+        if _brain.get("total_learning_cycles", 0) == 0: warnings.append("Learning engine not yet cycled")
         self_awareness["cognitive_state"]["active_warnings"] = warnings
         self_awareness["current_state"]["errors_today"] = len(warnings)
 
@@ -623,7 +644,7 @@ def update_self_awareness():
         self_awareness["emotional_intelligence"]["emotional_history"] = hist[-20:]
 
         # ── Pillar 3: Cognitive State (enhanced) ──────────
-        fg = market_cache.get("fear_greed", 50)
+        fg = _mc.get("fear_greed", 50)
         self_awareness["cognitive_state"]["mood"]             = emotion_data["emotion"]
         self_awareness["cognitive_state"]["market_sentiment"] = (
             "EXTREME_GREED" if fg > 75 else
@@ -633,14 +654,14 @@ def update_self_awareness():
             "EXTREME_FEAR"
         )
         self_awareness["cognitive_state"]["learning_velocity"] = (
-            "ACCELERATING" if len(new_pairs_queue) > 20 else
-            "FAST"         if len(new_pairs_queue) > 10 else
-            "NORMAL"       if len(new_pairs_queue) > 3  else
+            "ACCELERATING" if len(_npq) > 20 else
+            "FAST"         if len(_npq) > 10 else
+            "NORMAL"       if len(_npq) > 3  else
             "SLOW"
         )
         self_awareness["cognitive_state"]["processing_load"] = (
-            "HIGH"   if len(monitored_positions) > 3 else
-            "MEDIUM" if len(monitored_positions) > 0 else
+            "HIGH"   if len(_mon) > 3 else
+            "MEDIUM" if len(_mon) > 0 else
             "LOW"
         )
 
@@ -649,14 +670,14 @@ def update_self_awareness():
         self_awareness["performance_intelligence"]["trading_iq"] = tiq
 
         mem_total = (
-            len(brain["trading"]["best_patterns"]) +
-            len(brain["trading"]["avoid_patterns"])
+            len(_brain.get("trading", {})["best_patterns"]) +
+            len(_brain.get("trading", {})["avoid_patterns"])
         )
         self_awareness["memory_summary"]["total_patterns_learned"]   = mem_total
-        self_awareness["memory_summary"]["tokens_blacklisted"]       = len(brain["trading"]["token_blacklist"])
-        self_awareness["memory_summary"]["tokens_whitelisted"]       = len(brain["trading"]["token_whitelist"])
+        self_awareness["memory_summary"]["tokens_blacklisted"]       = len(_brain.get("trading", {})["token_blacklist"])
+        self_awareness["memory_summary"]["tokens_whitelisted"]       = len(_brain.get("trading", {})["token_whitelist"])
         self_awareness["memory_summary"]["airdrop_projects_tracked"] = len(brain["airdrop"]["active_projects"])
-        self_awareness["memory_summary"]["strategy_notes_count"]     = len(brain["trading"]["strategy_notes"])
+        self_awareness["memory_summary"]["strategy_notes_count"]     = len(_brain.get("trading", {})["strategy_notes"])
         self_awareness["memory_summary"]["memory_health"]            = (
             "RICH"    if mem_total > 50  else
             "HEALTHY" if mem_total > 10  else
@@ -669,7 +690,7 @@ def update_self_awareness():
         conf_base += min(25, mem_total)                         # patterns se confidence
         conf_base += (15 if not warnings else 0)               # warning free bonus
         conf_base += (10 if supabase else 0)                   # memory persistence
-        conf_base += (10 if market_cache.get("bnb_price",0)>0 else 0)  # data feed
+        conf_base += (10 if _mc.get("bnb_price",0)>0 else 0)  # data feed
         conf_base += min(10, tiq // 10)                        # trading IQ se
         self_awareness["cognitive_state"]["confidence_level"] = min(100, conf_base)
 
@@ -711,9 +732,12 @@ def self_introspect() -> dict:
         tiq      = self_awareness["performance_intelligence"]["trading_iq"]
         conf     = self_awareness["cognitive_state"]["confidence_level"]
         uptime_h = self_awareness["current_state"]["uptime_seconds"] // 3600
-        username = user_profile.get("name", "Bhai")
-        bl_count = len(brain["trading"]["token_blacklist"])
-        wl_count = len(brain["trading"]["token_whitelist"])
+        _up      = user_profile if isinstance(user_profile, dict) else {}
+        _brain   = brain if isinstance(brain, dict) else {}
+        _trade   = _brain.get("trading", {})
+        username = _up.get("name", "Bhai")
+        bl_count = len(_trade.get("token_blacklist", []))
+        wl_count = len(_trade.get("token_whitelist", []))
 
         # Genuine thought — not template filler
         thought_parts = [
@@ -792,11 +816,11 @@ def get_self_awareness_context_for_llm() -> str:
             f"MONITORING={len(monitored_positions)}positions",
         ]
 
-        if cs["active_warnings"]:
-            parts.append(f"WARNINGS={';'.join(cs['active_warnings'][:2])}")
+        if cs.get("active_warnings"):
+            parts.append("WARNINGS=" + ";".join(cs["active_warnings"][:2]))
 
         # Add meta-cognition to LLM context
-        strengths = s["meta_cognition"].get("what_i_know_well", [])
+        strengths = s.get("meta_cognition", {}).get("what_i_know_well", [])
         if strengths:
             parts.append(f"MY_STRENGTH={strengths[0][:50]}")
 
@@ -806,7 +830,7 @@ def get_self_awareness_context_for_llm() -> str:
 
         # Relationship context
         if rel.get("knows_user_name"):
-            parts.append(f"TRUST={rel['trust_level']}|SESSIONS={rel['sessions_together']}")
+            parts.append("TRUST=" + str(rel.get("trust_level","?")) + "|SESSIONS=" + str(rel.get("sessions_together",0)))
 
         # Last introspection thought
         if s["introspection_log"]:
