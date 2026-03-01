@@ -1145,10 +1145,14 @@ def poll_new_pairs():
             _cycle += 1
             global discovered_addresses
 
-            # Cache cleanup har 10 cycles
+            # FIX: Memory leak — har cycle cleanup + max 5000 cap
+            _nc = time.time()
+            discovered_addresses = {k: v for k, v in discovered_addresses.items() if _nc - v < DISCOVERY_TTL}
+            if len(discovered_addresses) > 5000:
+                # Sabse purane entries hata do
+                sorted_items = sorted(discovered_addresses.items(), key=lambda x: x[1], reverse=True)
+                discovered_addresses = dict(sorted_items[:5000])
             if _cycle % 10 == 0:
-                _nc = time.time()
-                discovered_addresses = {k: v for k, v in discovered_addresses.items() if _nc - v < DISCOVERY_TTL}
                 print(f"\U0001f504 Cache: {len(discovered_addresses)} entries | Queue: {len(new_pairs_queue)}")
 
             # Token boosts
