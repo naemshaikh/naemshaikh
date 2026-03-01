@@ -1045,8 +1045,12 @@ def poll_new_pairs():
     Auto-reconnect with 4 free endpoints.
     """
     import asyncio
-    import websockets as _ws
     import json as _json
+    try:
+        import websockets as _ws
+    except ImportError:
+        print("\u26a0\ufe0f websockets package nahi hai — sirf DexScreener fallback chalega")
+        _ws = None
 
     FACTORY    = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
     PAIR_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
@@ -1111,18 +1115,28 @@ def poll_new_pairs():
     async def _ws_loop():
         idx = 0
         while True:
-            await _listen(WSS_ENDPOINTS[idx % len(WSS_ENDPOINTS)])
+            try:
+                await _listen(WSS_ENDPOINTS[idx % len(WSS_ENDPOINTS)])
+            except Exception as e:
+                print(f"\u26a0\ufe0f WSS loop iteration error: {e}")
             idx += 1
             print(f"\U0001f504 WSS reconnecting... endpoint {idx % len(WSS_ENDPOINTS) + 1}/3")
-            await asyncio.sleep(3)
+            await asyncio.sleep(5)
 
     def _run_ws():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(_ws_loop())
+        try:
+            asyncio.run(_ws_loop())
+        except RuntimeError as re:
+            # Agar event loop conflict ho — ignore, DexScreener fallback chalega
+            print(f"\u26a0\ufe0f WSS loop error (fallback active): {re}")
+        except Exception as ex:
+            print(f"\u26a0\ufe0f WSS thread crashed (fallback active): {ex}")
 
-    threading.Thread(target=_run_ws, daemon=True).start()
-    print("\U0001f50c WebSocket thread started!")
+    if _ws is not None:
+        threading.Thread(target=_run_ws, daemon=True).start()
+        print("\U0001f50c WebSocket thread started (safe mode)!")
+    else:
+        print("\u26a0\ufe0f WebSocket disabled — only DexScreener fallback active")
 
     # ── DexScreener fallback — har 5 min ───────────────────────────
     _cycle = 0
