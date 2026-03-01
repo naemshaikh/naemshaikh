@@ -23,7 +23,13 @@ import httpx
 httpx.__version__ = "0.24.1"
 
 app = Flask(__name__)
-MODEL_NAME = "llama-3.3-70b-versatile"
+MODELS_PRIORITY = [
+    "deepseek-r1-distill-llama-70b",
+    "llama-3.3-70b-versatile",
+    "llama-3.1-70b-versatile",
+    "mixtral-8x7b-32768",
+]
+MODEL_NAME = MODELS_PRIORITY[0]
 
 # ========== ENV CONFIG ==========
 BSC_RPC          = "https://bsc-dataseed.binance.org/"
@@ -619,6 +625,18 @@ def _auto_check_new_pair(pair_address: str):
     if overall in ["SAFE", "CAUTION"]:
         telegram_new_token_alert(pair_address, score, total, rec)
 
+    # AUTO PAPER BUY trigger
+    if overall == "SAFE" and score >= int(total * 0.75):
+        try:
+            _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
+        except Exception as e:
+            print(f"Auto buy error: {e}")
+    elif overall == "CAUTION" and score >= int(total * 0.88):
+        try:
+            _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
+        except Exception as e:
+            print(f"Auto buy error caution: {e}")
+
     # Add to knowledge base
     knowledge_base["bsc"]["new_tokens"].append({
         "address": pair_address,
@@ -638,6 +656,157 @@ def _auto_check_new_pair(pair_address: str):
 #              "token": str, "size_bnb": float, "session_id": str,
 #              "stop_loss_pct": float, "last_check": timestamp } }
 monitored_positions: Dict[str, dict] = {}
+
+# ═══════════════════════════════════════════════
+# AUTO PAPER TRADING ENGINE
+# ═══════════════════════════════════════════════
+AUTO_TRADE_ENABLED = True
+AUTO_BUY_SIZE_BNB  = 0.003
+AUTO_MAX_POSITIONS = 4
+AUTO_SESSION_ID    = "AUTO_TRADER"
+
+auto_trade_stats = {
+    "total_auto_buys":   0,
+    "total_auto_sells":  0,
+    "auto_pnl_total":    0.0,
+    "running_positions": {},
+    "last_action":       None,
+}
+
+
+def _auto_paper_buy(address, token_name, score, total, checklist_result):
+    if not AUTO_TRADE_ENABLED:
+        return
+    sess = get_or_create_session(AUTO_SESSION_ID)
+    if sess.get("daily_loss", 0) >= 8.0:
+        print("Auto-buy blocked: daily loss limit")
+        return
+    if len(auto_trade_stats["running_positions"]) >= AUTO_MAX_POSITIONS:
+        print("Auto-buy skipped: max positions open")
+        return
+    if address in auto_trade_stats["running_positions"]:
+        return
+    paper_balance = sess.get("paper_balance", 1.87)
+    if paper_balance < AUTO_BUY_SIZE_BNB:
+        print("Auto-buy skipped: low balance")
+        return
+    entry_price = get_token_price_bnb(address)
+    if entry_price <= 0:
+        dex = checklist_result.get("dex_data", {})
+        bnb_p = market_cache.get("bnb_price", 300) or 300
+        entry_price = dex.get("price_usd", 0) / bnb_p if dex.get("price_usd", 0) > 0 else 0
+    if entry_price <= 0:
+        print(f"Auto-buy skipped: no price for {address[:10]}")
+        return
+    size_bnb = min(AUTO_BUY_SIZE_BNB, paper_balance * 0.025)
+    size_bnb = max(size_bnb, 0.001)
+    sess["paper_balance"] = round(paper_balance - size_bnb, 6)
+    add_position_to_monitor(AUTO_SESSION_ID, address,
+                            token_name or address[:10], entry_price,
+                            size_bnb, stop_loss_pct=15.0)
+    auto_trade_stats["running_positions"][address] = {
+        "token":     token_name or address[:10],
+        "entry":     entry_price,
+        "size_bnb":  size_bnb,
+        "sl_pct":    15.0,
+        "tp_sold":   0.0,
+        "bought_at": datetime.utcnow().isoformat(),
+    }
+    auto_trade_stats["total_auto_buys"] += 1
+    auto_trade_stats["last_action"] = f"BUY {token_name or address[:10]}"
+    sess.setdefault("positions", []).append({
+        "address": address, "token": token_name or address[:10],
+        "entry": entry_price, "size_bnb": size_bnb, "type": "auto"
+    })
+    threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
+    send_telegram(
+        f"AUTO PAPER BUY\n"
+        f"Token: {address[:12]}\n"
+        f"Entry: {entry_price:.8f} BNB\n"
+        f"Size: {size_bnb:.4f} BNB\n"
+        f"Score: {score}/{total}\n"
+        f"Balance: {sess['paper_balance']:.4f} BNB"
+    )
+    print(f"AUTO BUY: {address[:10]} @ {entry_price:.8f} size={size_bnb:.4f}")
+
+
+def _auto_paper_sell(address, reason, sell_pct=100.0):
+    if address not in auto_trade_stats["running_positions"]:
+        return
+    pos  = auto_trade_stats["running_positions"][address]
+    mon  = monitored_positions.get(address, {})
+    entry   = pos.get("entry", 0)
+    current = mon.get("current", entry)
+    size    = pos.get("size_bnb", AUTO_BUY_SIZE_BNB)
+    token   = pos.get("token", address[:10])
+    if entry <= 0:
+        return
+    pnl_pct    = ((current - entry) / entry) * 100
+    sell_size  = size * (sell_pct / 100.0)
+    return_bnb = sell_size * (1 + pnl_pct / 100.0)
+    sess = get_or_create_session(AUTO_SESSION_ID)
+    sess["paper_balance"] = round(sess.get("paper_balance", 1.87) + return_bnb, 6)
+    auto_trade_stats["auto_pnl_total"] += pnl_pct * (sell_pct / 100.0)
+    auto_trade_stats["total_auto_sells"] += 1
+    auto_trade_stats["last_action"] = f"SELL {sell_pct:.0f}% {token} PnL:{pnl_pct:+.1f}%"
+    if sell_pct >= 100.0:
+        auto_trade_stats["running_positions"].pop(address, None)
+        remove_position_from_monitor(address)
+        log_trade_internal(AUTO_SESSION_ID, {
+            "token_address": address,
+            "entry_price":   entry,
+            "exit_price":    current,
+            "pnl_pct":       pnl_pct,
+            "win":           pnl_pct > 0,
+            "lesson":        f"Auto: {reason} | PnL:{pnl_pct:+.1f}%",
+        })
+        sess["positions"] = [p for p in sess.get("positions", []) if p.get("address") != address]
+    else:
+        pos["size_bnb"] = size * (1 - sell_pct / 100.0)
+        pos["tp_sold"]  = pos.get("tp_sold", 0) + sell_pct
+    threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
+    emoji = "GREEN" if pnl_pct > 0 else "RED"
+    send_telegram(
+        f"AUTO PAPER SELL {sell_pct:.0f}% [{emoji}]\n"
+        f"Token: {address[:12]}\n"
+        f"Reason: {reason}\n"
+        f"PnL: {pnl_pct:+.1f}%\n"
+        f"Balance: {sess['paper_balance']:.4f} BNB",
+        urgent=(pnl_pct < -10)
+    )
+    print(f"AUTO SELL {sell_pct:.0f}%: {address[:10]} PnL:{pnl_pct:+.1f}% [{reason}]")
+
+
+def auto_position_manager():
+    print("Auto Position Manager started!")
+    while True:
+        for addr, pos in list(auto_trade_stats["running_positions"].items()):
+            try:
+                mon     = monitored_positions.get(addr, {})
+                current = mon.get("current", 0)
+                entry   = pos.get("entry", 0)
+                high    = mon.get("high", entry)
+                tp_sold = pos.get("tp_sold", 0.0)
+                sl_pct  = pos.get("sl_pct", 15.0)
+                if current <= 0 or entry <= 0:
+                    continue
+                pnl          = ((current - entry) / entry) * 100
+                drop_hi      = ((current - high) / high) * 100 if high > 0 else 0
+                if   pnl <= -sl_pct:              _auto_paper_sell(addr, f"SL -{sl_pct:.0f}%", 100.0)
+                elif drop_hi <= -80 and tp_sold < 75: _auto_paper_sell(addr, "Dump -80%", 100.0)
+                elif drop_hi <= -60 and tp_sold < 50: _auto_paper_sell(addr, "Dump -60%", 75.0)
+                elif pnl >= 200 and tp_sold < 90:  _auto_paper_sell(addr, "TP+200%", 90-tp_sold)
+                elif pnl >= 100 and tp_sold < 75:  _auto_paper_sell(addr, "TP+100%", 25.0)
+                elif pnl >= 50  and tp_sold < 50:  _auto_paper_sell(addr, "TP+50%",  25.0)
+                elif pnl >= 30  and tp_sold < 25:  _auto_paper_sell(addr, "TP+30%",  25.0)
+                elif pnl >= 20  and tp_sold < 1:
+                    pos["sl_pct"] = 2.0
+                    pos["tp_sold"] = 1
+                    print(f"SL moved to cost: {addr[:10]}")
+            except Exception as e:
+                print(f"Auto manager err {addr[:10]}: {e}")
+        time.sleep(10)
+
 
 def get_token_price_bnb(token_address: str) -> float:
     """
@@ -2203,6 +2372,33 @@ def introspect():
         "memory_summary": self_awareness["memory_summary"]
     })
 
+
+@app.route("/auto-stats", methods=["GET"])
+def auto_stats_route():
+    sess = get_or_create_session(AUTO_SESSION_ID)
+    positions_info = {}
+    for k, v in auto_trade_stats["running_positions"].items():
+        entry   = v.get("entry", 0)
+        current = monitored_positions.get(k, {}).get("current", entry)
+        pnl     = ((current - entry) / entry * 100) if entry > 0 else 0
+        positions_info[k[:12]] = {
+            "token":   v.get("token"),
+            "pnl_pct": round(pnl, 2),
+            "size":    v.get("size_bnb"),
+        }
+    return jsonify({
+        "enabled":        AUTO_TRADE_ENABLED,
+        "open_positions": len(auto_trade_stats["running_positions"]),
+        "positions":      positions_info,
+        "total_buys":     auto_trade_stats["total_auto_buys"],
+        "total_sells":    auto_trade_stats["total_auto_sells"],
+        "total_pnl_pct":  round(auto_trade_stats["auto_pnl_total"], 2),
+        "paper_balance":  sess.get("paper_balance", 1.87),
+        "trade_count":    sess.get("trade_count", 0),
+        "win_rate":       round(sess.get("win_count",0)/max(sess.get("trade_count",1),1)*100,1),
+        "last_action":    auto_trade_stats["last_action"],
+    })
+
 @app.route("/health")
 def health():
     return jsonify({
@@ -2247,6 +2443,7 @@ if __name__ == "__main__":
 
     # 24x7 Self-Learning Engine (market + airdrops + patterns every 5 min)
     threading.Thread(target=continuous_learning,   daemon=True).start()
+    threading.Thread(target=auto_position_manager, daemon=True).start()
     threading.Thread(target=self_awareness_loop,   daemon=True).start()  # Self-Awareness Engine
 
     app.run(host="0.0.0.0", port=port, debug=False)
