@@ -2319,31 +2319,17 @@ def continuous_learning():
                         if "[LLM-INSIGHT]" in n.get("note","")
                     ])
 
-                    send_telegram(
-                        f"🧠 <b>MRBLACK LEARNING REPORT #{cycle}</b>
-"
-                        f"━━━━━━━━━━━━━━━━━━━━
-"
-                        f"📊 Trading IQ: {tiq}/100
-"
-                        f"💭 State: {emotion} | Confidence: {conf}%
-"
-                        f"📈 Win patterns: {wins_c} | Avoid: {avoid_c}
-"
-                        f"🚫 Blacklisted: {len(brain['trading']['token_blacklist'])} tokens
-"
-                        f"🪂 Airdrops tracked: {drops_c}
-"
-                        f"🔬 LLM insights: {llm_insights_count}
-"
-                        f"📡 BNB: ${bnb:.1f} | Market: {mood_str}
-"
-                        f"🆕 New pairs seen: {len(new_pairs_queue)}
-"
-                        f"━━━━━━━━━━━━━━━━━━━━
-"
-                        f"Growing smarter every cycle 🚀"
+                    report_msg = (
+                        "MrBlack Learning Report #" + str(cycle) + "\n"
+                        "Trading IQ: " + str(tiq) + "/100\n"
+                        "Emotion: " + str(emotion) + " Conf: " + str(conf) + "%\n"
+                        "Patterns W:" + str(wins_c) + " L:" + str(avoid_c) + "\n"
+                        "Blacklisted: " + str(len(brain["trading"]["token_blacklist"])) + "\n"
+                        "Airdrops: " + str(drops_c) + "\n"
+                        "BNB: $" + str(round(bnb,1)) + " FG:" + str(fg) + "\n"
+                        "Growing smarter every cycle!"
                     )
+                    send_telegram(report_msg)
                 except Exception as e:
                     print(f"Hourly report error: {e}")
 
