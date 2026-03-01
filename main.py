@@ -1196,6 +1196,25 @@ def _auto_check_new_pair(pair_address: str):
     print(f"⏳ Waiting 3 min before checking new pair: {pair_address}")
     time.sleep(180)  # Stage 3: wait 3-5 min
 
+    # Age filter — 7 din (10080 min) se purane tokens skip karo
+    try:
+        _ar = requests.get(
+            f"https://api.dexscreener.com/latest/dex/tokens/{pair_address}",
+            timeout=8
+        )
+        if _ar.status_code == 200:
+            _aj  = _ar.json() or {}
+            _bp  = [p for p in (_aj.get("pairs") or []) if p.get("chainId") == "bsc"]
+            if _bp:
+                _ct  = _bp[0].get("pairCreatedAt", 0) or 0
+                if _ct:
+                    _age = (time.time() - _ct / 1000) / 60
+                    if _age > 10080:
+                        print(f"⏭️ Skip — {_age/1440:.0f} day old token: {pair_address[:10]}")
+                        return
+    except Exception:
+        pass
+
     result = run_full_sniper_checklist(pair_address)
     score  = result.get("score", 0)
     total  = result.get("total", 1)
