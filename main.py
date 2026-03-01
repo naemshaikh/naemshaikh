@@ -961,56 +961,48 @@ discovered_addresses: set = set()
 PAIR_CREATED_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
 
 def poll_new_pairs():
-    """
-    Fallback polling: BSCScan txlist on PancakeFactory every 30s.
-    Finds newly deployed pair contracts.
-    """
-    print("👂 New Pair Listener starting...")
-    print("👂 New Pair Listener (polling) started")
+    """DexScreener se naye BSC pairs — free, no API key needed."""
+    print("👂 New Pair Listener (DexScreener) started — free!")
     while True:
         try:
-            r = requests.get(BSC_SCAN_API, params={
-                "module":  "logs",
-                "action":  "getLogs",
-                "address": PANCAKE_FACTORY,
-                "topic0":  PAIR_CREATED_TOPIC,
-                "page":    1,
-                "offset":  5,
-                "apikey":  BSC_SCAN_KEY
-            }, timeout=12)
+            r = requests.get(
+                "https://api.dexscreener.com/latest/dex/pairs/bsc",
+                timeout=12
+            )
             if r.status_code == 200:
-                logs = r.json().get("result", [])
-                if not isinstance(logs, list):
-                    print(f'⚠️ BSCScan API error: {logs}')
-                    time.sleep(60)
-                    continue
-                for log in logs:
-                    # Pair address is in data field (last 32 bytes = pair address)
-                    raw_data = log.get("data", "")
-                    if len(raw_data) >= 66:
-                        # Token0, Token1, Pair are packed in data
-                        pair_addr_raw = raw_data[26:66]  # bytes 13-32 of first 32 bytes
-                        try:
-                            pair_addr = Web3.to_checksum_address("0x" + pair_addr_raw)
-                            if pair_addr not in discovered_addresses:
-                                discovered_addresses.add(pair_addr)
-                                new_pairs_queue.append({
-                                    "address":    pair_addr,
-                                    "discovered": datetime.utcnow().isoformat(),
-                                    "tx_hash":    log.get("transactionHash", ""),
-                                    "block":      int(log.get("blockNumber", "0"), 16)
-                                })
-                                print(f"🆕 New pair discovered: {pair_addr}")
-                                # Auto safety check in background
-                                threading.Thread(
-                                    target=_auto_check_new_pair,
-                                    args=(pair_addr,), daemon=True
-                                ).start()
-                        except Exception:
-                            pass
+                pairs = r.json().get("pairs", [])
+                new_count = 0
+                for pair in pairs[:20]:
+                    pair_addr = pair.get("pairAddress", "")
+                    if not pair_addr:
+                        continue
+                    try:
+                        pair_addr = Web3.to_checksum_address(pair_addr)
+                    except Exception:
+                        continue
+                    if pair_addr not in discovered_addresses:
+                        discovered_addresses.add(pair_addr)
+                        token = pair.get("baseToken", {})
+                        new_pairs_queue.append({
+                            "address":    pair_addr,
+                            "name":       token.get("name", "Unknown"),
+                            "symbol":     token.get("symbol", "???"),
+                            "discovered": datetime.utcnow().isoformat(),
+                            "liquidity":  pair.get("liquidity", {}).get("usd", 0),
+                            "volume_24h": pair.get("volume", {}).get("h24", 0),
+                        })
+                        new_count += 1
+                        print(f"🆕 New pair: {token.get('symbol','?')} ({pair_addr[:10]})")
+                        threading.Thread(
+                            target=_auto_check_new_pair,
+                            args=(pair_addr,), daemon=True
+                        ).start()
+                if new_count:
+                    print(f"✅ {new_count} naye pairs mila!")
         except Exception as e:
-            print(f"⚠️ New pair polling error: {e}")
-        time.sleep(30)  # poll every 30 seconds
+            print(f"⚠️ DexScreener polling error: {e}")
+        time.sleep(60)
+
 
 def _auto_check_new_pair(pair_address: str):
     """
