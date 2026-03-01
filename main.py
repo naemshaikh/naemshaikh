@@ -965,9 +965,7 @@ def poll_new_pairs():
     Fallback polling: BSCScan txlist on PancakeFactory every 30s.
     Finds newly deployed pair contracts.
     """
-    if not BSC_SCAN_KEY:
-        print("ℹ️ BSC_SCAN_KEY missing — new pair polling disabled")
-        return
+    print("👂 New Pair Listener starting...")
     print("👂 New Pair Listener (polling) started")
     while True:
         try:
