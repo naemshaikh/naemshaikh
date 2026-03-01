@@ -170,10 +170,17 @@ def _load_user_profile():
         threading.Thread(target=_save_user_profile, daemon=True).start()
 
 
+_profile_save_cache = {"last_save": 0}
+
 def _save_user_profile():
-    """User profile Supabase mein save karo."""
+    """User profile Supabase mein save karo — max har 2 min mein."""
+    import time as _t
     if not supabase:
         return
+    # FIX: Supabase rate limit — 2 min se kam mein dobara save nahi
+    if _t.time() - _profile_save_cache["last_save"] < 120:
+        return
+    _profile_save_cache["last_save"] = _t.time()
     try:
         user_profile["last_seen"] = datetime.utcnow().isoformat()
         user_profile["total_sessions"] = user_profile.get("total_sessions", 0) + 1
@@ -2085,10 +2092,17 @@ brain: Dict = {
     "user_pain_points": [],
 }
 
+_brain_save_cache = {"last_save": 0}
+
 def _save_brain_to_db():
-    """Save entire brain to Supabase for persistence."""
+    """Save entire brain to Supabase — max har 5 min mein ek baar (rate limit fix)."""
+    import time as _t
     if not supabase:
         return
+    # FIX: Supabase rate limit — 5 min se kam mein dobara save nahi
+    if _t.time() - _brain_save_cache["last_save"] < 300:
+        return
+    _brain_save_cache["last_save"] = _t.time()
     try:
         supabase.table("memory").upsert({
             "session_id":   "MRBLACK_BRAIN",
