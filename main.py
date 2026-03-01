@@ -661,12 +661,29 @@ def _generate_meta_thoughts() -> dict:
         if brain.get("total_learning_cycles", 0) < 10:
             meta["what_i_struggle_with"].append("Abhi data kam hai — zyada cycles ke baad better hounga")
 
-        # Blind spots
-        meta["blind_spots"] = [
-            "Very new tokens (< 1 hour old) ka behavior predict karna mushkil hai",
-            "Coordinated pump groups ko detect karna challenging hai",
-            "Market manipulation ke against data nahi hai abhi",
-        ]
+        # Blind spots — real data se generate karo, hardcoded nahi
+        blind_spots = []
+        # Naye tokens mein zyada losses?
+        new_token_losses = [t for t in all_trades if not t.get("win") and "new" in t.get("lesson","").lower()]
+        if len(new_token_losses) > 2:
+            blind_spots.append(f"Naye tokens mein {len(new_token_losses)} losses — entry timing improve karna hai")
+        else:
+            blind_spots.append("Very new tokens (< 1 hour old) ka data abhi kam hai")
+
+        # High loss trades
+        big_losses = [t for t in all_trades if t.get("pnl_pct", 0) < -30]
+        if big_losses:
+            blind_spots.append(f"{len(big_losses)} trades mein -30%+ loss — stop loss discipline check karo")
+        else:
+            blind_spots.append("Coordinated pump groups ko detect karna challenging hai")
+
+        # Low volume tokens
+        if market_cache.get("bnb_price", 0) == 0:
+            blind_spots.append("BNB price feed unstable — market data pe dependency hai")
+        else:
+            blind_spots.append("Market manipulation ke against limited data hai abhi")
+
+        meta["blind_spots"] = blind_spots
 
         # Growth areas
         meta["growth_areas"] = [
