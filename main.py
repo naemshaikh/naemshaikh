@@ -3252,7 +3252,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
 
         # Pattern 1: client.chat() direct
         try:
-            response = client.chat(model=MODEL_NAME, messages=messages, max_tokens=150)
+            response = client.chat(model=MODEL_NAME, messages=messages, max_tokens=600)
             if isinstance(response, str):
                 reply_text = response.strip()
             elif hasattr(response, "choices"):
@@ -3268,7 +3268,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
         # Pattern 2: client.completions.create()
         if not reply_text:
             try:
-                r2 = client.completions.create(model=MODEL_NAME, messages=messages, max_tokens=150)
+                r2 = client.completions.create(model=MODEL_NAME, messages=messages, max_tokens=600)
                 reply_text = (r2.choices[0].message.content if hasattr(r2, "choices") else str(r2)).strip()
             except Exception as e2:
                 print(f"FreeFlow P2 fail: {e2}")
