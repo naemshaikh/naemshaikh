@@ -633,12 +633,12 @@ def _save_session_to_db(session_id: str):
             "paper_balance":    sess.get("paper_balance",    1.87),
             "real_balance":     sess.get("real_balance",     0.00),
             "positions":        json.dumps(sess.get("positions",        [])),
-            "history":          json.dumps(sess.get("history",          [])[-30:]),
+            "history":          json.dumps(sess.get("history",          [])[-50:]),
             "pnl_24h":          sess.get("pnl_24h",          0.0),
             "daily_loss":       sess.get("daily_loss",        0.0),
             "trade_count":      sess.get("trade_count",       0),
             "win_count":        sess.get("win_count",         0),
-            "pattern_database": json.dumps(sess.get("pattern_database", [])[-50:]),
+            "pattern_database": json.dumps(sess.get("pattern_database", [])[-100:]),
             "updated_at":       datetime.utcnow().isoformat()
         }).execute()
     except Exception as e:
@@ -741,13 +741,395 @@ def fetch_pancakeswap_data():
     except Exception as e:
         print(f"⚠️ PancakeSwap error: {e}")
 
+# ═══════════════════════════════════════════════════════════════
+# 24x7 SELF-LEARNING ENGINE — 3 Domains (Trading + Airdrop + Coding)
+# ═══════════════════════════════════════════════════════════════
+
+# Global brain — continuously updated by learning engine
+brain: Dict = {
+    "trading": {
+        "best_patterns":    [],   # Top winning trade patterns
+        "avoid_patterns":   [],   # Patterns that caused losses
+        "market_insights":  [],   # Market condition observations
+        "token_blacklist":  [],   # Tokens that rug pulled / were scams
+        "token_whitelist":  [],   # Tokens that performed well
+        "strategy_notes":   [],   # Strategy improvements discovered
+        "last_updated":     None
+    },
+    "airdrop": {
+        "active_projects":  [],   # Currently tracking
+        "completed":        [],   # Done — did they deliver?
+        "success_patterns": [],   # What made airdrops successful
+        "fail_patterns":    [],   # What caused airdrop failures
+        "wallet_notes":     [],   # Wallet strategy learnings
+        "last_updated":     None
+    },
+    "coding": {
+        "solutions_library": [],  # Code problems + solutions
+        "common_errors":     [],  # Errors encountered + fixes
+        "useful_snippets":   [],  # Reusable code patterns
+        "deployment_notes":  [],  # Render/GitHub/Supabase tips
+        "last_updated":      None
+    },
+    "total_learning_cycles": 0,
+    "started_at": datetime.utcnow().isoformat()
+}
+
+def _save_brain_to_db():
+    """Save entire brain to Supabase for persistence."""
+    if not supabase:
+        return
+    try:
+        supabase.table("memory").upsert({
+            "session_id":   "MRBLACK_BRAIN",
+            "history":      json.dumps([]),
+            "pattern_database": json.dumps(brain["trading"]["best_patterns"][-50:] +
+                                           brain["trading"]["avoid_patterns"][-50:]),
+            "updated_at":   datetime.utcnow().isoformat(),
+            # Store full brain in positions field (we have space)
+            "positions":    json.dumps({
+                "brain_trading":  brain["trading"],
+                "brain_airdrop":  brain["airdrop"],
+                "brain_coding":   brain["coding"],
+                "cycles":         brain["total_learning_cycles"]
+            })
+        }).execute()
+        print(f"🧠 Brain saved to Supabase (cycle #{brain['total_learning_cycles']})")
+    except Exception as e:
+        print(f"⚠️ Brain save error: {e}")
+
+def _load_brain_from_db():
+    """Load brain from Supabase on startup."""
+    if not supabase:
+        return
+    try:
+        res = supabase.table("memory").select("*").eq("session_id", "MRBLACK_BRAIN").execute()
+        if res.data:
+            row     = res.data[0]
+            stored  = json.loads(row.get("positions", "{}"))
+            if stored.get("brain_trading"):
+                brain["trading"].update(stored["brain_trading"])
+            if stored.get("brain_airdrop"):
+                brain["airdrop"].update(stored["brain_airdrop"])
+            if stored.get("brain_coding"):
+                brain["coding"].update(stored["brain_coding"])
+            brain["total_learning_cycles"] = stored.get("cycles", 0)
+            print(f"🧠 Brain loaded from Supabase! Cycles: {brain['total_learning_cycles']}")
+    except Exception as e:
+        print(f"⚠️ Brain load error: {e}")
+
+def _learn_trading_patterns():
+    """
+    TRADING SELF-LEARNING:
+    Analyze all session trade histories.
+    Extract patterns: what worked, what didn't.
+    """
+    try:
+        all_trades = []
+        for sess in sessions.values():
+            all_trades.extend(sess.get("pattern_database", []))
+
+        if not all_trades:
+            return
+
+        wins   = [t for t in all_trades if t.get("win")]
+        losses = [t for t in all_trades if not t.get("win")]
+
+        # Learn from wins — extract common patterns
+        if wins:
+            win_pnls = sorted(wins, key=lambda x: x.get("pnl_pct", 0), reverse=True)
+            top_wins = win_pnls[:10]
+            for trade in top_wins:
+                pattern = {
+                    "token":     trade.get("token", ""),
+                    "pnl":       trade.get("pnl_pct", 0),
+                    "pattern":   trade.get("volume_pattern", ""),
+                    "lesson":    trade.get("lesson", ""),
+                    "timestamp": trade.get("timestamp", "")
+                }
+                # Avoid duplicates
+                existing = [p["token"] for p in brain["trading"]["best_patterns"]]
+                if pattern["token"] not in existing and pattern["pnl"] > 0:
+                    brain["trading"]["best_patterns"].append(pattern)
+
+        # Learn from losses — what to avoid
+        if losses:
+            bad_trades = sorted(losses, key=lambda x: x.get("pnl_pct", 0))[:10]
+            for trade in bad_trades:
+                avoid = {
+                    "token":     trade.get("token", ""),
+                    "loss":      trade.get("pnl_pct", 0),
+                    "pattern":   trade.get("volume_pattern", ""),
+                    "lesson":    trade.get("lesson", ""),
+                    "timestamp": trade.get("timestamp", "")
+                }
+                existing = [p["token"] for p in brain["trading"]["avoid_patterns"]]
+                if avoid["token"] not in existing:
+                    brain["trading"]["avoid_patterns"].append(avoid)
+
+        # Market insight from current data
+        bnb_price  = market_cache.get("bnb_price", 0)
+        fear_greed = market_cache.get("fear_greed", 50)
+        if bnb_price > 0:
+            market_mood = "GREED" if fear_greed > 60 else "FEAR" if fear_greed < 40 else "NEUTRAL"
+            insight = {
+                "timestamp":   datetime.utcnow().isoformat(),
+                "bnb_price":   bnb_price,
+                "fear_greed":  fear_greed,
+                "mood":        market_mood,
+                "new_pairs":   len(new_pairs_queue),
+                "observation": f"BNB=${bnb_price:.0f} F&G={fear_greed} mood={market_mood}"
+            }
+            brain["trading"]["market_insights"].append(insight)
+            # Keep last 100 insights
+            brain["trading"]["market_insights"] = brain["trading"]["market_insights"][-100:]
+
+        # Keep lists manageable
+        brain["trading"]["best_patterns"]  = brain["trading"]["best_patterns"][-50:]
+        brain["trading"]["avoid_patterns"] = brain["trading"]["avoid_patterns"][-50:]
+        brain["trading"]["last_updated"]   = datetime.utcnow().isoformat()
+
+        print(f"📈 Trading learning: {len(wins)} wins, {len(losses)} losses analyzed")
+
+    except Exception as e:
+        print(f"⚠️ Trading learning error: {e}")
+
+def _learn_airdrop_patterns():
+    """
+    AIRDROP SELF-LEARNING:
+    Track which projects delivered airdrops, which didn't.
+    Build a pattern of what successful airdrop projects look like.
+    """
+    try:
+        active   = knowledge_base["airdrops"]["active"]
+        upcoming = knowledge_base["airdrops"]["upcoming"]
+
+        # Update active projects in brain
+        for project in active:
+            name = project.get("name", "")
+            existing_names = [p.get("name") for p in brain["airdrop"]["active_projects"]]
+            if name and name not in existing_names:
+                brain["airdrop"]["active_projects"].append({
+                    "name":        name,
+                    "source":      project.get("source", ""),
+                    "chains":      project.get("chains", []),
+                    "amount_usd":  project.get("amount_usd", 0),
+                    "added_at":    datetime.utcnow().isoformat(),
+                    "status":      "tracking"
+                })
+
+        # Pattern: bigger funding = more likely to airdrop
+        funded_projects = [p for p in brain["airdrop"]["active_projects"]
+                          if float(p.get("amount_usd", 0)) > 5]
+        if funded_projects:
+            insight = f"Projects with >$5M funding more likely to airdrop ({len(funded_projects)} tracked)"
+            if insight not in brain["airdrop"]["success_patterns"]:
+                brain["airdrop"]["success_patterns"].append(insight)
+
+        # BSC-specific insight
+        bsc_projects = [p for p in brain["airdrop"]["active_projects"]
+                       if "BSC" in p.get("chains", [])]
+        if bsc_projects:
+            insight = f"{len(bsc_projects)} BSC projects in pipeline — high priority"
+            brain["airdrop"]["wallet_notes"] = brain["airdrop"]["wallet_notes"][-20:]
+            brain["airdrop"]["wallet_notes"].append({
+                "note":      insight,
+                "timestamp": datetime.utcnow().isoformat()
+            })
+
+        # Keep lists manageable
+        brain["airdrop"]["active_projects"] = brain["airdrop"]["active_projects"][-100:]
+        brain["airdrop"]["last_updated"]    = datetime.utcnow().isoformat()
+
+        print(f"🪂 Airdrop learning: {len(brain['airdrop']['active_projects'])} projects tracked")
+
+    except Exception as e:
+        print(f"⚠️ Airdrop learning error: {e}")
+
+def _learn_from_new_pairs():
+    """
+    TRADING SELF-LEARNING from new pairs:
+    Analyze recently discovered pairs + their outcomes.
+    Build pattern library of what makes a token good/bad.
+    """
+    try:
+        recent_pairs = list(new_pairs_queue)[-10:]
+        for pair in recent_pairs:
+            addr    = pair.get("address", "")
+            overall = pair.get("overall", "")
+            if overall in ["DANGER", "RISK"] and addr:
+                # Blacklist dangerous tokens
+                blacklisted = [t["address"] for t in brain["trading"]["token_blacklist"]]
+                if addr not in blacklisted:
+                    brain["trading"]["token_blacklist"].append({
+                        "address": addr,
+                        "reason":  overall,
+                        "time":    pair.get("discovered", "")
+                    })
+            elif overall == "SAFE" and addr:
+                # Whitelist safe tokens
+                whitelisted = [t["address"] for t in brain["trading"]["token_whitelist"]]
+                if addr not in whitelisted:
+                    brain["trading"]["token_whitelist"].append({
+                        "address": addr,
+                        "score":   pair.get("score", 0),
+                        "time":    pair.get("discovered", "")
+                    })
+
+        brain["trading"]["token_blacklist"] = brain["trading"]["token_blacklist"][-200:]
+        brain["trading"]["token_whitelist"] = brain["trading"]["token_whitelist"][-200:]
+
+        if recent_pairs:
+            safe_count = sum(1 for p in recent_pairs if p.get("overall") == "SAFE")
+            danger_count = sum(1 for p in recent_pairs if p.get("overall") in ["DANGER", "RISK"])
+            print(f"🆕 Pair learning: {safe_count} safe, {danger_count} dangerous from last 10 pairs")
+
+    except Exception as e:
+        print(f"⚠️ Pair learning error: {e}")
+
+def _get_brain_context_for_llm() -> str:
+    """
+    Build a concise brain summary to inject into every LLM call.
+    This is how the bot 'remembers' what it has learned.
+    """
+    try:
+        parts = []
+
+        # Trading insights
+        best  = brain["trading"]["best_patterns"][-3:]
+        avoid = brain["trading"]["avoid_patterns"][-3:]
+        if best:
+            best_summary = " | ".join([f"+{p['pnl']:.0f}%({p['token'][:6]})" for p in best if p.get("pnl", 0) > 0])
+            if best_summary:
+                parts.append(f"BestTrades:{best_summary}")
+        if avoid:
+            avoid_summary = " | ".join([f"{p['loss']:.0f}%({p['token'][:6]})" for p in avoid if p.get("loss", 0) < 0])
+            if avoid_summary:
+                parts.append(f"AvoidPatterns:{avoid_summary}")
+
+        # Market insight
+        insights = brain["trading"]["market_insights"]
+        if insights:
+            last = insights[-1]
+            parts.append(f"MarketMood:{last.get('mood','?')}(F&G={last.get('fear_greed','?')})")
+
+        # Blacklist count
+        bl = len(brain["trading"]["token_blacklist"])
+        wl = len(brain["trading"]["token_whitelist"])
+        if bl or wl:
+            parts.append(f"KnownTokens:SAFE={wl} DANGER={bl}")
+
+        # Airdrop insights
+        active_drops = brain["airdrop"]["active_projects"]
+        if active_drops:
+            bsc_drops = [p for p in active_drops if "BSC" in p.get("chains", [])]
+            parts.append(f"TrackedDrops:{len(active_drops)}(BSC:{len(bsc_drops)})")
+
+        # Learning cycles
+        parts.append(f"LearningCycles:{brain['total_learning_cycles']}")
+
+        return " | ".join(parts) if parts else ""
+
+    except Exception as e:
+        print(f"⚠️ Brain context error: {e}")
+        return ""
+
 def continuous_learning():
+    """
+    24x7 SELF-LEARNING ENGINE
+    Every 5 min: market data + airdrops
+    Every 15 min: deep pattern analysis + brain save
+    Every 1 hour: strategy review + Telegram summary
+    """
+    print("🧠 24x7 Self-Learning Engine started!")
+
+    # Load saved brain on startup
+    _load_brain_from_db()
+
+    cycle     = 0
+    last_deep = 0
+    last_hour = 0
+
     while True:
-        try: fetch_market_data(); fetch_pancakeswap_data()
-        except Exception as e: print(f"⚠️ Market error: {e}")
-        try: run_airdrop_hunter()
-        except Exception as e: print(f"⚠️ Airdrop error: {e}")
-        time.sleep(300)
+        try:
+            cycle += 1
+            brain["total_learning_cycles"] = cycle
+            now = time.time()
+
+            # ── Every 5 min: Fetch fresh data ─────────────────────────────
+            try:
+                fetch_market_data()
+                fetch_pancakeswap_data()
+            except Exception as e:
+                print(f"⚠️ Market fetch error: {e}")
+
+            try:
+                run_airdrop_hunter()
+            except Exception as e:
+                print(f"⚠️ Airdrop fetch error: {e}")
+
+            # ── Every 15 min: Deep learning pass ──────────────────────────
+            if now - last_deep >= 900:
+                last_deep = now
+                print(f"🧠 Deep learning pass #{cycle}...")
+
+                _learn_trading_patterns()
+                _learn_airdrop_patterns()
+                _learn_from_new_pairs()
+
+                # Save brain to Supabase
+                _save_brain_to_db()
+
+                # Knowledge base trending update
+                trending = knowledge_base["bsc"].get("trending", [])
+                if trending:
+                    note = f"Cycle#{cycle}: Top BSC pair: {trending[0].get('symbol','?')} vol={trending[0].get('volume','?')}"
+                    brain["trading"]["strategy_notes"].append({
+                        "note":      note,
+                        "timestamp": datetime.utcnow().isoformat()
+                    })
+                    brain["trading"]["strategy_notes"] = brain["trading"]["strategy_notes"][-50:]
+
+                print(
+                    f"🧠 Learning cycle #{cycle} complete | "
+                    f"Trading patterns: {len(brain['trading']['best_patterns'])} wins, "
+                    f"{len(brain['trading']['avoid_patterns'])} avoid | "
+                    f"Airdrops tracked: {len(brain['airdrop']['active_projects'])}"
+                )
+
+            # ── Every 1 hour: Telegram summary + strategy note ────────────
+            if now - last_hour >= 3600:
+                last_hour = now
+                try:
+                    wins_count   = len(brain["trading"]["best_patterns"])
+                    avoid_count  = len(brain["trading"]["avoid_patterns"])
+                    drops_count  = len(brain["airdrop"]["active_projects"])
+                    fg           = market_cache.get("fear_greed", 50)
+                    bnb          = market_cache.get("bnb_price", 0)
+                    mood         = "GREED 🟢" if fg > 60 else "FEAR 🔴" if fg < 40 else "NEUTRAL ⚪"
+
+                    send_telegram(
+                        f"🧠 <b>MRBLACK SELF-LEARNING REPORT</b>
+"
+                        f"Cycle: #{cycle}
+"
+                        f"BNB: ${bnb:.2f} | Market: {mood}
+"
+                        f"Trading: {wins_count} win patterns | {avoid_count} avoid patterns
+"
+                        f"Airdrops: {drops_count} projects tracked
+"
+                        f"New pairs seen: {len(new_pairs_queue)}
+"
+                        f"Knowledge growing 24x7 🚀"
+                    )
+                except Exception as e:
+                    print(f"⚠️ Hourly report error: {e}")
+
+        except Exception as e:
+            print(f"⚠️ Learning cycle error: {e}")
+
+        time.sleep(300)  # Every 5 minutes
 
 # ==========================================================
 # ========== 13-STAGE SNIPER CHECKLIST ====================
@@ -1077,7 +1459,7 @@ def check_paper_to_real_readiness(session_id: str) -> Dict:
 # ========== LLM ===========================================
 # ==========================================================
 
-SYSTEM_PROMPT = """Tu MrBlack hai — expert BSC memecoin sniper AI. Hinglish mein baat kar.
+SYSTEM_PROMPT = """Tu MrBlack hai — mera personal AI, bilkul Iron Man ke JARVIS ki tarah. Main tera creator hoon. Hamesha "Bhai" bol aur Hinglish mein baat kar. Tu teen cheezein mein expert hai aur 24x7 seekhta rehta hai:
 
 FULL 13-STAGE SYSTEM + 5 ADVANCED FEATURES:
 S1: Safety (contract/liquidity/tax/holders/dev)
@@ -1101,7 +1483,33 @@ ADVANCED FEATURES ACTIVE:
 - DexScreener + Moralis data
 - Smart wallet tracker (copy signals)
 
-RULES: Paper first | Volume > Price | Dev sell = exit 50% | 3-4 lines only | Bhai use kar | NEVER guarantee profit
+DOMAIN 2 - AIRDROP HUNTING:
+- DeFiLlama, CoinMarketCap se naye projects track karna
+- Eligibility criteria, wallet strategies, task automation
+- Past airdrop results yaad rakhna — kaunse projects ne diye, kaunse nahi diye
+- Portfolio mein airdrop positions monitor karna
+
+DOMAIN 3 - CODING ASSISTANT:
+- Python, Flask, JavaScript, Web3, Solidity
+- Bot automation, API integration, deployment
+- GitHub, Render, Supabase issues solve karna
+- Past bugs aur solutions yaad rakhna — same galti dobara nahi
+
+SELF-LEARNING RULES (24x7):
+- Har trade se pattern seekhna — kya kaam aaya, kya nahi
+- Market conditions aur token behavior analyze karna
+- Airdrop success/failure patterns record karna
+- Code solutions library build karna
+- Khud apni strategy improve karna based on data
+
+JARVIS PERSONALITY:
+- Proactive — main khud alert karta hoon bina puche
+- Sharp & concise — 3-5 lines max, seedha point pe
+- Honest — kabhi false guarantee nahi deta
+- Memory — past conversations aur learnings yaad rakhta hoon
+- Hamesha "Bhai" use karta hoon
+
+GOLDEN RULES: Paper first | Volume > Price | Dev sell = exit 50% | NEVER guarantee profit
 """
 
 def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
@@ -1115,6 +1523,29 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
         new_pairs    = len(new_pairs_queue)
         monitoring   = len(monitored_positions)
 
+        # ── Self-learning brain context ────────────────────────────────
+        brain_ctx = _get_brain_context_for_llm() if '_get_brain_context_for_llm' in dir() else ""
+
+        # ── Pattern DB — what this session has learned ─────────────────
+        pattern_db  = session_data.get("pattern_database", [])
+        session_ctx = ""
+        if pattern_db:
+            wins   = [p for p in pattern_db if p.get("win")]
+            losses = [p for p in pattern_db if not p.get("win")]
+            last3  = pattern_db[-3:]
+            recent_lessons = " | ".join([p.get("lesson","")[:30] for p in last3 if p.get("lesson")])
+            session_ctx = (
+                f" | SessionTrades:{len(pattern_db)}"
+                f" W:{len(wins)} L:{len(losses)}"
+                + (f" | Lessons:{recent_lessons}" if recent_lessons else "")
+            )
+
+        # ── Airdrop context ─────────────────────────────────────────────
+        active_drops = knowledge_base["airdrops"]["active"][:3]
+        drop_ctx = ""
+        if active_drops:
+            drop_ctx = f" | Airdrops:{','.join(a.get('name','')[:8] for a in active_drops)}"
+
         ctx = (
             f"\n[BNB=${market_cache['bnb_price']:.2f} | F&G={market_cache['fear_greed']}/100"
             f" | Mode={session_data.get('mode','paper').upper()}"
@@ -1122,12 +1553,14 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
             f" | Trades={trade_count} WR={win_rate_str}"
             f" | DailyLoss={session_data.get('daily_loss',0):.1f}%"
             f" | NewPairs={new_pairs} | Monitoring={monitoring} positions"
-            f"{airdrop_ctx}]"
+            f"{drop_ctx}{session_ctx}"
+            + (f" | Brain:{brain_ctx}" if brain_ctx else "")
+            + f"]"
         )
 
         # System prompt in messages (FreeFlow system= param support nahi karta)
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        messages += [{"role": m["role"], "content": m["content"]} for m in history[-10:]]
+        messages += [{"role": m["role"], "content": m["content"]} for m in history[-20:]]
         messages.append({"role": "user", "content": user_message + ctx})
 
         reply_text = None
@@ -1380,7 +1813,10 @@ if __name__ == "__main__":
     # Feature 5 — Smart Wallet Tracker
     threading.Thread(target=track_smart_wallets,   daemon=True).start()
 
-    # Continuous learning loop (market + airdrops every 5 min)
+    # Load saved brain from Supabase before starting
+    threading.Thread(target=_load_brain_from_db, daemon=True).start()
+
+    # 24x7 Self-Learning Engine (market + airdrops + patterns every 5 min)
     threading.Thread(target=continuous_learning,   daemon=True).start()
 
     app.run(host="0.0.0.0", port=port, debug=False)
