@@ -619,7 +619,7 @@ def update_self_awareness():
         self_awareness["current_state"]["uptime_seconds"]    = int(uptime)
         self_awareness["current_state"]["total_sessions"]    = len(_sessions)
         self_awareness["current_state"]["pairs_discovered"]  = len(_npq)
-        self_awareness["current_state"]["learning_cycles"]   = __brain.get("total_learning_cycles", 0)
+        self_awareness["current_state"]["learning_cycles"]   = _brain.get("total_learning_cycles", 0)
         self_awareness["current_state"]["last_heartbeat"]    = datetime.utcnow().isoformat()
         self_awareness["identity"]["model_backbone"]         = MODEL_NAME
 
@@ -1264,7 +1264,9 @@ def price_monitor_loop():
     """
     print("📡 Price Monitor started")
     while True:
-        for addr, pos in list(monitored_positions.items()):
+        with monitor_lock:
+            _snap = list(monitored_positions.items())
+        for addr, pos in _snap:
             try:
                 current = get_token_price_bnb(addr)
                 if current <= 0:
@@ -1748,6 +1750,20 @@ def _save_brain_to_db():
     except Exception as e:
         print(f"⚠️ Brain save error: {e}")
 
+
+def _ensure_brain_structure():
+    for key in ["best_patterns","avoid_patterns","token_blacklist",
+                "token_whitelist","strategy_notes","market_insights"]:
+        if not isinstance(brain["trading"].get(key), list):
+            brain["trading"][key] = []
+    for key in ["active_projects","completed","success_patterns",
+                "fail_patterns","wallet_notes"]:
+        if not isinstance(brain["airdrop"].get(key), list):
+            brain["airdrop"][key] = []
+    for key in ["solutions_library","common_errors","useful_snippets","deployment_notes"]:
+        if not isinstance(brain["coding"].get(key), list):
+            brain["coding"][key] = []
+
 def _load_brain_from_db():
     """Load brain from Supabase on startup."""
     if not supabase:
@@ -2046,7 +2062,9 @@ def _fast_learning_cycle():
     """Quick wins — price moves, new pair verdicts."""
     try:
         # Learn from monitored positions — are they moving as expected?
-        for addr, pos in list(monitored_positions.items()):
+        with monitor_lock:
+            _snap = list(monitored_positions.items())
+        for addr, pos in _snap:
             current = pos.get("current", 0)
             entry   = pos.get("entry", 0)
             high    = pos.get("high", entry)
@@ -3175,7 +3193,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
 
     # Immediate startup fetches
-    threading.Thread(target=fetch_market_data,    daemon=True).start()
+    fetch_market_data()  # FIXED: blocking startup call
     threading.Thread(target=run_airdrop_hunter,   daemon=True).start()
 
     # Feature 1 — Telegram (no thread needed, called on demand)
