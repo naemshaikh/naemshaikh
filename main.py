@@ -3064,11 +3064,16 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
 # Pehli request pe BNB price + user memory load
 # ═══════════════════════════════════════════
 _startup_done = False
+_startup_lock = threading.Lock()
 
 @app.before_request
 def _startup_once():
     global _startup_done
-    if not _startup_done:
+    if _startup_done:
+        return
+    with _startup_lock:
+        if _startup_done:
+            return
         _startup_done = True
         try:
             _load_user_profile()
