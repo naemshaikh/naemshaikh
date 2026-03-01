@@ -636,6 +636,15 @@ def _assess_capabilities() -> dict:
     _brain = brain if isinstance(brain, dict) else {}
     _trade = _brain.get("trading", {})
 
+    # ── All trades — sabse pehle define karo ──────────────────────
+    all_trades = []
+    try:
+        _sessions = sessions if isinstance(sessions, dict) else {}
+        for sess in _sessions.values():
+            all_trades.extend(sess.get("pattern_database", []))
+    except Exception:
+        all_trades = []
+
     # ── Rug Detection — kitne dangerous tokens sahi pakde ──────────
     safe_tokens   = _trade.get("token_whitelist", [])
     danger_tokens = _trade.get("token_blacklist", [])
@@ -644,16 +653,11 @@ def _assess_capabilities() -> dict:
     if total_scanned > 0:
         cap["rug_detection"]["tested"]  = total_scanned
         cap["rug_detection"]["correct"] = len(danger_tokens)
-        # Score: base 3 + danger ratio * 5 + volume bonus
         danger_ratio = len(danger_tokens) / max(total_scanned, 1)
         vol_bonus    = min(2, total_scanned // 20)
         cap["rug_detection"]["score"] = min(10, int(3 + danger_ratio * 5 + vol_bonus))
 
     # ── Price Prediction — actual trade win/loss outcomes ──────────
-    all_trades = []
-    _sessions  = sessions if isinstance(sessions, dict) else {}
-    for sess in _sessions.values():
-        all_trades.extend(sess.get("pattern_database", []))
 
     if all_trades:
         total  = len(all_trades)
