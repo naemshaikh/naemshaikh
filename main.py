@@ -1337,7 +1337,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     if address not in auto_trade_stats["running_positions"]:
         return
     pos  = auto_trade_stats["running_positions"][address]
-    mon  = monitored_positions.get(address, {})
+    with monitor_lock:
+        mon = monitored_positions.get(address, {})
     entry   = pos.get("entry", 0)
     current = mon.get("current", entry)
     size    = pos.get("size_bnb", AUTO_BUY_SIZE_BNB)
@@ -1385,7 +1386,8 @@ def auto_position_manager():
     while True:
         for addr, pos in list(auto_trade_stats["running_positions"].items()):
             try:
-                mon     = monitored_positions.get(addr, {})
+                with monitor_lock:
+                    mon = monitored_positions.get(addr, {})
                 current = mon.get("current", 0)
                 entry   = pos.get("entry", 0)
                 high    = mon.get("high", entry)
@@ -1455,7 +1457,8 @@ def get_token_price_bnb(token_address: str) -> float:
 def add_position_to_monitor(session_id: str, token_address: str, token_name: str,
                              entry_price: float, size_bnb: float, stop_loss_pct: float = 15.0):
     """Add a position for real-time price monitoring."""
-    monitored_positions[token_address] = {
+    with monitor_lock:
+        monitored_positions[token_address] = {
         "session_id":     session_id,
         "token":          token_name,
         "address":        token_address,
@@ -1470,9 +1473,10 @@ def add_position_to_monitor(session_id: str, token_address: str, token_name: str
     print(f"👁️ Monitoring: {token_name} @ {entry_price:.8f} BNB")
 
 def remove_position_from_monitor(token_address: str):
-    if token_address in monitored_positions:
-        del monitored_positions[token_address]
-        print(f"✅ Stopped monitoring: {token_address}")
+    with monitor_lock:
+        if token_address in monitored_positions:
+            del monitored_positions[token_address]
+    print(f"✅ Stopped monitoring: {token_address}")
 
 def price_monitor_loop():
     """
