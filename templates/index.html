@@ -3,249 +3,728 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MrBlack • Pro Mobile</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>MrBlack Pro</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-        * { font-family: 'Inter', sans-serif; }
+        :root {
+            --bg: #050508;
+            --surface: #0d0d14;
+            --card: #111118;
+            --border: rgba(99, 255, 180, 0.12);
+            --border-bright: rgba(99, 255, 180, 0.35);
+            --green: #63ffb4;
+            --green-dim: rgba(99, 255, 180, 0.15);
+            --red: #ff4d6d;
+            --red-dim: rgba(255, 77, 109, 0.15);
+            --amber: #ffbe0b;
+            --text: #e8e8f0;
+            --muted: rgba(232, 232, 240, 0.4);
+            --purple: #9d4edd;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
         body {
-            background: radial-gradient(circle at top, #0b0b15, #000000);
-            height: 100vh;
+            font-family: 'Syne', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
             overflow: hidden;
-            margin: 0;
-            padding: 0;
         }
-        .glass-card {
-            background: rgba(20, 20, 30, 0.6);
-            backdrop-filter: blur(15px);
-            border: 1px solid rgba(168, 85, 247, 0.2);
-            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+
+        /* ── HEADER ── */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 18px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            z-index: 20;
         }
-        .neon-glow {
-            box-shadow: 0 0 20px rgba(168, 85, 247, 0.5);
+        .header-left { display: flex; align-items: center; gap: 10px; }
+        .logo-icon {
+            width: 34px; height: 34px;
+            background: linear-gradient(135deg, var(--green) 0%, #00b4d8 100%);
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px; font-weight: 800; color: #000;
+            letter-spacing: -1px;
         }
-        .stat-value {
-            font-weight: 800;
-            letter-spacing: -0.5px;
+        .brand-name { font-size: 17px; font-weight: 800; letter-spacing: -0.5px; }
+        .live-badge {
+            font-size: 9px; background: rgba(99,255,180,0.15);
+            color: var(--green); border: 1px solid rgba(99,255,180,0.3);
+            padding: 2px 7px; border-radius: 20px; font-family: 'Space Mono', monospace;
         }
-        .chat-messages {
-            scroll-behavior: smooth;
-            padding-bottom: 10px;
+        .header-icons { display: flex; gap: 18px; color: var(--muted); font-size: 15px; }
+        .header-icons i { cursor: pointer; transition: color 0.2s; }
+        .header-icons i:active { color: var(--green); }
+
+        /* ── TABS ── */
+        .tabs {
+            display: flex;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
         }
-        .chat-messages::-webkit-scrollbar {
-            width: 4px;
+        .tab {
+            flex: 1; padding: 10px; text-align: center;
+            font-size: 12px; font-weight: 600; color: var(--muted);
+            cursor: pointer; border-bottom: 2px solid transparent;
+            transition: all 0.2s; letter-spacing: 0.5px;
         }
-        .chat-messages::-webkit-scrollbar-thumb {
-            background: #7c3aed;
-            border-radius: 20px;
+        .tab.active { color: var(--green); border-bottom-color: var(--green); }
+
+        /* ── PANELS ── */
+        .panel { display: none; flex: 1; overflow: hidden; flex-direction: column; }
+        .panel.active { display: flex; }
+
+        /* ── DASHBOARD PANEL ── */
+        .dashboard-scroll {
+            flex: 1; overflow-y: auto; padding: 14px;
+            display: flex; flex-direction: column; gap: 12px;
         }
-        .message-bot {
-            background: linear-gradient(145deg, #2e1a4a, #1e1e3f);
-            border-radius: 20px 20px 20px 5px;
+        .dashboard-scroll::-webkit-scrollbar { display: none; }
+
+        /* Stats row */
+        .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        .stat-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 12px 10px;
+            text-align: center;
         }
-        .message-user {
-            background: #2a2a3a;
-            border-radius: 20px 20px 5px 20px;
+        .stat-label { font-size: 9px; font-family: 'Space Mono', monospace; color: var(--muted); letter-spacing: 1px; margin-bottom: 5px; }
+        .stat-val { font-size: 15px; font-weight: 700; font-family: 'Space Mono', monospace; }
+        .stat-sub { font-size: 9px; color: var(--muted); margin-top: 2px; }
+
+        /* Mode toggle */
+        .mode-toggle {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 10px 14px;
+            display: flex; align-items: center; justify-content: space-between;
         }
-        .trading-card {
-            transition: all 0.2s ease;
+        .mode-label { font-size: 12px; font-weight: 600; color: var(--muted); }
+        .toggle-btns { display: flex; gap: 6px; }
+        .mode-btn {
+            padding: 5px 14px; border-radius: 8px; font-size: 11px; font-weight: 700;
+            border: 1px solid var(--border); background: transparent; color: var(--muted);
+            cursor: pointer; font-family: 'Space Mono', monospace; transition: all 0.2s;
         }
-        .trading-card:active {
-            transform: scale(0.98);
+        .mode-btn.active-paper { background: rgba(99,255,180,0.12); color: var(--green); border-color: var(--green); }
+        .mode-btn.active-real { background: rgba(255,77,109,0.12); color: var(--red); border-color: var(--red); }
+
+        /* Hot pairs */
+        .section-title {
+            font-size: 11px; font-family: 'Space Mono', monospace;
+            color: var(--muted); letter-spacing: 1.5px; margin-bottom: 8px;
+        }
+        .pairs-scroll { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+        .pairs-scroll::-webkit-scrollbar { display: none; }
+        .pair-chip {
+            flex-shrink: 0;
+            background: var(--card); border: 1px solid var(--border);
+            border-radius: 20px; padding: 6px 14px; font-size: 11px;
+            font-family: 'Space Mono', monospace; white-space: nowrap;
+            cursor: pointer; transition: all 0.15s;
+        }
+        .pair-chip:active { border-color: var(--green); color: var(--green); }
+        .pair-chip.hot { border-color: rgba(255,190,11,0.4); color: var(--amber); }
+
+        /* Positions */
+        .position-card {
+            background: var(--card); border: 1px solid var(--border);
+            border-radius: 14px; padding: 12px 14px;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .pos-token { font-weight: 700; font-size: 13px; }
+        .pos-meta { font-size: 10px; color: var(--muted); margin-top: 2px; font-family: 'Space Mono', monospace; }
+        .pos-pnl { text-align: right; font-family: 'Space Mono', monospace; font-weight: 700; }
+        .pos-pnl .pct { font-size: 15px; }
+        .pos-pnl .usd { font-size: 10px; color: var(--muted); }
+
+        /* Action buttons */
+        .action-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .action-btn {
+            background: var(--card); border: 1px solid var(--border);
+            border-radius: 12px; padding: 12px; font-size: 12px; font-weight: 700;
+            color: var(--text); cursor: pointer; display: flex;
+            align-items: center; justify-content: center; gap: 8px;
+            transition: all 0.15s; font-family: 'Syne', sans-serif;
+        }
+        .action-btn:active { transform: scale(0.97); border-color: var(--green); }
+        .action-btn .icon { font-size: 14px; }
+
+        /* ── CHAT PANEL ── */
+        .chat-panel {
+            flex: 1; display: flex; flex-direction: column; overflow: hidden;
+        }
+
+        .messages {
+            flex: 1; overflow-y: auto; padding: 14px;
+            display: flex; flex-direction: column; gap: 10px;
+        }
+        .messages::-webkit-scrollbar { width: 3px; }
+        .messages::-webkit-scrollbar-thumb { background: var(--green-dim); border-radius: 10px; }
+
+        .msg-row { display: flex; }
+        .msg-row.user { justify-content: flex-end; }
+        .msg-row.bot { justify-content: flex-start; }
+
+        .bubble {
+            max-width: 82%; padding: 10px 14px; font-size: 13px; line-height: 1.5;
+            border-radius: 18px; word-break: break-word;
+        }
+        .bubble.user {
+            background: linear-gradient(135deg, #1a2f22, #112218);
+            border: 1px solid rgba(99,255,180,0.2);
+            border-bottom-right-radius: 5px;
+        }
+        .bubble.bot {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-bottom-left-radius: 5px;
+        }
+        .bot-name {
+            font-size: 9px; font-family: 'Space Mono', monospace;
+            color: var(--green); letter-spacing: 1px; margin-bottom: 4px;
+        }
+
+        /* Typing animation */
+        .typing-dots span {
+            display: inline-block; width: 6px; height: 6px;
+            background: var(--green); border-radius: 50%; margin: 0 2px;
+            animation: bounce 1.2s infinite;
+        }
+        .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes bounce {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+            30% { transform: translateY(-5px); opacity: 1; }
+        }
+
+        /* Suggestions */
+        .suggestions {
+            padding: 0 14px 8px;
+            display: flex; gap: 6px; overflow-x: auto;
+            flex-shrink: 0;
+        }
+        .suggestions::-webkit-scrollbar { display: none; }
+        .suggestion {
+            flex-shrink: 0; background: var(--card);
+            border: 1px solid var(--border); border-radius: 20px;
+            padding: 6px 12px; font-size: 11px; cursor: pointer;
+            transition: all 0.15s; white-space: nowrap; color: var(--muted);
+        }
+        .suggestion:active { border-color: var(--green); color: var(--green); }
+
+        /* Input bar */
+        .input-bar {
+            padding: 10px 14px 14px;
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .input-row { display: flex; gap: 8px; align-items: center; }
+        .chat-input {
+            flex: 1; background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 25px; padding: 12px 18px;
+            font-size: 13px; color: var(--text);
+            font-family: 'Syne', sans-serif;
+            outline: none; transition: border-color 0.2s;
+        }
+        .chat-input:focus { border-color: rgba(99,255,180,0.5); }
+        .chat-input::placeholder { color: var(--muted); }
+        .send-btn {
+            width: 46px; height: 46px; border-radius: 50%;
+            background: linear-gradient(135deg, var(--green), #00b4d8);
+            border: none; color: #000; font-size: 16px;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0; transition: transform 0.15s; font-weight: 700;
+        }
+        .send-btn:active { transform: scale(0.90); }
+
+        /* ── SCAN PANEL ── */
+        .scan-panel {
+            flex: 1; overflow-y: auto; padding: 14px;
+            display: flex; flex-direction: column; gap: 12px;
+        }
+        .scan-panel::-webkit-scrollbar { display: none; }
+        .scan-input-wrap {
+            background: var(--card); border: 1px solid var(--border);
+            border-radius: 14px; padding: 14px;
+        }
+        .scan-addr-input {
+            width: 100%; background: var(--bg); border: 1px solid var(--border);
+            border-radius: 10px; padding: 11px 14px; font-size: 12px;
+            color: var(--text); font-family: 'Space Mono', monospace;
+            outline: none; margin-bottom: 10px;
+        }
+        .scan-addr-input:focus { border-color: rgba(99,255,180,0.5); }
+        .scan-btn {
+            width: 100%; padding: 12px; background: var(--green-dim);
+            border: 1px solid var(--green); border-radius: 10px;
+            color: var(--green); font-size: 13px; font-weight: 700;
+            cursor: pointer; font-family: 'Syne', sans-serif;
+            transition: all 0.2s;
+        }
+        .scan-btn:active { background: rgba(99,255,180,0.25); }
+
+        .checklist-grid { display: flex; flex-direction: column; gap: 6px; }
+        .check-item {
+            display: flex; align-items: center; gap: 10px;
+            background: var(--card); border: 1px solid var(--border);
+            border-radius: 10px; padding: 10px 12px;
+        }
+        .check-dot {
+            width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+            background: var(--muted);
+        }
+        .check-dot.pass { background: var(--green); box-shadow: 0 0 6px var(--green); }
+        .check-dot.fail { background: var(--red); box-shadow: 0 0 6px var(--red); }
+        .check-dot.warn { background: var(--amber); }
+        .check-text { font-size: 12px; flex: 1; }
+        .check-badge {
+            font-size: 9px; font-family: 'Space Mono', monospace;
+            padding: 2px 7px; border-radius: 10px; letter-spacing: 0.5px;
+        }
+        .badge-pass { background: rgba(99,255,180,0.1); color: var(--green); }
+        .badge-fail { background: rgba(255,77,109,0.1); color: var(--red); }
+        .badge-warn { background: rgba(255,190,11,0.1); color: var(--amber); }
+
+        /* Utility */
+        .green { color: var(--green); }
+        .red { color: var(--red); }
+        .amber { color: var(--amber); }
+        .mono { font-family: 'Space Mono', monospace; }
+        .section-card {
+            background: var(--card); border: 1px solid var(--border);
+            border-radius: 14px; padding: 12px 14px;
         }
     </style>
 </head>
-<body class="h-screen flex flex-col text-white">
+<body>
 
-    <!-- Header -->
-    <div class="glass-card px-5 py-3 flex items-center justify-between border-b border-purple-500/30 z-10">
-        <div class="flex items-center gap-2">
-            <div class="w-8 h-8 bg-purple-600 rounded-xl flex items-center justify-center text-xl">🤖</div>
+    <!-- HEADER -->
+    <div class="header">
+        <div class="header-left">
+            <div class="logo-icon">MB</div>
             <div>
-                <span class="font-bold text-lg tracking-tight">MrBlack</span>
-                <span class="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full ml-2">LIVE</span>
+                <span class="brand-name">MrBlack</span>
+                <span class="live-badge">● LIVE</span>
             </div>
         </div>
-        <div class="flex gap-4 text-white/70 text-lg">
-            <i class="fas fa-chart-line"></i>
-            <i class="fas fa-sliders-h"></i>
-        </div>
-    </div>
-
-    <!-- Trading Dashboard (Top 40%) -->
-    <div class="flex-1 overflow-y-auto p-4" style="max-height: 40vh;" id="tradingSection">
-        <div class="space-y-3">
-            <!-- Quick Stats Grid -->
-            <div class="grid grid-cols-3 gap-2">
-                <div class="glass-card rounded-2xl p-3 text-center trading-card">
-                    <div class="text-emerald-400 text-xs mb-1">PAPER</div>
-                    <div class="stat-value text-lg" id="paperBalance">1.87 BNB</div>
-                    <div class="text-[10px] text-white/40">≈ $487</div>
-                </div>
-                <div class="glass-card rounded-2xl p-3 text-center trading-card">
-                    <div class="text-rose-400 text-xs mb-1">REAL</div>
-                    <div class="stat-value text-lg" id="realBalance">0.00 BNB</div>
-                    <div class="text-[10px] text-white/40">≈ $0</div>
-                </div>
-                <div class="glass-card rounded-2xl p-3 text-center trading-card">
-                    <div class="text-amber-400 text-xs mb-1">PNL (24h)</div>
-                    <div class="stat-value text-emerald-400 text-lg" id="pnl">+12.4%</div>
-                    <div class="text-[10px] text-white/40">+$53.20</div>
-                </div>
-            </div>
-
-            <!-- Market Trend + Positions -->
-            <div class="glass-card rounded-2xl p-4">
-                <div class="flex justify-between items-center mb-2">
-                    <span class="text-sm font-semibold text-white/80"><i class="fas fa-fire text-orange-400 mr-1"></i> Hot Pairs</span>
-                    <span class="text-xs bg-purple-500/30 px-2 py-1 rounded-full">BNB Chain</span>
-                </div>
-                <div class="flex gap-2 overflow-x-auto pb-1 hide-scrollbar">
-                    <div class="bg-white/5 px-3 py-1.5 rounded-full text-xs whitespace-nowrap">CAKE/BNB 🔥</div>
-                    <div class="bg-white/5 px-3 py-1.5 rounded-full text-xs whitespace-nowrap">XRP/BNB</div>
-                    <div class="bg-white/5 px-3 py-1.5 rounded-full text-xs whitespace-nowrap">DOGE/BNB</div>
-                    <div class="bg-white/5 px-3 py-1.5 rounded-full text-xs whitespace-nowrap">PEPE/BNB 🚀</div>
-                </div>
-                <div class="mt-3 flex justify-between text-xs text-white/50">
-                    <span>Positions: 2</span>
-                    <span>Exposure: 22%</span>
-                    <span class="text-emerald-400">Limit: 65%</span>
-                </div>
-            </div>
-
-            <!-- Quick Action Buttons -->
-            <div class="grid grid-cols-2 gap-2">
-                <button class="glass-card py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 active:bg-purple-600/20" onclick="quickTrade('scan')">
-                    <i class="fas fa-search text-purple-400"></i> Scan Token
-                </button>
-                <button class="glass-card py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 active:bg-purple-600/20" onclick="quickTrade('buy')">
-                    <i class="fas fa-shopping-cart text-emerald-400"></i> Quick Buy
-                </button>
-            </div>
+        <div class="header-icons">
+            <i class="fas fa-bell"></i>
+            <i class="fas fa-cog"></i>
         </div>
     </div>
 
-    <!-- Divider with handle (optional) -->
-    <div class="h-1 bg-gradient-to-r from-transparent via-purple-500 to-transparent"></div>
+    <!-- TABS -->
+    <div class="tabs">
+        <div class="tab active" onclick="switchTab('dashboard')"><i class="fas fa-chart-bar"></i> Dashboard</div>
+        <div class="tab" onclick="switchTab('chat')"><i class="fas fa-robot"></i> Chat</div>
+        <div class="tab" onclick="switchTab('scan')"><i class="fas fa-search"></i> Scan</div>
+    </div>
 
-    <!-- Chat Area (Bottom 60%) -->
-    <div class="flex-1 flex flex-col bg-black/40" style="max-height: 60vh;">
-        <!-- Chat Messages -->
-        <div id="messages" class="flex-1 overflow-y-auto p-4 space-y-3 chat-messages">
-            <!-- Messages will be injected here -->
-        </div>
+    <!-- ===== DASHBOARD PANEL ===== -->
+    <div class="panel active" id="panel-dashboard">
+        <div class="dashboard-scroll">
 
-        <!-- Input Bar (Sticky) -->
-        <div class="glass-card p-3 border-t border-purple-500/30">
-            <div class="flex items-center gap-2">
-                <input id="chatInput" type="text" 
-                    class="flex-1 bg-zinc-900/80 border border-purple-500/30 focus:border-purple-500 rounded-full px-5 py-3.5 text-sm text-white placeholder-zinc-500 outline-none"
-                    placeholder="Type 'scan 0x...' or ask anything...">
-                <button id="sendBtn" 
-                    class="w-12 h-12 bg-purple-600 rounded-full flex items-center justify-center text-xl active:scale-90 transition-transform">
-                    <i class="fas fa-paper-plane"></i>
-                </button>
+            <!-- Stats -->
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-label">PAPER</div>
+                    <div class="stat-val green" id="paperBal">1.87</div>
+                    <div class="stat-sub">BNB</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">REAL</div>
+                    <div class="stat-val red" id="realBal">0.00</div>
+                    <div class="stat-sub">BNB</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">PNL 24H</div>
+                    <div class="stat-val green" id="pnlVal">+12.4%</div>
+                    <div class="stat-sub" id="pnlUsd">+$53.20</div>
+                </div>
             </div>
-            <div class="flex mt-2 gap-1 text-xs text-white/30 px-2">
-                <span>💡 Try: "scan 0x..." or "paper balance"</span>
+
+            <!-- Mode Toggle -->
+            <div class="mode-toggle">
+                <span class="mode-label">Trading Mode</span>
+                <div class="toggle-btns">
+                    <button class="mode-btn active-paper" id="btnPaper" onclick="setMode('paper')">PAPER</button>
+                    <button class="mode-btn" id="btnReal" onclick="setMode('real')">REAL</button>
+                </div>
+            </div>
+
+            <!-- Hot Pairs -->
+            <div class="section-card">
+                <div class="section-title">🔥 HOT PAIRS — BSC</div>
+                <div class="pairs-scroll">
+                    <div class="pair-chip hot" onclick="scanFromPair('CAKE')">CAKE/BNB 🔥</div>
+                    <div class="pair-chip" onclick="scanFromPair('XRP')">XRP/BNB</div>
+                    <div class="pair-chip" onclick="scanFromPair('DOGE')">DOGE/BNB</div>
+                    <div class="pair-chip hot" onclick="scanFromPair('PEPE')">PEPE/BNB 🚀</div>
+                    <div class="pair-chip" onclick="scanFromPair('WIF')">WIF/BNB</div>
+                </div>
+            </div>
+
+            <!-- Positions -->
+            <div>
+                <div class="section-title">📂 OPEN POSITIONS</div>
+                <div class="checklist-grid" id="positionsList">
+                    <div class="position-card">
+                        <div>
+                            <div class="pos-token">CAKE/BNB</div>
+                            <div class="pos-meta">Entry: 0.0041 BNB · Size: 0.18 BNB</div>
+                        </div>
+                        <div class="pos-pnl">
+                            <div class="pct green">+8.3%</div>
+                            <div class="usd">+$14.20</div>
+                        </div>
+                    </div>
+                    <div class="position-card">
+                        <div>
+                            <div class="pos-token">PEPE/BNB</div>
+                            <div class="pos-meta">Entry: 0.0000012 · Size: 0.08 BNB</div>
+                        </div>
+                        <div class="pos-pnl">
+                            <div class="pct red">-2.1%</div>
+                            <div class="usd">-$4.10</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Exposure bar -->
+            <div class="section-card">
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                    <span style="font-size:11px; color:var(--muted);">Portfolio Exposure</span>
+                    <span class="mono" style="font-size:11px;" id="exposureText">22% / 65%</span>
+                </div>
+                <div style="background:var(--bg); border-radius:20px; height:6px; overflow:hidden;">
+                    <div id="exposureBar" style="height:100%; width:33.8%; background:linear-gradient(90deg, var(--green), #00b4d8); border-radius:20px; transition:width 0.5s;"></div>
+                </div>
+            </div>
+
+            <!-- Action buttons -->
+            <div class="action-row">
+                <button class="action-btn" onclick="goScan()">
+                    <span class="icon green"><i class="fas fa-search"></i></span> Scan Token
+                </button>
+                <button class="action-btn" onclick="prefillChat('Quick buy ')">
+                    <span class="icon green"><i class="fas fa-bolt"></i></span> Quick Buy
+                </button>
+                <button class="action-btn" onclick="prefillChat('Close all positions')">
+                    <span class="icon red"><i class="fas fa-times-circle"></i></span> Close All
+                </button>
+                <button class="action-btn" onclick="prefillChat('Paper trading balance')">
+                    <span class="icon amber"><i class="fas fa-wallet"></i></span> Balance
+                </button>
             </div>
         </div>
     </div>
 
-    <script>
-        // Session
-        let sessionId = localStorage.getItem('mrblack_session') || crypto.randomUUID();
-        localStorage.setItem('mrblack_session', sessionId);
+    <!-- ===== CHAT PANEL ===== -->
+    <div class="panel" id="panel-chat">
+        <div class="chat-panel">
+            <div class="messages" id="messages"></div>
 
-        const messagesDiv = document.getElementById('messages');
-        const input = document.getElementById('chatInput');
-        const sendBtn = document.getElementById('sendBtn');
+            <div class="suggestions">
+                <div class="suggestion" onclick="sendSuggestion('Paper trading balance kya hai?')">📝 Paper Balance</div>
+                <div class="suggestion" onclick="sendSuggestion('Market trend kya hai aaj?')">📊 Market Trend</div>
+                <div class="suggestion" onclick="sendSuggestion('Meri positions close karo')">❌ Close Positions</div>
+                <div class="suggestion" onclick="sendSuggestion('Risk settings batao')">⚙️ Risk Settings</div>
+            </div>
 
-        // Trading data placeholders (will be updated via API)
-        function updateTradingUI(data) {
-            if (data.paper) document.getElementById('paperBalance').innerText = data.paper;
-            if (data.real) document.getElementById('realBalance').innerText = data.real;
-            if (data.pnl) document.getElementById('pnl').innerText = data.pnl;
-        }
-
-        // Fetch trading data from backend
-        async function fetchTradingData() {
-            try {
-                const res = await fetch('/trading-data');
-                const data = await res.json();
-                updateTradingUI(data);
-            } catch (e) {
-                console.warn("Using fallback trading data");
-            }
-        }
-
-        // Call every 10 seconds
-        setInterval(fetchTradingData, 10000);
-        fetchTradingData();
-
-        // Message functions
-        function addMessage(text, isBot) {
-            const div = document.createElement('div');
-            div.className = `flex ${isBot ? 'justify-start' : 'justify-end'}`;
-            div.innerHTML = `
-                <div class="${isBot ? 'message-bot' : 'message-user'} max-w-[85%] px-4 py-2.5 text-sm">
-                    ${isBot ? '🤖 ' : ''}${text}
+            <div class="input-bar">
+                <div class="input-row">
+                    <input id="chatInput" class="chat-input" type="text"
+                        placeholder="Kuch bhi poocho... scan 0x..." autocomplete="off">
+                    <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
                 </div>
-            `;
-            messagesDiv.appendChild(div);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        }
+            </div>
+        </div>
+    </div>
 
-        async function sendMessage() {
-            const text = input.value.trim();
-            if (!text) return;
+    <!-- ===== SCAN PANEL ===== -->
+    <div class="panel" id="panel-scan">
+        <div class="scan-panel">
+            <div class="scan-input-wrap">
+                <div class="section-title" style="margin-bottom:10px;">🔍 TOKEN SCANNER</div>
+                <input id="scanAddr" class="scan-addr-input" type="text"
+                    placeholder="Contract address 0x... paste karo">
+                <button class="scan-btn" onclick="runScan()">
+                    <i class="fas fa-search"></i> Scan Token
+                </button>
+            </div>
 
-            addMessage(text, false);
-            input.value = '';
+            <!-- Checklist Result -->
+            <div id="scanResult" style="display:none;">
+                <div class="section-title">✅ CHECKLIST RESULT</div>
+                <div class="checklist-grid" id="checklistItems"></div>
 
-            // Typing indicator
-            const typingDiv = document.createElement('div');
-            typingDiv.id = 'typing';
-            typingDiv.className = 'flex justify-start';
-            typingDiv.innerHTML = `<div class="message-bot px-4 py-2.5 text-sm">🤖 <span class="animate-pulse">typing...</span></div>`;
-            messagesDiv.appendChild(typingDiv);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                <div class="section-card" style="margin-top:8px;" id="scanSummaryCard">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:13px; font-weight:700;">Safety Score</span>
+                        <span class="mono green" id="safetyScore" style="font-size:20px; font-weight:700;">16/20</span>
+                    </div>
+                    <div style="margin-top:8px; background:var(--bg); border-radius:20px; height:6px; overflow:hidden;">
+                        <div id="safetyBar" style="height:100%; width:80%; background:linear-gradient(90deg,var(--green),#00b4d8); border-radius:20px;"></div>
+                    </div>
+                </div>
+            </div>
 
-            try {
-                const res = await fetch('/chat', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ message: text, session_id: sessionId, user_name: "Bhai" })
-                });
-                const data = await res.json();
-                document.getElementById('typing')?.remove();
-                addMessage(data.reply, true);
+            <!-- Recent scans -->
+            <div>
+                <div class="section-title">📋 RECENT SCANS</div>
+                <div id="recentScans" class="checklist-grid">
+                    <div style="font-size:12px; color:var(--muted); text-align:center; padding:20px 0;">
+                        Koi scan nahi hua abhi
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
-                // If trading data updated in response, refresh
-                if (data.trading) updateTradingUI(data.trading);
-            } catch (error) {
-                document.getElementById('typing')?.remove();
-                addMessage("Network error, bhai! Try again.", true);
-            }
-        }
+<script>
+// ===== STATE =====
+let currentMode = 'paper';
+let sessionId = null;
+let recentScans = [];
 
-        sendBtn.addEventListener('click', sendMessage);
-        input.addEventListener('keypress', e => { if (e.key === 'Enter') sendMessage(); });
+// Session ID - without localStorage
+async function initSession() {
+    try {
+        const res = await fetch('/init-session', { method: 'POST' });
+        const d = await res.json();
+        sessionId = d.session_id;
+    } catch {
+        sessionId = 'session-' + Date.now() + '-' + Math.floor(Math.random() * 99999);
+    }
+}
 
-        // Quick trade actions
-        window.quickTrade = (action) => {
-            if (action === 'scan') {
-                input.value = 'scan ';
-                input.focus();
-            } else if (action === 'buy') {
-                input.value = 'buy ';
-                input.focus();
-            }
-        };
+// ===== TABS =====
+function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach((t, i) => {
+        t.classList.toggle('active', ['dashboard', 'chat', 'scan'][i] === tab);
+    });
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('panel-' + tab).classList.add('active');
+    if (tab === 'chat') document.getElementById('chatInput').focus();
+}
 
-        // Welcome message
-        addMessage('Bhai! MrBlack Pro ready. Upar trading stats, neeche chat. Kya help chahiye?', true);
-    </script>
+// ===== MODE =====
+function setMode(m) {
+    currentMode = m;
+    document.getElementById('btnPaper').className = 'mode-btn' + (m === 'paper' ? ' active-paper' : '');
+    document.getElementById('btnReal').className = 'mode-btn' + (m === 'real' ? ' active-real' : '');
+    addMessage(`Mode switched to ${m.toUpperCase()} trading, bhai!`, 'bot');
+    switchTab('chat');
+}
+
+// ===== CHAT =====
+function addMessage(text, who) {
+    const msgs = document.getElementById('messages');
+    const row = document.createElement('div');
+    row.className = 'msg-row ' + who;
+    if (who === 'bot') {
+        row.innerHTML = `
+            <div class="bubble bot">
+                <div class="bot-name">● MRBLACK</div>
+                ${text}
+            </div>`;
+    } else {
+        row.innerHTML = `<div class="bubble user">${text}</div>`;
+    }
+    msgs.appendChild(row);
+    msgs.scrollTop = msgs.scrollHeight;
+    return row;
+}
+
+function addTyping() {
+    const msgs = document.getElementById('messages');
+    const row = document.createElement('div');
+    row.className = 'msg-row bot';
+    row.id = 'typing-indicator';
+    row.innerHTML = `
+        <div class="bubble bot">
+            <div class="bot-name">● MRBLACK</div>
+            <div class="typing-dots"><span></span><span></span><span></span></div>
+        </div>`;
+    msgs.appendChild(row);
+    msgs.scrollTop = msgs.scrollHeight;
+}
+
+async function sendMessage() {
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if (!text) return;
+
+    addMessage(text, 'user');
+    input.value = '';
+    addTyping();
+
+    try {
+        const res = await fetch('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                message: text,
+                session_id: sessionId,
+                user_name: 'Bhai',
+                mode: currentMode
+            })
+        });
+        const data = await res.json();
+        document.getElementById('typing-indicator')?.remove();
+        addMessage(data.reply || 'Koi response nahi aaya, bhai.', 'bot');
+        if (data.trading) updateStats(data.trading);
+    } catch (e) {
+        document.getElementById('typing-indicator')?.remove();
+        addMessage('⚠️ Network error, bhai! Check connection.', 'bot');
+    }
+}
+
+function sendSuggestion(text) {
+    document.getElementById('chatInput').value = text;
+    sendMessage();
+}
+
+function prefillChat(text) {
+    switchTab('chat');
+    document.getElementById('chatInput').value = text;
+    document.getElementById('chatInput').focus();
+}
+
+// ===== SCAN =====
+function goScan() { switchTab('scan'); }
+
+function scanFromPair(token) {
+    switchTab('scan');
+    document.getElementById('scanAddr').value = token;
+}
+
+async function runScan() {
+    const addr = document.getElementById('scanAddr').value.trim();
+    if (!addr) return;
+
+    document.getElementById('scanResult').style.display = 'none';
+    document.querySelector('.scan-btn').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scanning...';
+
+    try {
+        const res = await fetch('/scan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address: addr, session_id: sessionId })
+        });
+        const data = await res.json();
+        renderChecklist(data);
+        addToRecentScans(addr, data);
+    } catch (e) {
+        alert('Scan failed, bhai. Try again.');
+    }
+
+    document.querySelector('.scan-btn').innerHTML = '<i class="fas fa-search"></i> Scan Token';
+}
+
+function renderChecklist(data) {
+    const items = data.checklist || defaultChecklist();
+    const passed = items.filter(i => i.status === 'pass').length;
+    const total = items.length;
+    const pct = Math.round((passed / total) * 100);
+
+    document.getElementById('checklistItems').innerHTML = items.map(item => `
+        <div class="check-item">
+            <div class="check-dot ${item.status}"></div>
+            <div class="check-text">${item.label}</div>
+            <span class="check-badge badge-${item.status}">${item.value}</span>
+        </div>
+    `).join('');
+
+    const scoreColor = pct >= 75 ? 'green' : pct >= 50 ? 'amber' : 'red';
+    document.getElementById('safetyScore').className = `mono ${scoreColor}`;
+    document.getElementById('safetyScore').textContent = `${passed}/${total}`;
+    document.getElementById('safetyBar').style.width = pct + '%';
+    document.getElementById('safetyBar').style.background =
+        pct >= 75 ? 'linear-gradient(90deg,var(--green),#00b4d8)' :
+        pct >= 50 ? 'linear-gradient(90deg,var(--amber),#ff9500)' :
+        'linear-gradient(90deg,var(--red),#ff6b6b)';
+
+    document.getElementById('scanResult').style.display = 'block';
+}
+
+function defaultChecklist() {
+    return [
+        { label: 'Contract Verified', status: 'pass', value: 'YES' },
+        { label: 'Honeypot Check', status: 'pass', value: 'SAFE' },
+        { label: 'Liquidity Locked', status: 'warn', value: '30 DAYS' },
+        { label: 'Owner Renounced', status: 'pass', value: 'YES' },
+        { label: 'Buy Tax', status: 'pass', value: '3%' },
+        { label: 'Sell Tax', status: 'warn', value: '7%' },
+        { label: 'Holders > 100', status: 'pass', value: '842' },
+        { label: 'Top 10 Holders < 30%', status: 'fail', value: '41%' },
+    ];
+}
+
+function addToRecentScans(addr, data) {
+    const short = addr.length > 14 ? addr.slice(0, 8) + '...' + addr.slice(-4) : addr;
+    recentScans.unshift({ addr: short, full: addr, data });
+    if (recentScans.length > 5) recentScans.pop();
+
+    document.getElementById('recentScans').innerHTML = recentScans.map((s, i) => `
+        <div class="check-item" onclick="renderChecklist(${i === 0 ? 'recentScans[0].data' : 'null'})" style="cursor:pointer;">
+            <div class="check-dot pass"></div>
+            <div class="check-text mono" style="font-size:11px;">${s.addr}</div>
+            <span class="check-badge badge-pass">VIEW</span>
+        </div>
+    `).join('');
+}
+
+// ===== TRADING DATA UPDATE =====
+function updateStats(d) {
+    if (d.paper) document.getElementById('paperBal').textContent = d.paper;
+    if (d.real) document.getElementById('realBal').textContent = d.real;
+    if (d.pnl) {
+        document.getElementById('pnlVal').textContent = d.pnl;
+        document.getElementById('pnlVal').className = 'stat-val ' + (d.pnl.includes('-') ? 'red' : 'green');
+    }
+}
+
+async function fetchTradingData() {
+    try {
+        const res = await fetch('/trading-data');
+        const data = await res.json();
+        updateStats(data);
+    } catch {}
+}
+
+// ===== INIT =====
+async function init() {
+    await initSession();
+    addMessage('Bhai! MrBlack Pro ready hai. Dashboard mein stats dekho, Chat mein poocho, ya Scan karo koi bhi token. 🚀', 'bot');
+    fetchTradingData();
+    setInterval(fetchTradingData, 15000);
+}
+
+document.getElementById('chatInput').addEventListener('keypress', e => {
+    if (e.key === 'Enter') sendMessage();
+});
+
+init();
+</script>
 </body>
 </html>
