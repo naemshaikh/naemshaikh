@@ -1511,12 +1511,12 @@ def _auto_check_new_pair(pair_address: str):
         telegram_new_token_alert(pair_address, score, total, rec)
 
     # AUTO PAPER BUY trigger
-    if overall == "SAFE" and score >= int(total * 0.75):
+    if overall == "SAFE" and score >= int(total * 0.65):
         try:
             _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
         except Exception as e:
             print(f"Auto buy error: {e}")
-    elif overall == "CAUTION" and score >= int(total * 0.88):
+    elif overall == "CAUTION" and score >= int(total * 0.70):
         try:
             _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
         except Exception as e:
@@ -3432,6 +3432,7 @@ def run_full_sniper_checklist(address: str) -> Dict:
         print(f"⚠️ GoPlus error: {e}")
 
     bscscan_source = ""
+    goplus_empty = not bool(goplus_data)
     if _gp_str(goplus_data, "is_open_source", "0") == "1":
         bscscan_source = "verified"
     print("✅ Contract check via GoPlus (no BSCScan needed)")
@@ -3651,10 +3652,13 @@ def run_full_sniper_checklist(address: str) -> Dict:
     critical_fails = [
         c for c in result["checklist"] if c["status"] == "fail" and c["label"] in [
             "Honeypot Safe", "Buy Tax ≤ 10%", "Sell Tax ≤ 10%",
-            "No Hidden Functions", "Transfer Allowed", "Mint Authority Disabled"
+            "No Hidden Functions", "Transfer Allowed", "Mint Authority Disabled",
+            "Contract Verified", "Liquidity ≥ 2 BNB", "Liquidity Locked"
         ]
     ]
 
+    if goplus_empty:
+        critical_fails = [c for c in result["checklist"] if c["status"] == "fail" and c["label"] in ["Honeypot Safe", "Buy Tax ≤ 10%", "Sell Tax ≤ 10%", "Transfer Allowed"]]
     if critical_fails or honeypot:
         result["overall"]        = "DANGER"
         result["recommendation"] = "❌ SKIP — Critical fail. Honeypot/Tax/Hidden function. Do NOT buy."
