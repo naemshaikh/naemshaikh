@@ -49,6 +49,68 @@ SMART_WALLETS = [
     w.strip() for w in os.getenv("SMART_WALLETS", "").split(",") if w.strip()
 ]
 
+
+PAIR_ABI_PRICE = [
+    {"name":"getReserves","type":"function","stateMutability":"view","inputs":[],
+     "outputs":[{"name":"reserve0","type":"uint112"},{"name":"reserve1","type":"uint112"},{"name":"blockTimestampLast","type":"uint32"}]},
+    {"name":"token0","type":"function","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"address"}]}
+]
+FACTORY_ABI_PRICE = [
+    {"name":"getPair","type":"function","stateMutability":"view",
+     "inputs":[{"name":"tokenA","type":"address"},{"name":"tokenB","type":"address"}],
+     "outputs":[{"name":"pair","type":"address"}]}
+]
+ROUTER_ABI_PRICE = [
+    {"name":"getAmountsOut","type":"function","stateMutability":"view",
+     "inputs":[{"name":"amountIn","type":"uint256"},{"name":"path","type":"address[]"}],
+     "outputs":[{"name":"amounts","type":"uint256[]"}]}
+]
+TOKEN_DEC_ABI = [{"name":"decimals","type":"function","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"uint8"}]}]
+_dec_cache = {}
+
+def _get_dec(addr):
+    if addr.lower() in _dec_cache: return _dec_cache[addr.lower()]
+    try: d = w3.eth.contract(address=Web3.to_checksum_address(addr), abi=TOKEN_DEC_ABI).functions.decimals().call()
+    except: d = 18
+    _dec_cache[addr.lower()] = d
+    return d
+
+def _get_v2_pair(token_address):
+    try:
+        p = w3.eth.contract(address=Web3.to_checksum_address(PANCAKE_FACTORY), abi=FACTORY_ABI_PRICE).functions.getPair(
+            Web3.to_checksum_address(token_address), Web3.to_checksum_address(WBNB)).call()
+        return "" if p == "0x0000000000000000000000000000000000000000" else p
+    except: return ""
+
+def get_token_price_bnb(token_address: str) -> float:
+    try:
+        dec = _get_dec(token_address)
+        amt = w3.eth.contract(address=Web3.to_checksum_address(PANCAKE_ROUTER), abi=ROUTER_ABI_PRICE).functions.getAmountsOut(
+            10**dec, [Web3.to_checksum_address(token_address), Web3.to_checksum_address(WBNB)]).call()
+        if amt[1] > 0: return amt[1] / 1e18
+    except: pass
+    try:
+        pair = _get_v2_pair(token_address)
+        if pair:
+            pc = w3.eth.contract(address=Web3.to_checksum_address(pair), abi=PAIR_ABI_PRICE)
+            t0 = pc.functions.token0().call()
+            r  = pc.functions.getReserves().call()
+            dec = _get_dec(token_address)
+            if r[0] > 0 and r[1] > 0:
+                return (r[0]/1e18)/(r[1]/(10**dec)) if t0.lower()==WBNB.lower() else (r[1]/1e18)/(r[0]/(10**dec))
+    except: pass
+    try:
+        resp = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{token_address}", timeout=8)
+        if resp.status_code == 200:
+            bsc = [p for p in (resp.json().get("pairs") or []) if p.get("chainId")=="bsc"]
+            if bsc:
+                bsc.sort(key=lambda x: float((x.get("liquidity") or {}).get("usd",0) or 0), reverse=True)
+                pusd = float(bsc[0].get("priceUsd",0) or 0)
+                bnb  = market_cache.get("bnb_price",300) or 300
+                return pusd/bnb if pusd > 0 else 0.0
+    except: pass
+    return 0.0
+
 w3 = Web3(Web3.HTTPProvider(BSC_RPC))
 print(f"✅ BSC Connected: {w3.is_connected()}")
 
@@ -1563,46 +1625,6 @@ def auto_position_manager():
         time.sleep(10)
 
 
-def get_token_price_bnb(token_address: str) -> float:
-    """
-    Get current token price in BNB using DexScreener API (free, no key needed).
-    Fallback: Moralis if key available.
-    """
-    # Try DexScreener first
-    try:
-        r = requests.get(
-            f"https://api.dexscreener.com/latest/dex/tokens/{token_address}",
-            timeout=8
-        )
-        if r.status_code == 200:
-            pairs = r.json().get("pairs", [])
-            # Filter BSC pairs only, sort by liquidity
-            bsc_pairs = [p for p in pairs if p.get("chainId") == "bsc"]
-            if bsc_pairs:
-                bsc_pairs.sort(key=lambda x: float(x.get("liquidity", {}).get("usd", 0) or 0), reverse=True)
-                price_usd = float(bsc_pairs[0].get("priceUsd", 0) or 0)
-                bnb_price = market_cache.get("bnb_price", 300) or 300
-                return price_usd / bnb_price if price_usd > 0 else 0.0
-    except Exception as e:
-        print(f"⚠️ DexScreener price error: {e}")
-
-    # Fallback: Moralis
-    if MORALIS_API_KEY:
-        try:
-            r2 = requests.get(
-                f"https://deep-index.moralis.io/api/v2.2/erc20/{token_address}/price",
-                headers={"X-API-Key": MORALIS_API_KEY},
-                params={"chain": "bsc"},
-                timeout=8
-            )
-            if r2.status_code == 200:
-                price_usd = float(r2.json().get("usdPrice", 0) or 0)
-                bnb_price = market_cache.get("bnb_price", 300) or 300
-                return price_usd / bnb_price if price_usd > 0 else 0.0
-        except Exception as e:
-            print(f"⚠️ Moralis price error: {e}")
-
-    return 0.0
 
 def add_position_to_monitor(session_id: str, token_address: str, token_name: str,
                              entry_price: float, size_bnb: float, stop_loss_pct: float = 15.0):
@@ -3437,7 +3459,25 @@ def run_full_sniper_checklist(address: str) -> Dict:
         "OK" if token_age_min >= 5 else "WAIT", 3)
 
     # ── STAGE 4 — Buy Pressure (DexScreener enhanced) ─────
-    buys_5m  = dex_data.get("buys_5m",  0)
+    try:
+        _sp  = _get_v2_pair(address)
+        _cur = w3.eth.block_number
+        _SWT = "0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822"
+        def _cnt(frm):
+            if not _sp: return 0,0
+            logs = w3.eth.get_logs({"address":Web3.to_checksum_address(_sp),"topics":[_SWT],"fromBlock":frm,"toBlock":_cur})
+            b=s=0
+            _t0l = w3.eth.contract(address=Web3.to_checksum_address(_sp),abi=PAIR_ABI_PRICE).functions.token0().call()
+            for lg in logs:
+                hx = lg["data"].hex() if isinstance(lg["data"],bytes) else lg["data"].replace("0x","")
+                if len(hx)<256: continue
+                a0=int(hx[0:64],16); a1=int(hx[64:128],16)
+                if _t0l.lower()==WBNB.lower(): b+=1 if a0>0 else 0; s+=1 if a0==0 else 0
+                else: b+=1 if a1>0 else 0; s+=1 if a1==0 else 0
+            return b,s
+        buys_5m,sells_5m = _cnt(_cur-100)
+        buys_1h,sells_1h = _cnt(_cur-1200)
+    except: buys_5m=sells_5m=buys_1h=sells_1h=0
     sells_5m = dex_data.get("sells_5m", 0)
     buys_1h  = dex_data.get("buys_1h",  0)
     sells_1h = dex_data.get("sells_1h", 0)
