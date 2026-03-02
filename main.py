@@ -27,10 +27,10 @@ MODELS_PRIORITY = [
     "llama-3.1-70b-versatile",      # Backup 70B
     "llama3-70b-8192",              # Reliable fallback
     "mixtral-8x7b-32768",           # Long context fallback
-    "gemma2-9b-it",                 # Ultra-fast for simple tasks
+    "llama-3.1-8b-instant",                 # Ultra-fast for simple tasks
 ]
 MODEL_NAME      = MODELS_PRIORITY[0]
-MODEL_FAST      = "gemma2-9b-it"        # Micro-tasks ke liye (learning extractions)
+MODEL_FAST      = "llama-3.1-8b-instant"        # Micro-tasks ke liye (learning extractions)
 MODEL_DEEP      = "llama-3.3-70b-versatile"  # Deep analysis ke liye
 
 # ========== ENV CONFIG ==========
