@@ -3667,7 +3667,7 @@ def run_full_sniper_checklist(address: str) -> Dict:
     elif failed >= 3 or pct < 50:
         result["overall"]        = "RISK"
         result["recommendation"] = "⚠️ HIGH RISK — Multiple issues. Skip or 0.001 BNB test max."
-    elif pct >= 75:
+    elif pct >= 60:
         result["overall"]        = "SAFE"
         result["recommendation"] = "✅ LOOKS SAFE — Start PAPER. Follow Stage 2 test buy + Stage 3 wait rules."
     else:
