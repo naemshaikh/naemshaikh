@@ -82,6 +82,68 @@ def _get_v2_pair(token_address):
         return "" if p == "0x0000000000000000000000000000000000000000" else p
     except: return ""
 
+
+# ── PancakeSwap V3 ──────────────────────────────────────────────
+PANCAKE_V3_FACTORY = "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865"
+V3_FEE_TIERS       = [500, 2500, 10000]
+
+V3_FACTORY_ABI = [{"name":"getPool","type":"function","stateMutability":"view",
+    "inputs":[{"name":"tokenA","type":"address"},{"name":"tokenB","type":"address"},{"name":"fee","type":"uint24"}],
+    "outputs":[{"name":"pool","type":"address"}]}]
+
+V3_POOL_ABI = [
+    {"name":"slot0","type":"function","stateMutability":"view","inputs":[],
+     "outputs":[{"name":"sqrtPriceX96","type":"uint160"},{"name":"tick","type":"int24"},
+                {"name":"observationIndex","type":"uint16"},{"name":"observationCardinality","type":"uint16"},
+                {"name":"observationCardinalityNext","type":"uint16"},{"name":"feeProtocol","type":"uint32"},
+                {"name":"unlocked","type":"bool"}]},
+    {"name":"token0","type":"function","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"address"}]},
+    {"name":"token1","type":"function","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"address"}]},
+    {"name":"liquidity","type":"function","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"uint128"}]}
+]
+
+def _get_v3_pool(token_address):
+    try:
+        v3f     = w3.eth.contract(address=Web3.to_checksum_address(PANCAKE_V3_FACTORY), abi=V3_FACTORY_ABI)
+        tok_cs  = Web3.to_checksum_address(token_address)
+        wbnb_cs = Web3.to_checksum_address(WBNB)
+        zero    = "0x0000000000000000000000000000000000000000"
+        for fee in V3_FEE_TIERS:
+            try:
+                pool = v3f.functions.getPool(tok_cs, wbnb_cs, fee).call()
+                if pool and pool != zero:
+                    return pool
+            except: continue
+    except: pass
+    return ""
+
+def _get_v3_price_bnb(pool_address, token_address):
+    try:
+        pc      = w3.eth.contract(address=Web3.to_checksum_address(pool_address), abi=V3_POOL_ABI)
+        slot0   = pc.functions.slot0().call()
+        sqrtP   = slot0[0]
+        if sqrtP == 0: return 0.0
+        token0  = pc.functions.token0().call()
+        dec     = _get_dec(token_address)
+        raw     = (sqrtP / (2**96)) ** 2
+        if token0.lower() == WBNB.lower():
+            return raw * (10**(18 - dec))
+        else:
+            adj = raw * (10**(dec - 18))
+            return 1.0 / adj if adj > 0 else 0.0
+    except: return 0.0
+
+def _get_dexpaprika_price_bnb(token_address):
+    try:
+        r = requests.get(f"https://api.dexpaprika.com/networks/bsc/tokens/{token_address.lower()}", timeout=8)
+        if r.status_code == 200:
+            pusd = float((r.json().get("summary") or {}).get("price_usd", 0) or 0)
+            if pusd > 0:
+                bnb = market_cache.get("bnb_price", 300) or 300
+                return pusd / bnb
+    except: pass
+    return 0.0
+
 def get_token_price_bnb(token_address: str) -> float:
     try:
         dec = _get_dec(token_address)
@@ -100,6 +162,19 @@ def get_token_price_bnb(token_address: str) -> float:
                 return (r[0]/1e18)/(r[1]/(10**dec)) if t0.lower()==WBNB.lower() else (r[1]/1e18)/(r[0]/(10**dec))
     except: pass
     try:
+        # Source 3: V3 slot0
+        v3pool = _get_v3_pool(token_address)
+        if v3pool:
+            p = _get_v3_price_bnb(v3pool, token_address)
+            if p > 0: return p
+    except: pass
+    try:
+        # Source 4: DexPaprika (free, no key, 2M+ tokens)
+        p = _get_dexpaprika_price_bnb(token_address)
+        if p > 0: return p
+    except: pass
+    try:
+        # Source 5: DexScreener
         resp = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{token_address}", timeout=8)
         if resp.status_code == 200:
             bsc = [p for p in (resp.json().get("pairs") or []) if p.get("chainId")=="bsc"]
@@ -1273,7 +1348,7 @@ def poll_new_pairs():
             async with _ws.connect(wss_url, ping_interval=20, ping_timeout=10, close_timeout=5) as ws:
                 await ws.send(_json.dumps({
                     "id": 1, "method": "eth_subscribe",
-                    "params": ["logs", {"address": FACTORY, "topics": [PAIR_TOPIC]}],
+                    "params": ["logs", {"address": [FACTORY, PANCAKE_V3_FACTORY], "topics": [[PAIR_TOPIC, "0x783cca1c0412dd0d695e784568c96da2e9c22ff989357a2e8b1d9b2b4e6b7118"]]}],
                     "jsonrpc": "2.0"
                 }))
                 resp = await asyncio.wait_for(ws.recv(), timeout=10)
