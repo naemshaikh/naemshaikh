@@ -3651,14 +3651,16 @@ def run_full_sniper_checklist(address: str) -> Dict:
 
     critical_fails = [
         c for c in result["checklist"] if c["status"] == "fail" and c["label"] in [
-            "Honeypot Safe", "Buy Tax ≤ 10%", "Sell Tax ≤ 10%",
+            "Honeypot Safe", "Buy Tax ≤ 9%", "Sell Tax ≤ 9%",
             "No Hidden Functions", "Transfer Allowed", "Mint Authority Disabled",
-            "Contract Verified", "Liquidity ≥ 2 BNB", "Liquidity Locked"
+            "Liquidity ≥ 1 BNB", "Liquidity Locked"
         ]
     ]
 
     if goplus_empty:
         critical_fails = [c for c in result["checklist"] if c["status"] == "fail" and c["label"] in ["Honeypot Safe", "Buy Tax ≤ 10%", "Sell Tax ≤ 10%", "Transfer Allowed"]]
+    if goplus_empty:
+        critical_fails = [c for c in result["checklist"] if c["status"] == "fail" and c["label"] in ["Honeypot Safe", "Buy Tax ≤ 9%", "Sell Tax ≤ 9%", "Transfer Allowed"]]
     if critical_fails or honeypot:
         result["overall"]        = "DANGER"
         result["recommendation"] = "❌ SKIP — Critical fail. Honeypot/Tax/Hidden function. Do NOT buy."
