@@ -2427,6 +2427,15 @@ def _get_brain_context_for_llm() -> str:
         if bl or wl:
             parts.append(f"KnownTokens:SAFE={wl} DANGER={bl}")
 
+        # FIX: Discovered tokens — naam aur address inject karo
+        if new_pairs_queue:
+            queue_names = [f"{q.get('name','Unknown')}({q.get('address','')[:10]})"
+                          for q in list(new_pairs_queue)[-15:]]
+            parts.append(f"DiscoveredTokensList:{queue_names}")
+        if discovered_addresses:
+            recent_addrs = list(discovered_addresses.keys())[-10:]
+            parts.append(f"RecentAddresses:{[a[:10] for a in recent_addrs]}")
+
         # Airdrop insights
         active_drops = brain["airdrop"]["active_projects"]
         if active_drops:
