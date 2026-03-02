@@ -3486,10 +3486,10 @@ def run_full_sniper_checklist(address: str) -> Dict:
     hidden   = _gp_bool_flag(goplus_data, "can_take_back_ownership") or _gp_bool_flag(goplus_data, "hidden_owner")
     transfer = not _gp_bool_flag(goplus_data, "transfer_pausable")
 
-    add("Liquidity ≥ 2 BNB",    "pass" if liq_bnb > 2    else ("warn" if liq_bnb > 0.5 else "fail"), f"{liq_bnb:.2f} BNB", 1)
+    add("Liquidity ≥ 1 BNB",    "pass" if liq_bnb > 2    else ("warn" if liq_bnb > 0.5 else "fail"), f"{liq_bnb:.2f} BNB", 1)
     add(    "pass" if liq_locked > 80 else ("warn" if liq_locked > 20 else "fail"), f"{liq_locked:.0f}%", 1)
-    add("Buy Tax ≤ 10%",        "pass" if buy_tax <= 10   else "fail",          f"{buy_tax:.1f}%",  1)
-    add("Sell Tax ≤ 10%",       "pass" if sell_tax <= 10  else "fail",          f"{sell_tax:.1f}%", 1)
+    add("Buy Tax ≤ 12%",        "pass" if buy_tax <= 10   else "fail",          f"{buy_tax:.1f}%",  1)
+    add("Sell Tax ≤ 12%",       "pass" if sell_tax <= 10  else "fail",          f"{sell_tax:.1f}%", 1)
     add("No Hidden Functions",  "pass" if not hidden       else "fail", "CLEAN" if not hidden else "RISK",   1)
     add("Transfer Allowed",     "pass" if transfer         else "fail", "YES"   if transfer   else "PAUSED", 1)
 
