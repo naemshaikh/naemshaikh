@@ -3392,8 +3392,15 @@ def run_full_sniper_checklist(address: str) -> Dict:
         liq_locked = (liq_locked / len(dex_list)) * 100
 
     # Use DexScreener liquidity if better
-    if dex_data.get("liquidity_usd", 0) > liq_usd:
-        liq_usd = dex_data["liquidity_usd"]
+    try:
+        _pl = _get_v2_pair(address)
+        if _pl:
+            _pc  = w3.eth.contract(address=Web3.to_checksum_address(_pl), abi=PAIR_ABI_PRICE)
+            _r   = _pc.functions.getReserves().call()
+            _t0  = _pc.functions.token0().call()
+            _liq = _r[0]/1e18 if _t0.lower()==WBNB.lower() else _r[1]/1e18
+            if _liq > 0: liq_bnb = _liq; liq_usd = _liq * bnb_price
+    except: pass
 
     bnb_price = market_cache.get("bnb_price", 300) or 300
     liq_bnb   = liq_usd / bnb_price
