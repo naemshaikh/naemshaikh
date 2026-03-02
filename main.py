@@ -3454,7 +3454,7 @@ def run_full_sniper_checklist(address: str) -> Dict:
         ] or "renounceOwnership" in bscscan_source
     )
 
-    add("Contract Verified",       "pass" if verified  else "fail", "YES" if verified  else "NO",   1)
+    add(      "pass" if verified  else "fail", "YES" if verified  else "NO",   1)
     add("Mint Authority Disabled", "pass" if mint_ok   else "fail", "SAFE" if mint_ok  else "RISK", 1)
     add("Ownership Renounced",     "pass" if renounced else "warn", "YES" if renounced else "MAYBE",1)
 
@@ -3487,7 +3487,7 @@ def run_full_sniper_checklist(address: str) -> Dict:
     transfer = not _gp_bool_flag(goplus_data, "transfer_pausable")
 
     add("Liquidity ≥ 2 BNB",    "pass" if liq_bnb > 2    else ("warn" if liq_bnb > 0.5 else "fail"), f"{liq_bnb:.2f} BNB", 1)
-    add("Liquidity Locked",     "pass" if liq_locked > 80 else ("warn" if liq_locked > 20 else "fail"), f"{liq_locked:.0f}%", 1)
+    add(    "pass" if liq_locked > 80 else ("warn" if liq_locked > 20 else "fail"), f"{liq_locked:.0f}%", 1)
     add("Buy Tax ≤ 10%",        "pass" if buy_tax <= 10   else "fail",          f"{buy_tax:.1f}%",  1)
     add("Sell Tax ≤ 10%",       "pass" if sell_tax <= 10  else "fail",          f"{sell_tax:.1f}%", 1)
     add("No Hidden Functions",  "pass" if not hidden       else "fail", "CLEAN" if not hidden else "RISK",   1)
