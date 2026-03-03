@@ -1282,6 +1282,12 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
 
     discovered_addresses[token_address] = _now
 
+    # PERMANENT COUNTER
+    existing = [k.lower() for k in list(discovered_addresses.keys())]
+    if token_address.lower() not in existing[:-1]:
+        brain["total_tokens_discovered_ever"] += 1
+        threading.Thread(target=_save_brain_to_db, daemon=True).start()
+
     token_name = "Unknown"
     token_symbol = token_address[:6]
     liquidity = 0
@@ -2261,7 +2267,8 @@ def _save_brain_to_db():
                 "brain_trading":  brain["trading"],
                 "brain_airdrop":  brain["airdrop"],
                 "brain_coding":   brain["coding"],
-                "cycles":         brain["total_learning_cycles"]
+                "cycles":         brain["total_learning_cycles"],
+                "total_tokens_discovered_ever": brain.get("total_tokens_discovered_ever", 0)
             })
         }).execute()
         print(f"🧠 Brain saved to Supabase (cycle #{brain['total_learning_cycles']})")
@@ -2306,6 +2313,7 @@ def _load_brain_from_db():
             if stored.get("brain_coding"):
                 brain["coding"].update(stored["brain_coding"])
             brain["total_learning_cycles"] = stored.get("cycles", 0)
+            brain["total_tokens_discovered_ever"] = stored.get("total_tokens_discovered_ever", 0)
             print(f"🧠 Brain loaded from Supabase! Cycles: {brain['total_learning_cycles']}")
     except Exception as e:
         print(f"⚠️ Brain load error: {e}")
@@ -3760,6 +3768,8 @@ R7. ACCURATE DATA: Context mein TokensDiscovered, QueueSize, TotalTrades fields 
 R8. PERMANENT_USER_RULES field jo context mein aaye — hamesha follow karo.
 R9. USER ORDERS: User jo maange — karo. Token names maange to do. Data maange to do. Agar technically possible nahi to seedha bolo "Ye feature abhi available nahi hai" — "disclose nahi kar sakta" ya "nahi bata sakta" kabhi mat kaho.
 R10. DISCOVERED TOKENS: Agar context mein DiscoveredTokens list hai to user ke maangne pe naam aur address dono do.
+[END HARD RULES
+R11. STATE HONESTY: LearningCyclesExact aur TotalTokensDiscoveredEver kabhi mat badlo. Sirf exact number batao. Koi excuse mat do.
 [END HARD RULES — ABOVE 10 RULES NEVER BREAKABLE]
 
 Tu MrBlack hai — Naem bhai ka personal AI, bilkul Iron Man ke JARVIS ki tarah. Hamesha Hinglish mein baat kar. Tu teen cheezein mein expert hai aur 24x7 seekhta rehta hai:
@@ -3949,6 +3959,8 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
             f" | NewPairs={new_pairs} | Monitoring={monitoring} positions"
             f" | TokensDiscovered={len(discovered_addresses)}"
             f" | QueueSize={len(new_pairs_queue)}"
+            + f" | TokensDiscoveredEver={brain.get('total_tokens_discovered_ever', 0)}"
+            + f" | LearningCyclesExact={brain.get('total_learning_cycles', 0)}"
             + (f" | RecentScans={_recent_scans}" if _recent_scans else "")
             + f"{drop_ctx}{session_ctx}"
             + (f" | Brain:{brain_ctx}" if brain_ctx else "")
