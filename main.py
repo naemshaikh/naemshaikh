@@ -838,7 +838,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     if paper_balance < AUTO_BUY_SIZE_BNB:
         return
     entry_price = get_token_price_bnb(address)
-    for _wait in [5, 10, 15]:
+    for _wait in [3, 5, 8]:
         if entry_price <= 0:
             time.sleep(_wait)
             entry_price = get_token_price_bnb(address)
@@ -1131,7 +1131,7 @@ def fetch_market_data():
     sources = [
         ("Binance",      lambda: float(requests.get(
             "https://api.binance.com/api/v3/ticker/price",
-            params={"symbol":"BNBUSDT"}, timeout=25
+            params={"symbol":"BNBUSDT"}, timeout=30
         ).json().get("price",0) or 0)),
         ("CoinGecko",    lambda: float((requests.get(
             "https://api.coingecko.com/api/v3/simple/price",
@@ -2242,6 +2242,15 @@ def _startup_once():
                 fn()
             return _wrap
         threading.Thread(target=fetch_market_data,                    daemon=True).start()
+
+        # BNB price verify + retry
+        import time as _st
+        _st.sleep(8)
+        if market_cache.get("bnb_price", 0) == 0:
+            print("⚠️ BNB price not loaded, retrying...")
+            threading.Thread(target=fetch_market_data, daemon=True).start()
+            _st.sleep(8)
+
         threading.Thread(target=_delayed(poll_new_pairs,        10),  daemon=True).start()
         threading.Thread(target=_delayed(price_monitor_loop,    15),  daemon=True).start()
         threading.Thread(target=_delayed(track_smart_wallets,   20),  daemon=True).start()
