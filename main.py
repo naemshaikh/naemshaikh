@@ -1517,12 +1517,12 @@ def _auto_check_new_pair(pair_address: str):
         telegram_new_token_alert(pair_address, score, total, rec)
 
     # AUTO PAPER BUY trigger
-    if overall == "SAFE" and score >= int(total * 0.65):
+    if overall == "SAFE" and score >= int(total * 0.50):  # FIX: threshold 65->50
         try:
             _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
         except Exception as e:
             print(f"Auto buy error: {e}")
-    elif overall == "CAUTION" and score >= int(total * 0.60):
+    elif overall == "CAUTION" and score >= int(total * 0.45):  # FIX: threshold 60->45
         try:
             _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
         except Exception as e:
@@ -1583,6 +1583,13 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         print("Auto-buy skipped: low balance")
         return
     entry_price = get_token_price_bnb(address)
+    # FIX: Retry — naye tokens pe price aane mein time lagta hai
+    if entry_price <= 0:
+        import time as _t; _t.sleep(5)
+        entry_price = get_token_price_bnb(address)
+    if entry_price <= 0:
+        import time as _t; _t.sleep(10)
+        entry_price = get_token_price_bnb(address)
     if entry_price <= 0:
         dex = checklist_result.get("dex_data", {})
         bnb_p = market_cache.get("bnb_price", 300) or 300
@@ -3665,10 +3672,9 @@ def run_full_sniper_checklist(address: str) -> Dict:
         ]
     ]
 
+    # FIX: GoPlus empty hone pe sirf honeypot critical fail rakho
     if goplus_empty:
-        critical_fails = [c for c in result["checklist"] if c["status"] == "fail" and c["label"] in ["Honeypot Safe", "Buy Tax ≤ 8%", "Sell Tax ≤ 8%", "Transfer Allowed"]]
-    if goplus_empty:
-        critical_fails = [c for c in result["checklist"] if c["status"] == "fail" and c["label"] in ["Honeypot Safe", "Buy Tax ≤ 8%", "Sell Tax ≤ 8%", "Transfer Allowed"]]
+        critical_fails = [c for c in result["checklist"] if c["status"] == "fail" and c["label"] == "Honeypot Safe"]
     if critical_fails or honeypot:
         result["overall"]        = "DANGER"
         result["recommendation"] = "❌ SKIP — Critical fail. Honeypot/Tax/Hidden function. Do NOT buy."
