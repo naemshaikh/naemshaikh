@@ -658,6 +658,16 @@ def _load_session_from_db(session_id: str):
                 "win_count":        int(row.get("win_count")        or 0),
                 "pattern_database": _safe_json(row.get("pattern_database"), []),
             })
+            # Restore auto_trade_stats if this is AUTO session
+            if session_id == AUTO_SESSION_ID:
+                raw = _safe_json(row.get("pattern_database"), {})
+                if isinstance(raw, dict):
+                    auto_trade_stats["total_auto_buys"]  = raw.get("total_buys", 0)
+                    auto_trade_stats["total_auto_sells"] = raw.get("total_sells", 0)
+                    auto_trade_stats["auto_pnl_total"]   = raw.get("pnl_total", 0.0)
+                    auto_trade_stats["last_action"]      = raw.get("last_action", "")
+                    auto_trade_stats["trade_history"]    = raw.get("trade_history", [])
+                    print(f"✅ Auto stats restored: buys={auto_trade_stats['total_auto_buys']} history={len(auto_trade_stats['trade_history'])}")
             print(f"✅ Session loaded: {session_id[:8]}... Balance:{sessions[session_id]['paper_balance']:.3f}BNB")
     except Exception as e:
         print(f"⚠️ Session load error: {e}")
@@ -666,6 +676,17 @@ def _save_session_to_db(session_id: str):
     if not supabase: return
     try:
         sess = sessions.get(session_id, {})
+        extra = {}
+        if session_id == AUTO_SESSION_ID:
+            extra["pattern_database"] = json.dumps({
+                "total_buys":   auto_trade_stats.get("total_auto_buys", 0),
+                "total_sells":  auto_trade_stats.get("total_auto_sells", 0),
+                "pnl_total":    auto_trade_stats.get("auto_pnl_total", 0.0),
+                "last_action":  auto_trade_stats.get("last_action", ""),
+                "trade_history": auto_trade_stats.get("trade_history", [])[-100:],
+            })
+        else:
+            extra["pattern_database"] = json.dumps(sess.get("pattern_database", [])[-100:])
         supabase.table("memory").upsert({
             "session_id":       session_id,
             "role":             "user",
@@ -678,7 +699,7 @@ def _save_session_to_db(session_id: str):
             "daily_loss":       sess.get("daily_loss",        0.0),
             "trade_count":      sess.get("trade_count",       0),
             "win_count":        sess.get("win_count",         0),
-            "pattern_database": json.dumps(sess.get("pattern_database", [])[-100:]),
+            **extra,
             "updated_at":       datetime.utcnow().isoformat()
         }).execute()
     except Exception as e:
