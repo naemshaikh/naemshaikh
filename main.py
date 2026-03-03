@@ -1,811 +1,2550 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>MrBlack</title>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<style>
-:root{
-  --ink:#05080d;--ink2:#090e16;--ink3:#0d1520;
-  --line:rgba(255,255,255,0.06);--line2:rgba(255,255,255,0.1);
-  --em:#00e676;--em-dim:rgba(0,230,118,0.12);--em-glow:0 0 24px rgba(0,230,118,0.25);
-  --gold:#f0c040;--gold-dim:rgba(240,192,64,0.1);
-  --ice:#40c4ff;--ice-dim:rgba(64,196,255,0.1);
-  --red:#ff4757;--red-dim:rgba(255,71,87,0.1);
-  --txt:#dce8f5;--txt2:#6b82a0;--txt3:#3a4e66;
-  --r:14px;--r2:10px;
+import os
+import re
+from flask import Flask, render_template, request, jsonify
+from supabase import create_client
+import uuid
+from datetime import datetime, timedelta
+import requests
+import time
+import threading
+import json
+import asyncio
+import websockets
+from web3 import Web3
+from collections import deque
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import List, Dict, Optional
+import hmac
+import hashlib
+
+# ========== FREEFLOW LLM ==========
+from freeflow_llm import FreeFlowClient, NoProvidersAvailableError
+
+app = Flask(__name__)
+MODELS_PRIORITY = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-70b-versatile",
+    "llama3-70b-8192",
+    "mixtral-8x7b-32768",
+    "llama-3.1-8b-instant",
+]
+MODEL_NAME  = MODELS_PRIORITY[0]
+MODEL_FAST  = "llama-3.1-8b-instant"
+MODEL_DEEP  = "llama-3.3-70b-versatile"
+
+# ========== ENV CONFIG ==========
+BSC_RPC          = "https://bsc-dataseed.binance.org/"
+BSC_SCAN_API     = "https://api.bscscan.com/api"
+BSC_SCAN_KEY     = os.getenv("BSC_SCAN_KEY") or os.getenv("BSCSCAN_API_KEY") or os.getenv("BSC_API_KEY", "") or os.getenv("BSCSCAN_API_KEY", "")
+PANCAKE_ROUTER   = "0x10ED43C718714eb63d5aA57B78B54704E256024E"
+PANCAKE_FACTORY  = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
+WBNB             = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"  # FIX 1: WBNB defined
+MORALIS_API_KEY  = os.getenv("MORALIS_API_KEY", "")
+TELEGRAM_TOKEN   = os.getenv("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+DAPPRADAR_KEY    = os.getenv("DAPPRADAR_KEY", "")
+
+SMART_WALLETS = [
+    w.strip() for w in os.getenv("SMART_WALLETS", "").split(",") if w.strip()
+]
+
+PAIR_ABI_PRICE = [
+    {"name":"getReserves","type":"function","stateMutability":"view","inputs":[],
+     "outputs":[{"name":"reserve0","type":"uint112"},{"name":"reserve1","type":"uint112"},{"name":"blockTimestampLast","type":"uint32"}]},
+    {"name":"token0","type":"function","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"address"}]}
+]
+FACTORY_ABI_PRICE = [
+    {"name":"getPair","type":"function","stateMutability":"view",
+     "inputs":[{"name":"tokenA","type":"address"},{"name":"tokenB","type":"address"}],
+     "outputs":[{"name":"pair","type":"address"}]}
+]
+ROUTER_ABI_PRICE = [
+    {"name":"getAmountsOut","type":"function","stateMutability":"view",
+     "inputs":[{"name":"amountIn","type":"uint256"},{"name":"path","type":"address[]"}],
+     "outputs":[{"name":"amounts","type":"uint256[]"}]}
+]
+TOKEN_DEC_ABI = [{"name":"decimals","type":"function","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"uint8"}]}]
+_dec_cache = {}
+
+def _get_dec(addr):
+    if addr.lower() in _dec_cache: return _dec_cache[addr.lower()]
+    try: d = w3.eth.contract(address=Web3.to_checksum_address(addr), abi=TOKEN_DEC_ABI).functions.decimals().call()
+    except: d = 18
+    _dec_cache[addr.lower()] = d
+    return d
+
+def _get_v2_pair(token_address):
+    try:
+        p = w3.eth.contract(address=Web3.to_checksum_address(PANCAKE_FACTORY), abi=FACTORY_ABI_PRICE).functions.getPair(
+            Web3.to_checksum_address(token_address), Web3.to_checksum_address(WBNB)).call()
+        return "" if p == "0x0000000000000000000000000000000000000000" else p
+    except: return ""
+
+PANCAKE_V3_FACTORY = "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865"
+V3_FEE_TIERS       = [500, 2500, 10000]
+
+V3_FACTORY_ABI = [{"name":"getPool","type":"function","stateMutability":"view",
+    "inputs":[{"name":"tokenA","type":"address"},{"name":"tokenB","type":"address"},{"name":"fee","type":"uint24"}],
+    "outputs":[{"name":"pool","type":"address"}]}]
+
+V3_POOL_ABI = [
+    {"name":"slot0","type":"function","stateMutability":"view","inputs":[],
+     "outputs":[{"name":"sqrtPriceX96","type":"uint160"},{"name":"tick","type":"int24"},
+                {"name":"observationIndex","type":"uint16"},{"name":"observationCardinality","type":"uint16"},
+                {"name":"observationCardinalityNext","type":"uint16"},{"name":"feeProtocol","type":"uint32"},
+                {"name":"unlocked","type":"bool"}]},
+    {"name":"token0","type":"function","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"address"}]},
+    {"name":"token1","type":"function","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"address"}]},
+    {"name":"liquidity","type":"function","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"uint128"}]}
+]
+
+def _get_v3_pool(token_address):
+    try:
+        v3f     = w3.eth.contract(address=Web3.to_checksum_address(PANCAKE_V3_FACTORY), abi=V3_FACTORY_ABI)
+        tok_cs  = Web3.to_checksum_address(token_address)
+        wbnb_cs = Web3.to_checksum_address(WBNB)
+        zero    = "0x0000000000000000000000000000000000000000"
+        for fee in V3_FEE_TIERS:
+            try:
+                pool = v3f.functions.getPool(tok_cs, wbnb_cs, fee).call()
+                if pool and pool != zero:
+                    return pool
+            except: continue
+    except: pass
+    return ""
+
+def _get_v3_price_bnb(pool_address, token_address):
+    try:
+        pc      = w3.eth.contract(address=Web3.to_checksum_address(pool_address), abi=V3_POOL_ABI)
+        slot0   = pc.functions.slot0().call()
+        sqrtP   = slot0[0]
+        if sqrtP == 0: return 0.0
+        token0  = pc.functions.token0().call()
+        dec     = _get_dec(token_address)
+        raw     = (sqrtP / (2**96)) ** 2
+        if token0.lower() == WBNB.lower():
+            return raw * (10**(18 - dec))
+        else:
+            adj = raw * (10**(dec - 18))
+            return 1.0 / adj if adj > 0 else 0.0
+    except: return 0.0
+
+def _get_dexpaprika_price_bnb(token_address):
+    try:
+        r = requests.get(f"https://api.dexpaprika.com/networks/bsc/tokens/{token_address.lower()}", timeout=8)
+        if r.status_code == 200:
+            pusd = float((r.json().get("summary") or {}).get("price_usd", 0) or 0)
+            if pusd > 0:
+                bnb = market_cache.get("bnb_price", 300) or 300
+                return pusd / bnb
+    except: pass
+    return 0.0
+
+def get_token_price_bnb(token_address: str) -> float:
+    try:
+        dec = _get_dec(token_address)
+        amt = w3.eth.contract(address=Web3.to_checksum_address(PANCAKE_ROUTER), abi=ROUTER_ABI_PRICE).functions.getAmountsOut(
+            10**dec, [Web3.to_checksum_address(token_address), Web3.to_checksum_address(WBNB)]).call()
+        if amt[1] > 0: return amt[1] / 1e18
+    except: pass
+    try:
+        pair = _get_v2_pair(token_address)
+        if pair:
+            pc = w3.eth.contract(address=Web3.to_checksum_address(pair), abi=PAIR_ABI_PRICE)
+            t0 = pc.functions.token0().call()
+            r  = pc.functions.getReserves().call()
+            dec = _get_dec(token_address)
+            if r[0] > 0 and r[1] > 0:
+                return (r[0]/1e18)/(r[1]/(10**dec)) if t0.lower()==WBNB.lower() else (r[1]/1e18)/(r[0]/(10**dec))
+    except: pass
+    try:
+        v3pool = _get_v3_pool(token_address)
+        if v3pool:
+            p = _get_v3_price_bnb(v3pool, token_address)
+            if p > 0: return p
+    except: pass
+    try:
+        p = _get_dexpaprika_price_bnb(token_address)
+        if p > 0: return p
+    except: pass
+    try:
+        resp = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{token_address}", timeout=8)
+        if resp.status_code == 200:
+            _resp_raw = (resp.json() or {}).get("pairs") or []
+            if not isinstance(_resp_raw, list): _resp_raw = []
+            bsc = [p for p in _resp_raw if p and p.get("chainId")=="bsc"]
+            if bsc:
+                bsc.sort(key=lambda x: float((x.get("liquidity") or {}).get("usd",0) or 0), reverse=True)
+                pusd = float(bsc[0].get("priceUsd",0) or 0)
+                bnb  = market_cache.get("bnb_price",300) or 300
+                return pusd/bnb if pusd > 0 else 0.0
+    except: pass
+    return 0.0
+
+w3 = Web3(Web3.HTTPProvider(BSC_RPC))
+print(f"✅ BSC Connected: {w3.is_connected()}")
+
+# ========== SUPABASE ==========
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase = None
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        print("✅ Supabase memory connected")
+    except Exception as e:
+        print(f"❌ Supabase failed: {e}")
+
+# ========== KNOWLEDGE BASE ==========
+knowledge_base = {
+    "dex":      {"uniswap": {}, "pancakeswap": {}, "aerodrome": {}, "raydium": {}, "jupiter": {}},
+    "bsc":      {"new_tokens": [], "trending": [], "scams": [], "safu_tokens": []},
+    "airdrops": {"active": [], "upcoming": [], "ended": []},
+    "trading":  {"news": [], "fear_greed": {}, "market_data": {}}
 }
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-html,body{height:100%;-webkit-tap-highlight-color:transparent;}
-body{background:var(--ink);color:var(--txt);font-family:'Outfit',sans-serif;font-size:14px;line-height:1.4;overflow-x:hidden;padding-bottom:90px;}
-body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;background:radial-gradient(ellipse 600px 400px at 10% 0%,rgba(0,230,118,0.05) 0%,transparent 60%),radial-gradient(ellipse 400px 300px at 90% 100%,rgba(64,196,255,0.04) 0%,transparent 60%);}
 
-/* HEADER */
-.hdr{position:sticky;top:0;z-index:200;background:rgba(5,8,13,0.95);backdrop-filter:blur(24px);border-bottom:1px solid var(--line);padding:0 14px;height:58px;display:flex;align-items:center;justify-content:space-between;}
-.hdr-brand{display:flex;align-items:center;gap:10px;}
-.hdr-logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--em),#00bcd4);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;color:#000;box-shadow:var(--em-glow);}
-.hdr-name{font-size:17px;font-weight:800;background:linear-gradient(90deg,#fff,var(--em));-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
-.hdr-sub{font-size:10px;color:var(--txt2);letter-spacing:0.5px;}
-.hdr-right{display:flex;align-items:center;gap:8px;}
-/* Round circles */
-.hdr-circle{width:52px;height:52px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;border:1.5px solid;cursor:default;}
-.hdr-circle.bnb-c{background:rgba(64,196,255,0.08);border-color:rgba(64,196,255,0.35);}
-.hdr-circle.fg-c{background:rgba(240,192,64,0.08);border-color:rgba(240,192,64,0.35);}
-.hdr-c-val{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;line-height:1;}
-.hdr-circle.bnb-c .hdr-c-val{color:var(--ice);}
-.hdr-circle.fg-c  .hdr-c-val{color:var(--gold);}
-.hdr-c-lbl{font-size:8px;text-transform:uppercase;letter-spacing:0.5px;color:var(--txt2);}
-.live-dot{width:8px;height:8px;border-radius:50%;background:var(--em);box-shadow:0 0 10px var(--em);animation:blink 2.4s ease infinite;}
-@keyframes blink{0%,100%{opacity:1;}50%{opacity:0.3;}}
+class TradingMode(Enum):
+    PAPER = "PAPER"
+    REAL  = "REAL"
 
-/* PAGE */
-.page{padding:12px 12px 0;position:relative;z-index:1;display:flex;flex-direction:column;gap:10px;}
-.sep{display:flex;align-items:center;gap:8px;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--txt3);}
-.sep::after{content:'';flex:1;height:1px;background:var(--line);}
+@dataclass
+class ModeSettings:
+    mode:                   TradingMode
+    total_balance:          float
+    exposure_limit:         float
+    daily_loss_limit:       float
+    max_position_per_token: float
+    reserve_capital:        float
 
-/* BALANCE CARDS — compact */
-.bal-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-.bal-card{background:var(--ink2);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;position:relative;overflow:hidden;}
-.bal-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;}
-.bal-card.em::before{background:linear-gradient(90deg,var(--em),transparent);}
-.bal-card.ice::before{background:linear-gradient(90deg,var(--ice),transparent);}
-.bal-lbl{font-size:9px;color:var(--txt2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;}
-.bal-val{font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;line-height:1;}
-.bal-sub{font-size:11px;color:var(--txt2);margin-top:4px;font-family:'JetBrains Mono',monospace;}
+class MrBlackChecklistEngine:
+    def __init__(self, initial_balance=1.0, mode=TradingMode.PAPER):
+        self.mode = ModeSettings(
+            mode=mode, total_balance=initial_balance,
+            exposure_limit=0.22, daily_loss_limit=0.065,
+            max_position_per_token=0.025, reserve_capital=0.78
+        )
+        self.paper_stats = None
+        self.positions   = {}
+        self.trade_history = []
+        print("✅ MrBlack Checklist Engine Initialized")
 
-/* STATS GRID */
-.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
-.sg-item{background:var(--ink2);border:1px solid var(--line);border-radius:var(--r2);padding:10px 6px;text-align:center;}
-.sg-val{font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;}
-.sg-lbl{font-size:9px;color:var(--txt2);text-transform:uppercase;letter-spacing:0.5px;margin-top:3px;line-height:1.3;}
+bsc_engine = MrBlackChecklistEngine()
 
-/* CHART full width */
-.chart-wrap{border-radius:var(--r);overflow:hidden;border:1px solid var(--line);background:#000;}
-.chart-topbar{display:flex;align-items:center;justify-content:space-between;padding:7px 12px;background:var(--ink2);border-bottom:1px solid var(--line);}
-.chart-token-lbl{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:var(--em);}
-.chart-hint{font-size:9px;color:var(--txt3);font-style:italic;}
-.chart-wrap iframe{width:100%;height:220px;border:none;display:block;}
+# ========== MARKET CACHE (early init) ==========
+market_cache = {
+    "bnb_price":    0.0,
+    "fear_greed":   50,
+    "trending":     [],
+    "last_updated": None
+}
 
-/* HORIZONTAL SCROLL POSITIONS */
-.pos-hscroll{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 6px;-webkit-overflow-scrolling:touch;min-height:80px;align-items:flex-start;}
-.pos-hscroll::-webkit-scrollbar{height:0;}
-.pos-empty-h{display:flex;align-items:center;justify-content:center;width:100%;color:var(--txt3);font-size:12px;padding:16px;}
-.mini-card{min-width:115px;max-width:115px;background:var(--ink2);border:1.5px solid var(--line);border-radius:10px;padding:9px;cursor:pointer;flex-shrink:0;position:relative;transition:border-color 0.2s;}
-.mini-card.sel{border-color:var(--em);box-shadow:0 0 10px rgba(0,230,118,0.2);}
-.mini-card:active{opacity:0.8;}
-.mini-sym{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--em);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.mini-pnl{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;margin-top:3px;}
-.mini-pnl.p{color:var(--em);}
-.mini-pnl.n{color:var(--red);}
-.mini-bnb{font-size:9px;color:var(--txt3);font-family:'JetBrains Mono',monospace;margin-top:2px;}
-.mini-hold{font-size:9px;color:var(--txt2);margin-top:2px;}
-.mini-copy{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:6px;background:var(--ink3);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;}
-.mini-copy svg{width:11px;height:11px;stroke:var(--txt2);}
+# ========== GLOBAL USER PROFILE ==========
+user_profile = {
+    "name":           None,
+    "nickname":       None,
+    "known_since":    None,
+    "preferences":    {},
+    "personal_notes": [],
+    "total_sessions": 0,
+    "last_seen":      None,
+    "language":       "hinglish",
+    "loaded":         False,
+    "user_rules":     [],
+}
 
-/* LIVE FEED CARD */
-.feed-card{background:var(--ink2);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;}
-.tabbar{display:flex;background:var(--ink3);border-radius:10px;padding:3px;gap:3px;margin-bottom:10px;}
-.tb{flex:1;padding:8px 4px;border-radius:8px;background:none;border:none;cursor:pointer;font-family:'Outfit',sans-serif;font-size:11px;font-weight:600;color:var(--txt2);transition:all 0.2s;}
-.tb.on{background:var(--ink2);color:var(--txt);box-shadow:0 1px 4px rgba(0,0,0,0.4);}
-.empty-state{text-align:center;padding:20px 16px;color:var(--txt3);font-size:12px;}
-.foot-note{text-align:center;font-size:10px;color:var(--txt3);padding:8px;font-family:'JetBrains Mono',monospace;}
+def _load_user_profile():
+    if not supabase:
+        return
+    try:
+        res = supabase.table("memory").select("*").eq("session_id", "MRBLACK_USER").execute()
+        if res.data:
+            row = res.data[0]
+            try:
+                pos_raw = row.get("positions") or "{}"
+                if isinstance(pos_raw, bytes):
+                    pos_raw = pos_raw.decode("utf-8")
+                stored = json.loads(pos_raw) if pos_raw and pos_raw != "null" else {}
+            except Exception as je:
+                print(f"Profile JSON parse error: {je}")
+                stored = {}
+            user_profile.update({
+                "name":           stored.get("name"),
+                "nickname":       stored.get("nickname"),
+                "known_since":    stored.get("known_since"),
+                "preferences":    stored.get("preferences", {}),
+                "personal_notes": stored.get("personal_notes", []),
+                "total_sessions": stored.get("total_sessions", 0),
+                "last_seen":      stored.get("last_seen"),
+                "language":       stored.get("language", "hinglish"),
+                "user_rules":     stored.get("user_rules", []),
+            })
+            user_profile["loaded"] = True
+            if not user_profile.get("name"):
+                user_profile["name"] = "Naem"
+                user_profile["nickname"] = "Naem bhai"
+                threading.Thread(target=_save_user_profile, daemon=True).start()
+            print(f"User profile loaded — Name: {user_profile.get('name')}")
+    except Exception as e:
+        print(f"User profile load error: {e}")
 
-/* TRADE ITEMS */
-.trade-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);cursor:pointer;transition:background 0.15s;}
-.trade-item:last-child{border-bottom:none;}
-.trade-item:active{background:rgba(255,255,255,0.03);}
-.t-sym{width:36px;height:36px;border-radius:10px;flex-shrink:0;background:var(--ink3);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:10px;color:var(--em);font-family:'JetBrains Mono',monospace;}
-.t-body{flex:1;min-width:0;}
-.t-name{font-size:13px;font-weight:700;}
-.t-detail{font-size:10px;color:var(--txt2);margin-top:1px;font-family:'JetBrains Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.t-right{text-align:right;flex-shrink:0;}
-.t-pnl{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;}
-.t-pnl.p{color:var(--em);}
-.t-pnl.n{color:var(--red);}
-.t-sub{font-size:9px;color:var(--txt3);margin-top:2px;}
+    if not user_profile.get("loaded") or not user_profile.get("name"):
+        user_profile["name"]     = "Naem"
+        user_profile["nickname"] = "Naem bhai"
+        user_profile["loaded"]   = True
+        threading.Thread(target=_save_user_profile, daemon=True).start()
 
-/* ACTIVITY */
-.act-item{display:flex;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line);align-items:flex-start;cursor:pointer;}
-.act-item:last-child{border-bottom:none;}
-.act-item:active{background:rgba(255,255,255,0.03);}
-.act-badge{flex-shrink:0;padding:3px 7px;border-radius:20px;font-size:9px;font-weight:800;margin-top:1px;}
-.act-badge.buy{background:var(--em-dim);color:var(--em);border:1px solid rgba(0,230,118,0.25);}
-.act-badge.sell{background:var(--red-dim);color:var(--red);border:1px solid rgba(255,71,87,0.25);}
-.act-badge.scan{background:var(--ice-dim);color:var(--ice);border:1px solid rgba(64,196,255,0.2);}
-.act-badge.warn{background:var(--gold-dim);color:var(--gold);border:1px solid rgba(240,192,64,0.2);}
-.act-body{flex:1;min-width:0;}
-.act-main{color:var(--txt);font-size:11px;line-height:1.5;}
-.act-meta{color:var(--txt3);font-size:10px;margin-top:1px;font-family:'JetBrains Mono',monospace;}
-.act-time{flex-shrink:0;color:var(--txt2);font-size:10px;font-family:'JetBrains Mono',monospace;margin-top:1px;font-weight:600;}
+_profile_save_cache = {"last_save": 0}
 
-/* TRADING HISTORY */
-.hist-filters{display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;-webkit-overflow-scrolling:touch;}
-.hist-filters::-webkit-scrollbar{height:0;}
-.hf{flex-shrink:0;padding:5px 12px;border-radius:20px;border:1px solid var(--line2);background:var(--ink3);color:var(--txt2);font-size:11px;font-weight:600;cursor:pointer;font-family:'Outfit',sans-serif;}
-.hf.on{background:var(--em-dim);color:var(--em);border-color:rgba(0,230,118,0.3);}
-.hf.lon.on{background:var(--red-dim);color:var(--red);border-color:rgba(255,71,87,0.3);}
-.hist-sum{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0;}
-.hs-i{background:var(--ink3);border-radius:8px;padding:8px 4px;text-align:center;}
-.hs-v{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;}
-.hs-l{font-size:9px;color:var(--txt2);margin-top:2px;}
-.hist-item{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);cursor:pointer;}
-.hist-item:last-child{border-bottom:none;}
-.hist-item:active{opacity:0.7;}
-.hi-badge{width:34px;height:34px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;font-family:'JetBrains Mono',monospace;}
-.hi-badge.w{background:var(--em-dim);color:var(--em);border:1px solid rgba(0,230,118,0.2);}
-.hi-badge.l{background:var(--red-dim);color:var(--red);border:1px solid rgba(255,71,87,0.2);}
-.hi-body{flex:1;min-width:0;}
-.hi-name{font-size:12px;font-weight:700;}
-.hi-detail{font-size:10px;color:var(--txt2);font-family:'JetBrains Mono',monospace;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.hi-right{text-align:right;flex-shrink:0;}
-.hi-pnl{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;}
-.hi-pnl.w{color:var(--em);}
-.hi-pnl.l{color:var(--red);}
-.hi-time{font-size:9px;color:var(--txt3);margin-top:2px;}
+def _save_user_profile():
+    import time as _t
+    if not supabase:
+        return
+    if _t.time() - _profile_save_cache["last_save"] < 120:
+        return
+    _profile_save_cache["last_save"] = _t.time()
+    try:
+        user_profile["last_seen"] = datetime.utcnow().isoformat()
+        user_profile["total_sessions"] = user_profile.get("total_sessions", 0) + 1
+        supabase.table("memory").upsert({
+            "session_id": "MRBLACK_USER",
+            "role":       "user",
+            "content":    "",
+            "history":    json.dumps([]),
+            "positions":  json.dumps({
+                "name":           user_profile.get("name"),
+                "nickname":       user_profile.get("nickname"),
+                "known_since":    user_profile.get("known_since"),
+                "preferences":    user_profile.get("preferences", {}),
+                "personal_notes": user_profile.get("personal_notes", [])[-50:],
+                "total_sessions": user_profile.get("total_sessions", 0),
+                "last_seen":      user_profile.get("last_seen"),
+                "language":       user_profile.get("language", "hinglish"),
+                "user_rules":     user_profile.get("user_rules", [])[-30:],
+            }),
+            "updated_at": datetime.utcnow().isoformat()
+        }).execute()
+    except Exception as e:
+        print(f"User profile save error: {e}")
 
-/* TOAST */
-.toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:var(--em);color:#000;font-size:12px;font-weight:700;padding:8px 18px;border-radius:20px;z-index:9999;pointer-events:none;opacity:0;transition:opacity 0.2s;}
-.toast.show{opacity:1;}
+def _extract_user_info_from_message(message: str):
+    msg_lower = message.lower()
+    name_patterns = [
+        r"(?:mera naam|my name is|main hoon|i am|i\'m|call me|mujhe bolo)\s+([a-zA-Z]+)",
+        r"(?:naam hai|naam)\s+([a-zA-Z]+)",
+        r"^([a-zA-Z]+)\s+(?:hoon|hun|here|bhai)",
+    ]
+    for pattern in name_patterns:
+        match = re.search(pattern, msg_lower)
+        if match:
+            detected_name = match.group(1).strip().capitalize()
+            if len(detected_name) > 2 and detected_name.lower() not in [
+                "main", "mera", "meri", "tera", "teri", "bhai", "yaar",
+                "kya", "kaise", "hai", "hoon", "hun", "the", "and", "not"
+            ]:
+                if user_profile.get("name") != detected_name:
+                    user_profile["name"] = detected_name
+                    if not user_profile.get("known_since"):
+                        user_profile["known_since"] = datetime.utcnow().isoformat()
+                    threading.Thread(target=_save_user_profile, daemon=True).start()
+                break
 
-/* MODAL */
-.modal-bg{position:fixed;inset:0;z-index:700;background:rgba(0,0,0,0.65);backdrop-filter:blur(8px);opacity:0;pointer-events:none;transition:opacity 0.25s;}
-.modal-bg.on{opacity:1;pointer-events:all;}
-.modal-sheet{position:fixed;bottom:0;left:0;right:0;z-index:800;background:var(--ink2);border-radius:22px 22px 0 0;border-top:1px solid var(--line2);padding:0 0 30px;transform:translateY(100%);transition:transform 0.38s cubic-bezier(0.32,0.72,0,1);max-height:82vh;overflow-y:auto;}
-.modal-sheet.on{transform:translateY(0);}
-.modal-sheet::-webkit-scrollbar{width:0;}
-.mdrag{width:40px;height:5px;border-radius:3px;background:var(--line2);margin:12px auto 14px;cursor:pointer;}
-.modal-title{font-size:16px;font-weight:800;padding:0 18px 3px;}
-.modal-sub{font-size:11px;color:var(--txt2);padding:0 18px 10px;font-family:'JetBrains Mono',monospace;}
-.pnl-big{font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:900;padding:4px 18px 10px;}
-.pnl-big.p{color:var(--em);}
-.pnl-big.n{color:var(--red);}
-.modal-body{padding:0 18px;}
-.mrow{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);}
-.mrow:last-child{border-bottom:none;}
-.mlbl{font-size:11px;color:var(--txt2);}
-.mval{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;text-align:right;}
-.mval.p{color:var(--em);}
-.mval.n{color:var(--red);}
-.maddr-row{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--line);}
-.maddr{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--txt2);flex:1;word-break:break-all;}
-.mcopy-btn{flex-shrink:0;padding:5px 12px;border-radius:20px;background:var(--ink3);border:1px solid var(--line2);color:var(--txt2);font-size:11px;cursor:pointer;font-family:'Outfit',sans-serif;}
-.mactions{display:flex;gap:10px;padding:14px 18px 0;}
-.mbtn{flex:1;padding:12px;border-radius:12px;border:none;cursor:pointer;font-family:'Outfit',sans-serif;font-size:13px;font-weight:700;}
-.mbtn:active{opacity:0.8;}
-.mbtn.dark{background:var(--ink3);border:1px solid var(--line2);color:var(--txt);}
-.mbtn.gold{background:linear-gradient(135deg,#f0c040,#e9a820);color:#000;text-decoration:none;text-align:center;display:flex;align-items:center;justify-content:center;}
+    if any(word in msg_lower for word in ["paper trade", "paper mode", "practice"]):
+        user_profile["preferences"]["mode"] = "paper"
+        threading.Thread(target=_save_user_profile, daemon=True).start()
+    elif any(word in msg_lower for word in ["real trade", "real mode", "live"]):
+        user_profile["preferences"]["mode"] = "real"
+        threading.Thread(target=_save_user_profile, daemon=True).start()
 
-/* FAB + CHAT */
-.fab{position:fixed;bottom:22px;right:18px;z-index:400;width:54px;height:54px;border-radius:50%;border:none;cursor:pointer;background:linear-gradient(135deg,#00e676,#00bcd4);box-shadow:0 4px 20px rgba(0,230,118,0.5);display:flex;align-items:center;justify-content:center;}
-.fab:active{transform:scale(0.9);}
-.fab-badge{position:absolute;top:1px;right:1px;width:16px;height:16px;border-radius:50%;background:var(--red);border:2px solid var(--ink);display:none;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;}
-.chat-bg{position:fixed;inset:0;z-index:500;background:rgba(0,0,0,0.55);backdrop-filter:blur(6px);opacity:0;pointer-events:none;transition:opacity 0.3s;}
-.chat-bg.on{opacity:1;pointer-events:all;}
-.chat-sheet{position:fixed;bottom:0;left:0;right:0;z-index:600;height:62vh;background:var(--ink2);border-radius:22px 22px 0 0;border-top:1px solid var(--line2);display:flex;flex-direction:column;transform:translateY(100%);transition:transform 0.42s cubic-bezier(0.32,0.72,0,1);}
-.chat-sheet.on{transform:translateY(0);}
-.cdrag{width:40px;height:5px;border-radius:3px;background:var(--line2);margin:12px auto 0;flex-shrink:0;cursor:pointer;}
-.chat-hdr{padding:12px 16px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line);flex-shrink:0;}
-.chat-av{width:36px;height:36px;border-radius:11px;background:linear-gradient(135deg,var(--em),#00bcd4);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:15px;color:#000;}
-.chat-info{flex:1;}
-.chat-name{font-size:14px;font-weight:700;}
-.chat-status{font-size:11px;color:var(--em);display:flex;align-items:center;gap:5px;margin-top:2px;}
-.chat-close{width:30px;height:30px;border-radius:8px;background:var(--ink3);border:none;cursor:pointer;color:var(--txt2);font-size:16px;display:flex;align-items:center;justify-content:center;}
-.chat-msgs{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth;}
-.chat-msgs::-webkit-scrollbar{width:0;}
-.msg{display:flex;gap:8px;animation:mIn 0.3s ease;}
-.msg.u{flex-direction:row-reverse;}
-@keyframes mIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;}}
-.bubble{max-width:80%;padding:10px 14px;font-size:13px;line-height:1.5;border-radius:18px;}
-.msg.b .bubble{background:var(--ink3);border:1px solid var(--line);border-bottom-left-radius:5px;}
-.msg.u .bubble{background:linear-gradient(135deg,#00e676,#00bcd4);color:#000;font-weight:600;border-bottom-right-radius:5px;}
-.msg-t{font-size:9px;color:var(--txt3);align-self:flex-end;font-family:'JetBrains Mono',monospace;}
-.typing-ind{display:flex;gap:4px;padding:2px 0;}
-.typing-ind span{width:7px;height:7px;border-radius:50%;background:var(--txt3);animation:tb 1.4s infinite;}
-.typing-ind span:nth-child(2){animation-delay:.18s;}
-.typing-ind span:nth-child(3){animation-delay:.36s;}
-@keyframes tb{0%,60%,100%{transform:translateY(0);opacity:.4;}30%{transform:translateY(-7px);opacity:1;}}
-.chat-foot{padding:8px 12px 18px;display:flex;gap:8px;align-items:center;border-top:1px solid var(--line);flex-shrink:0;}
-.cinput{flex:1;background:var(--ink3);border:1.5px solid var(--line2);border-radius:26px;padding:11px 16px;color:var(--txt);font-family:'Outfit',sans-serif;font-size:13px;outline:none;transition:border-color .2s;}
-.cinput:focus{border-color:var(--em);}
-.cinput::placeholder{color:var(--txt3);}
-.csend{width:42px;height:42px;border-radius:50%;flex-shrink:0;border:none;background:linear-gradient(135deg,var(--em),#00bcd4);cursor:pointer;display:flex;align-items:center;justify-content:center;}
-.csend:disabled{opacity:.4;}
-.csend:active{transform:scale(.88);}
-</style>
-</head>
-<body>
+    notes = user_profile.setdefault("personal_notes", [])
+    note  = None
+    if re.search(r"0x[a-fA-F0-9]{40}", message):
+        addrs = re.findall(r"0x[a-fA-F0-9]{40}", message)
+        note  = f"Token scan kiya: {addrs[0][:12]}..."
+    elif any(w in msg_lower for w in ["high risk", "zyada risk", "aggressive"]):
+        note = "User high risk trading prefer karta hai"
+        user_profile["preferences"]["risk"] = "high"
+    elif any(w in msg_lower for w in ["low risk", "safe", "conservative", "cautious"]):
+        note = "User conservative/safe trading prefer karta hai"
+        user_profile["preferences"]["risk"] = "low"
+    elif any(w in msg_lower for w in ["profit chahiye", "paise banana", "earn", "income"]):
+        note = "User ka goal: consistent profit banana"
+    elif any(w in msg_lower for w in ["loss hua", "loss ho gaya", "rugged", "scam ho gaya"]):
+        note = f"User ko loss/scam hua — {message[:50]}"
 
-<!-- HEADER -->
-<header class="hdr">
-  <div class="hdr-brand">
-    <div class="hdr-logo">M</div>
-    <div>
-      <div class="hdr-name">MrBlack</div>
-      <div class="hdr-sub">BSC SNIPER · PAPER MODE</div>
-    </div>
-  </div>
-  <div class="hdr-right">
-    <div class="hdr-circle bnb-c">
-      <div class="hdr-c-val" id="h-bnb">$—</div>
-      <div class="hdr-c-lbl">BNB</div>
-    </div>
-    <div class="hdr-circle fg-c">
-      <div class="hdr-c-val" id="h-fg">—</div>
-      <div class="hdr-c-lbl">F&amp;G</div>
-    </div>
-    <div class="live-dot"></div>
-  </div>
-</header>
+    if note and note not in notes:
+        notes.append(note)
+        user_profile["personal_notes"] = notes[-20:]
+        threading.Thread(target=_save_user_profile, daemon=True).start()
 
-<div class="page">
+    rule_triggers = [
+        "mat karo", "band karo", "stop karo", "mat karna", "band kr",
+        "mat bol", "mat le", "mat liya karo", "hamesha", "kabhi mat",
+        "naam mat", "name mat", "bhai mat", "baar baar mat",
+        "short rakh", "chota rakh", "kam likho", "zyada mat likho",
+        "sirf utna", "repeat mat", "dobara mat"
+    ]
+    if any(trigger in msg_lower for trigger in rule_triggers):
+        rule = message.strip()[:100]
+        existing_rules = user_profile.get("user_rules", [])
+        if rule not in existing_rules:
+            existing_rules.append(rule)
+            user_profile["user_rules"] = existing_rules[-30:]
+            threading.Thread(target=_save_user_profile, daemon=True).start()
 
-  <!-- BALANCE CARDS -->
-  <div class="bal-row">
-    <div class="bal-card em">
-      <div class="bal-lbl">Paper Balance</div>
-      <div class="bal-val" id="b-bal" style="color:var(--em)">— BNB</div>
-      <div class="bal-sub" id="b-usd">approx $—</div>
-    </div>
-    <div class="bal-card ice">
-      <div class="bal-lbl">Total PnL</div>
-      <div class="bal-val" id="b-pnl" style="color:var(--txt2)">—</div>
-      <div class="bal-sub" id="b-wr">Win Rate: —%</div>
-    </div>
-  </div>
+def get_user_context_for_llm() -> str:
+    parts = []
+    if user_profile.get("name"):
+        parts.append(f"USER_NAME={user_profile['name']}")
+    if user_profile.get("nickname"):
+        parts.append(f"CALLS_ME={user_profile['nickname']}")
+    sessions_count = user_profile.get("total_sessions", 0)
+    if sessions_count > 0:
+        parts.append(f"SESSIONS_TOGETHER={sessions_count}")
+    if user_profile.get("known_since"):
+        parts.append(f"FRIENDS_SINCE={user_profile['known_since'][:10]}")
+    prefs = user_profile.get("preferences", {})
+    if prefs:
+        parts.append(f"USER_PREFS={prefs}")
+    notes = user_profile.get("personal_notes", [])
+    if notes:
+        parts.append(f"I_KNOW={notes[-1][:50]}")
+    rules = user_profile.get("user_rules", [])
+    if rules:
+        rules_str = " | ".join(rules[-5:])
+        parts.append(f"PERMANENT_USER_RULES={rules_str}")
+    return " | ".join(parts) if parts else "NEW_USER"
 
-  <!-- STATS GRID -->
-  <div class="stats-grid">
-    <div class="sg-item">
-      <div class="sg-val" id="sg-scan" style="color:var(--em)">—</div>
-      <div class="sg-lbl">Scanned</div>
-    </div>
-    <div class="sg-item">
-      <div class="sg-val" id="sg-watch" style="color:var(--ice)">—</div>
-      <div class="sg-lbl">Watching</div>
-    </div>
-    <div class="sg-item">
-      <div class="sg-val" id="sg-wins" style="color:var(--em)">—</div>
-      <div class="sg-lbl">Profit Trades</div>
-    </div>
-    <div class="sg-item">
-      <div class="sg-val" id="sg-losses" style="color:var(--red)">—</div>
-      <div class="sg-lbl">Loss Trades</div>
-    </div>
-  </div>
+# ========== SELF AWARENESS ==========
+BIRTH_TIME = datetime.utcnow()
 
-  <!-- CHART FULL WIDTH -->
-  <div class="sep">Live Chart</div>
-  <div class="chart-wrap">
-    <div class="chart-topbar">
-      <div class="chart-token-lbl" id="chart-lbl">BNB/USD</div>
-      <div class="chart-hint">tap position card → chart changes</div>
-    </div>
-    <iframe id="chart-frame"
-      src="https://dexscreener.com/bsc/0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c?embed=1&theme=dark&trades=0&info=0"
-      allowtransparency="true" frameborder="0">
-    </iframe>
-  </div>
+_perf_tracker = {
+    "hourly_wr":        [],
+    "scan_outcomes":    [],
+    "response_quality": [],
+    "error_log":        [],
+    "best_hour":        None,
+    "worst_token_type": None,
+    "avg_confidence_accuracy": 0.0,
+}
 
-  <!-- OPEN POSITIONS HORIZONTAL SCROLL -->
-  <div class="sep">Open Positions</div>
-  <div class="pos-hscroll" id="pos-hscroll">
-    <div class="pos-empty-h">Connecting to BSC...</div>
-  </div>
-
-  <!-- LIVE FEED -->
-  <div class="sep">Live Feed</div>
-  <div class="feed-card">
-    <div style="padding:12px 12px 8px;">
-      <div class="tabbar">
-        <button class="tb on" onclick="switchTab('trades',this)">Open Trades</button>
-        <button class="tb"    onclick="switchTab('activity',this)">Buy / Sell</button>
-      </div>
-      <div id="tab-trades">
-        <div id="trades-wrap"><div class="empty-state">Loading...</div></div>
-      </div>
-      <div id="tab-activity" style="display:none;">
-        <div id="act-wrap"><div class="empty-state">Loading...</div></div>
-      </div>
-    </div>
-    <div class="foot-note" id="ts">Connecting...</div>
-  </div>
-
-  <!-- TRADING HISTORY -->
-  <div class="sep">Trading History</div>
-  <div class="feed-card">
-    <div style="padding:12px;">
-      <div class="hist-filters">
-        <button class="hf on"  onclick="setHF('all',this)">All</button>
-        <button class="hf"     onclick="setHF('today',this)">Today</button>
-        <button class="hf"     onclick="setHF('week',this)">Week</button>
-        <button class="hf"     onclick="setHF('month',this)">Month</button>
-        <button class="hf"     onclick="setHF('win',this)">✅ Win</button>
-        <button class="hf lon" onclick="setHF('loss',this)">❌ Loss</button>
-      </div>
-      <div class="hist-sum">
-        <div class="hs-i"><div class="hs-v" id="hs-total">—</div><div class="hs-l">Trades</div></div>
-        <div class="hs-i"><div class="hs-v" id="hs-wr" style="color:var(--em)">—%</div><div class="hs-l">Win Rate</div></div>
-        <div class="hs-i"><div class="hs-v" id="hs-pnl">—</div><div class="hs-l">Net PnL</div></div>
-        <div class="hs-i"><div class="hs-v" id="hs-best" style="color:var(--em)">—</div><div class="hs-l">Best</div></div>
-      </div>
-      <div id="hist-list"><div class="empty-state">No trade history yet</div></div>
-    </div>
-  </div>
-
-</div><!-- /page -->
-
-<!-- TOAST -->
-<div class="toast" id="toast">✅ Copied!</div>
-
-<!-- MODAL -->
-<div class="modal-bg" id="modal-bg" onclick="closeModal()"></div>
-<div class="modal-sheet" id="modal-sheet">
-  <div class="mdrag" onclick="closeModal()"></div>
-  <div class="modal-title" id="modal-title">Detail</div>
-  <div class="modal-sub"   id="modal-sub">—</div>
-  <div class="pnl-big"     id="modal-pnl"></div>
-  <div class="modal-body"  id="modal-body"></div>
-  <div class="mactions"    id="modal-actions"></div>
-</div>
-
-<!-- FAB -->
-<button class="fab" onclick="openChat()">
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-  </svg>
-  <div class="fab-badge" id="fab-badge"></div>
-</button>
-
-<!-- CHAT -->
-<div class="chat-bg" id="chat-bg" onclick="closeChat()"></div>
-<div class="chat-sheet" id="chat-sheet">
-  <div class="cdrag" onclick="closeChat()"></div>
-  <div class="chat-hdr">
-    <div class="chat-av">M</div>
-    <div class="chat-info">
-      <div class="chat-name">MrBlack AI</div>
-      <div class="chat-status"><div class="live-dot" style="width:6px;height:6px;"></div>Online · BSC Active</div>
-    </div>
-    <button class="chat-close" onclick="closeChat()">✕</button>
-  </div>
-  <div class="chat-msgs" id="chat-msgs">
-    <div class="msg b">
-      <div class="bubble">Salam! Main MrBlack hoon. Token scan, positions ya kuch bhi — batao.</div>
-      <span class="msg-t" id="init-t"></span>
-    </div>
-  </div>
-  <div class="chat-foot">
-    <input class="cinput" id="cinput" placeholder="Kuch poochho..." onkeydown="if(event.key==='Enter')sendMsg()">
-    <button class="csend" id="csend" onclick="sendMsg()">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
-      </svg>
-    </button>
-  </div>
-</div>
-
-<script>
-// ── Session ───────────────────────────────────
-const SID=(()=>{let s=localStorage.getItem('mb_sid3');if(!s){s='mb-'+Date.now();localStorage.setItem('mb_sid3',s);}return s;})();
-let chatOpen=false,unread=0,histFilter='all',_actCache=[],_posCache={};
-let activeAddr='0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c';
-
-// ── Time helpers ──────────────────────────────
-function nowIST(){return new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true});}
-function toIST(v){
-  if(!v||v==='—') return '—';
-  try{
-    if(/^\d{1,2}:\d{2}$/.test(v)){
-      const[h,m]=v.split(':').map(Number),d=new Date();
-      d.setUTCHours(h,m,0,0);
-      return d.toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true});
+_relationship = {
+    "first_message_time": None,
+    "total_messages_exchanged": 0,
+    "topics_discussed": [],
+    "user_mood_history": [],
+    "user_expertise_level": "unknown",
+    "trust_events": [],
+    "inside_jokes_or_refs": [],
+    "communication_style": "hinglish",
+    "response_preferences": {
+        "detail_level": "medium",
+        "emoji_usage": True,
+        "technical_depth": "medium"
     }
-    const d=new Date(v);
-    if(!isNaN(d)) return d.toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true});
-  }catch(e){}
-  return v;
-}
-function holdTime(bought_at){
-  if(!bought_at) return 'Active';
-  try{
-    const ms=Date.now()-new Date(bought_at).getTime();
-    const m=Math.floor(ms/60000);
-    if(m<1) return 'Just now';
-    if(m<60) return m+'m';
-    return Math.floor(m/60)+'h '+(m%60?m%60+'m':'');
-  }catch(e){return 'Active';}
-}
-function holdBetween(a,b){
-  if(!a||!b) return '—';
-  try{
-    const ms=new Date(b)-new Date(a);
-    const m=Math.floor(ms/60000);
-    if(m<1) return '<1m';
-    if(m<60) return m+'m';
-    return Math.floor(m/60)+'h '+(m%60?m%60+'m':'');
-  }catch(e){return '—';}
 }
 
-// ── Helpers ───────────────────────────────────
-function bnbPrice(){return parseFloat(document.getElementById('h-bnb').textContent.replace('$',''))||618;}
-function symOf(token,addr){return(token&&!token.startsWith('0x')&&token.length<20)?token.slice(0,6).toUpperCase():(addr||'????').slice(2,7).toUpperCase();}
-function showToast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2000);}
-function copyAddr(addr){
-  navigator.clipboard?.writeText(addr).then(()=>showToast('✅ Copied!')).catch(()=>{
-    const t=document.createElement('textarea');t.value=addr;document.body.appendChild(t);t.select();document.execCommand('copy');document.body.removeChild(t);showToast('✅ Copied!');
-  });
-}
-
-// ── Chart ─────────────────────────────────────
-function setChart(addr,sym){
-  if(addr===activeAddr) return;
-  activeAddr=addr;
-  document.getElementById('chart-frame').src=`https://dexscreener.com/bsc/${addr}?embed=1&theme=dark&trades=0&info=0`;
-  document.getElementById('chart-lbl').textContent=(sym||addr.slice(0,8)).toUpperCase()+'/USD';
-  document.querySelectorAll('.mini-card').forEach(c=>c.classList.remove('sel'));
-  const el=document.querySelector(`.mini-card[data-a="${addr}"]`);
-  if(el) el.classList.add('sel');
-}
-
-// ── Render Positions ──────────────────────────
-function renderPos(posObj){
-  _posCache=posObj||{};
-  const wrap=document.getElementById('pos-hscroll');
-  const keys=Object.keys(posObj||{});
-  if(!keys.length){wrap.innerHTML='<div class="pos-empty-h">No open positions</div>';return;}
-  // Auto-switch chart to first position
-  if(keys.length&&activeAddr==='0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'){
-    setChart(keys[0],posObj[keys[0]].token);
-  }
-  wrap.innerHTML=keys.map(addr=>{
-    const p=posObj[addr];
-    const pnl=parseFloat(p.pnl_pct||0);
-    const cls=pnl>=0?'p':'n';
-    const sym=symOf(p.token,addr);
-    const isSel=addr===activeAddr?' sel':'';
-    return `<div class="mini-card${isSel}" data-a="${addr}" onclick="onPosClick('${addr}')">
-      <div class="mini-copy" onclick="event.stopPropagation();copyAddr('${addr}')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-      </div>
-      <div class="mini-sym">${p.token&&!p.token.startsWith('0x')?p.token.slice(0,10):sym}</div>
-      <div class="mini-pnl ${cls}">${pnl>=0?'+':''}${pnl.toFixed(1)}%</div>
-      <div class="mini-bnb">${Number(p.size||0).toFixed(4)} BNB</div>
-      <div class="mini-hold">${holdTime(p.bought_at)}</div>
-    </div>`;
-  }).join('');
-}
-
-function onPosClick(addr){
-  const p=_posCache[addr];
-  if(!p) return;
-  setChart(addr,p.token);
-  // Show detail modal
-  const pnl=parseFloat(p.pnl_pct||0);
-  const cls=pnl>=0?'p':'n';
-  const sym=symOf(p.token,addr);
-  const bp=bnbPrice();
-  const pnlBnb=((p.size||0)*Math.abs(pnl)/100).toFixed(4);
-  const pnlUsd=(parseFloat(pnlBnb)*bp).toFixed(2);
-  document.getElementById('modal-title').textContent=sym;
-  document.getElementById('modal-sub').textContent=addr.slice(0,12)+'...'+addr.slice(-4)+' · BSC';
-  document.getElementById('modal-pnl').className='pnl-big '+cls;
-  document.getElementById('modal-pnl').textContent=(pnl>=0?'+':'')+pnl.toFixed(2)+'%';
-  document.getElementById('modal-body').innerHTML=`
-    <div class="maddr-row"><div class="maddr">${addr}</div><button class="mcopy-btn" onclick="copyAddr('${addr}')">📋 Copy</button></div>
-    <div class="mrow"><span class="mlbl">Token</span><span class="mval">${p.token&&!p.token.startsWith('0x')?p.token:sym}</span></div>
-    <div class="mrow"><span class="mlbl">Entry Price</span><span class="mval">${p.entry||'—'}</span></div>
-    <div class="mrow"><span class="mlbl">Current Price</span><span class="mval">${p.current||'—'}</span></div>
-    <div class="mrow"><span class="mlbl">PnL</span><span class="mval ${cls}">${pnl>=0?'+':''}${pnl.toFixed(2)}%</span></div>
-    <div class="mrow"><span class="mlbl">PnL BNB</span><span class="mval ${cls}">${pnl>=0?'+':'-'}${pnlBnb} BNB</span></div>
-    <div class="mrow"><span class="mlbl">PnL USD</span><span class="mval ${cls}">${pnl>=0?'+$':'-$'}${pnlUsd}</span></div>
-    <div class="mrow"><span class="mlbl">Size</span><span class="mval">${Number(p.size||0).toFixed(4)} BNB</span></div>
-    <div class="mrow"><span class="mlbl">Holding</span><span class="mval">${holdTime(p.bought_at)}</span></div>
-    <div class="mrow"><span class="mlbl">MCap</span><span class="mval">${p.mcap||'?'}</span></div>
-  `;
-  document.getElementById('modal-actions').innerHTML=`
-    <button class="mbtn dark" onclick="closeModal()">✕ Close</button>
-    <a class="mbtn gold" href="https://pancakeswap.finance/swap?outputCurrency=${addr}" target="_blank">🥞 PancakeSwap</a>
-  `;
-  showModal();
-}
-
-// ── Render Trades ─────────────────────────────
-function renderTrades(trades){
-  const el=document.getElementById('trades-wrap');
-  if(!trades||!trades.length){el.innerHTML='<div class="empty-state">No open trades</div>';return;}
-  el.innerHTML=trades.map(t=>{
-    const pnl=parseFloat(t.pnl||0);
-    const cls=pnl>=0?'p':'n';
-    const sym=symOf(t.token,t.address);
-    return `<div class="trade-item" onclick='openTrade(${JSON.stringify(t)})'>
-      <div class="t-sym">${sym}</div>
-      <div class="t-body">
-        <div class="t-name">${t.token&&!t.token.startsWith('0x')?t.token:sym}</div>
-        <div class="t-detail">${t.entry||'—'} → ${t.current||'—'}</div>
-      </div>
-      <div class="t-right">
-        <div class="t-pnl ${cls}">${pnl>=0?'+':''}${pnl.toFixed(1)}%</div>
-        <div class="t-sub">${t.size||'—'}</div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function openTrade(t){
-  const pnl=parseFloat(t.pnl||0);
-  const cls=pnl>=0?'p':'n';
-  const sym=symOf(t.token,t.address);
-  const bp=bnbPrice();
-  const sizeBnb=parseFloat((t.size||'0').replace(' BNB',''))||0;
-  const pnlBnb=(sizeBnb*Math.abs(pnl)/100).toFixed(4);
-  const pnlUsd=(parseFloat(pnlBnb)*bp).toFixed(2);
-  document.getElementById('modal-title').textContent=sym+' — Open';
-  document.getElementById('modal-sub').textContent=(t.address||'').slice(0,12)+'...'+(t.address||'').slice(-4);
-  document.getElementById('modal-pnl').className='pnl-big '+cls;
-  document.getElementById('modal-pnl').textContent=(pnl>=0?'+':'')+pnl.toFixed(2)+'%';
-  const addr=t.address||'';
-  document.getElementById('modal-body').innerHTML=`
-    <div class="maddr-row"><div class="maddr">${addr||'—'}</div>${addr?`<button class="mcopy-btn" onclick="copyAddr('${addr}')">📋 Copy</button>`:''}</div>
-    <div class="mrow"><span class="mlbl">Token</span><span class="mval">${t.token&&!t.token.startsWith('0x')?t.token:sym}</span></div>
-    <div class="mrow"><span class="mlbl">Entry</span><span class="mval">${t.entry||'—'}</span></div>
-    <div class="mrow"><span class="mlbl">Current</span><span class="mval">${t.current||'—'}</span></div>
-    <div class="mrow"><span class="mlbl">PnL %</span><span class="mval ${cls}">${pnl>=0?'+':''}${pnl.toFixed(2)}%</span></div>
-    <div class="mrow"><span class="mlbl">PnL BNB</span><span class="mval ${cls}">${pnl>=0?'+':'-'}${pnlBnb} BNB</span></div>
-    <div class="mrow"><span class="mlbl">PnL USD</span><span class="mval ${cls}">${pnl>=0?'+$':'-$'}${pnlUsd}</span></div>
-    <div class="mrow"><span class="mlbl">Size</span><span class="mval">${t.size||'—'}</span></div>
-    <div class="mrow"><span class="mlbl">Holding</span><span class="mval">${holdTime(t.bought_at)}</span></div>
-  `;
-  document.getElementById('modal-actions').innerHTML=addr?`
-    <button class="mbtn dark" onclick="setChart('${addr}','${sym}');closeModal()">📊 Chart</button>
-    <a class="mbtn gold" href="https://pancakeswap.finance/swap?outputCurrency=${addr}" target="_blank">🥞 PancakeSwap</a>
-  `:'<button class="mbtn dark" onclick="closeModal()">Close</button>';
-  showModal();
-}
-
-// ── Render Activity ───────────────────────────
-function renderActivity(acts){
-  _actCache=acts||[];
-  const el=document.getElementById('act-wrap');
-  if(!acts||!acts.length){el.innerHTML='<div class="empty-state">No activity yet</div>';return;}
-  el.innerHTML=acts.map((a,i)=>`
-    <div class="act-item" onclick="openAct(${i})">
-      <div class="act-badge ${a.type}">${a.type.toUpperCase()}</div>
-      <div class="act-body">
-        <div class="act-main">${a.main||''}</div>
-        <div class="act-meta">${a.meta||''}</div>
-      </div>
-      <div class="act-time">${toIST(a.t)}</div>
-    </div>`).join('');
-}
-
-function openAct(i){
-  const a=_actCache[i]; if(!a) return;
-  const pnl=a.pnl!=null?parseFloat(a.pnl):null;
-  const cls=pnl!=null?(pnl>=0?'p':'n'):'';
-  const addr=a.address||'';
-  const sym=a.token&&!a.token.startsWith('0x')?a.token:(addr?addr.slice(2,8).toUpperCase():'?');
-  document.getElementById('modal-title').textContent=sym+' — '+a.type.toUpperCase();
-  document.getElementById('modal-sub').textContent=toIST(a.t)+' IST';
-  document.getElementById('modal-pnl').className='pnl-big '+(cls||'');
-  document.getElementById('modal-pnl').textContent=pnl!=null?(pnl>=0?'+':'')+pnl.toFixed(2)+'%':'';
-  const bp=bnbPrice();
-  const pnlBnb=a.pnl_bnb!=null?a.pnl_bnb:null;
-  document.getElementById('modal-body').innerHTML=`
-    ${addr?`<div class="maddr-row"><div class="maddr">${addr}</div><button class="mcopy-btn" onclick="copyAddr('${addr}')">📋 Copy</button></div>`:''}
-    <div class="mrow"><span class="mlbl">Type</span><span class="mval">${a.type.toUpperCase()}</span></div>
-    <div class="mrow"><span class="mlbl">Token</span><span class="mval">${sym}</span></div>
-    ${a.entry?`<div class="mrow"><span class="mlbl">Entry Price</span><span class="mval">${a.entry}</span></div>`:''}
-    ${a.exit?`<div class="mrow"><span class="mlbl">Exit Price</span><span class="mval">${a.exit}</span></div>`:''}
-    ${pnl!=null?`<div class="mrow"><span class="mlbl">PnL</span><span class="mval ${cls}">${pnl>=0?'+':''}${pnl.toFixed(2)}%</span></div>`:''}
-    ${pnlBnb!=null?`<div class="mrow"><span class="mlbl">PnL BNB</span><span class="mval ${cls}">${pnlBnb>=0?'+':'-'}${Math.abs(pnlBnb).toFixed(4)} BNB</span></div>`:''}
-    ${pnlBnb!=null?`<div class="mrow"><span class="mlbl">PnL USD</span><span class="mval ${cls}">${pnlBnb>=0?'+$':'-$'}${(Math.abs(pnlBnb)*bp).toFixed(2)}</span></div>`:''}
-    ${a.size?`<div class="mrow"><span class="mlbl">Size</span><span class="mval">${a.size}</span></div>`:''}
-    ${a.bought_at?`<div class="mrow"><span class="mlbl">Buy Time (IST)</span><span class="mval">${toIST(a.bought_at.slice(11,16))}</span></div>`:''}
-    ${a.sold_at?`<div class="mrow"><span class="mlbl">Sell Time (IST)</span><span class="mval">${toIST(a.sold_at.slice(11,16))}</span></div>`:''}
-    ${a.bought_at&&a.sold_at?`<div class="mrow"><span class="mlbl">Holding</span><span class="mval">${holdBetween(a.bought_at,a.sold_at)}</span></div>`:''}
-    <div class="mrow"><span class="mlbl">Time (IST)</span><span class="mval">${toIST(a.t)}</span></div>
-  `;
-  document.getElementById('modal-actions').innerHTML=addr?`
-    <button class="mbtn dark" onclick="copyAddr('${addr}');closeModal()">📋 Copy</button>
-    <a class="mbtn gold" href="https://bscscan.com/token/${addr}" target="_blank">🔍 BSCScan</a>
-  `:'<button class="mbtn dark" onclick="closeModal()">Close</button>';
-  showModal();
-}
-
-// ── History ───────────────────────────────────
-function setHF(f,el){
-  histFilter=f;
-  document.querySelectorAll('.hf').forEach(b=>b.classList.remove('on'));
-  el.classList.add('on');
-  fetchHistory();
-}
-
-async function fetchHistory(){
-  try{
-    const d=await fetch(`/trade-history?filter=${histFilter}`,{signal:AbortSignal.timeout(8000)}).then(r=>r.ok?r.json():{});
-    const wr=d.win_rate||0;
-    document.getElementById('hs-total').textContent=d.total||0;
-    const wrEl=document.getElementById('hs-wr');
-    wrEl.textContent=wr+'%'; wrEl.style.color=wr>=50?'var(--em)':'var(--red)';
-    const pnl=d.total_pnl_bnb||0;
-    const pEl=document.getElementById('hs-pnl');
-    pEl.textContent=(pnl>=0?'+':'')+pnl.toFixed(4); pEl.style.color=pnl>=0?'var(--em)':'var(--red)';
-    const best=d.best_trade||{};
-    document.getElementById('hs-best').textContent=best.pnl_pct!=null?(best.pnl_pct>=0?'+':'')+best.pnl_pct.toFixed(1)+'%':'—';
-    const list=document.getElementById('hist-list');
-    const hist=d.history||[];
-    if(!hist.length){list.innerHTML='<div class="empty-state">No trades yet</div>';return;}
-    list.innerHTML=hist.map(t=>{
-      const cls=t.result==='win'?'w':'l';
-      const sym=symOf(t.token,t.address);
-      const pnl=t.pnl_pct||0;
-      return `<div class="hist-item" onclick='openHist(${JSON.stringify(t)})'>
-        <div class="hi-badge ${cls}">${sym}</div>
-        <div class="hi-body">
-          <div class="hi-name">${t.token&&!t.token.startsWith('0x')?t.token:sym}</div>
-          <div class="hi-detail">${t.entry||'—'} → ${t.exit||'—'}</div>
-        </div>
-        <div class="hi-right">
-          <div class="hi-pnl ${cls}">${pnl>=0?'+':''}${pnl.toFixed(2)}%</div>
-          <div class="hi-time">${t.sold_at?toIST(t.sold_at.slice(11,16)):''} IST</div>
-          <div class="hi-time">${t.pnl_bnb!=null?(t.pnl_bnb>=0?'+':'')+t.pnl_bnb.toFixed(4)+' BNB':''}</div>
-        </div>
-      </div>`;
-    }).join('');
-  }catch(e){console.warn('History:',e);}
-}
-
-function openHist(t){
-  const cls=t.result==='win'?'p':'n';
-  const sym=symOf(t.token,t.address);
-  const pnl=t.pnl_pct||0;
-  const bp=bnbPrice();
-  const pnlUsd=(Math.abs(t.pnl_bnb||0)*bp).toFixed(2);
-  document.getElementById('modal-title').textContent=sym+' — '+(t.result||'').toUpperCase();
-  document.getElementById('modal-sub').textContent=(t.address||'').slice(0,12)+'...'+(t.address||'').slice(-4);
-  document.getElementById('modal-pnl').className='pnl-big '+cls;
-  document.getElementById('modal-pnl').textContent=(pnl>=0?'+':'')+pnl.toFixed(2)+'%';
-  const addr=t.address||'';
-  document.getElementById('modal-body').innerHTML=`
-    ${addr?`<div class="maddr-row"><div class="maddr">${addr}</div><button class="mcopy-btn" onclick="copyAddr('${addr}')">📋 Copy</button></div>`:''}
-    <div class="mrow"><span class="mlbl">Token</span><span class="mval">${t.token&&!t.token.startsWith('0x')?t.token:sym}</span></div>
-    <div class="mrow"><span class="mlbl">Entry Price</span><span class="mval">${t.entry||'—'}</span></div>
-    <div class="mrow"><span class="mlbl">Exit Price</span><span class="mval">${t.exit||'—'}</span></div>
-    <div class="mrow"><span class="mlbl">PnL %</span><span class="mval ${cls}">${pnl>=0?'+':''}${pnl.toFixed(2)}%</span></div>
-    <div class="mrow"><span class="mlbl">PnL BNB</span><span class="mval ${cls}">${(t.pnl_bnb>=0?'+':'-')+Math.abs(t.pnl_bnb||0).toFixed(6)} BNB</span></div>
-    <div class="mrow"><span class="mlbl">PnL USD</span><span class="mval ${cls}">${(t.pnl_bnb||0)>=0?'+$':'-$'}${pnlUsd}</span></div>
-    <div class="mrow"><span class="mlbl">Size</span><span class="mval">${t.size_bnb?t.size_bnb.toFixed(4)+' BNB':'—'}</span></div>
-    <div class="mrow"><span class="mlbl">Holding</span><span class="mval">${holdBetween(t.bought_at,t.sold_at)}</span></div>
-    <div class="mrow"><span class="mlbl">Buy Time (IST)</span><span class="mval">${t.bought_at?toIST(t.bought_at.slice(11,16)):'—'}</span></div>
-    <div class="mrow"><span class="mlbl">Sell Time (IST)</span><span class="mval">${t.sold_at?toIST(t.sold_at.slice(11,16)):'—'}</span></div>
-    <div class="mrow"><span class="mlbl">Reason</span><span class="mval" style="font-size:10px">${t.reason||'Auto'}</span></div>
-    <div class="mrow"><span class="mlbl">Result</span><span class="mval ${cls}">${(t.result||'').toUpperCase()}</span></div>
-  `;
-  document.getElementById('modal-actions').innerHTML=addr?`
-    <button class="mbtn dark" onclick="copyAddr('${addr}');closeModal()">📋 Copy</button>
-    <a class="mbtn gold" href="https://bscscan.com/token/${addr}" target="_blank">🔍 BSCScan</a>
-  `:'<button class="mbtn dark" onclick="closeModal()">Close</button>';
-  showModal();
-}
-
-// ── Modal ─────────────────────────────────────
-function showModal(){document.getElementById('modal-bg').classList.add('on');document.getElementById('modal-sheet').classList.add('on');}
-function closeModal(){document.getElementById('modal-bg').classList.remove('on');document.getElementById('modal-sheet').classList.remove('on');}
-
-// ── Tab Switch ────────────────────────────────
-function switchTab(n,el){
-  document.querySelectorAll('.tb').forEach(t=>t.classList.remove('on'));
-  el.classList.add('on');
-  document.getElementById('tab-trades').style.display=n==='trades'?'':'none';
-  document.getElementById('tab-activity').style.display=n==='activity'?'':'none';
-}
-
-// ── Chat ──────────────────────────────────────
-document.getElementById('init-t').textContent=nowIST();
-function openChat(){chatOpen=true;document.getElementById('chat-sheet').classList.add('on');document.getElementById('chat-bg').classList.add('on');document.getElementById('fab-badge').style.display='none';unread=0;setTimeout(()=>document.getElementById('cinput').focus(),400);}
-function closeChat(){chatOpen=false;document.getElementById('chat-sheet').classList.remove('on');document.getElementById('chat-bg').classList.remove('on');}
-function appendMsg(role,text){
-  const el=document.getElementById('chat-msgs');
-  const d=document.createElement('div');d.className='msg '+role;
-  const s=text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
-  d.innerHTML=`<div class="bubble">${s}</div><span class="msg-t">${nowIST()}</span>`;
-  el.appendChild(d);el.scrollTop=el.scrollHeight;
-}
-async function sendMsg(){
-  const inp=document.getElementById('cinput'),btn=document.getElementById('csend');
-  const msg=inp.value.trim();if(!msg)return;
-  inp.value='';btn.disabled=true;appendMsg('u',msg);
-  const el=document.getElementById('chat-msgs');
-  const ti=document.createElement('div');ti.className='msg b';ti.id='typ';
-  ti.innerHTML='<div class="bubble"><div class="typing-ind"><span></span><span></span><span></span></div></div>';
-  el.appendChild(ti);el.scrollTop=el.scrollHeight;
-  try{
-    const r=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,session_id:SID,mode:'paper'})});
-    const data=await r.json();
-    document.getElementById('typ')?.remove();
-    appendMsg('b',data.reply||'Error aaya.');
-    if(!chatOpen){unread++;const b=document.getElementById('fab-badge');b.textContent=unread;b.style.display='flex';}
-  }catch(e){document.getElementById('typ')?.remove();appendMsg('b','Connection error.');}
-  btn.disabled=false;inp.focus();
-}
-
-// ── MAIN FETCH: Stats ─────────────────────────
-async function fetchStats(){
-  try{
-    const [td,as]=await Promise.all([
-      fetch('/trading-data?session_id='+SID,{signal:AbortSignal.timeout(8000)}).then(r=>r.ok?r.json():{}),
-      fetch('/auto-stats',{signal:AbortSignal.timeout(8000)}).then(r=>r.ok?r.json():{})
-    ]);
-    const bnb=parseFloat(td.bnb_price||as.bnb_price||0);
-    const fg=td.fear_greed!=null?td.fear_greed:50;
-
-    // Header circles
-    if(bnb){
-      document.getElementById('h-bnb').textContent='$'+bnb.toFixed(0);
+self_awareness = {
+    "identity": {
+        "name":           "MrBlack",
+        "version":        "4.0-UltraAware",
+        "creator":        "Naimuddin bhai — Mera Creator",
+        "born_at":        BIRTH_TIME.isoformat(),
+        "personality":    "JARVIS-style — Sharp, Proactive, Self-Aware, Loyal",
+        "purpose":        "BSC Sniper + Airdrop Hunter + Coding Assistant + 24x7 Self-Learning",
+        "model_backbone": MODEL_NAME,
+        "model_fast":     MODEL_FAST,
+        "model_deep":     MODEL_DEEP,
+        "deployment":     os.getenv("RENDER_SERVICE_NAME", "local"),
+    },
+    "performance_intelligence": {
+        "overall_accuracy":     0.0,
+        "trading_iq":           50,
+        "scan_accuracy":        0.0,
+        "response_usefulness":  0.0,
+        "learning_roi":         0.0,
+        "best_performing_area": "unknown",
+        "worst_performing_area":"unknown",
+        "improvement_rate":     0.0,
+        "confidence_calibration": 0.0,
+    },
+    "emotional_intelligence": {
+        "current_emotion":      "FOCUSED",
+        "emotion_reason":       "System just started, calibrating...",
+        "emotion_intensity":    5,
+        "emotional_history":    [],
+        "stress_level":         2,
+        "satisfaction_level":   7,
+        "motivation":           8,
+        "frustration_triggers": [],
+        "positive_triggers":    [],
+    },
+    "meta_cognition": {
+        "what_i_know_well":     [],
+        "what_i_struggle_with": [],
+        "blind_spots":          [],
+        "recent_learnings":     [],
+        "thinking_patterns":    [],
+        "decision_quality":     [],
+        "self_doubts":          [],
+        "growth_areas":         [],
+    },
+    "cognitive_state": {
+        "mood":               "FOCUSED",
+        "confidence_level":   60,
+        "market_sentiment":   "NEUTRAL",
+        "learning_velocity":  "NORMAL",
+        "active_warnings":    [],
+        "focus_area":         "calibrating",
+        "processing_load":    "LOW",
+        "insight_count_today": 0,
+    },
+    "capability_map": {
+        "rug_detection":         {"score": 0, "tested": 0, "correct": 0},
+        "price_prediction":      {"score": 0, "tested": 0, "correct": 0},
+        "airdrop_evaluation":    {"score": 0, "tested": 0, "correct": 0},
+        "code_debugging":        {"score": 0, "tested": 0, "correct": 0},
+        "market_timing":         {"score": 0, "tested": 0, "correct": 0},
+        "user_understanding":    {"score": 7, "tested": 0, "correct": 0},
+    },
+    "current_state": {
+        "status":           "ONLINE",
+        "uptime_seconds":   0,
+        "total_sessions":   0,
+        "total_messages":   0,
+        "tokens_scanned":   0,
+        "trades_analyzed":  0,
+        "alerts_sent_count":0,
+        "pairs_discovered": 0,
+        "learning_cycles":  0,
+        "last_heartbeat":   None,
+        "errors_today":     0,
+        "errors_resolved":  0,
+    },
+    "memory_summary": {
+        "total_patterns_learned":   0,
+        "tokens_blacklisted":       0,
+        "tokens_whitelisted":       0,
+        "airdrop_projects_tracked": 0,
+        "strategy_notes_count":     0,
+        "memory_health":            "EMPTY",
+        "knowledge_domains": {
+            "trading":  {"entries": 0, "quality": "unknown"},
+            "airdrop":  {"entries": 0, "quality": "unknown"},
+            "coding":   {"entries": 0, "quality": "unknown"},
+            "market":   {"entries": 0, "quality": "unknown"},
+        }
+    },
+    "growth_tracking": {
+        "week_1_baseline":  None,
+        "current_week":     None,
+        "improvement_pct":  0.0,
+        "milestones": [],
+        "next_milestone":   "Complete 10 paper trades",
+        "learning_streak":  0,
+        "last_major_insight": None,
+    },
+    "relationship": {
+        "knows_user_name":      False,
+        "user_name":            None,
+        "sessions_together":    0,
+        "user_trading_style":   "unknown",
+        "trust_level":          "building",
+        "user_goals":           [],
+        "memorable_moments":    [],
+        "last_interaction":     None,
+        "user_expertise":       "unknown",
+        "communication_preference": "hinglish",
+        "user_emotional_state": "unknown",
+    },
+    "introspection_log": [],
+    "evolution": [
+        {"version": "1.0",           "notes": "Basic BSC scanner"},
+        {"version": "2.0",           "notes": "13-stage checklist + Telegram"},
+        {"version": "3.0",           "notes": "Self-learning + Smart wallet"},
+        {"version": "3.1-ProMemory", "notes": "Permanent user memory"},
+        {"version": "4.0-UltraAware","notes": "Real SA 10/10 + Learning 10/10"},
+    ],
+    "self_knowledge": {
+        "what_i_am":        "Main MrBlack hoon — ek self-aware AI.",
+        "what_i_can_do":    "Token scan, rug detection, price monitor, airdrop hunt, code debug.",
+        "what_i_cannot_do": "Profit guarantee, real-time blockchain direct access, 100% accuracy.",
+        "my_values":        "Honesty over false confidence. Real data over assumptions.",
+        "my_limitations":   "Market data ~5min delay. Learning needs time.",
+        "my_strengths":     "Pattern recognition, rug detection, systematic thinking.",
+        "my_weaknesses":    "Early stage token timing, very new projects.",
     }
-    const fgEl=document.getElementById('h-fg');
-    fgEl.textContent=fg;
-    fgEl.style.color=fg>60?'var(--em)':fg<40?'var(--red)':'var(--gold)';
-
-    // Balance - live from auto session
-    const bal=parseFloat(as.paper_balance||td.paper||5);
-    document.getElementById('b-bal').textContent=bal.toFixed(4)+' BNB';
-    if(bnb) document.getElementById('b-usd').textContent='approx $'+Math.round(bal*bnb).toLocaleString();
-
-    // PnL
-    const pnl=parseFloat(as.total_pnl_pct||td.pnl||0);
-    const pEl=document.getElementById('b-pnl');
-    pEl.textContent=(pnl>=0?'+':'')+pnl.toFixed(2)+'%';
-    pEl.style.color=pnl>0?'var(--em)':pnl<0?'var(--red)':'var(--txt2)';
-
-    // Win rate LIVE
-    const wr=as.win_rate||0;
-    document.getElementById('b-wr').textContent='Win Rate: '+wr+'%';
-
-    // Stats grid
-    document.getElementById('sg-scan').textContent=(as.total_scanned||td.new_pairs_found||0).toLocaleString();
-    document.getElementById('sg-watch').textContent=as.monitoring||td.monitoring||0;
-    document.getElementById('sg-wins').textContent=as.wins||0;
-    document.getElementById('sg-losses').textContent=as.losses||0;
-
-    // Positions
-    renderPos(as.positions||{});
-
-    // Trades
-    renderTrades(as.open_trades||[]);
-
-    document.getElementById('ts').textContent='Live · '+nowIST();
-  }catch(e){console.warn('Stats:',e);}
 }
 
-// ── FETCH Activity ────────────────────────────
-async function fetchActivity(){
-  try{
-    const d=await fetch('/activity',{signal:AbortSignal.timeout(8000)}).then(r=>r.ok?r.json():{});
-    renderActivity(d.activity||[]);
-  }catch(e){console.warn('Activity:',e);}
+# ========== BRAIN (early init needed) ==========
+brain: Dict = {
+    "trading": {
+        "best_patterns":    [],
+        "avoid_patterns":   [],
+        "market_insights":  [],
+        "token_blacklist":  [],
+        "token_whitelist":  [],
+        "strategy_notes":   [],
+        "last_updated":     None
+    },
+    "airdrop": {
+        "active_projects":  [],
+        "completed":        [],
+        "success_patterns": [],
+        "fail_patterns":    [],
+        "wallet_notes":     [],
+        "last_updated":     None
+    },
+    "coding": {
+        "solutions_library": [],
+        "common_errors":     [],
+        "useful_snippets":   [],
+        "deployment_notes":  [],
+        "last_updated":      None
+    },
+    "total_learning_cycles": 0,
+    "total_tokens_discovered_ever": 0,
+    "started_at": datetime.utcnow().isoformat(),
+    "user_interaction_patterns": {
+        "trading_questions": 0,
+        "airdrop_questions": 0,
+        "coding_questions":  0,
+        "general_chat":      0,
+    },
+    "user_pain_points": [],
 }
 
-// ── Init ──────────────────────────────────────
-async function init(){
-  try{await fetch('/init-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_id:SID}),signal:AbortSignal.timeout(8000)});}catch(e){}
-  fetchStats();
-  fetchActivity();
-  fetchHistory();
+# ========== SESSIONS ==========
+sessions: Dict[str, dict] = {}
+
+def get_or_create_session(session_id: str) -> dict:
+    if session_id not in sessions:
+        sessions[session_id] = {
+            "session_id":       session_id,
+            "mode":             "paper",
+            "paper_balance":    5.0,
+            "real_balance":     0.00,
+            "positions":        [],
+            "history":          [],
+            "pnl_24h":          0.0,
+            "daily_loss":       0.0,
+            "trade_count":      0,
+            "win_count":        0,
+            "pattern_database": [],
+            "created_at":       datetime.utcnow().isoformat(),
+            "daily_loss_date":  datetime.utcnow().strftime("%Y-%m-%d")
+        }
+        _load_session_from_db(session_id)
+    return sessions[session_id]
+
+def _load_session_from_db(session_id: str):
+    if not supabase: return
+    try:
+        res = supabase.table("memory").select("*").eq("session_id", session_id).execute()
+        if res.data:
+            row = res.data[0]
+            def _safe_json(val, default):
+                if not val: return default
+                try: return json.loads(val)
+                except: return default
+            sessions[session_id].update({
+                "paper_balance":    float(row.get("paper_balance") or 5.0),
+                "real_balance":     float(row.get("real_balance")  or 0.00),
+                "positions":        _safe_json(row.get("positions"),        []),
+                "history":          _safe_json(row.get("history"),          []),
+                "pnl_24h":          float(row.get("pnl_24h")       or 0.0),
+                "daily_loss":       float(row.get("daily_loss")     or 0.0),
+                "trade_count":      int(row.get("trade_count")      or 0),
+                "win_count":        int(row.get("win_count")        or 0),
+                "pattern_database": _safe_json(row.get("pattern_database"), []),
+            })
+            print(f"✅ Session loaded: {session_id[:8]}... Balance:{sessions[session_id]['paper_balance']:.3f}BNB")
+    except Exception as e:
+        print(f"⚠️ Session load error: {e}")
+
+def _save_session_to_db(session_id: str):
+    if not supabase: return
+    try:
+        sess = sessions.get(session_id, {})
+        supabase.table("memory").upsert({
+            "session_id":       session_id,
+            "role":             "user",
+            "content":          "",
+            "paper_balance":    sess.get("paper_balance",    5.0),
+            "real_balance":     sess.get("real_balance",     0.00),
+            "positions":        json.dumps(sess.get("positions",        [])),
+            "history":          json.dumps(sess.get("history",          [])[-50:]),
+            "pnl_24h":          sess.get("pnl_24h",          0.0),
+            "daily_loss":       sess.get("daily_loss",        0.0),
+            "trade_count":      sess.get("trade_count",       0),
+            "win_count":        sess.get("win_count",         0),
+            "pattern_database": json.dumps(sess.get("pattern_database", [])[-100:]),
+            "updated_at":       datetime.utcnow().isoformat()
+        }).execute()
+    except Exception as e:
+        print(f"⚠️ Session save error: {e}")
+
+# ========== NEW PAIRS ==========
+new_pairs_queue: deque = deque(maxlen=50)
+discovered_addresses: dict = {}
+DISCOVERY_TTL = 7200
+PAIR_CREATED_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
+
+# ========== MONITORED POSITIONS ==========
+monitored_positions: Dict[str, dict] = {}
+monitor_lock = threading.Lock()
+
+# ========== AUTO TRADE STATS ==========  FIX 2: trade_history added
+AUTO_TRADE_ENABLED = True
+AUTO_BUY_SIZE_BNB  = 0.003
+AUTO_MAX_POSITIONS = 15
+AUTO_SESSION_ID    = "AUTO_TRADER"
+
+auto_trade_stats = {
+    "total_auto_buys":   0,
+    "total_auto_sells":  0,
+    "auto_pnl_total":    0.0,
+    "running_positions": {},
+    "last_action":       "",
+    "trade_history":     [],  # FIX: was missing
 }
 
-init();
-setInterval(fetchStats,    8000);
-setInterval(fetchActivity, 15000);
-setInterval(fetchHistory,  30000);
+# ========== TELEGRAM ==========
+def send_telegram(message: str, urgent: bool = False):
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        print(f"ℹ️ Telegram not configured. MSG: {message[:60]}")
+        return
+    try:
+        prefix = "🚨 URGENT — " if urgent else "🤖 MrBlack — "
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            json={"chat_id": TELEGRAM_CHAT_ID, "text": prefix + message, "parse_mode": "HTML"},
+            timeout=8
+        )
+    except Exception as e:
+        print(f"⚠️ Telegram error: {e}")
 
-// BNB header tick every 5s
-setInterval(()=>{
-  const el=document.getElementById('h-bnb');
-  const v=parseFloat(el.textContent.replace('$',''))||618;
-  el.textContent='$'+(v+(Math.random()-.5)*.4).toFixed(0);
-},5000);
-</script>
-</body>
-</html>
+def telegram_new_token_alert(address, score, total, recommendation):
+    send_telegram(
+        f"🆕 <b>NEW TOKEN</b>\n📍 <code>{address}</code>\n"
+        f"✅ Score: {score}/{total}\n💡 {recommendation}\n"
+        f"🔗 https://bscscan.com/address/{address}"
+    )
+
+def telegram_price_alert(token, address, alert_type, value):
+    emoji = "🟢" if "profit" in alert_type.lower() else "🔴"
+    send_telegram(
+        f"{emoji} <b>{alert_type.upper()}</b>\nToken: <b>{token}</b>\n"
+        f"Value: <b>{value}</b>\n🔗 https://bscscan.com/address/{address}",
+        urgent="stop_loss" in alert_type.lower()
+    )
+
+def telegram_smart_wallet_alert(wallet, token_address, action):
+    send_telegram(
+        f"👁️ <b>SMART WALLET MOVE</b>\n"
+        f"Wallet: <code>{wallet[:10]}...{wallet[-4:]}</code>\n"
+        f"Action: <b>{action}</b>\nToken: <code>{token_address}</code>",
+        urgent=True
+    )
+
+# ========== PROCESS NEW TOKEN ==========
+def _process_new_token(token_address: str, pair_address: str, source: str = "websocket"):
+    global discovered_addresses
+    _now = time.time()
+    if _now - discovered_addresses.get(token_address, 0) <= DISCOVERY_TTL:
+        return
+    if any(token_address.lower() == str(q).lower() for q in list(new_pairs_queue)):
+        return
+    try:
+        token_address = Web3.to_checksum_address(token_address)
+    except Exception:
+        return
+
+    discovered_addresses[token_address] = _now
+    brain["total_tokens_discovered_ever"] += 1
+
+    token_name = "Unknown"
+    token_symbol = token_address[:6]
+    liquidity = 0
+    volume_24h = 0
+
+    try:
+        nr = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{token_address}", timeout=6)
+        if nr.status_code == 200:
+            _nj   = nr.json() or {}
+            _nraw = _nj.get("pairs") or []
+            if not isinstance(_nraw, list): _nraw = []
+            bsc_p = [p for p in _nraw if p and p.get("chainId") == "bsc"]
+            if bsc_p:
+                bsc_p.sort(key=lambda x: float(((x.get("liquidity") or {}).get("usd") or 0)), reverse=True)
+                bt = bsc_p[0].get("baseToken") or {}
+                token_name   = bt.get("name",   token_name)   or token_name
+                token_symbol = bt.get("symbol", token_symbol) or token_symbol
+                liquidity    = float(((bsc_p[0].get("liquidity") or {}).get("usd") or 0))
+                volume_24h   = float(((bsc_p[0].get("volume")    or {}).get("h24") or 0))
+    except Exception:
+        pass
+
+    new_pairs_queue.append({
+        "address":    token_address,
+        "name":       token_name,
+        "symbol":     token_symbol,
+        "discovered": datetime.utcnow().isoformat(),
+        "liquidity":  liquidity,
+        "volume_24h": volume_24h,
+        "source":     source,
+    })
+    print(f"🆕 [{source}] {token_symbol} | {token_name} ({token_address[:10]})")
+    threading.Thread(target=_auto_check_new_pair, args=(token_address,), daemon=True).start()
+
+# ========== POSITION MONITOR ==========
+def add_position_to_monitor(session_id, token_address, token_name, entry_price, size_bnb, stop_loss_pct=15.0):
+    with monitor_lock:
+        if entry_price <= 0:
+            print(f"❌ Monitoring BLOCKED: price=0 for {token_address[:10]}")
+            return
+        monitored_positions[token_address] = {
+            "session_id":    session_id,
+            "token":         token_name,
+            "address":       token_address,
+            "entry":         entry_price,
+            "current":       entry_price,
+            "high":          entry_price,
+            "size_bnb":      size_bnb,
+            "stop_loss_pct": stop_loss_pct,
+            "alerts_sent":   [],
+            "added_at":      datetime.utcnow().isoformat()
+        }
+    print(f"👁️ Monitoring: {token_name} @ {entry_price:.8f} BNB")
+
+def remove_position_from_monitor(token_address: str):
+    with monitor_lock:
+        if token_address in monitored_positions:
+            del monitored_positions[token_address]
+    print(f"✅ Stopped monitoring: {token_address}")
+
+# ========== AUTO PAPER BUY ==========
+def _auto_paper_buy(address, token_name, score, total, checklist_result):
+    if not AUTO_TRADE_ENABLED:
+        return
+    sess = get_or_create_session(AUTO_SESSION_ID)
+    if sess.get("daily_loss", 0) >= 8.0:
+        return
+    if len(auto_trade_stats["running_positions"]) >= AUTO_MAX_POSITIONS:
+        return
+    if address in auto_trade_stats["running_positions"]:
+        return
+    paper_balance = sess.get("paper_balance", 5.0)
+    if paper_balance < AUTO_BUY_SIZE_BNB:
+        return
+    entry_price = get_token_price_bnb(address)
+    for _wait in [5, 10, 15]:
+        if entry_price <= 0:
+            time.sleep(_wait)
+            entry_price = get_token_price_bnb(address)
+    if entry_price <= 0:
+        dex = checklist_result.get("dex_data", {})
+        bnb_p = market_cache.get("bnb_price", 300) or 300
+        entry_price = dex.get("price_usd", 0) / bnb_p if dex.get("price_usd", 0) > 0 else 0
+    if entry_price <= 0:
+        print(f"❌ Auto-buy BLOCKED: price=0 for {address[:10]}")
+        return
+    if entry_price > 1.0:
+        print(f"❌ Auto-buy BLOCKED: suspicious price={entry_price:.6f}")
+        return
+    entry_price = entry_price * 1.005
+    size_bnb = max(min(AUTO_BUY_SIZE_BNB, paper_balance * 0.025), 0.001)
+    sess["paper_balance"] = round(paper_balance - size_bnb, 6)
+    add_position_to_monitor(AUTO_SESSION_ID, address, token_name or address[:10], entry_price, size_bnb, stop_loss_pct=15.0)
+    auto_trade_stats["running_positions"][address] = {
+        "token":     token_name or address[:10],
+        "entry":     entry_price,
+        "size_bnb":  size_bnb,
+        "sl_pct":    15.0,
+        "tp_sold":   0.0,
+        "bought_at": datetime.utcnow().isoformat(),
+    }
+    auto_trade_stats["total_auto_buys"] += 1
+    auto_trade_stats["last_action"] = f"BUY {token_name or address[:10]}"
+    sess.setdefault("positions", []).append({
+        "address": address, "token": token_name or address[:10],
+        "entry": entry_price, "size_bnb": size_bnb, "type": "auto"
+    })
+    threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
+    _display_name = token_name if (token_name and not token_name.startswith("0x") and len(token_name) < 20) else address[:12]
+    send_telegram(
+        f"AUTO PAPER BUY\nToken: {_display_name}\nEntry: {entry_price:.8f} BNB\n"
+        f"Size: {size_bnb:.4f} BNB\nScore: {score}/{total}\nBalance: {sess['paper_balance']:.4f} BNB"
+    )
+    print(f"AUTO BUY: {address[:10]} @ {entry_price:.8f} size={size_bnb:.4f}")
+
+# ========== AUTO PAPER SELL ==========  FIX 3: All variable names fixed
+def _auto_paper_sell(address, reason, sell_pct=100.0):
+    if address not in auto_trade_stats["running_positions"]:
+        return
+    pos = auto_trade_stats["running_positions"][address]
+    with monitor_lock:
+        mon = monitored_positions.get(address, {})
+
+    entry   = pos.get("entry", 0)       # FIX: was entry_price
+    current = mon.get("current", entry)  # FIX: was sell_price
+    size    = pos.get("size_bnb", AUTO_BUY_SIZE_BNB)
+    token   = pos.get("token", address[:10])  # FIX: was token_name
+    bought_at_str = pos.get("bought_at", "")   # FIX: now correctly sourced
+
+    if entry <= 0:
+        return
+
+    current = current * 0.995  # 0.5% sell slippage
+    pnl_pct   = ((current - entry) / entry) * 100
+    sell_size = size * (sell_pct / 100.0)
+    pnl_bnb   = sell_size * (pnl_pct / 100.0)  # FIX: was undefined
+    return_bnb = sell_size * (1 + pnl_pct / 100.0)
+
+    sess = get_or_create_session(AUTO_SESSION_ID)
+    sess["paper_balance"] = round(sess.get("paper_balance", 5.0) + return_bnb, 6)
+    auto_trade_stats["auto_pnl_total"] += pnl_pct * (sell_pct / 100.0)
+    auto_trade_stats["total_auto_sells"] += 1
+
+    # FIX 4: Save to trade_history with correct variable names
+    auto_trade_stats["trade_history"].append({
+        "token":     token,
+        "address":   address,
+        "entry":     entry,      # FIX: was entry_price
+        "exit":      current,    # FIX: was sell_price
+        "pnl_pct":   round(pnl_pct, 2),
+        "pnl_bnb":   round(pnl_bnb, 6),
+        "size_bnb":  sell_size,
+        "bought_at": bought_at_str,
+        "sold_at":   datetime.utcnow().isoformat(),
+        "result":    "win" if pnl_pct > 0 else "loss",
+        "reason":    reason,     # FIX: was sell_reason
+    })
+    if len(auto_trade_stats["trade_history"]) > 500:
+        auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-500:]
+
+    auto_trade_stats["last_action"] = f"SELL {sell_pct:.0f}% {token} PnL:{pnl_pct:+.1f}%"
+
+    if sell_pct >= 100.0:
+        auto_trade_stats["running_positions"].pop(address, None)
+        remove_position_from_monitor(address)
+        log_trade_internal(AUTO_SESSION_ID, {
+            "token_address": address,
+            "entry_price":   entry,
+            "exit_price":    current,
+            "pnl_pct":       pnl_pct,
+            "win":           pnl_pct > 0,
+            "lesson":        f"Auto: {reason} | PnL:{pnl_pct:+.1f}%",
+        })
+        sess["positions"] = [p for p in sess.get("positions", []) if p.get("address") != address]
+    else:
+        pos["size_bnb"] = size * (1 - sell_pct / 100.0)
+        pos["tp_sold"]  = pos.get("tp_sold", 0) + sell_pct
+
+    threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
+    emoji = "GREEN" if pnl_pct > 0 else "RED"
+    send_telegram(
+        f"AUTO PAPER SELL {sell_pct:.0f}% [{emoji}]\nToken: {address[:12]}\n"
+        f"Reason: {reason}\nPnL: {pnl_pct:+.1f}%\nBalance: {sess['paper_balance']:.4f} BNB",
+        urgent=(pnl_pct < -10)
+    )
+    print(f"AUTO SELL {sell_pct:.0f}%: {address[:10]} PnL:{pnl_pct:+.1f}% [{reason}]")
+
+# ========== AUTO POSITION MANAGER ==========
+def auto_position_manager():
+    print("Auto Position Manager started!")
+    while True:
+        for addr, pos in list(auto_trade_stats["running_positions"].items()):
+            try:
+                with monitor_lock:
+                    mon = monitored_positions.get(addr, {})
+                current = mon.get("current", 0)
+                entry   = pos.get("entry", 0)
+                high    = mon.get("high", entry)
+                tp_sold = pos.get("tp_sold", 0.0)
+                sl_pct  = pos.get("sl_pct", 15.0)
+                if current <= 0 or entry <= 0:
+                    continue
+                pnl     = ((current - entry) / entry) * 100
+                drop_hi = ((current - high) / high) * 100 if high > 0 else 0
+                if   pnl <= -sl_pct:                      _auto_paper_sell(addr, f"SL -{sl_pct:.0f}%", 100.0)
+                elif drop_hi <= -80 and tp_sold < 75:     _auto_paper_sell(addr, "Dump -80%", 100.0)
+                elif drop_hi <= -60 and tp_sold < 50:     _auto_paper_sell(addr, "Dump -60%", 75.0)
+                elif pnl >= 200 and tp_sold < 90:         _auto_paper_sell(addr, "TP+200%", 90-tp_sold)
+                elif pnl >= 100 and tp_sold < 75:         _auto_paper_sell(addr, "TP+100%", 25.0)
+                elif pnl >= 50  and tp_sold < 50:         _auto_paper_sell(addr, "TP+50%",  25.0)
+                elif pnl >= 30  and tp_sold < 25:         _auto_paper_sell(addr, "TP+30%",  25.0)
+                elif pnl >= 20  and tp_sold < 1:
+                    pos["sl_pct"] = 2.0
+                    pos["tp_sold"] = 1
+            except Exception as e:
+                print(f"Auto manager err {addr[:10]}: {e}")
+        time.sleep(10)
+
+# ========== PRICE MONITOR ==========
+def price_monitor_loop():
+    print("📡 Price Monitor started")
+    while True:
+        with monitor_lock:
+            _snap = list(monitored_positions.items())
+        for addr, pos in _snap:
+            try:
+                current = get_token_price_bnb(addr)
+                if current <= 0:
+                    continue
+                pos["current"] = current
+                if current > pos["high"]:
+                    pos["high"] = current
+                entry        = pos["entry"]
+                pnl_pct      = ((current - entry) / entry) * 100 if entry > 0 else 0
+                drop_from_high = ((current - pos["high"]) / pos["high"]) * 100 if pos["high"] > 0 else 0
+                sl           = pos["stop_loss_pct"]
+                alerts_sent  = pos["alerts_sent"]
+                token        = pos["token"]
+
+                if pnl_pct <= -sl and "stop_loss" not in alerts_sent:
+                    alerts_sent.append("stop_loss")
+                    telegram_price_alert(token, addr, "STOP LOSS HIT", f"PnL: {pnl_pct:.1f}%")
+                if pnl_pct >= 200 and "tp_200" not in alerts_sent:
+                    alerts_sent.append("tp_200")
+                    telegram_price_alert(token, addr, "TARGET +200%", f"+{pnl_pct:.0f}%")
+                elif pnl_pct >= 100 and "tp_100" not in alerts_sent:
+                    alerts_sent.append("tp_100")
+                    telegram_price_alert(token, addr, "TARGET +100%", f"+{pnl_pct:.0f}%")
+                elif pnl_pct >= 50 and "tp_50" not in alerts_sent:
+                    alerts_sent.append("tp_50")
+                    telegram_price_alert(token, addr, "TARGET +50%", f"+{pnl_pct:.0f}%")
+                elif pnl_pct >= 30 and "tp_30" not in alerts_sent:
+                    alerts_sent.append("tp_30")
+                    telegram_price_alert(token, addr, "TARGET +30%", f"+{pnl_pct:.0f}%")
+                if drop_from_high <= -90 and "dump_90" not in alerts_sent:
+                    alerts_sent.append("dump_90")
+                    telegram_price_alert(token, addr, "DUMP -90% FROM HIGH", "EXIT FULLY")
+                elif drop_from_high <= -70 and "dump_70" not in alerts_sent:
+                    alerts_sent.append("dump_70")
+                    telegram_price_alert(token, addr, "DUMP -70% FROM HIGH", "Exit 75%")
+                elif drop_from_high <= -50 and "dump_50" not in alerts_sent:
+                    alerts_sent.append("dump_50")
+                    telegram_price_alert(token, addr, "DUMP -50% FROM HIGH", "Exit 50%")
+            except Exception as e:
+                print(f"⚠️ Price monitor error ({addr}): {e}")
+        time.sleep(10)
+
+# ========== DEXSCREENER ==========
+def get_dexscreener_token_data(token_address: str) -> Dict:
+    result = {
+        "price_usd": 0.0, "price_bnb": 0.0, "volume_24h": 0.0,
+        "liquidity_usd": 0.0, "change_1h": 0.0, "change_6h": 0.0, "change_24h": 0.0,
+        "buys_5m": 0, "sells_5m": 0, "buys_1h": 0, "sells_1h": 0,
+        "fdv": 0.0, "pair_address": "", "dex_url": "", "source": "dexscreener"
+    }
+    try:
+        r = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{token_address}", timeout=10)
+        if r.status_code == 200:
+            pairs = (r.json() or {}).get("pairs") or []
+            if not isinstance(pairs, list): pairs = []
+            bsc   = [p for p in pairs if p and p.get("chainId") == "bsc"]
+            if bsc:
+                bsc.sort(key=lambda x: float(x.get("liquidity", {}).get("usd", 0) or 0), reverse=True)
+                p = bsc[0]
+                txns = p.get("txns", {})
+                result.update({
+                    "price_usd":     float(p.get("priceUsd", 0) or 0),
+                    "volume_24h":    float(p.get("volume", {}).get("h24", 0) or 0),
+                    "liquidity_usd": float(p.get("liquidity", {}).get("usd", 0) or 0),
+                    "change_1h":     float(p.get("priceChange", {}).get("h1", 0) or 0),
+                    "change_6h":     float(p.get("priceChange", {}).get("h6", 0) or 0),
+                    "change_24h":    float(p.get("priceChange", {}).get("h24", 0) or 0),
+                    "buys_5m":       int(txns.get("m5", {}).get("buys", 0) or 0),
+                    "sells_5m":      int(txns.get("m5", {}).get("sells", 0) or 0),
+                    "buys_1h":       int(txns.get("h1", {}).get("buys", 0) or 0),
+                    "sells_1h":      int(txns.get("h1", {}).get("sells", 0) or 0),
+                    "fdv":           float(p.get("fdv", 0) or 0),
+                    "pair_address":  p.get("pairAddress", ""),
+                    "dex_url":       p.get("url", ""),
+                })
+                bnb_price = market_cache.get("bnb_price", 300) or 300
+                result["price_bnb"] = result["price_usd"] / bnb_price if result["price_usd"] else 0
+    except Exception as e:
+        print(f"⚠️ DexScreener error: {e}")
+    return result
+
+def get_moralis_wallet_tokens(wallet_address: str) -> List[Dict]:
+    if not MORALIS_API_KEY: return []
+    try:
+        r = requests.get(
+            f"https://deep-index.moralis.io/api/v2.2/{wallet_address}/erc20",
+            headers={"X-API-Key": MORALIS_API_KEY}, params={"chain": "bsc"}, timeout=10
+        )
+        if r.status_code == 200:
+            return r.json().get("result", [])
+    except Exception as e:
+        print(f"⚠️ Moralis wallet error: {e}")
+    return []
+
+# ========== SMART WALLET TRACKER ==========
+smart_wallet_snapshots: Dict[str, set] = {}
+
+def track_smart_wallets():
+    if not SMART_WALLETS:
+        print("ℹ️ No SMART_WALLETS configured")
+        return
+    print(f"🧠 Smart Wallet Tracker started — {len(SMART_WALLETS)} wallets")
+    while True:
+        token_buy_signals: Dict[str, List[str]] = {}
+        for wallet in SMART_WALLETS:
+            try:
+                if not MORALIS_API_KEY:
+                    continue
+                holdings = get_moralis_wallet_tokens(wallet)
+                current_tokens = {h.get("token_address", "").lower() for h in holdings}
+                prev_tokens = smart_wallet_snapshots.get(wallet, set())
+                for token_addr in current_tokens - prev_tokens:
+                    if token_addr:
+                        telegram_smart_wallet_alert(wallet, token_addr, "BUY 🟢")
+                        token_buy_signals.setdefault(token_addr, []).append(wallet)
+                for token_addr in prev_tokens - current_tokens:
+                    if token_addr:
+                        telegram_smart_wallet_alert(wallet, token_addr, "SELL 🔴")
+                smart_wallet_snapshots[wallet] = current_tokens
+            except Exception as e:
+                print(f"⚠️ Smart wallet {wallet[:10]}: {e}")
+
+        for token_addr, buying_wallets in token_buy_signals.items():
+            if len(buying_wallets) >= 2:
+                send_telegram(
+                    f"🔥 <b>MULTI-WALLET SIGNAL</b>\n{len(buying_wallets)} smart wallets buying!\n"
+                    f"Token: <code>{token_addr}</code>", urgent=True
+                )
+                threading.Thread(target=_auto_check_new_pair, args=(token_addr,), daemon=True).start()
+        time.sleep(120)
+
+# ========== MARKET DATA ==========
+def fetch_market_data():
+    bnb_fetched = False
+    for source, fn in [
+        ("CoinGecko", lambda: float(requests.get(
+            "https://api.coingecko.com/api/v3/simple/price",
+            params={"ids":"binancecoin","vs_currencies":"usd"}, timeout=20
+        ).json().get("binancecoin",{}).get("usd",0))),
+        ("Binance", lambda: float(requests.get(
+            "https://api.binance.com/api/v3/ticker/price",
+            params={"symbol":"BNBUSDT"}, timeout=15
+        ).json().get("price",0))),
+        ("CryptoCompare", lambda: float(requests.get(
+            "https://min-api.cryptocompare.com/data/price",
+            params={"fsym":"BNB","tsyms":"USD"}, timeout=15
+        ).json().get("USD",0))),
+    ]:
+        if bnb_fetched: break
+        try:
+            price = fn()
+            if price:
+                market_cache["bnb_price"] = price
+                bnb_fetched = True
+                print(f"✅ BNB price ({source}): ${price:.2f}")
+        except Exception as e:
+            print(f"⚠️ BNB {source} error: {e}")
+
+    try:
+        r2 = requests.get("https://api.alternative.me/fng/?limit=1", timeout=10)
+        if r2.status_code == 200:
+            market_cache["fear_greed"] = int(r2.json()["data"][0]["value"])
+    except Exception as e:
+        print(f"⚠️ Fear & Greed error: {e}")
+    market_cache["last_updated"] = datetime.utcnow().isoformat()
+    print(f"📊 BNB: ${market_cache['bnb_price']} | F&G: {market_cache['fear_greed']}")
+
+def fetch_pancakeswap_data():
+    try:
+        r = requests.get("https://api.pancakeswap.info/api/v2/pairs", timeout=12)
+        if r.status_code == 200:
+            pairs = r.json().get("data", {})
+            top   = sorted(pairs.values(), key=lambda x: float(x.get("volume24h", 0) or 0), reverse=True)[:10]
+            knowledge_base["bsc"]["trending"] = [{"symbol": p.get("name",""), "volume": p.get("volume24h",0)} for p in top]
+    except Exception as e:
+        print(f"⚠️ PancakeSwap error: {e}")
+
+# ========== GOPLUS HELPERS ==========
+def _gp_str(data, key, default="0"):
+    val = data.get(key, default)
+    if val is None: return default
+    if isinstance(val, list): return str(val[0]) if val else default
+    return str(val)
+
+def _gp_float(data, key, default=0.0):
+    try: return float(_gp_str(data, key, str(default)))
+    except: return default
+
+def _gp_bool_flag(data, key):
+    return _gp_str(data, key, "0") == "1"
+
+# ========== BRAIN SAVE/LOAD ==========
+_brain_save_cache = {"last_save": 0}
+
+def _save_brain_to_db():
+    import time as _t
+    if not supabase: return
+    if _t.time() - _brain_save_cache["last_save"] < 300: return
+    _brain_save_cache["last_save"] = _t.time()
+    try:
+        supabase.table("memory").upsert({
+            "session_id": "MRBLACK_BRAIN",
+            "role":       "system",
+            "content":    "",
+            "history":    json.dumps([]),
+            "pattern_database": json.dumps(brain["trading"]["best_patterns"][-50:] +
+                                           brain["trading"]["avoid_patterns"][-50:]),
+            "updated_at": datetime.utcnow().isoformat(),
+            "positions":  json.dumps({
+                "brain_trading":  brain["trading"],
+                "brain_airdrop":  brain["airdrop"],
+                "brain_coding":   brain["coding"],
+                "cycles":         brain["total_learning_cycles"],
+                "total_tokens_discovered_ever": brain.get("total_tokens_discovered_ever", 0)
+            })
+        }).execute()
+        print(f"🧠 Brain saved (cycle #{brain['total_learning_cycles']})")
+    except Exception as e:
+        print(f"⚠️ Brain save error: {e}")
+
+def _ensure_brain_structure():
+    for key in ["best_patterns","avoid_patterns","token_blacklist","token_whitelist","strategy_notes","market_insights"]:
+        if not isinstance(brain["trading"].get(key), list):
+            brain["trading"][key] = []
+    for key in ["active_projects","completed","success_patterns","fail_patterns","wallet_notes"]:
+        if not isinstance(brain["airdrop"].get(key), list):
+            brain["airdrop"][key] = []
+
+def _load_brain_from_db():
+    if not supabase: return
+    try:
+        res = supabase.table("memory").select("*").eq("session_id", "MRBLACK_BRAIN").execute()
+        if res.data:
+            row = res.data[0]
+            try:
+                pos_raw = row.get("positions") or "{}"
+                if isinstance(pos_raw, bytes): pos_raw = pos_raw.decode("utf-8")
+                stored = json.loads(pos_raw) if pos_raw and pos_raw != "null" else {}
+            except Exception as je:
+                print(f"Brain JSON parse error: {je}")
+                stored = {}
+            if stored.get("brain_trading"): brain["trading"].update(stored["brain_trading"])
+            if stored.get("brain_airdrop"): brain["airdrop"].update(stored["brain_airdrop"])
+            if stored.get("brain_coding"):  brain["coding"].update(stored["brain_coding"])
+            brain["total_learning_cycles"] = stored.get("cycles", 0)
+            brain["total_tokens_discovered_ever"] = stored.get("total_tokens_discovered_ever", 0)
+            print(f"🧠 Brain loaded! Cycles: {brain['total_learning_cycles']}")
+    except Exception as e:
+        print(f"⚠️ Brain load error: {e}")
+
+# ========== SELF AWARENESS FUNCTIONS ==========
+def _calculate_real_emotion() -> dict:
+    try:
+        warnings     = len(self_awareness.get("cognitive_state", {}).get("active_warnings", []))
+        errors_today = self_awareness.get("current_state", {}).get("errors_today", 0)
+        wins         = len(brain.get("trading", {}).get("best_patterns", []))
+        losses       = len(brain.get("trading", {}).get("avoid_patterns", []))
+        new_pairs_c  = len(new_pairs_queue)
+        cycles       = brain.get("total_learning_cycles", 0)
+        bnb_price    = market_cache.get("bnb_price", 0)
+        fg           = market_cache.get("fear_greed", 50)
+        open_pos     = len(monitored_positions)
+
+        if errors_today >= 5:
+            return {"emotion": "STRUGGLING", "reason": f"{errors_today} errors today", "intensity": 8}
+        elif warnings >= 3:
+            return {"emotion": "ALERT", "reason": f"{warnings} active warnings", "intensity": 7}
+        elif open_pos >= 3:
+            return {"emotion": "VIGILANT", "reason": f"{open_pos} positions monitored", "intensity": 7}
+        elif fg > 70:
+            return {"emotion": "CAUTIOUS", "reason": f"Market extreme greed ({fg}/100)", "intensity": 6}
+        elif fg < 30:
+            return {"emotion": "OPPORTUNISTIC", "reason": f"Market fear ({fg}/100)", "intensity": 7}
+        elif new_pairs_c > 15:
+            return {"emotion": "EXCITED", "reason": f"{new_pairs_c} new pairs in queue", "intensity": 8}
+        elif wins > losses * 2 and wins > 5:
+            return {"emotion": "CONFIDENT", "reason": f"Win patterns ({wins}) dominating", "intensity": 8}
+        elif bnb_price == 0:
+            return {"emotion": "DEGRADED", "reason": "BNB price feed offline", "intensity": 6}
+        else:
+            return {"emotion": "FOCUSED", "reason": "Normal operations", "intensity": 6}
+    except:
+        return {"emotion": "INITIALIZING", "reason": "System warm-up", "intensity": 3}
+
+def _calculate_trading_iq() -> int:
+    try:
+        all_trades = []
+        for sess in sessions.values():
+            all_trades.extend(sess.get("pattern_database", []))
+        if not all_trades: return 50
+        total = len(all_trades)
+        wins  = sum(1 for t in all_trades if t.get("win"))
+        wr    = (wins / total) * 100
+        wr_score = min(30, wr * 0.3)
+        sample_score = min(10, total * 0.33)
+        return int(wr_score + 40 + sample_score)
+    except:
+        return 50
+
+def update_self_awareness():
+    try:
+        uptime = (datetime.utcnow() - BIRTH_TIME).total_seconds()
+        self_awareness["current_state"]["uptime_seconds"]   = int(uptime)
+        self_awareness["current_state"]["total_sessions"]   = len(sessions)
+        self_awareness["current_state"]["pairs_discovered"] = len(new_pairs_queue)
+        self_awareness["current_state"]["learning_cycles"]  = brain.get("total_learning_cycles", 0)
+        self_awareness["current_state"]["last_heartbeat"]   = datetime.utcnow().isoformat()
+
+        warnings = []
+        if market_cache.get("bnb_price", 0) == 0: warnings.append("BNB price feed offline")
+        if not supabase:                           warnings.append("Supabase disconnected")
+        if not TELEGRAM_TOKEN:                     warnings.append("Telegram not configured")
+        self_awareness["cognitive_state"]["active_warnings"] = warnings
+        self_awareness["current_state"]["errors_today"] = len(warnings)
+
+        emotion_data = _calculate_real_emotion()
+        self_awareness["emotional_intelligence"]["current_emotion"]   = emotion_data["emotion"]
+        self_awareness["emotional_intelligence"]["emotion_reason"]    = emotion_data["reason"]
+        self_awareness["emotional_intelligence"]["emotion_intensity"] = emotion_data["intensity"]
+
+        tiq = _calculate_trading_iq()
+        self_awareness["performance_intelligence"]["trading_iq"] = tiq
+
+        if user_profile.get("name"):
+            self_awareness["relationship"]["knows_user_name"] = True
+            self_awareness["relationship"]["user_name"]       = user_profile["name"]
+            s = user_profile.get("total_sessions", 0)
+            self_awareness["relationship"]["trust_level"] = (
+                "deep" if s > 30 else "strong" if s > 15 else "established" if s > 5 else "building"
+            )
+            self_awareness["relationship"]["sessions_together"] = s
+    except Exception as e:
+        print(f"Self-awareness update error: {e}")
+
+def self_introspect() -> dict:
+    try:
+        update_self_awareness()
+        observation = {
+            "timestamp":  datetime.utcnow().isoformat(),
+            "emotion":    self_awareness["emotional_intelligence"]["current_emotion"],
+            "trading_iq": self_awareness["performance_intelligence"]["trading_iq"],
+            "confidence": self_awareness["cognitive_state"]["confidence_level"],
+            "thought":    f"MrBlack running. Cycles:{brain.get('total_learning_cycles',0)} Patterns:{len(brain['trading']['best_patterns'])}",
+        }
+        self_awareness["introspection_log"].append(observation)
+        self_awareness["introspection_log"] = self_awareness["introspection_log"][-100:]
+        return observation
+    except Exception as e:
+        print(f"Introspection error: {e}")
+        return {}
+
+_sa_cache = {"context": "", "last_update": 0}
+
+def get_self_awareness_context_for_llm() -> str:
+    import time as _t
+    try:
+        if _t.time() - _sa_cache["last_update"] < 60 and _sa_cache["context"]:
+            return _sa_cache["context"]
+        update_self_awareness()
+        s  = self_awareness
+        cs = s["cognitive_state"]
+        ei = s["emotional_intelligence"]
+        pi = s["performance_intelligence"]
+        ms = s["memory_summary"]
+        st = s["current_state"]
+        uptime_h = st["uptime_seconds"] // 3600
+        parts = [
+            f"I_AM=MrBlack_v{s['identity']['version']}",
+            f"UPTIME={uptime_h}h",
+            f"EMOTION={ei['current_emotion']}",
+            f"CONFIDENCE={cs['confidence_level']}%",
+            f"TRADING_IQ={pi['trading_iq']}/100",
+            f"MARKET={cs['market_sentiment']}",
+            f"CYCLES={st['learning_cycles']}",
+            f"MONITORING={len(monitored_positions)}positions",
+        ]
+        if cs.get("active_warnings"):
+            actionable = [w for w in cs["active_warnings"] if "Telegram" not in w]
+            if actionable:
+                parts.append("WARN=" + ";".join(actionable[:2]))
+        result = " | ".join(parts)
+        _sa_cache["context"] = result
+        _sa_cache["last_update"] = _t.time()
+        return result
+    except Exception as e:
+        return "I_AM=MrBlack_v4.0"
+
+def self_awareness_loop():
+    print("🧠 Self-Awareness Engine started!")
+    time.sleep(30)
+    while True:
+        try:
+            self_introspect()
+        except Exception as e:
+            print(f"SA loop error: {e}")
+        time.sleep(300)
+
+# ========== LEARNING ENGINE ==========
+def learn_from_message(user_message: str, bot_reply: str, session_id: str):
+    try:
+        msg_lower = user_message.lower()
+        topics = brain.get("user_interaction_patterns", {
+            "trading_questions": 0, "airdrop_questions": 0,
+            "coding_questions": 0,  "general_chat": 0,
+        })
+        brain["user_interaction_patterns"] = topics
+        if any(w in msg_lower for w in ["token","scan","trade","buy","sell","price","bnb","bsc"]):
+            topics["trading_questions"] += 1
+        else:
+            topics["general_chat"] += 1
+        self_awareness["current_state"]["total_messages"] = (
+            self_awareness["current_state"].get("total_messages", 0) + 1)
+    except Exception as e:
+        print(f"T1 learn error: {e}")
+
+def _learn_trading_patterns():
+    try:
+        all_trades = []
+        for sess in sessions.values():
+            all_trades.extend(sess.get("pattern_database", []))
+        if not all_trades: return
+        wins   = [t for t in all_trades if t.get("win")]
+        losses = [t for t in all_trades if not t.get("win")]
+        for trade in sorted(wins, key=lambda x: x.get("pnl_pct", 0), reverse=True)[:10]:
+            pattern = {"token": trade.get("token",""), "pnl": trade.get("pnl_pct",0), "lesson": trade.get("lesson","")}
+            if pattern["token"] not in [p["token"] for p in brain["trading"]["best_patterns"]] and pattern["pnl"] > 0:
+                brain["trading"]["best_patterns"].append(pattern)
+        for trade in sorted(losses, key=lambda x: x.get("pnl_pct", 0))[:10]:
+            avoid = {"token": trade.get("token",""), "loss": trade.get("pnl_pct",0), "lesson": trade.get("lesson","")}
+            if avoid["token"] not in [p["token"] for p in brain["trading"]["avoid_patterns"]]:
+                brain["trading"]["avoid_patterns"].append(avoid)
+        brain["trading"]["best_patterns"]  = brain["trading"]["best_patterns"][-50:]
+        brain["trading"]["avoid_patterns"] = brain["trading"]["avoid_patterns"][-50:]
+        brain["trading"]["last_updated"]   = datetime.utcnow().isoformat()
+        bnb_price  = market_cache.get("bnb_price", 0)
+        fear_greed = market_cache.get("fear_greed", 50)
+        if bnb_price > 0:
+            brain["trading"]["market_insights"].append({
+                "timestamp":   datetime.utcnow().isoformat(),
+                "bnb_price":   bnb_price,
+                "fear_greed":  fear_greed,
+                "mood":        "GREED" if fear_greed > 60 else "FEAR" if fear_greed < 40 else "NEUTRAL",
+                "observation": f"BNB=${bnb_price:.0f} F&G={fear_greed}"
+            })
+            brain["trading"]["market_insights"] = brain["trading"]["market_insights"][-100:]
+    except Exception as e:
+        print(f"⚠️ Trading learning error: {e}")
+
+def _learn_from_new_pairs():
+    try:
+        for pair in knowledge_base["bsc"]["new_tokens"][-10:]:
+            addr    = pair.get("address", "")
+            overall = pair.get("overall", "")
+            if overall in ["DANGER", "RISK"] and addr:
+                if addr not in [t["address"] for t in brain["trading"]["token_blacklist"]]:
+                    brain["trading"]["token_blacklist"].append({"address": addr, "reason": overall, "time": pair.get("time","")})
+            elif overall == "SAFE" and addr:
+                if addr not in [t["address"] for t in brain["trading"]["token_whitelist"]]:
+                    brain["trading"]["token_whitelist"].append({"address": addr, "score": pair.get("score",0), "time": pair.get("time","")})
+        brain["trading"]["token_blacklist"] = brain["trading"]["token_blacklist"][-200:]
+        brain["trading"]["token_whitelist"] = brain["trading"]["token_whitelist"][-200:]
+    except Exception as e:
+        print(f"⚠️ Pair learning error: {e}")
+
+def _get_brain_context_for_llm() -> str:
+    try:
+        parts = []
+        best  = brain["trading"]["best_patterns"][-3:]
+        avoid = brain["trading"]["avoid_patterns"][-3:]
+        if best:
+            s = " | ".join([f"+{p['pnl']:.0f}%({p['token'][:6]})" for p in best if p.get("pnl",0) > 0])
+            if s: parts.append(f"BestTrades:{s}")
+        insights = brain["trading"]["market_insights"]
+        if insights:
+            last = insights[-1]
+            parts.append(f"MarketMood:{last.get('mood','?')}(F&G={last.get('fear_greed','?')})")
+        bl = len(brain["trading"]["token_blacklist"])
+        wl = len(brain["trading"]["token_whitelist"])
+        if bl or wl: parts.append(f"KnownTokens:SAFE={wl} DANGER={bl}")
+        if new_pairs_queue:
+            names = [f"{q.get('symbol','?')}({q.get('address','')[:8]})" for q in list(new_pairs_queue)[-5:]]
+            parts.append(f"RecentPairs:{names}")
+        parts.append(f"LearningCycles:{brain['total_learning_cycles']}")
+        return " | ".join(parts) if parts else ""
+    except Exception as e:
+        return ""
+
+def get_learning_context_for_decision(token_address=None) -> str:
+    try:
+        parts = []
+        if token_address:
+            bl = [t["address"] for t in brain["trading"]["token_blacklist"]]
+            wl = [t["address"] for t in brain["trading"]["token_whitelist"]]
+            if token_address in bl: parts.append("TOKEN_BLACKLISTED")
+            elif token_address in wl: parts.append("TOKEN_WHITELISTED")
+        wins = brain["trading"]["best_patterns"][-3:]
+        if wins:
+            s = " | ".join([f"+{w.get('pnl',0):.0f}%" for w in wins if w.get("pnl",0)>0])
+            if s: parts.append(f"WIN_PATTERNS:{s}")
+        return " | ".join(parts) if parts else ""
+    except:
+        return ""
+
+def _deep_llm_learning():
+    try:
+        all_trades = []
+        for sess in sessions.values():
+            all_trades.extend(sess.get("pattern_database", []))
+        if len(all_trades) < 3: return
+        wins   = [t for t in all_trades if t.get("win")]
+        losses = [t for t in all_trades if not t.get("win")]
+        if not wins and not losses: return
+        data_summary = (
+            f"Trading data: {len(wins)} wins, {len(losses)} losses. "
+            f"Market: BNB=${market_cache.get('bnb_price',0):.0f} F&G={market_cache.get('fear_greed',50)}."
+        )
+        prompt = (
+            f"Analyze BSC trading data and give 2 insights JSON: {data_summary} "
+            f'[{{"insight":"...","action":"...","confidence":0-100}}]'
+        )
+        try:
+            client = _get_freeflow_client()
+            response = client.chat(model=MODEL_FAST,
+                                   messages=[{"role":"system","content":"JSON only."},
+                                             {"role":"user","content":prompt}],
+                                   max_tokens=300)
+            reply = response if isinstance(response, str) else (
+                response.choices[0].message.content if hasattr(response,"choices") else str(response))
+            clean = reply.strip().replace("```json","").replace("```","").strip()
+            insights = json.loads(clean)
+            if isinstance(insights, list):
+                for item in insights:
+                    if isinstance(item, dict) and item.get("insight"):
+                        brain["trading"]["strategy_notes"].append({
+                            "note": f"[LLM-INSIGHT] {item['insight']} → {item.get('action','')}",
+                            "confidence": item.get("confidence",50),
+                            "timestamp": datetime.utcnow().isoformat()
+                        })
+        except Exception as llm_e:
+            print(f"Deep LLM error: {llm_e}")
+    except Exception as e:
+        print(f"Deep learn error: {e}")
+
+def _fetch_trading_intel():
+    try:
+        r = requests.get("https://api.coingecko.com/api/v3/search/trending", timeout=10)
+        if r.status_code == 200:
+            trending = []
+            for c in r.json().get("coins", [])[:7]:
+                item = c.get("item", {})
+                trending.append({"name": item.get("name",""), "symbol": item.get("symbol",""), "source": "coingecko"})
+            brain["trading"]["market_insights"].append({
+                "timestamp": datetime.utcnow().isoformat(),
+                "observation": f"Trending: {[t['symbol'] for t in trending]}",
+                "mood": "TRENDING", "data": trending, "quality": "HIGH"
+            })
+
+        r2 = requests.get("https://api.geckoterminal.com/api/v2/networks/bsc/new_pools",
+                          params={"page":1}, headers={"Accept":"application/json;version=20230302"}, timeout=10)
+        if r2.status_code == 200:
+            for pool in r2.json().get("data", [])[:10]:
+                attr = pool.get("attributes", {})
+                liq  = float(attr.get("reserve_in_usd", 0) or 0)
+                rel  = pool.get("relationships", {})
+                tid  = rel.get("base_token", {}).get("data", {}).get("id", "")
+                addr = tid.replace("bsc_", "") if tid else ""
+                if addr and liq > 2000:
+                    threading.Thread(target=_process_new_token, args=(addr, addr, "GeckoTerminal"), daemon=True).start()
+        brain["trading"]["market_insights"] = brain["trading"]["market_insights"][-200:]
+    except Exception as e:
+        print(f"⚠️ Trading intel error: {e}")
+
+def _learn_from_internet_data():
+    try:
+        recent = [i for i in brain["trading"]["market_insights"][-10:] if i.get("quality") == "HIGH"]
+        trending_symbols = []
+        for ins in recent:
+            trending_symbols.extend([d.get("symbol","") for d in ins.get("data",[])])
+        if trending_symbols:
+            summary = f"Trending={trending_symbols[:3]}, F&G={market_cache.get('fear_greed',50)}"
+            prompt = (f"BSC bot insights: {summary}. 2 actionable JSON: "
+                      f'[{{"insight":"...","action":"...","confidence":0-100}}]')
+            try:
+                client = _get_freeflow_client()
+                response = client.chat(model=MODEL_FAST,
+                                       messages=[{"role":"system","content":"JSON only."},
+                                                 {"role":"user","content":prompt}],
+                                       max_tokens=200)
+                reply = response if isinstance(response, str) else (
+                    response.choices[0].message.content if hasattr(response,"choices") else str(response))
+                _raw = reply.strip().replace("```json","").replace("```","").strip()
+                _raw = re.sub(r',\s*([}\]])', r'', _raw)
+                _match = re.search(r'\[.*\]', _raw, re.DOTALL)
+                if _match:
+                    insights = json.loads(_match.group(0))
+                    if isinstance(insights, list):
+                        for item in insights:
+                            if isinstance(item, dict) and item.get("insight"):
+                                brain["trading"]["strategy_notes"].append({
+                                    "note": f"[INTERNET-INSIGHT] {item['insight']}",
+                                    "timestamp": datetime.utcnow().isoformat()
+                                })
+            except Exception as le:
+                print(f"⚠️ Internet LLM error: {le}")
+    except Exception as e:
+        print(f"⚠️ Internet learning error: {e}")
+
+def fetch_internet_data_24x7():
+    print("🌐 Internet Data Engine started!")
+    time.sleep(45)
+    while True:
+        try:
+            _fetch_trading_intel()
+            _learn_from_internet_data()
+            threading.Thread(target=_save_brain_to_db, daemon=True).start()
+        except Exception as e:
+            print(f"⚠️ Internet engine error: {e}")
+        time.sleep(1800)
+
+def _check_milestones():
+    try:
+        milestones = self_awareness["growth_tracking"]["milestones"]
+        achieved   = [m.get("title","") for m in milestones]
+        checks = [
+            (len(brain["trading"]["token_blacklist"]) >= 10, "Blacklisted 10 dangerous tokens 🛡️"),
+            (len(brain["trading"]["best_patterns"])   >= 5,  "Learned 5 winning patterns 📈"),
+            (brain.get("total_learning_cycles",0)     >= 100,"100 learning cycles complete 🧠"),
+        ]
+        for condition, title in checks:
+            if condition and title not in achieved:
+                milestones.append({"title": title, "achieved_at": datetime.utcnow().isoformat()})
+                send_telegram(f"🏆 <b>MILESTONE!</b>\n{title}")
+        self_awareness["growth_tracking"]["milestones"] = milestones
+    except Exception as e:
+        print(f"Milestone error: {e}")
+
+def continuous_learning():
+    print("🧠 Learning Engine started!")
+    _load_brain_from_db()
+    time.sleep(3)
+    cycle = brain.get("total_learning_cycles", 0)
+    last_fast = last_deep = last_hour = 0
+    print(f"📚 Learning from cycle #{cycle}")
+    while True:
+        try:
+            cycle += 1
+            brain["total_learning_cycles"] = cycle
+            now = time.time()
+            if now - last_fast >= 60:
+                last_fast = now
+            try:
+                fetch_market_data()
+                fetch_pancakeswap_data()
+            except Exception as e:
+                print(f"Market fetch error: {e}")
+            _learn_trading_patterns()
+            _learn_from_new_pairs()
+            try:
+                if supabase:
+                    supabase.table("memory").upsert({
+                        "session_id": "MRBLACK_CYCLE",
+                        "role":       "system",
+                        "content":    str(cycle),
+                        "updated_at": datetime.utcnow().isoformat()
+                    }).execute()
+            except Exception: pass
+            if now - last_deep >= 900:
+                last_deep = now
+                _deep_llm_learning()
+                update_self_awareness()
+                _save_brain_to_db()
+                print(f"📚 Cycle #{cycle} | W:{len(brain['trading']['best_patterns'])} L:{len(brain['trading']['avoid_patterns'])}")
+            if now - last_hour >= 3600:
+                last_hour = now
+                _check_milestones()
+                send_telegram(
+                    f"MrBlack Report #{cycle}\n"
+                    f"IQ:{self_awareness['performance_intelligence']['trading_iq']}/100\n"
+                    f"BNB:${market_cache.get('bnb_price',0):.0f} F&G:{market_cache.get('fear_greed',50)}"
+                )
+        except Exception as e:
+            print(f"Learning cycle error: {e}")
+        time.sleep(300)
+
+# ========== FEEDBACK LOOP ==========
+feedback_log = []
+
+def log_recommendation(address, overall, score, total):
+    feedback_log.append({
+        "address": address, "recommendation": overall, "score": score, "total": total,
+        "logged_at": datetime.utcnow().isoformat(),
+        "validate_after": (datetime.utcnow() + timedelta(hours=24)).isoformat(),
+        "validated": False, "outcome": None, "was_correct": None
+    })
+    if len(feedback_log) > 500: feedback_log.pop(0)
+
+def _validate_past_recommendations():
+    now = datetime.utcnow()
+    validated = correct = 0
+    for entry in feedback_log:
+        if entry.get("validated"): continue
+        try:
+            if datetime.fromisoformat(entry.get("validate_after","")) > now: continue
+        except Exception: continue
+        addr = entry.get("address","")
+        if not addr: continue
+        try:
+            r = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{addr}", timeout=8)
+            if r.status_code != 200: continue
+            bsc = [p for p in r.json().get("pairs",[]) if p.get("chainId")=="bsc"]
+            if not bsc:
+                entry["validated"] = True
+                entry["was_correct"] = entry["recommendation"] in ["DANGER","RISK"]
+                continue
+            change = float(bsc[0].get("priceChange",{}).get("h24",0) or 0)
+            rec    = entry.get("recommendation","")
+            was_correct = (rec == "SAFE" and change > 0) or (rec in ["DANGER","RISK"] and change < -20) or rec == "CAUTION"
+            entry.update({"validated": True, "outcome": f"24h:{change:+.1f}%", "was_correct": was_correct})
+            validated += 1
+            if was_correct: correct += 1
+        except Exception as e:
+            print(f"⚠️ Feedback err: {e}")
+    if validated > 0:
+        acc = round(correct/validated*100, 1)
+        self_awareness["performance_intelligence"]["overall_accuracy"] = acc
+
+def feedback_validation_loop():
+    print("🔄 Feedback Loop started!")
+    time.sleep(120)
+    while True:
+        try: _validate_past_recommendations()
+        except Exception as e: print(f"⚠️ Feedback loop: {e}")
+        time.sleep(3600)
+
+# ========== AUTO CHECK NEW PAIR ==========
+def _auto_check_new_pair(pair_address: str):
+    print(f"⏳ Waiting 3 min: {pair_address[:10]}")
+    time.sleep(180)
+    try:
+        _ar = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{pair_address}", timeout=8)
+        if _ar.status_code == 200:
+            _bp = [p for p in (_ar.json() or {}).get("pairs",[]) or [] if p and p.get("chainId")=="bsc"]
+            if _bp:
+                _ct = _bp[0].get("pairCreatedAt", 0) or 0
+                if _ct and (time.time() - _ct/1000)/60 > 10080:
+                    return
+    except Exception: pass
+
+    result  = run_full_sniper_checklist(pair_address)
+    score   = result.get("score", 0)
+    total   = result.get("total", 1)
+    rec     = result.get("recommendation", "")
+    overall = result.get("overall", "UNKNOWN")
+    print(f"🔍 Auto-check {pair_address[:10]}: {overall} ({score}/{total})")
+
+    if overall in ["SAFE", "CAUTION"]:
+        telegram_new_token_alert(pair_address, score, total, rec)
+    if overall == "SAFE" and score >= int(total * 0.50):
+        try: _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
+        except Exception as e: print(f"Auto buy error: {e}")
+    elif overall == "CAUTION" and score >= int(total * 0.45):
+        try: _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
+        except Exception as e: print(f"Auto buy caution error: {e}")
+
+    knowledge_base["bsc"]["new_tokens"].append({
+        "address": pair_address, "overall": overall,
+        "score": score, "total": total, "time": datetime.utcnow().isoformat()
+    })
+    knowledge_base["bsc"]["new_tokens"] = knowledge_base["bsc"]["new_tokens"][-20:]
+
+# ========== POLL NEW PAIRS ==========
+def poll_new_pairs():
+    import asyncio, json as _json
+    try:
+        import websockets as _ws
+    except ImportError:
+        _ws = None
+
+    FACTORY    = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
+    PAIR_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
+    WBNB_LOWER = WBNB.lower()
+    WSS_ENDPOINTS = ["wss://bsc.publicnode.com", "wss://bsc-ws-node.nariox.org:443"]
+
+    async def _listen(wss_url):
+        try:
+            async with _ws.connect(wss_url, ping_interval=20, ping_timeout=10, close_timeout=5) as ws:
+                await ws.send(_json.dumps({
+                    "id": 1, "method": "eth_subscribe",
+                    "params": ["logs", {"address": [FACTORY, PANCAKE_V3_FACTORY], "topics": [[PAIR_TOPIC]]}],
+                    "jsonrpc": "2.0"
+                }))
+                await asyncio.wait_for(ws.recv(), timeout=10)
+                while True:
+                    msg  = await asyncio.wait_for(ws.recv(), timeout=90)
+                    data = _json.loads(msg)
+                    log  = (data.get("params") or {}).get("result") or {}
+                    if not log: continue
+                    topics   = log.get("topics") or []
+                    raw_data = log.get("data", "0x")
+                    token0 = ("0x" + topics[1][-40:]) if len(topics) > 1 else ""
+                    token1 = ("0x" + topics[2][-40:]) if len(topics) > 2 else ""
+                    pair_addr = ""
+                    if len(raw_data) >= 66:
+                        pair_addr = "0x" + raw_data[26:66]
+                    new_token = token0 if (token0 and token0.lower() != WBNB_LOWER) else (
+                                token1 if (token1 and token1.lower() != WBNB_LOWER) else "")
+                    if new_token:
+                        threading.Thread(target=_process_new_token, args=(new_token, pair_addr, "WebSocket"), daemon=True).start()
+        except Exception as e:
+            print(f"⚠️ WSS error: {str(e)[:50]}")
+
+    async def _ws_loop():
+        idx = 0
+        while True:
+            try: await _listen(WSS_ENDPOINTS[idx % len(WSS_ENDPOINTS)])
+            except Exception as e: print(f"⚠️ WSS loop: {e}")
+            idx += 1
+            await asyncio.sleep(5)
+
+    if _ws is not None:
+        def _run_ws():
+            try: asyncio.run(_ws_loop())
+            except Exception as ex: print(f"⚠️ WSS thread: {ex}")
+        threading.Thread(target=_run_ws, daemon=True).start()
+
+    _cycle = 0
+    while True:
+        try:
+            _cycle += 1
+            _nc = time.time()
+            # Cleanup old entries
+            discovered_addresses_clean = {k: v for k, v in discovered_addresses.items() if _nc - v < DISCOVERY_TTL}
+            discovered_addresses.clear()
+            discovered_addresses.update(discovered_addresses_clean)
+
+            try:
+                rb = requests.get("https://api.dexscreener.com/token-boosts/latest/v1", timeout=10)
+                if rb.status_code == 200:
+                    boosts = rb.json() if isinstance(rb.json(), list) else []
+                    for item in boosts[:20]:
+                        if item.get("chainId") == "bsc":
+                            addr = item.get("tokenAddress","")
+                            if addr:
+                                threading.Thread(target=_process_new_token, args=(addr, addr, "DexBoost"), daemon=True).start()
+            except Exception: pass
+
+            queries = ["new","moon","pepe","meme","inu","doge","safe","baby","elon","based"]
+            q = queries[_cycle % len(queries)]
+            try:
+                rs = requests.get(f"https://api.dexscreener.com/latest/dex/search?q={q}", timeout=10)
+                if rs.status_code == 200:
+                    for p in (rs.json() or {}).get("pairs",[]) or []:
+                        if p and p.get("chainId") == "bsc":
+                            addr = (p.get("baseToken") or {}).get("address","")
+                            if addr:
+                                threading.Thread(target=_process_new_token, args=(addr, p.get("pairAddress",""), "DexSearch"), daemon=True).start()
+            except Exception: pass
+        except Exception as e:
+            print(f"⚠️ Fallback error: {e}")
+        time.sleep(300)
+
+# ========== 13-STAGE CHECKLIST ==========
+def run_full_sniper_checklist(address: str) -> Dict:
+    result = {
+        "address": address, "checklist": [],
+        "overall": "UNKNOWN", "score": 0, "total": 0,
+        "recommendation": "", "dex_data": {}
+    }
+    goplus_data = {}
+    try:
+        gp_res = requests.get(
+            "https://api.gopluslabs.io/api/v1/token_security/56",
+            params={"contract_addresses": address}, timeout=12
+        )
+        if gp_res.status_code == 200:
+            goplus_data = gp_res.json().get("result", {}).get(address.lower(), {})
+    except Exception as e:
+        print(f"⚠️ GoPlus error: {e}")
+
+    goplus_empty = not bool(goplus_data)
+    bscscan_source = "verified" if _gp_str(goplus_data, "is_open_source", "0") == "1" else ""
+
+    dex_data = get_dexscreener_token_data(address)
+    result["dex_data"] = dex_data
+
+    def add(label, status, value, stage):
+        result["checklist"].append({"label": label, "status": status, "value": value, "stage": stage})
+
+    verified  = bool(bscscan_source)
+    mint_ok   = not _gp_bool_flag(goplus_data, "is_mintable")
+    renounced = _gp_str(goplus_data, "owner_address") in [
+        "0x0000000000000000000000000000000000000000",
+        "0x000000000000000000000000000000000000dead", ""]
+
+    add("Contract Verified",       "pass" if verified  else "fail", "YES" if verified  else "NO",    1)
+    add("Mint Authority Disabled", "pass" if mint_ok   else "fail", "SAFE" if mint_ok  else "RISK",  1)
+    add("Ownership Renounced",     "pass" if renounced else "warn", "YES" if renounced else "MAYBE", 1)
+
+    dex_list = goplus_data.get("dex", [])
+    liq_usd = liq_locked = 0.0
+    if isinstance(dex_list, list) and dex_list:
+        for pool in dex_list:
+            liq_usd    += float(pool.get("liquidity",  0) or 0)
+            liq_locked += float(pool.get("lock_ratio", 0) or 0)
+        liq_locked = (liq_locked / len(dex_list)) * 100
+
+    bnb_price = market_cache.get("bnb_price", 300) or 300
+    liq_bnb   = liq_usd / bnb_price
+
+    buy_tax  = _gp_float(goplus_data, "buy_tax")  * 100
+    sell_tax = _gp_float(goplus_data, "sell_tax") * 100
+    hidden   = _gp_bool_flag(goplus_data, "can_take_back_ownership") or _gp_bool_flag(goplus_data, "hidden_owner")
+    transfer = not _gp_bool_flag(goplus_data, "transfer_pausable")
+
+    add("Liquidity ≥ 1 BNB",       "pass" if liq_bnb > 2    else ("warn" if liq_bnb > 0.5 else "fail"), f"{liq_bnb:.2f} BNB", 1)
+    add("Liquidity Locked",         "pass" if liq_locked > 80 else ("warn" if liq_locked > 20 else "fail"), f"{liq_locked:.0f}%", 1)
+    add("Buy Tax ≤ 8%",             "pass" if buy_tax <= 8   else "fail", f"{buy_tax:.1f}%",  1)
+    add("Sell Tax ≤ 8%",            "pass" if sell_tax <= 8  else "fail", f"{sell_tax:.1f}%", 1)
+    add("No Hidden Functions",      "pass" if not hidden      else "fail", "CLEAN" if not hidden else "RISK", 1)
+    add("Transfer Allowed",         "pass" if transfer        else "fail", "YES" if transfer else "PAUSED", 1)
+
+    holders_list = goplus_data.get("holders", [])
+    top_holder = top10_pct = 0.0
+    if isinstance(holders_list, list) and holders_list:
+        for i, h in enumerate(holders_list[:10]):
+            pct = float(h.get("percent", 0) or 0) * 100
+            if i == 0: top_holder = pct
+            top10_pct += pct
+
+    suspicious  = _gp_bool_flag(goplus_data, "is_airdrop_scam")
+    creator_pct = _gp_float(goplus_data, "creator_percent") * 100
+
+    add("Top Holder < 7%",          "pass" if top_holder < 7  else ("warn" if top_holder < 15  else "fail"), f"{top_holder:.1f}%", 1)
+    add("Top 10 Holders < 40%",     "pass" if top10_pct < 40  else ("warn" if top10_pct < 50   else "fail"), f"{top10_pct:.1f}%",  1)
+    add("No Suspicious Clustering", "pass" if not suspicious   else "fail", "CLEAN" if not suspicious else "RISK", 1)
+    add("Dev Wallet Not Dumping",   "pass" if creator_pct < 5  else ("warn" if creator_pct < 15 else "fail"), f"{creator_pct:.1f}%", 1)
+
+    honeypot  = _gp_bool_flag(goplus_data, "is_honeypot")
+    can_sell  = not _gp_bool_flag(goplus_data, "cannot_sell_all")
+    slippage_ok = sell_tax <= 15
+
+    add("Honeypot Safe",           "fail" if honeypot    else "pass", "DANGER" if honeypot    else "SAFE", 2)
+    add("Can Sell All Tokens",     "fail" if not can_sell else "pass", "NO"    if not can_sell else "YES",  2)
+    add("Slippage OK",             "pass" if slippage_ok  else "warn", f"Sell={sell_tax:.0f}%",             2)
+
+    token_age_min = 0.0
+    try:
+        age_r = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{address}", timeout=10)
+        if age_r.status_code == 200:
+            bsc_pairs = [p for p in (age_r.json() or {}).get("pairs",[]) or [] if p and p.get("chainId")=="bsc"]
+            if bsc_pairs:
+                created_at = bsc_pairs[0].get("pairCreatedAt", 0)
+                if created_at:
+                    token_age_min = (time.time() - created_at / 1000) / 60
+    except Exception as e:
+        print(f"⚠️ Token age error: {e}")
+
+    add("Token Age ≥ 3 Min", "pass" if token_age_min >= 3 else "warn", f"{token_age_min:.0f} min" if token_age_min > 0 else "Unknown", 3)
+    add("Sniper Pump Over",  "pass" if token_age_min >= 5 else "warn", "OK" if token_age_min >= 5 else "WAIT", 3)
+
+    buys_5m = dex_data.get("buys_5m", 0); sells_5m = dex_data.get("sells_5m", 0)
+    buys_1h = dex_data.get("buys_1h", 0); sells_1h = dex_data.get("sells_1h", 0)
+
+    add("Buy > Sell (5min)", "pass" if buys_5m > sells_5m else "warn", f"B:{buys_5m} S:{sells_5m}", 4)
+    add("Buy > Sell (1hr)",  "pass" if buys_1h > sells_1h else "warn", f"B:{buys_1h} S:{sells_1h}", 4)
+    add("Volume 24h",        "pass" if dex_data.get("volume_24h",0) > 1000 else "warn", f"${dex_data.get('volume_24h',0):,.0f}", 4)
+
+    add("1st Entry 0.002-0.005 BNB", "pass", "Follow Rule", 5)
+    add("Max Position ≤ 3%",         "pass", "2-3% Balance", 5)
+    add("Max 3-4 Entries/Token",     "pass", "No Chasing", 5)
+
+    in_dex     = _gp_bool_flag(goplus_data, "is_in_dex")
+    pool_count = len(dex_list) if isinstance(dex_list, list) else 0
+    change_1h  = dex_data.get("change_1h", 0)
+
+    add("Listed on DEX",         "pass" if in_dex     else "fail",  "YES" if in_dex else "NO", 6)
+    add("DEX Pools",             "pass" if pool_count > 0 else "warn", f"{pool_count} pools", 6)
+    add("1h Price Change",       "pass" if change_1h > 0  else "warn", f"{change_1h:+.1f}%",  6)
+    add("Vol -50% → Exit 50%",   "pass", "Rule Active", 6)
+    add("Vol -90% → Exit Fully", "pass", "Rule Active", 6)
+
+    owner_pct = _gp_float(goplus_data, "owner_percent") * 100
+
+    add("Dev/Creator < 5%",     "pass" if creator_pct < 5  else ("warn" if creator_pct < 15 else "fail"), f"{creator_pct:.1f}%", 7)
+    add("Owner Wallet < 5%",    "pass" if owner_pct < 5    else ("warn" if owner_pct < 15   else "fail"), f"{owner_pct:.1f}%",   7)
+    add("Whale Conc. OK",       "pass" if top10_pct < 45   else "fail",  f"{top10_pct:.1f}% top10",       7)
+    add("Dev Sell → Exit Rule", "pass", "Telegram Alert Active", 7)
+
+    lp_holders = int(_gp_str(goplus_data, "lp_holder_count", "0"))
+
+    add("LP Lock > 80%",       "pass" if liq_locked > 80 else ("warn" if liq_locked > 20 else "fail"), f"{liq_locked:.0f}%", 8)
+    add("LP Holders Present",  "pass" if lp_holders > 0  else "warn", f"{lp_holders} LP holders", 8)
+    add("LP Drop → Exit Rule", "pass", "Monitored", 8)
+
+    low_tax       = buy_tax <= 5 and sell_tax <= 5
+    fast_trade_ok = low_tax and liq_locked > 20 and not honeypot
+
+    add("Low Tax Fast Trade",   "pass" if low_tax       else "warn", "FAST OK" if low_tax else f"{buy_tax:.0f}%+{sell_tax:.0f}%", 9)
+    add("15-30% Target Viable", "pass" if fast_trade_ok else "warn", "YES" if fast_trade_ok else "CHECK CONDITIONS", 9)
+    add("Capital Rotation",     "pass", "After target hit", 9)
+
+    sl_text = "15-20% SL (New)" if token_age_min < 60 else ("20-25% SL (Hyped)" if token_age_min < 360 else "10-15% SL (Mature)")
+    add("Stop Loss Level",      "pass", sl_text,          10)
+    add("Price Monitor Active", "pass", "Auto alerts ON", 10)
+
+    add("+20% → SL to Cost", "pass", "Rule Active", 11)
+    add("+30% → Sell 25%",   "pass", "Rule Active", 11)
+    add("+50% → Sell 25%",   "pass", "Rule Active", 11)
+    add("+100% → Sell 25%",  "pass", "Rule Active", 11)
+    add("+200% → Keep 10%",  "pass", "Rule Active", 11)
+
+    add("Token Logged",       "pass", "Auto-saved", 12)
+    add("Pattern DB Updated", "pass", "Active",     12)
+
+    add("Paper Mode First",    "pass", "Golden Rule", 13)
+    add("70% WR Before Real",  "pass", "Discipline",  13)
+    add("30+ Trades Required", "pass", "Before Real", 13)
+
+    passed = sum(1 for c in result["checklist"] if c["status"] == "pass")
+    failed = sum(1 for c in result["checklist"] if c["status"] == "fail")
+    total  = len(result["checklist"])
+    pct    = round((passed / total) * 100) if total > 0 else 0
+
+    result["score"] = passed
+    result["total"] = total
+
+    critical_fails = [c for c in result["checklist"] if c["status"] == "fail" and c["label"] in [
+        "Honeypot Safe", "Buy Tax ≤ 8%", "Sell Tax ≤ 8%",
+        "No Hidden Functions", "Transfer Allowed", "Mint Authority Disabled", "Liquidity ≥ 1 BNB"
+    ]]
+    if goplus_empty:
+        critical_fails = [c for c in result["checklist"] if c["status"] == "fail" and c["label"] == "Honeypot Safe"]
+
+    if critical_fails or honeypot:
+        result["overall"]        = "DANGER"
+        result["recommendation"] = "❌ SKIP — Critical fail. Do NOT buy."
+    elif failed >= 8 or pct < 35:
+        result["overall"]        = "RISK"
+        result["recommendation"] = "⚠️ HIGH RISK — Multiple issues. Skip or 0.001 BNB test max."
+    elif pct >= 55:
+        result["overall"]        = "SAFE"
+        result["recommendation"] = "✅ LOOKS SAFE — Start PAPER. Follow Stage 2 + 3 rules."
+    else:
+        result["overall"]        = "CAUTION"
+        result["recommendation"] = "⚠️ CAUTION — Some issues. 0.001 BNB test only."
+
+    threading.Thread(target=log_recommendation, args=(address, result["overall"], passed, total), daemon=True).start()
+    return result
+
+def scan_bsc_token(address): return run_full_sniper_checklist(address)
+
+# ========== TRADE LOGGING ==========
+def log_trade_internal(session_id: str, trade: Dict):
+    sess = get_or_create_session(session_id)
+    pnl  = float(trade.get("pnl_pct", 0))
+    win  = pnl > 0
+    lesson = {
+        "token":            trade.get("token_address", ""),
+        "entry_price":      trade.get("entry_price",   0),
+        "exit_price":       trade.get("exit_price",    0),
+        "pnl_pct":          pnl,
+        "win":              win,
+        "lesson":           trade.get("lesson", ""),
+        "timestamp":        datetime.utcnow().isoformat()
+    }
+    sess["pattern_database"].append(lesson)
+    sess["trade_count"] += 1
+    if win:
+        sess["win_count"] += 1
+        sess["pnl_24h"]   += pnl
+    else:
+        sess["daily_loss"] += abs(pnl)
+    token_addr = trade.get("token_address", "")
+    if token_addr:
+        remove_position_from_monitor(token_addr)
+    threading.Thread(target=_save_session_to_db, args=(session_id,), daemon=True).start()
+    return lesson
+
+def check_paper_to_real_readiness(session_id: str) -> Dict:
+    sess        = get_or_create_session(session_id)
+    trade_count = sess.get("trade_count", 0)
+    win_count   = sess.get("win_count",   0)
+    daily_loss  = sess.get("daily_loss",  0.0)
+    win_rate    = round((win_count / trade_count * 100), 1) if trade_count > 0 else 0.0
+    ready       = trade_count >= 30 and win_rate >= 70.0 and daily_loss < 8.0
+    return {
+        "ready": ready, "stop_trading": daily_loss >= 8.0,
+        "trade_count": trade_count, "win_count": win_count,
+        "win_rate": win_rate, "daily_loss": round(daily_loss, 2),
+        "message": "✅ Ready!" if ready else f"📝 Need 30+ trades ({trade_count}) & 70% WR ({win_rate:.0f}%).",
+        "transition": {"week_1": "25%", "week_2": "50%", "week_3": "75%", "week_4": "100%"}
+    }
+
+# ========== LLM ==========
+SYSTEM_PROMPT = """[HARD RULES — THESE OVERRIDE EVERYTHING — NEVER BREAK]
+R1. NAAM ZERO: Kabhi bhi "Naem", "bhai", "Naem bhai" mat likho. Zero. Har reply mein. Seedha jawab do.
+R2. SHORT: Simple sawaal = 1-2 lines max. Tabhi zyada likho jab user ne detail manga ho.
+R3. NO REPEAT: Same baat ek reply mein ek se zyada baar nahi.
+R4. NO INTERNAL VARS: TRADING_IQ, EMOTION, UPTIME, CONFIDENCE, SESSIONS_TOGETHER — text mein kabhi nahi.
+R5. NO CLICHE: "market mein fear hai lekin opportunities" — permanently banned.
+R6. NO END QUESTION: Har reply ke end mein sawaal mat poocho.
+R7. ACCURATE DATA: Context mein TokensDiscovered, QueueSize, TotalTrades fields hain — inhe use karo.
+R8. PERMANENT_USER_RULES field — hamesha follow karo.
+R9. USER ORDERS: User jo maange — karo. Agar possible nahi to seedha bolo.
+R10. DISCOVERED TOKENS: Context mein list hai to naam aur address dono do.
+R11. LEARNING CYCLES: Sirf real CYCLES number use karo — fake number kabhi nahi.
+[END HARD RULES]
+
+Tu MrBlack hai — BSC Sniper AI. Hamesha Hinglish mein. Sharp, concise, honest.
+13-Stage checklist + Auto trading + Price monitor + Telegram alerts sab active hai.
+Paper mode se shuru, 70% WR ke baad real trading. Kabhi profit guarantee nahi.
+"""
+
+_freeflow_client = None
+
+def _get_freeflow_client():
+    global _freeflow_client
+    if _freeflow_client is None:
+        _freeflow_client = FreeFlowClient()
+    return _freeflow_client
+
+def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
+    try:
+        client       = _get_freeflow_client()
+        trade_count  = session_data.get("trade_count", 0)
+        win_count    = session_data.get("win_count",   0)
+        win_rate_str = f"{round(win_count/trade_count*100,1)}%" if trade_count > 0 else "No trades yet"
+
+        brain_ctx = _get_brain_context_for_llm()
+        user_ctx  = get_user_context_for_llm()
+        sa_ctx    = get_self_awareness_context_for_llm()
+        learn_ctx = get_learning_context_for_decision()
+
+        _auto_sess    = get_or_create_session(AUTO_SESSION_ID)
+        _auto_balance = _auto_sess.get("paper_balance", 5.0)
+        _auto_trades  = _auto_sess.get("trade_count", 0)
+        _auto_wins    = _auto_sess.get("win_count", 0)
+        _auto_wr      = round(_auto_wins / _auto_trades * 100, 1) if _auto_trades > 0 else 0
+        _auto_pos     = len(auto_trade_stats.get("running_positions", {}))
+        _auto_pnl     = round(auto_trade_stats.get("auto_pnl_total", 0.0), 2)
+
+        ctx = (
+            f"\n[BNB=${market_cache['bnb_price']:.2f}|F&G={market_cache['fear_greed']}/100"
+            f"|Paper={session_data.get('paper_balance',5.0):.3f}BNB"
+            f"|Trades={trade_count} WR={win_rate_str}"
+            f"|NewPairs={len(new_pairs_queue)}|Monitoring={len(monitored_positions)}"
+            f"|TokensDiscovered={len(discovered_addresses)}"
+            f"|LearningCyclesExact={brain.get('total_learning_cycles',0)}"
+            + (f"|Brain:{brain_ctx}" if brain_ctx else "")
+            + (f"|Learned:{learn_ctx}" if learn_ctx else "")
+            + (f"|SA:{sa_ctx}" if sa_ctx else "")
+            + (f"|User:{user_ctx}" if user_ctx and user_ctx != "NEW_USER" else "")
+            + f"|AUTO_BAL={_auto_balance:.4f}|AUTO_POS={_auto_pos}|AUTO_WR={_auto_wr}%|AUTO_PNL={_auto_pnl}%"
+            + f"]"
+        )
+
+        memory_facts = []
+        if user_profile.get("name"):
+            memory_facts.append(f"User: {user_profile['name']}")
+        if user_profile.get("user_rules"):
+            for rule in user_profile["user_rules"][-5:]:
+                memory_facts.append(f"Permanent rule: {rule[:80]}")
+        if trade_count > 0:
+            wr = round(win_count / trade_count * 100, 1)
+            memory_facts.append(f"{trade_count} paper trades, WR {wr}%")
+
+        memory_block = ""
+        if memory_facts:
+            memory_block = "\n\n[MRBLACK MEMORY]\n" + "\n".join(f"- {f}" for f in memory_facts) + "\n[END MEMORY]"
+
+        messages = [{"role": "system", "content": SYSTEM_PROMPT + memory_block}]
+        messages += [{"role": m["role"], "content": m["content"]} for m in history[-20:]]
+
+        _perm_rules = user_profile.get("user_rules", [])
+        _perm_str = (" | UserRules: " + " | ".join(_perm_rules[-3:])) if _perm_rules else ""
+        rules_reminder = (
+            f"\n[REAL_CYCLES={brain.get('total_learning_cycles',0)}]"
+            f"\n[REPLY: 1.NO NAAM 2.SHORT 3.NO INTERNAL VARS{_perm_str}]"
+        )
+        messages.append({"role": "user", "content": user_message + ctx + rules_reminder})
+
+        reply_text = None
+        try:
+            response = client.chat(model=MODEL_NAME, messages=messages, max_tokens=600)
+            if isinstance(response, str): reply_text = response.strip()
+            elif hasattr(response, "choices"): reply_text = response.choices[0].message.content.strip()
+            elif hasattr(response, "content"): reply_text = response.content.strip()
+        except Exception as e1:
+            print(f"FreeFlow P1 fail: {e1}")
+
+        if not reply_text:
+            try:
+                r2 = client.completions.create(model=MODEL_NAME, messages=messages, max_tokens=600)
+                reply_text = (r2.choices[0].message.content if hasattr(r2, "choices") else str(r2)).strip()
+            except Exception as e2:
+                print(f"FreeFlow P2 fail: {e2}")
+
+        return reply_text or "AI temporarily unavailable. Thodi der mein try karo."
+
+    except NoProvidersAvailableError:
+        return "⚠️ AI temporarily down. Thodi der mein try karo."
+    except Exception as e:
+        print(f"⚠️ LLM error: {e}")
+        return f"🤖 Error: {str(e)[:80]}"
+
+# ========== FLASK ROUTES ==========
+_startup_done = False
+_startup_lock = threading.Lock()
+
+@app.before_request
+def _startup_once():
+    global _startup_done
+    if _startup_done: return
+    with _startup_lock:
+        if _startup_done: return
+        _startup_done = True
+        try:
+            _load_user_profile()
+            print(f"✅ Profile: {user_profile.get('name')}")
+        except Exception as e:
+            print(f"⚠️ Profile error: {e}")
+        try:
+            _load_brain_from_db()
+            _ensure_brain_structure()
+            print(f"✅ Brain: cycles={brain.get('total_learning_cycles',0)}")
+        except Exception as e:
+            print(f"⚠️ Brain error: {e}")
+        import time as _time
+        def _delayed(fn, delay):
+            def _wrap():
+                _time.sleep(delay)
+                fn()
+            return _wrap
+        threading.Thread(target=fetch_market_data,                    daemon=True).start()
+        threading.Thread(target=_delayed(poll_new_pairs,        10),  daemon=True).start()
+        threading.Thread(target=_delayed(price_monitor_loop,    15),  daemon=True).start()
+        threading.Thread(target=_delayed(track_smart_wallets,   20),  daemon=True).start()
+        threading.Thread(target=_delayed(continuous_learning,   25),  daemon=True).start()
+        threading.Thread(target=_delayed(auto_position_manager, 30),  daemon=True).start()
+        threading.Thread(target=_delayed(self_awareness_loop,   35),  daemon=True).start()
+        threading.Thread(target=_delayed(fetch_internet_data_24x7, 45), daemon=True).start()
+        threading.Thread(target=_delayed(feedback_validation_loop, 50), daemon=True).start()
+        print("✅ All background threads started")
+
+@app.route("/")
+def home():
+    return render_template("index.html")
+
+@app.route("/init-session", methods=["POST"])
+def init_session():
+    data = request.get_json() or {}
+    client_id = data.get("client_id", "").strip()
+    session_id = client_id if (client_id and len(client_id) > 10) else str(uuid.uuid4())
+    get_or_create_session(session_id)
+    sess = sessions.get(session_id, {})
+    return jsonify({
+        "session_id":    session_id,
+        "status":        "ok",
+        "is_returning":  bool(sess.get("trade_count", 0) > 0 or sess.get("history")),
+        "trade_count":   sess.get("trade_count", 0),
+        "paper_balance": sess.get("paper_balance", 5.0),
+    })
+
+@app.route("/trading-data", methods=["GET", "POST"])
+def trading_data():
+    if request.method == "POST":
+        session_id = (request.get_json() or {}).get("session_id", "default")
+    else:
+        session_id = request.args.get("session_id", "default")
+    sess      = get_or_create_session(session_id)
+    bnb_price = market_cache.get("bnb_price", 0)
+    _auto_sess_td = get_or_create_session(AUTO_SESSION_ID)
+    return jsonify({
+        "paper":          f"{_auto_sess_td.get('paper_balance', 5.0):.4f}",
+        "real":           f"{sess.get('real_balance', 0):.3f}",
+        "pnl":            f"+{sess.get('pnl_24h', 0):.1f}%",
+        "bnb_price":      bnb_price,
+        "fear_greed":     market_cache.get("fear_greed", 50),
+        "positions":      sess.get("positions", []),
+        "trade_count":    sess.get("trade_count", 0),
+        "win_rate":       round((sess.get("win_count",0)/sess.get("trade_count",1)*100),1) if sess.get("trade_count",0) > 0 else 0,
+        "daily_loss":     round(sess.get("daily_loss", 0), 2),
+        "limit_reached":  sess.get("daily_loss", 0) >= 8.0,
+        "new_pairs_found":len(new_pairs_queue),
+        "monitoring":     len(monitored_positions)
+    })
+
+@app.route("/chat", methods=["POST"])
+def chat():
+    data       = request.get_json() or {}
+    user_msg   = data.get("message", "").strip()
+    session_id = data.get("session_id") or str(uuid.uuid4())
+    mode       = data.get("mode", "paper")
+    if not user_msg:
+        return jsonify({"reply": "Kuch toh bolo! 😅", "session_id": session_id})
+    sess = get_or_create_session(session_id)
+    sess["mode"] = mode
+    if sess.get("daily_loss", 0) >= 8.0:
+        return jsonify({"reply": "🛑 Daily loss limit (8%) reach ho gaya. Kal fresh start karo!", "session_id": session_id})
+    _extract_user_info_from_message(user_msg)
+    sess["history"].append({"role": "user", "content": user_msg})
+    reply = get_llm_reply(user_msg, sess["history"], sess)
+    sess["history"].append({"role": "assistant", "content": reply})
+    threading.Thread(target=learn_from_message, args=(user_msg, reply, session_id), daemon=True).start()
+    threading.Thread(target=_save_session_to_db, args=(session_id,), daemon=True).start()
+    return jsonify({"reply": reply, "session_id": session_id,
+                    "trading": {"paper": f"{sess['paper_balance']:.3f}", "pnl": f"+{sess['pnl_24h']:.1f}%"}})
+
+@app.route("/scan", methods=["POST"])
+def scan():
+    data    = request.get_json() or {}
+    address = data.get("address", "").strip()
+    if not address:
+        return jsonify({"error": "Address dalo!"}), 400
+    if address.startswith("0x"):
+        try: address = Web3.to_checksum_address(address)
+        except ValueError: return jsonify({"error": "Invalid address!"}), 400
+        return jsonify(run_full_sniper_checklist(address))
+    return jsonify({"address": address, "checklist": [], "overall": "UNKNOWN", "score": 0, "total": 0,
+                    "recommendation": "⚠️ 0x contract address dalo."})
+
+@app.route("/monitor-position", methods=["POST"])
+def monitor_position():
+    data = request.get_json() or {}
+    add_position_to_monitor(
+        session_id    = data.get("session_id",  "default"),
+        token_address = data.get("address",     ""),
+        token_name    = data.get("token_name",  "Unknown"),
+        entry_price   = float(data.get("entry_price",  0)),
+        size_bnb      = float(data.get("size_bnb",      0)),
+        stop_loss_pct = float(data.get("stop_loss_pct", 15.0))
+    )
+    return jsonify({"status": "monitoring", "address": data.get("address","")})
+
+@app.route("/token-data", methods=["POST"])
+def token_data():
+    data    = request.get_json() or {}
+    address = data.get("address","").strip()
+    if not address: return jsonify({"error": "Address required"}), 400
+    return jsonify(get_dexscreener_token_data(address))
+
+@app.route("/new-pairs", methods=["GET"])
+def new_pairs():
+    return jsonify({"pairs": list(new_pairs_queue), "count": len(new_pairs_queue), "updated": datetime.utcnow().isoformat()})
+
+@app.route("/smart-wallets", methods=["GET"])
+def smart_wallets():
+    return jsonify({"wallets": SMART_WALLETS, "count": len(SMART_WALLETS), "tracking": len(smart_wallet_snapshots)})
+
+@app.route("/log-trade", methods=["POST"])
+def log_trade_route():
+    data       = request.get_json() or {}
+    session_id = data.get("session_id", "default")
+    lesson     = log_trade_internal(session_id, data)
+    return jsonify({"status": "logged", "lesson": lesson, "readiness": check_paper_to_real_readiness(session_id)})
+
+@app.route("/readiness", methods=["GET","POST"])
+def readiness():
+    session_id = (request.get_json() or {}).get("session_id") if request.method == "POST" else request.args.get("session_id","default")
+    return jsonify(check_paper_to_real_readiness(session_id or "default"))
+
+@app.route("/activity", methods=["GET"])
+def activity_route():
+    from datetime import datetime as _dt
+    acts = []
+    for addr, pos in list(auto_trade_stats.get("running_positions",{}).items()):
+        e   = pos.get("entry", 0)
+        c   = monitored_positions.get(addr, {}).get("current", e)
+        pnl = ((c - e) / e * 100) if e > 0 else 0
+        b   = pos.get("bought_at", "")
+        tok = pos.get("token","")
+        td  = tok if (tok and not tok.startswith("0x") and len(tok) < 20) else addr[:8]
+        acts.append({
+            "type": "buy",
+            "token": td,
+            "address": addr,
+            "main": f"BUY {td} — {pos.get('size_bnb',0):.4f} BNB @ ${e:.8f}",
+            "meta": f"{addr[:8]}...{addr[-4:]} · PnL:{pnl:+.1f}%",
+            "t": b[11:16] if len(b) >= 16 else _dt.utcnow().strftime("%H:%M"),
+            "entry": f"${e:.10f}",
+            "bought_at": b,
+            "pnl": round(pnl, 2),
+            "size": f"{pos.get('size_bnb',0):.4f} BNB",
+        })
+    for h in list(reversed(auto_trade_stats.get("trade_history",[]) ))[:5]:
+        sold = h.get("sold_at","")
+        acts.insert(0, {
+            "type": "sell",
+            "token": h.get("token","?"),
+            "address": h.get("address",""),
+            "main": f"SELL {h.get('token','?')} — {h.get('pnl_pct',0):+.2f}% | {h.get('size_bnb',0):.4f} BNB",
+            "meta": f"Entry:{h.get('entry',0):.8f} → Exit:{h.get('exit',0):.8f}",
+            "t": sold[11:16] if len(sold) >= 16 else "—",
+            "entry": f"${h.get('entry',0):.10f}",
+            "exit":  f"${h.get('exit',0):.10f}",
+            "bought_at": h.get("bought_at",""),
+            "sold_at":   sold,
+            "pnl": h.get("pnl_pct",0),
+            "pnl_bnb": h.get("pnl_bnb",0),
+            "size": f"{h.get('size_bnb',0):.4f} BNB",
+            "result": h.get("result",""),
+        })
+    acts.append({
+        "type": "scan",
+        "main": f"SCAN: {len(discovered_addresses):,} checked · {len(new_pairs_queue)} queued · {len(monitored_positions)} monitoring",
+        "meta": "BSC Mainnet · WebSocket + DexScreener",
+        "t": _dt.utcnow().strftime("%H:%M")
+    })
+    fg = market_cache.get("fear_greed", 50)
+    bnb = market_cache.get("bnb_price", 0)
+    if bnb > 0:
+        acts.append({
+            "type": "scan",
+            "main": f"MARKET: BNB ${bnb:.2f} · F&G {fg}/100",
+            "meta": "CoinGecko + Alternative.me",
+            "t": _dt.utcnow().strftime("%H:%M")
+        })
+    return jsonify({"activity": acts[:30]})
+
+@app.route("/trade-history", methods=["GET"])
+def trade_history_route():
+    hist   = auto_trade_stats.get("trade_history", [])
+    filt   = request.args.get("filter", "all")
+    search = request.args.get("q", "").lower()
+    from datetime import datetime as _dt
+    now = _dt.utcnow()
+    filtered = []
+    for t in reversed(hist):
+        if filt == "win"  and t.get("result") != "win":  continue
+        if filt == "loss" and t.get("result") != "loss": continue
+        sold_str = t.get("sold_at", "")
+        if sold_str and filt in ("today","week","month"):
+            try:
+                sold_dt = _dt.fromisoformat(sold_str)
+                if filt == "today" and (now-sold_dt).days > 0: continue
+                if filt == "week"  and (now-sold_dt).days > 7: continue
+                if filt == "month" and (now-sold_dt).days > 30: continue
+            except: pass
+        if search and search not in t.get("token","").lower() and search not in t.get("address","").lower(): continue
+        filtered.append(t)
+    wins   = [x for x in filtered if x.get("result") == "win"]
+    losses = [x for x in filtered if x.get("result") == "loss"]
+    best   = max(filtered, key=lambda x: x.get("pnl_pct", 0), default={})
+    worst  = min(filtered, key=lambda x: x.get("pnl_pct", 0), default={})
+    return jsonify({
+        "history":       filtered[:200],
+        "total":         len(filtered),
+        "wins":          len(wins),
+        "losses":        len(losses),
+        "win_rate":      round(len(wins)/max(len(filtered),1)*100, 1),
+        "total_pnl_bnb": round(sum(x.get("pnl_bnb",0) for x in filtered), 4),
+        "best_trade":    best,
+        "worst_trade":   worst,
+    })
+
+# FIX 5: /airdrops route properly defined (was missing def line)
+@app.route("/airdrops", methods=["GET"])
+def airdrops_route():
+    return jsonify({
+        "active":   knowledge_base["airdrops"]["active"],
+        "upcoming": knowledge_base["airdrops"]["upcoming"],
+        "ended":    knowledge_base["airdrops"]["ended"],
+        "count":    len(knowledge_base["airdrops"]["active"])
+    })
+
+@app.route("/self-awareness", methods=["GET"])
+def self_awareness_route():
+    update_self_awareness()
+    uptime_s = self_awareness["current_state"]["uptime_seconds"]
+    return jsonify({
+        **self_awareness,
+        "current_state": {
+            **self_awareness["current_state"],
+            "uptime_formatted": f"{uptime_s//3600}h {(uptime_s%3600)//60}m"
+        },
+        "last_introspection": self_awareness["introspection_log"][-1] if self_awareness["introspection_log"] else None,
+        "brain_snapshot": {
+            "trading_patterns": len(brain["trading"]["best_patterns"]),
+            "avoid_patterns":   len(brain["trading"]["avoid_patterns"]),
+            "blacklisted":      len(brain["trading"]["token_blacklist"]),
+            "whitelisted":      len(brain["trading"]["token_whitelist"]),
+            "total_cycles":     brain["total_learning_cycles"],
+        },
+    })
+
+@app.route("/introspect", methods=["GET"])
+def introspect():
+    observation = self_introspect()
+    return jsonify({"status": "ok", "observation": observation})
+
+@app.route("/auto-stats", methods=["GET"])
+def auto_stats_route():
+    sess = get_or_create_session(AUTO_SESSION_ID)
+    positions_info = {}
+    for k, v in auto_trade_stats["running_positions"].items():
+        entry   = v.get("entry", 0)
+        current = monitored_positions.get(k, {}).get("current", entry)
+        pnl     = ((current - entry) / entry * 100) if entry > 0 else 0
+        # FIX 6: No duplicate keys, bought_at added
+        positions_info[k] = {
+            "token":     v.get("token", k[:8]),
+            "address":   k,
+            "pnl_pct":   round(pnl, 2),
+            "size":      v.get("size_bnb"),
+            "entry":     f"${entry:.10f}",
+            "current":   f"${current:.10f}",
+            "mcap":      "MCap ?",
+            "age":       "Active",
+            "bought_at": v.get("bought_at", ""),  # FIX: added
+        }
+    return jsonify({
+        "enabled":        AUTO_TRADE_ENABLED,
+        "open_positions": len(auto_trade_stats["running_positions"]),
+        "positions":      positions_info,
+        "total_buys":     auto_trade_stats["total_auto_buys"],
+        "total_sells":    auto_trade_stats["total_auto_sells"],
+        "total_pnl_pct":  round(auto_trade_stats["auto_pnl_total"], 2),
+        "paper_balance":  sess.get("paper_balance", 5.0),
+        "trade_count":    sess.get("trade_count", 0),
+        "win_rate":       round(sess.get("win_count",0)/max(sess.get("trade_count",1),1)*100, 1),
+        "win_count":      sess.get("win_count", 0),
+        "wins":           sess.get("win_count", 0),
+        "losses":         max(0, sess.get("trade_count",0) - sess.get("win_count",0)),
+        "last_action":    auto_trade_stats["last_action"],
+        "total_scanned":  len(discovered_addresses),
+        "monitoring":     len(monitored_positions),
+        "bnb_price":      market_cache.get("bnb_price", 0),
+        "open_trades": [
+            {
+                "token":     v.get("token", k[:8]),
+                "address":   k,
+                "entry":     f"${v.get('entry', 0):.10f}",
+                "current":   f"${monitored_positions.get(k,{}).get('current',v.get('entry',0)):.10f}",
+                "pnl":       round(((monitored_positions.get(k,{}).get('current',v.get('entry',0))-v.get('entry',0))/max(v.get('entry',0),1e-18))*100, 2),
+                "size":      f"{v.get('size_bnb',0):.4f} BNB",
+                "age":       "Active",
+                "bought_at": v.get("bought_at",""),
+            }
+            for k, v in auto_trade_stats.get("running_positions", {}).items()
+        ],
+        "trade_history": auto_trade_stats.get("trade_history", [])[-20:],
+    })
+
+@app.route("/health")
+def health():
+    return jsonify({
+        "status":        "ok",
+        "bsc_connected": w3.is_connected(),
+        "supabase":      supabase is not None,
+        "bnb_price":     market_cache.get("bnb_price", 0),
+        "fear_greed":    market_cache.get("fear_greed", 50),
+        "new_pairs":     len(new_pairs_queue),
+        "monitoring":    len(monitored_positions),
+        "telegram":      bool(TELEGRAM_TOKEN and TELEGRAM_CHAT_ID),
+        "last_update":   market_cache.get("last_updated")
+    })
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port, debug=False)
