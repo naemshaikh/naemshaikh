@@ -1520,21 +1520,30 @@ def _auto_check_new_pair(pair_address: str):
 
     print(f"🔍 Auto-check {pair_address}: {overall} ({score}/{total})")
 
-    # Alert only if SAFE or CAUTION (not DANGER/RISK)
+    # Alert only if SAFE, CAUTION or high-score RISK
     if overall in ["SAFE", "CAUTION"]:
         telegram_new_token_alert(pair_address, score, total, rec)
+    elif overall == "RISK" and score >= int(total * 0.75):
+        telegram_new_token_alert(pair_address, score, total, rec + " [HIGH SCORE RISK]")
 
-    # AUTO PAPER BUY trigger
-    if overall == "SAFE" and score >= int(total * 0.50):  # FIX: threshold 65->50
+    # AUTO PAPER BUY trigger — FIX: RISK bhi buy hoga agar score > 75%
+    if overall == "SAFE" and score >= int(total * 0.50):
         try:
             _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
         except Exception as e:
             print(f"Auto buy error: {e}")
-    elif overall == "CAUTION" and score >= int(total * 0.45):  # FIX: threshold 60->45
+    elif overall == "CAUTION" and score >= int(total * 0.45):
         try:
             _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
         except Exception as e:
             print(f"Auto buy error caution: {e}")
+    elif overall == "RISK" and score >= int(total * 0.75):
+        # FIX: High score RISK tokens bhi paper buy karenge
+        try:
+            _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
+            print(f"Auto buy RISK token (high score {score}/{total}): {pair_address[:10]}")
+        except Exception as e:
+            print(f"Auto buy error risk: {e}")
 
     # Add to knowledge base
     knowledge_base["bsc"]["new_tokens"].append({
@@ -3699,10 +3708,12 @@ def run_full_sniper_checklist(address: str) -> Dict:
     if critical_fails or honeypot:
         result["overall"]        = "DANGER"
         result["recommendation"] = "❌ SKIP — Critical fail. Honeypot/Tax/Hidden function. Do NOT buy."
-    elif failed >= 4 or pct < 40:
+    elif failed >= 8 or pct < 35:
+        # FIX: failed 4→8, pct 40→35 — GoPlus empty tokens ko zyada chance
         result["overall"]        = "RISK"
         result["recommendation"] = "⚠️ HIGH RISK — Multiple issues. Skip or 0.001 BNB test max."
-    elif pct >= 65:
+    elif pct >= 55:
+        # FIX: pct 65→55 — zyada tokens SAFE category mein aayenge
         result["overall"]        = "SAFE"
         result["recommendation"] = "✅ LOOKS SAFE — Start PAPER. Follow Stage 2 test buy + Stage 3 wait rules."
     else:
