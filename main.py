@@ -1517,12 +1517,12 @@ def _auto_check_new_pair(pair_address: str):
         telegram_new_token_alert(pair_address, score, total, rec)
 
     # AUTO PAPER BUY trigger
-    if overall == "SAFE" and score >= int(total * 0.60):
+    if overall == "SAFE" and score >= int(total * 0.65):
         try:
             _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
         except Exception as e:
             print(f"Auto buy error: {e}")
-    elif overall == "CAUTION" and score >= int(total * 0.55):
+    elif overall == "CAUTION" and score >= int(total * 0.60):
         try:
             _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
         except Exception as e:
@@ -3496,8 +3496,8 @@ def run_full_sniper_checklist(address: str) -> Dict:
 
     add("Liquidity ≥ 1 BNB",    "pass" if liq_bnb > 2    else ("warn" if liq_bnb > 0.5 else "fail"), f"{liq_bnb:.2f} BNB", 1)
     add("Liquidity Locked", "pass" if liq_locked > 80 else ("warn" if liq_locked > 20 else "fail"), f"{liq_locked:.0f}%", 1)
-    add("Buy Tax ≤ 12%",        "pass" if buy_tax <= 10   else "fail",          f"{buy_tax:.1f}%",  1)
-    add("Sell Tax ≤ 12%",       "pass" if sell_tax <= 10  else "fail",          f"{sell_tax:.1f}%", 1)
+    add("Buy Tax ≤ 8%",        "pass" if buy_tax <= 8   else "fail",          f"{buy_tax:.1f}%",  1)
+    add("Sell Tax ≤ 8%",       "pass" if sell_tax <= 8  else "fail",          f"{sell_tax:.1f}%", 1)
     add("No Hidden Functions",  "pass" if not hidden       else "fail", "CLEAN" if not hidden else "RISK",   1)
     add("Transfer Allowed",     "pass" if transfer         else "fail", "YES"   if transfer   else "PAUSED", 1)
 
@@ -3659,23 +3659,23 @@ def run_full_sniper_checklist(address: str) -> Dict:
 
     critical_fails = [
         c for c in result["checklist"] if c["status"] == "fail" and c["label"] in [
-            "Honeypot Safe", "Buy Tax ≤ 12%", "Sell Tax ≤ 12%",
+            "Honeypot Safe", "Buy Tax ≤ 8%", "Sell Tax ≤ 8%",
             "No Hidden Functions", "Transfer Allowed", "Mint Authority Disabled",
             "Liquidity ≥ 1 BNB"
         ]
     ]
 
     if goplus_empty:
-        critical_fails = [c for c in result["checklist"] if c["status"] == "fail" and c["label"] in ["Honeypot Safe", "Buy Tax ≤ 12%", "Sell Tax ≤ 12%", "Transfer Allowed"]]
+        critical_fails = [c for c in result["checklist"] if c["status"] == "fail" and c["label"] in ["Honeypot Safe", "Buy Tax ≤ 8%", "Sell Tax ≤ 8%", "Transfer Allowed"]]
     if goplus_empty:
-        critical_fails = [c for c in result["checklist"] if c["status"] == "fail" and c["label"] in ["Honeypot Safe", "Buy Tax ≤ 12%", "Sell Tax ≤ 12%", "Transfer Allowed"]]
+        critical_fails = [c for c in result["checklist"] if c["status"] == "fail" and c["label"] in ["Honeypot Safe", "Buy Tax ≤ 8%", "Sell Tax ≤ 8%", "Transfer Allowed"]]
     if critical_fails or honeypot:
         result["overall"]        = "DANGER"
         result["recommendation"] = "❌ SKIP — Critical fail. Honeypot/Tax/Hidden function. Do NOT buy."
     elif failed >= 4 or pct < 40:
         result["overall"]        = "RISK"
         result["recommendation"] = "⚠️ HIGH RISK — Multiple issues. Skip or 0.001 BNB test max."
-    elif pct >= 55:
+    elif pct >= 65:
         result["overall"]        = "SAFE"
         result["recommendation"] = "✅ LOOKS SAFE — Start PAPER. Follow Stage 2 test buy + Stage 3 wait rules."
     else:
