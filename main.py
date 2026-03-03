@@ -1679,6 +1679,21 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     sess["paper_balance"] = round(sess.get("paper_balance", 5.0) + return_bnb, 6)
     auto_trade_stats["auto_pnl_total"] += pnl_pct * (sell_pct / 100.0)
     auto_trade_stats["total_auto_sells"] += 1
+    auto_trade_stats["trade_history"].append({
+        "token":      token_name,
+        "address":    address,
+        "entry":      entry_price,
+        "exit":       sell_price,
+        "pnl_pct":    round(pnl_pct, 2),
+        "pnl_bnb":    round(pnl_bnb, 6),
+        "size_bnb":   size_bnb,
+        "bought_at":  bought_at_str,
+        "sold_at":    datetime.utcnow().isoformat(),
+        "result":     "win" if pnl_pct > 0 else "loss",
+        "reason":     sell_reason,
+    })
+    if len(auto_trade_stats["trade_history"]) > 500:
+        auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-500:]
     auto_trade_stats["last_action"] = f"SELL {sell_pct:.0f}% {token} PnL:{pnl_pct:+.1f}%"
     if sell_pct >= 100.0:
         auto_trade_stats["running_positions"].pop(address, None)
@@ -4129,6 +4144,33 @@ def activity_route():
     fg=market_cache.get("fear_greed",50); bnb=market_cache.get("bnb_price",0)
     if bnb>0: acts.append({"type":"scan","main":f"BNB ${bnb:.2f} F&G {fg}/100","meta":"Live","t":_dt.utcnow().strftime("%H:%M")})
     return jsonify({"activity":acts[:25]})
+
+
+@app.route("/trade-history", methods=["GET"])
+def trade_history_route():
+    hist=auto_trade_stats.get("trade_history",[])
+    filt=request.args.get("filter","all"); search=request.args.get("q","").lower()
+    from datetime import datetime as _dt
+    now=_dt.utcnow()
+    filtered=[]
+    for t in reversed(hist):
+        if filt=="win" and t.get("result")!="win": continue
+        if filt=="loss" and t.get("result")!="loss": continue
+        sold_str=t.get("sold_at","")
+        if sold_str and filt in ("today","week","month"):
+            try:
+                sold_dt=_dt.fromisoformat(sold_str)
+                if filt=="today" and (now-sold_dt).days>0: continue
+                if filt=="week" and (now-sold_dt).days>7: continue
+                if filt=="month" and (now-sold_dt).days>30: continue
+            except: pass
+        if search and search not in t.get("token","").lower() and search not in t.get("address","").lower(): continue
+        filtered.append(t)
+    wins=[x for x in filtered if x.get("result")=="win"]
+    losses=[x for x in filtered if x.get("result")=="loss"]
+    best=max(filtered,key=lambda x:x.get("pnl_pct",0),default={})
+    worst=min(filtered,key=lambda x:x.get("pnl_pct",0),default={})
+    return jsonify({"history":filtered[:200],"total":len(filtered),"wins":len(wins),"losses":len(losses),"win_rate":round(len(wins)/max(len(filtered),1)*100,1),"total_pnl_bnb":round(sum(x.get("pnl_bnb",0) for x in filtered),4),"best_trade":best,"worst_trade":worst})
 
 @app.route("/airdrops", methods=["GET"])
 
