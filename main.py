@@ -2868,8 +2868,8 @@ def fetch_internet_data_24x7():
         try:
             print("🌐 Fetching internet data...")
             t1 = threading.Thread(target=_fetch_trading_intel, daemon=True)
-            t1.start(); t2.start()
-            t1.join(timeout=30); t2.join(timeout=30)
+            t1.start()
+            t1.join(timeout=30)
             _learn_from_internet_data()
             threading.Thread(target=_save_brain_to_db, daemon=True).start()
             print(f"✅ Internet done | Trading:{len(brain['trading']['market_insights'])} | "
