@@ -3994,6 +3994,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
         except Exception:
             pass
 
+
         # ── Auto trader real stats ──────────────────────────────
         _auto_sess      = get_or_create_session(AUTO_SESSION_ID)
         _auto_balance   = _auto_sess.get("paper_balance", 1.87)
@@ -4030,7 +4031,6 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
             + (f" | Learned:{learn_ctx}" if learn_ctx else "")
             + (f" | SelfAwareness:{sa_ctx}" if sa_ctx else "")
             + (f" | User:{user_ctx}" if user_ctx and user_ctx != "NEW_USER" else "")
-            + f"]"
             + f" | AUTO_BALANCE={_auto_balance:.4f}BNB"
             + f" | AUTO_BUYS={_auto_buys}"
             + f" | AUTO_SELLS={_auto_sells}"
@@ -4039,6 +4039,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
             + f" | AUTO_PNL={_auto_pnl}%"
             + f" | AUTO_LAST={_auto_last}"
             + (f" | AUTO_POS={_pos_detail.strip()}" if _pos_detail else "")
+            + f"]"
         )
 
         # ── Cross-session persistent memory inject karo ──────────────
