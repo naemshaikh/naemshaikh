@@ -2146,20 +2146,30 @@ def fetch_market_data():
         except Exception as e:
             print(f"⚠️ BNB CryptoCompare error: {e}")
     if not bnb_fetched:
-        # Last resort: BSC on-chain WBNB/BUSD pool se real price lo
+        # Last resort: DexScreener WBNB/USDT pair se BNB price
         try:
+            # WBNB/USDT pair — baseToken = WBNB, price = BNB in USD
             r4 = requests.get(
-                "https://api.dexscreener.com/latest/dex/pairs/bsc/0x58f876857a02d6762e0101bb5c46a8c1ed44dc16",
+                "https://api.dexscreener.com/latest/dex/pairs/bsc/0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE",
                 timeout=15
             )
             if r4.status_code == 200:
-                pair = r4.json().get("pair", {})
-                price = float(pair.get("priceUsd", 0) or 0)
-                if price > 0:
-                    # WBNB/BUSD pair — token0 price = BNB price
+                _pj   = r4.json() or {}
+                _pair = _pj.get("pair") or _pj.get("pairs", [None])[0] or {}
+                base  = (_pair.get("baseToken") or {}).get("symbol", "").upper()
+                price = float(_pair.get("priceUsd", 0) or 0)
+                # Sirf tab use karo jab base WBNB ho aur price reasonable ho
+                if base == "WBNB" and price > 100:
                     market_cache["bnb_price"] = price
                     bnb_fetched = True
-                    print(f"✅ BNB price (DexScreener on-chain): ${price:.2f}")
+                    print(f"✅ BNB price (DexScreener WBNB/USDT): ${price:.2f}")
+                elif price > 100:
+                    # Base check nahi hua — price reasonable hai to use karo
+                    market_cache["bnb_price"] = price
+                    bnb_fetched = True
+                    print(f"✅ BNB price (DexScreener fallback): ${price:.2f}")
+                else:
+                    print(f"⚠️ DexScreener fallback: suspicious price ${price:.2f} — skip")
         except Exception as e:
             print(f"⚠️ BNB DexScreener fallback error: {e}")
     if not bnb_fetched:
