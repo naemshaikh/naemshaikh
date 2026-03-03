@@ -31,6 +31,14 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 .hdr-pill{display:flex;flex-direction:column;align-items:flex-end;}
 .hdr-pill-val{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;}
 .hdr-pill-lbl{font-size:9px;color:var(--txt2);text-transform:uppercase;letter-spacing:1px;}
+
+.hdr-circle{width:46px;height:46px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;border:1.5px solid;}
+.hdr-circle.ice-c{background:rgba(64,196,255,0.08);border-color:rgba(64,196,255,0.3);}
+.hdr-circle.gold-c{background:rgba(240,192,64,0.08);border-color:rgba(240,192,64,0.3);}
+.hdr-c-val{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;line-height:1;}
+.hdr-circle.ice-c .hdr-c-val{color:var(--ice);}
+.hdr-circle.gold-c .hdr-c-val{color:var(--gold);}
+.hdr-c-lbl{font-size:8px;color:var(--txt2);text-transform:uppercase;letter-spacing:0.5px;}
 .live-dot{width:8px;height:8px;border-radius:50%;background:var(--em);box-shadow:0 0 10px var(--em);animation:blink 2.4s ease infinite;}
 @keyframes blink{0%,100%{opacity:1;}50%{opacity:0.3;}}
 
@@ -41,12 +49,12 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 
 /* ── BALANCE ─────────────────────────────── */
 .bal-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-.bal-card{background:var(--ink2);border:1px solid var(--line);border-radius:var(--r);padding:14px;position:relative;overflow:hidden;}
+.bal-card{background:var(--ink2);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;position:relative;overflow:hidden;}
 .bal-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;}
 .bal-card.em::before{background:linear-gradient(90deg,var(--em),transparent);}
 .bal-card.ice::before{background:linear-gradient(90deg,var(--ice),transparent);}
-.bal-lbl{font-size:10px;color:var(--txt2);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;}
-.bal-val{font-family:'JetBrains Mono',monospace;font-size:19px;font-weight:700;line-height:1;}
+.bal-lbl{font-size:9px;color:var(--txt2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;}
+.bal-val{font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;line-height:1;}
 .bal-sub{font-size:11px;color:var(--txt2);margin-top:4px;font-family:'JetBrains Mono',monospace;}
 
 /* ── MARKET BAR ──────────────────────────── */
@@ -59,6 +67,19 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 .fg-pin{position:absolute;top:-4px;width:3px;height:13px;border-radius:2px;background:#fff;box-shadow:0 0 6px rgba(255,255,255,0.8);transform:translateX(-50%);transition:left 0.8s ease;}
 
 /* ── SPLIT PANEL (R4) ────────────────────── */
+
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+.sg-item{background:var(--ink2);border:1px solid var(--line);border-radius:var(--r2);padding:10px 6px;text-align:center;}
+.sg-val{font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;}
+.sg-lbl{font-size:9px;color:var(--txt2);text-transform:uppercase;letter-spacing:0.8px;margin-top:3px;}
+
+.fw-chart-wrap{border-radius:var(--r);overflow:hidden;border:1px solid var(--line);background:var(--ink2);}
+.fw-chart-bar{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--line);}
+.chart-tap-hint{font-size:9px;color:var(--txt3);font-style:italic;}
+.hscroll-wrap{display:flex;gap:10px;overflow-x:auto;padding:4px 2px 8px;-webkit-overflow-scrolling:touch;}
+.hscroll-wrap::-webkit-scrollbar{height:0;}
+.mini-card{min-width:120px;max-width:120px;background:var(--ink2);border:1px solid var(--line);border-radius:10px;padding:10px;cursor:pointer;flex-shrink:0;}
+.mini-card.active-chart{border-color:var(--em);box-shadow:0 0 8px rgba(0,230,118,0.2);}
 .split-panel{display:flex;height:250px;border-radius:var(--r);overflow:hidden;border:1px solid var(--line);background:var(--ink2);position:relative;}
 .chart-pane{flex:0 0 58%;position:relative;border-right:1px solid var(--line);background:#000;overflow:hidden;}
 .chart-pane iframe{width:100%;height:100%;border:none;display:block;}
@@ -151,6 +172,30 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 .pnl-big.neg{color:var(--red);}
 
 /* ── FAB + CHAT ───────────────────────────── */
+
+.hist-filters{display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:10px;-webkit-overflow-scrolling:touch;}
+.hist-filters::-webkit-scrollbar{height:0;}
+.hf{flex-shrink:0;padding:5px 12px;border-radius:20px;border:1px solid var(--line2);background:var(--ink3);color:var(--txt2);font-size:11px;font-weight:600;cursor:pointer;font-family:'Outfit',sans-serif;}
+.hf.on{background:var(--em-dim);color:var(--em);border-color:rgba(0,230,118,0.3);}
+.hf.win.on{background:var(--em-dim);color:var(--em);}
+.hf.loss.on{background:var(--red-dim);color:var(--red);border-color:rgba(255,71,87,0.3);}
+.hist-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px;}
+.hs-item{background:var(--ink3);border-radius:8px;padding:8px 4px;text-align:center;}
+.hs-val{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;}
+.hs-lbl{font-size:9px;color:var(--txt2);margin-top:2px;}
+.hist-item{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);cursor:pointer;}
+.hist-item:last-child{border-bottom:none;}
+.hist-badge{width:36px;height:36px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;font-family:'JetBrains Mono',monospace;}
+.hist-badge.win{background:var(--em-dim);color:var(--em);border:1px solid rgba(0,230,118,0.2);}
+.hist-badge.loss{background:var(--red-dim);color:var(--red);border:1px solid rgba(255,71,87,0.2);}
+.hist-body{flex:1;min-width:0;}
+.hist-name{font-size:13px;font-weight:700;color:var(--txt);}
+.hist-detail{font-size:10px;color:var(--txt2);margin-top:1px;font-family:'JetBrains Mono',monospace;}
+.hist-right{text-align:right;flex-shrink:0;}
+.hist-pnl{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;}
+.hist-pnl.win{color:var(--em);}
+.hist-pnl.loss{color:var(--red);}
+.hist-time{font-size:9px;color:var(--txt3);margin-top:2px;}
 .fab{position:fixed;bottom:22px;right:18px;z-index:400;width:54px;height:54px;border-radius:50%;border:none;cursor:pointer;background:linear-gradient(135deg,#00e676,#00bcd4);box-shadow:0 4px 20px rgba(0,230,118,0.5);display:flex;align-items:center;justify-content:center;transition:transform 0.2s;}
 .fab:active{transform:scale(0.9);}
 .fab svg{width:22px;height:22px;}
@@ -202,13 +247,13 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
     </div>
   </div>
   <div class="hdr-right">
-    <div class="hdr-pill">
-      <div class="hdr-pill-val" id="h-bnb" style="color:var(--ice)">$—</div>
-      <div class="hdr-pill-lbl">BNB</div>
+    <div class="hdr-circle ice-c" id="hdr-bnb-wrap">
+      <div class="hdr-c-val" id="h-bnb">$—</div>
+      <div class="hdr-c-lbl">BNB</div>
     </div>
-    <div class="hdr-pill">
-      <div class="hdr-pill-val" id="h-fg" style="color:var(--gold)">—</div>
-      <div class="hdr-pill-lbl">F&amp;G</div>
+    <div class="hdr-circle gold-c" id="hdr-fg-wrap">
+      <div class="hdr-c-val" id="h-fg">—</div>
+      <div class="hdr-c-lbl">F&amp;G</div>
     </div>
     <div class="live-dot"></div>
   </div>
@@ -230,49 +275,45 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
     </div>
   </div>
 
-  <!-- ── MARKET BAR ──────────────────────────── -->
-  <div class="mkt-row">
-    <div class="mkt-item">
-      <div class="mkt-val" id="m-bnb" style="color:var(--ice)">$—</div>
-      <div class="mkt-lbl">BNB</div>
+  <!-- ── SPLIT
+
+
+  <!-- ── STATS BOX ─────────────────────────────── -->
+  <div class="stats-grid">
+    <div class="sg-item">
+      <div class="sg-val" id="sg-scan" style="color:var(--em)">—</div>
+      <div class="sg-lbl">Scanned</div>
     </div>
-    <div class="mkt-div"></div>
-    <div class="mkt-item">
-      <div class="fg-bar"><div class="fg-pin" id="fg-pin" style="left:50%"></div></div>
-      <div class="mkt-lbl" id="m-fg-lbl">F&amp;G: —</div>
+    <div class="sg-item">
+      <div class="sg-val" id="sg-watch" style="color:var(--ice)">—</div>
+      <div class="sg-lbl">Watching</div>
     </div>
-    <div class="mkt-div"></div>
-    <div class="mkt-item">
-      <div class="mkt-val" id="m-scan" style="color:var(--em)">—</div>
-      <div class="mkt-lbl">Scanned</div>
+    <div class="sg-item">
+      <div class="sg-val" id="sg-wins" style="color:var(--em)">—</div>
+      <div class="sg-lbl">Profit Trades</div>
     </div>
-    <div class="mkt-div"></div>
-    <div class="mkt-item">
-      <div class="mkt-val" id="m-mon" style="color:var(--gold)">—</div>
-      <div class="mkt-lbl">Watching</div>
+    <div class="sg-item">
+      <div class="sg-val" id="sg-losses" style="color:var(--red)">—</div>
+      <div class="sg-lbl">Loss Trades</div>
     </div>
   </div>
-
   <!-- ── SPLIT PANEL: Chart + Positions (R4) ─── -->
   <div class="sep">Chart &amp; Positions</div>
-  <div class="split-panel">
-
-    <!-- Left: Live Chart -->
-    <div class="chart-pane">
+  <!-- Full width chart -->
+  <div class="fw-chart-wrap">
+    <div class="fw-chart-bar">
       <div class="chart-lbl" id="chart-lbl">BNB/USD</div>
-      <iframe
-        id="chart-frame"
-        src="https://dexscreener.com/bsc/0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c?embed=1&theme=dark&trades=0&info=0"
-        allowtransparency="true"
-        frameborder="0"
-      ></iframe>
+      <span class="chart-tap-hint">tap position → chart changes</span>
     </div>
-
-    <!-- Right: Open Positions (swipeable/scrollable) -->
-    <div class="pos-pane" id="mini-pos-wrap">
-      <div class="pos-pane-empty">Connecting...</div>
-    </div>
-
+    <iframe id="chart-frame"
+      src="https://dexscreener.com/bsc/0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c?embed=1&theme=dark&trades=0&info=0"
+      allowtransparency="true" frameborder="0" style="width:100%;height:220px;border:none;display:block;border-radius:0 0 var(--r) var(--r);">
+    </iframe>
+  </div>
+  <!-- Horizontal scroll positions -->
+  <div class="sep">Open Positions</div>
+  <div class="hscroll-wrap" id="mini-pos-wrap">
+    <div class="pos-pane-empty" style="padding:16px;">Connecting...</div>
   </div>
 
   <!-- ── LIVE FEED ───────────────────────────── -->
@@ -291,6 +332,32 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
       </div>
     </div>
     <div class="foot-note" id="ts">Connecting...</div>
+  </div>
+
+
+  <!-- ── TRADING HISTORY ────────────────────────── -->
+  <div class="sep">Trading History</div>
+  <div class="card" style="position:relative;">
+    <div style="padding:12px;">
+      <!-- Filter bar -->
+      <div class="hist-filters" id="hist-filters">
+        <button class="hf on" onclick="setHistFilter('all',this)">All</button>
+        <button class="hf" onclick="setHistFilter('today',this)">Today</button>
+        <button class="hf" onclick="setHistFilter('week',this)">Week</button>
+        <button class="hf" onclick="setHistFilter('month',this)">Month</button>
+        <button class="hf win" onclick="setHistFilter('win',this)">✅ Win</button>
+        <button class="hf loss" onclick="setHistFilter('loss',this)">❌ Loss</button>
+      </div>
+      <!-- Summary row -->
+      <div class="hist-summary" id="hist-summary">
+        <div class="hs-item"><div class="hs-val" id="hs-total">—</div><div class="hs-lbl">Trades</div></div>
+        <div class="hs-item"><div class="hs-val" id="hs-wr" style="color:var(--em)">—%</div><div class="hs-lbl">Win Rate</div></div>
+        <div class="hs-item"><div class="hs-val" id="hs-pnl">—</div><div class="hs-lbl">Net PnL</div></div>
+        <div class="hs-item"><div class="hs-val" id="hs-best" style="color:var(--em)">—</div><div class="hs-lbl">Best</div></div>
+      </div>
+      <!-- History list -->
+      <div id="hist-list"><div class="empty-state">No trade history yet</div></div>
+    </div>
   </div>
 
 </div><!-- /page -->
@@ -666,7 +733,7 @@ async function fetchStats(){
 
     if(bnb){
       document.getElementById('h-bnb').textContent = '$'+Number(bnb).toFixed(0);
-      document.getElementById('m-bnb').textContent = '$'+Number(bnb).toFixed(2);
+      const mbnbEl=document.getElementById('m-bnb'); if(mbnbEl) mbnbEl.textContent = '$'+Number(bnb).toFixed(2);
     }
     const fgEl=document.getElementById('h-fg');
     fgEl.textContent=fg;
@@ -685,8 +752,14 @@ async function fetchStats(){
     pEl.style.color=pnl>0?'var(--em)':pnl<0?'var(--red)':'var(--txt2)';
     document.getElementById('b-wr').textContent='Win Rate: '+(as.win_rate||0)+'%';
 
-    document.getElementById('m-scan').textContent=(as.total_scanned||td.new_pairs_found||0).toLocaleString();
-    document.getElementById('m-mon').textContent=as.monitoring||td.monitoring||0;
+    // Stats grid
+    const scanEl=document.getElementById('sg-scan'); if(scanEl) scanEl.textContent=(as.total_scanned||td.new_pairs_found||0).toLocaleString();
+    const watchEl=document.getElementById('sg-watch'); if(watchEl) watchEl.textContent=as.monitoring||td.monitoring||0;
+    const winsEl=document.getElementById('sg-wins'); if(winsEl) winsEl.textContent=as.wins||0;
+    const lossEl=document.getElementById('sg-losses'); if(lossEl) lossEl.textContent=as.losses||0;
+    // Win rate live
+    const wr=as.win_rate||0; document.getElementById('b-wr').textContent='Win Rate: '+wr+'%';
+    // Header BNB real-time flicker handled by fetchStats now
 
     // R4: Mini positions in right pane
     const posObj = as.positions||{};
@@ -717,9 +790,102 @@ async function init(){
   fetchActivity();
 }
 
+
+// ── History State ─────────────────────────────
+let histFilter = 'all';
+function setHistFilter(f, el){
+    histFilter=f;
+    document.querySelectorAll('.hf').forEach(b=>b.classList.remove('on'));
+    el.classList.add('on');
+    fetchHistory();
+}
+
+// ── Fetch History ──────────────────────────────
+async function fetchHistory(){
+    try{
+        const d = await fetch(`/trade-history?filter=${histFilter}`,{signal:AbortSignal.timeout(8000)}).then(r=>r.ok?r.json():{});
+        // Summary
+        const wr = d.win_rate||0;
+        document.getElementById('hs-total').textContent = d.total||0;
+        const wrEl=document.getElementById('hs-wr');
+        wrEl.textContent=(d.win_rate||0)+'%';
+        wrEl.style.color=wr>=50?'var(--em)':'var(--red)';
+        const pnlEl=document.getElementById('hs-pnl');
+        const pnl=d.total_pnl_bnb||0;
+        pnlEl.textContent=(pnl>=0?'+':'')+pnl.toFixed(4)+' BNB';
+        pnlEl.style.color=pnl>=0?'var(--em)':'var(--red)';
+        const best=d.best_trade||{};
+        document.getElementById('hs-best').textContent=best.pnl_pct!=null?(best.pnl_pct>=0?'+':'')+best.pnl_pct.toFixed(1)+'%':'—';
+        // List
+        const list=document.getElementById('hist-list');
+        const hist=d.history||[];
+        if(!hist.length){list.innerHTML='<div class="empty-state">No trades yet</div>';return;}
+        list.innerHTML=hist.map(t=>{
+            const cls=t.result==='win'?'win':'loss';
+            const sym=(t.token&&!t.token.startsWith('0x'))?t.token.slice(0,6).toUpperCase():(t.address||'?').slice(2,7).toUpperCase();
+            const soldIST=t.sold_at?toIST(t.sold_at.slice(11,16)):'—';
+            const pnlBnb=t.pnl_bnb!=null?((t.pnl_bnb>=0?'+':'')+t.pnl_bnb.toFixed(4)+' BNB'):'';
+            return `<div class="hist-item" onclick="openHistDetail(${JSON.stringify(t).replace(/"/g,'&quot;')})">
+                <div class="hist-badge ${cls}">${sym}</div>
+                <div class="hist-body">
+                    <div class="hist-name">${t.token&&!t.token.startsWith('0x')?t.token:sym}</div>
+                    <div class="hist-detail">${t.entry?'$'+parseFloat(t.entry.replace('$','')).toFixed(8):'—'} → ${t.exit?'$'+parseFloat(t.exit.replace('$','')).toFixed(8):'—'}</div>
+                </div>
+                <div class="hist-right">
+                    <div class="hist-pnl ${cls}">${t.pnl_pct!=null?(t.pnl_pct>=0?'+':'')+t.pnl_pct.toFixed(2)+'%':'—'}</div>
+                    <div class="hist-time">${soldIST} IST</div>
+                    <div class="hist-time">${pnlBnb}</div>
+                </div>
+            </div>`;
+        }).join('');
+    }catch(e){console.warn('History error:',e);}
+}
+
+function openHistDetail(t){
+    const cls=t.result==='win'?'pos':'neg';
+    const sym=(t.token&&!t.token.startsWith('0x'))?t.token:(t.address||'?').slice(2,8).toUpperCase();
+    const pnl=t.pnl_pct||0;
+    const bnbP=parseFloat(document.getElementById('m-bnb')?.textContent?.replace('$','')||618);
+    const pnlUsd=Math.abs((t.pnl_bnb||0)*bnbP).toFixed(2);
+    // Holding time calc
+    let hold='—';
+    if(t.bought_at&&t.sold_at){
+        try{const ms=new Date(t.sold_at)-new Date(t.bought_at);const m=Math.floor(ms/60000);hold=m<60?m+'m':(Math.floor(m/60)+'h '+(m%60)+'m');}catch(e){}
+    }
+    document.getElementById('modal-title').textContent=sym+' — '+t.result?.toUpperCase();
+    document.getElementById('modal-sub').textContent=(t.address||'').slice(0,12)+'...'+(t.address||'').slice(-4)+' · BSC';
+    document.getElementById('modal-pnl').className='pnl-big '+cls;
+    document.getElementById('modal-pnl').textContent=(pnl>=0?'+':'')+pnl.toFixed(2)+'%';
+    const addr=t.address||'';
+    document.getElementById('modal-body').innerHTML=`
+        <div class="modal-addr-row">
+            <div class="modal-addr">${addr||'—'}</div>
+            ${addr?`<button class="modal-copy-btn" onclick="copyAddr('${addr}')">📋 Copy</button>`:''}
+        </div>
+        <div class="modal-row"><span class="modal-lbl">Token</span><span class="modal-val">${sym}</span></div>
+        <div class="modal-row"><span class="modal-lbl">Entry Price</span><span class="modal-val">${t.entry||'—'}</span></div>
+        <div class="modal-row"><span class="modal-lbl">Exit Price</span><span class="modal-val">${t.exit||'—'}</span></div>
+        <div class="modal-row"><span class="modal-lbl">PnL %</span><span class="modal-val ${cls}">${pnl>=0?'+':''}${pnl.toFixed(2)}%</span></div>
+        <div class="modal-row"><span class="modal-lbl">PnL BNB</span><span class="modal-val ${cls}">${(t.pnl_bnb>=0?'+':'-')}${Math.abs(t.pnl_bnb||0).toFixed(6)} BNB</span></div>
+        <div class="modal-row"><span class="modal-lbl">PnL USD</span><span class="modal-val ${cls}">${(t.pnl_bnb||0)>=0?'+$':'-$'}${pnlUsd}</span></div>
+        <div class="modal-row"><span class="modal-lbl">Size</span><span class="modal-val">${t.size_bnb?t.size_bnb.toFixed(4)+' BNB':'—'}</span></div>
+        <div class="modal-row"><span class="modal-lbl">Holding Time</span><span class="modal-val">${hold}</span></div>
+        <div class="modal-row"><span class="modal-lbl">Buy Time (IST)</span><span class="modal-val">${t.bought_at?toIST(t.bought_at.slice(11,16)):'—'}</span></div>
+        <div class="modal-row"><span class="modal-lbl">Sell Time (IST)</span><span class="modal-val">${t.sold_at?toIST(t.sold_at.slice(11,16)):'—'}</span></div>
+        <div class="modal-row"><span class="modal-lbl">Reason</span><span class="modal-val" style="font-size:10px">${t.reason||'Auto'}</span></div>
+        <div class="modal-row"><span class="modal-lbl">Result</span><span class="modal-val ${cls}">${t.result?.toUpperCase()||'—'}</span></div>
+    `;
+    document.getElementById('modal-actions').innerHTML=addr?`
+        <button class="modal-btn chart" onclick="copyAddr('${addr}');closeModal()">📋 Copy Address</button>
+        <a class="modal-btn cake" href="https://bscscan.com/token/${addr}" target="_blank" style="text-decoration:none;text-align:center;display:flex;align-items:center;justify-content:center;">🔍 BSCScan</a>
+    `:'';
+    showModal();
+}
+
 init();
 setInterval(fetchStats,    8000);
 setInterval(fetchActivity, 15000);
+setInterval(fetchHistory,  30000);
 </script>
 </body>
 </html>
