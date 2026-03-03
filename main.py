@@ -821,8 +821,8 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
 # ========== POSITION MONITOR ==========
 def add_position_to_monitor(session_id, token_address, token_name, entry_price, size_bnb, stop_loss_pct=15.0):
     with monitor_lock:
-        if entry_price <= 0:
-            print(f"❌ Monitoring BLOCKED: price=0 for {token_address[:10]}")
+        if entry_price <= 0 or entry_price > 1.0:
+            print(f"❌ Monitoring BLOCKED: invalid price={entry_price} for {token_address[:10]}")
             return
         monitored_positions[token_address] = {
             "session_id":    session_id,
@@ -873,6 +873,24 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     if entry_price > 1.0:
         print(f"❌ Auto-buy BLOCKED: suspicious price={entry_price:.6f}")
         return
+
+    # ── STRICT: Ek baar aur verify karo buy se pehle ─────
+    verify_price = get_token_price_bnb(address)
+    if verify_price > 0:
+        # Dono prices ke beech zyada gap nahi hona chahiye
+        diff_pct = abs(verify_price - entry_price) / entry_price * 100
+        if diff_pct > 50:
+            print(f"❌ Auto-buy BLOCKED: price mismatch {entry_price:.8f} vs {verify_price:.8f} ({diff_pct:.0f}% diff)")
+            return
+        entry_price = verify_price  # Fresh price use karo
+    elif verify_price <= 0:
+        print(f"❌ Auto-buy BLOCKED: verify price=0 for {address[:10]}")
+        return
+
+    if entry_price <= 0:
+        print(f"❌ Auto-buy BLOCKED: final price=0 for {address[:10]}")
+        return
+
     entry_price = entry_price * 1.005
     size_bnb = max(min(AUTO_BUY_SIZE_BNB, paper_balance * 0.025), 0.001)
     sess["paper_balance"] = round(paper_balance - size_bnb, 6)
@@ -990,6 +1008,7 @@ def auto_position_manager():
                 tp_sold = pos.get("tp_sold", 0.0)
                 sl_pct  = pos.get("sl_pct", 15.0)
                 if current <= 0 or entry <= 0:
+                    print(f"⚠️ Skipping {addr[:10]}: current={current:.8f} entry={entry:.8f}")
                     continue
                 pnl     = ((current - entry) / entry) * 100
                 drop_hi = ((current - high) / high) * 100 if high > 0 else 0
