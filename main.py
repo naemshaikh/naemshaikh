@@ -2858,8 +2858,7 @@ def fetch_internet_data_24x7():
         try:
             print("🌐 Fetching internet data...")
             t1 = threading.Thread(target=_fetch_trading_intel, daemon=True)
-            t2 = threading.Thread(target=_fetch_airdrop_intel, daemon=True)
-            t1.start(); t2.start()
+                t1.start(); t2.start()
             t1.join(timeout=30); t2.join(timeout=30)
             _learn_from_internet_data()
             threading.Thread(target=_save_brain_to_db, daemon=True).start()
@@ -3742,7 +3741,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
             + f" | TokensDiscoveredEver={brain.get('total_tokens_discovered_ever', 0)}"
             + f" | LearningCyclesExact={brain.get('total_learning_cycles', 0)}"
             + (f" | RecentScans={_recent_scans}" if _recent_scans else "")
-            + f"{drop_ctx}{session_ctx}"
+            + f"{session_ctx}"
             + (f" | Brain:{brain_ctx}" if brain_ctx else "")
             + (f" | Learned:{learn_ctx}" if learn_ctx else "")
             + (f" | SelfAwareness:{sa_ctx}" if sa_ctx else "")
