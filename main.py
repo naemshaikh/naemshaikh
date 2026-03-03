@@ -1645,9 +1645,11 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         "entry": entry_price, "size_bnb": size_bnb, "type": "auto"
     })
     threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
+    # FIX: Token name DexScreener se lo agar sirf address tha
+    _display_name = token_name if (token_name and not token_name.startswith("0x") and len(token_name) < 20) else address[:12]
     send_telegram(
         f"AUTO PAPER BUY\n"
-        f"Token: {address[:12]}\n"
+        f"Token: {_display_name}\n"
         f"Entry: {entry_price:.8f} BNB\n"
         f"Size: {size_bnb:.4f} BNB\n"
         f"Score: {score}/{total}\n"
@@ -3981,8 +3983,11 @@ def trading_data():
     win_count  = sess.get("win_count",   0)
     daily_loss = sess.get("daily_loss",  0.0)
 
+    # FIX: AUTO_SESSION ka live balance bhi return karo
+    _auto_sess_td = get_or_create_session(AUTO_SESSION_ID)
+    _auto_bal_td  = _auto_sess_td.get("paper_balance", 5.0)
     return jsonify({
-        "paper":          f"{paper_bnb:.3f}",
+        "paper":          f"{_auto_bal_td:.4f}",
         "real":           f"{sess.get('real_balance', 0):.3f}",
         "pnl":            f"+{sess.get('pnl_24h', 0):.1f}%",
         "bnb_price":      bnb_price,
@@ -4116,7 +4121,8 @@ def activity_route():
     for addr,pos in list(auto_trade_stats.get("running_positions",{}).items()):
         e=pos.get("entry",0); c=monitored_positions.get(addr,{}).get("current",e)
         pnl=((c-e)/e*100) if e>0 else 0; b=pos.get("bought_at","")
-        acts.append({"type":"buy","main":f"BUY {pos.get('token',addr[:8])} — {pos.get('size_bnb',0):.4f} BNB @ ${e:.8f}","meta":f"{addr[:8]}...{addr[-4:]} PnL:{pnl:+.1f}%","t":b[11:16] if len(b)>=16 else _dt.utcnow().strftime("%H:%M")})
+        _t=pos.get("token",""); _td=_t if (_t and not _t.startswith("0x") and len(_t)<20) else addr[:8]
+        acts.append({"type":"buy","main":f"BUY {_td} — {pos.get('size_bnb',0):.4f} BNB @ ${e:.8f}","meta":f"{addr[:8]}...{addr[-4:]} PnL:{pnl:+.1f}%","t":b[11:16] if len(b)>=16 else _dt.utcnow().strftime("%H:%M")})
     last=auto_trade_stats.get("last_action","")
     if last and "SELL" in last: acts.insert(0,{"type":"sell","main":last,"meta":"Auto PM","t":_dt.utcnow().strftime("%H:%M")})
     acts.append({"type":"scan","main":f"SCAN:{len(discovered_addresses):,} checked · {len(new_pairs_queue)} queued","meta":"BSC WebSocket","t":_dt.utcnow().strftime("%H:%M")})
