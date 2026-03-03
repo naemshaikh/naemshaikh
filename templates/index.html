@@ -886,6 +886,13 @@ init();
 setInterval(fetchStats,    8000);
 setInterval(fetchActivity, 15000);
 setInterval(fetchHistory,  30000);
+
+
+// Debugging
+console.log('MrBlack UI loaded');
+window.onerror = function(msg, url, line) {
+  console.error('JS Error: ' + msg + ' at line ' + line);
+};
 </script>
 </body>
 </html>
