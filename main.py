@@ -3103,7 +3103,20 @@ def _learn_from_internet_data():
                                        max_tokens=300)
                 reply    = response if isinstance(response, str) else (
                     response.choices[0].message.content if hasattr(response,"choices") else str(response))
-                insights = json.loads(reply.strip().replace("```json","").replace("```","").strip())
+                # FIX: Robust JSON parse — LLM kabhi kabhi invalid JSON deta hai
+                _raw = reply.strip().replace("```json","").replace("```","").strip()
+                # Single quotes → double quotes fix
+                _raw = _raw.replace("'", '"')
+                # Trailing comma fix
+                _raw = re.sub(r',\s*([}\]])', r'', _raw)
+                # JSON array dhundo
+                _match = re.search(r'\[.*\]', _raw, re.DOTALL)
+                if _match:
+                    _raw = _match.group(0)
+                try:
+                    insights = json.loads(_raw)
+                except Exception:
+                    insights = []
                 if isinstance(insights, list):
                     for item in insights:
                         if isinstance(item, dict) and item.get("insight"):
