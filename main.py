@@ -4108,6 +4108,22 @@ def readiness():
     return jsonify(check_paper_to_real_readiness(session_id or "default"))
 
 # ── Airdrops ──────────────────────────────────────────────
+
+@app.route("/activity", methods=["GET"])
+def activity_route():
+    from datetime import datetime as _dt
+    acts=[]
+    for addr,pos in list(auto_trade_stats.get("running_positions",{}).items()):
+        e=pos.get("entry",0); c=monitored_positions.get(addr,{}).get("current",e)
+        pnl=((c-e)/e*100) if e>0 else 0; b=pos.get("bought_at","")
+        acts.append({"type":"buy","main":f"BUY {pos.get('token',addr[:8])} — {pos.get('size_bnb',0):.4f} BNB @ ${e:.8f}","meta":f"{addr[:8]}...{addr[-4:]} PnL:{pnl:+.1f}%","t":b[11:16] if len(b)>=16 else _dt.utcnow().strftime("%H:%M")})
+    last=auto_trade_stats.get("last_action","")
+    if last and "SELL" in last: acts.insert(0,{"type":"sell","main":last,"meta":"Auto PM","t":_dt.utcnow().strftime("%H:%M")})
+    acts.append({"type":"scan","main":f"SCAN:{len(discovered_addresses):,} checked · {len(new_pairs_queue)} queued","meta":"BSC WebSocket","t":_dt.utcnow().strftime("%H:%M")})
+    fg=market_cache.get("fear_greed",50); bnb=market_cache.get("bnb_price",0)
+    if bnb>0: acts.append({"type":"scan","main":f"BNB ${bnb:.2f} F&G {fg}/100","meta":"Live","t":_dt.utcnow().strftime("%H:%M")})
+    return jsonify({"activity":acts[:25]})
+
 @app.route("/airdrops", methods=["GET"])
 
 def self_awareness_route():
@@ -4158,10 +4174,14 @@ def auto_stats_route():
         entry   = v.get("entry", 0)
         current = monitored_positions.get(k, {}).get("current", entry)
         pnl     = ((current - entry) / entry * 100) if entry > 0 else 0
-        positions_info[k[:12]] = {
+        positions_info[k] = {
             "token":   v.get("token"),
             "pnl_pct": round(pnl, 2),
             "size":    v.get("size_bnb"),
+            "token":   v.get("token", k[:8]),
+            "address": k,
+            "mcap":    "MCap ?",
+            "age":     "Active",
         }
     return jsonify({
         "enabled":        AUTO_TRADE_ENABLED,
@@ -4174,6 +4194,21 @@ def auto_stats_route():
         "trade_count":    sess.get("trade_count", 0),
         "win_rate":       round(sess.get("win_count",0)/max(sess.get("trade_count",1),1)*100,1),
         "last_action":    auto_trade_stats["last_action"],
+        "total_scanned":  len(discovered_addresses),
+        "monitoring":     len(monitored_positions),
+        "open_trades": [
+            {
+                "token":   v.get("token", k[:8]),
+                "address": k,
+                "entry":   f"${v.get('entry', 0):.10f}",
+                "current": f"${monitored_positions.get(k,{}).get('current',v.get('entry',0)):.10f}",
+                "pnl":     round(((monitored_positions.get(k,{}).get('current',v.get('entry',0))-v.get('entry',0))/max(v.get('entry',0),1e-18))*100,2),
+                "size":    f"{v.get('size_bnb',0):.4f} BNB",
+                "age":     "Active",
+                "mcap":    "MCap ?"
+            }
+            for k,v in auto_trade_stats.get("running_positions",{}).items()
+        ],
     })
 
 @app.route("/health")
