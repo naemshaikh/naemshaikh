@@ -177,7 +177,9 @@ def get_token_price_bnb(token_address: str) -> float:
         # Source 5: DexScreener
         resp = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{token_address}", timeout=8)
         if resp.status_code == 200:
-            bsc = [p for p in (resp.json().get("pairs") or []) if p.get("chainId")=="bsc"]
+            _resp_raw = (resp.json() or {}).get("pairs") or []
+            if not isinstance(_resp_raw, list): _resp_raw = []
+            bsc = [p for p in _resp_raw if p and p.get("chainId")=="bsc"]
             if bsc:
                 bsc.sort(key=lambda x: float((x.get("liquidity") or {}).get("usd",0) or 0), reverse=True)
                 pusd = float(bsc[0].get("priceUsd",0) or 0)
@@ -1299,8 +1301,10 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
             timeout=6
         )
         if nr.status_code == 200:
-            _nj = nr.json() or {}
-            bsc_p = [p for p in (_nj.get("pairs") or []) if p.get("chainId") == "bsc"]
+            _nj   = nr.json() or {}
+            _nraw = _nj.get("pairs") or []
+            if not isinstance(_nraw, list): _nraw = []
+            bsc_p = [p for p in _nraw if p and p.get("chainId") == "bsc"]
             if bsc_p:
                 bsc_p.sort(key=lambda x: float(((x.get("liquidity") or {}).get("usd") or 0)), reverse=True)
                 bt = bsc_p[0].get("baseToken") or {}
@@ -1460,9 +1464,11 @@ def poll_new_pairs():
             try:
                 rs = requests.get(f"https://api.dexscreener.com/latest/dex/search?q={q}", timeout=10)
                 if rs.status_code == 200:
-                    _rsj = rs.json() or {}
-                    for p in (_rsj.get("pairs") or [])[:15]:
-                        if p.get("chainId") == "bsc":
+                    _rsj  = rs.json() or {}
+                    _rsraw = _rsj.get("pairs") or []
+                    if not isinstance(_rsraw, list): _rsraw = []
+                    for p in _rsraw[:15]:
+                        if p and p.get("chainId") == "bsc":
                             addr = (p.get("baseToken") or {}).get("address", "")
                             if addr:
                                 threading.Thread(target=_process_new_token, args=(addr, p.get("pairAddress",""), "DexSearch"), daemon=True).start()
@@ -1493,7 +1499,9 @@ def _auto_check_new_pair(pair_address: str):
         )
         if _ar.status_code == 200:
             _aj  = _ar.json() or {}
-            _bp  = [p for p in (_aj.get("pairs") or []) if p.get("chainId") == "bsc"]
+            _raw = _aj.get("pairs") or []
+            if not isinstance(_raw, list): _raw = []
+            _bp  = [p for p in _raw if p and p.get("chainId") == "bsc"]
             if _bp:
                 _ct  = _bp[0].get("pairCreatedAt", 0) or 0
                 if _ct:
@@ -1853,8 +1861,10 @@ def get_dexscreener_token_data(token_address: str) -> Dict:
             timeout=10
         )
         if r.status_code == 200:
-            pairs = r.json().get("pairs", [])
-            bsc   = [p for p in pairs if p.get("chainId") == "bsc"]
+            _json = r.json() or {}
+            pairs = _json.get("pairs") or []
+            if not isinstance(pairs, list): pairs = []
+            bsc   = [p for p in pairs if p and p.get("chainId") == "bsc"]
             if bsc:
                 bsc.sort(key=lambda x: float(x.get("liquidity", {}).get("usd", 0) or 0), reverse=True)
                 p = bsc[0]
@@ -3550,7 +3560,10 @@ def run_full_sniper_checklist(address: str) -> Dict:
             timeout=10
         )
         if age_r.status_code == 200:
-            bsc_pairs = [p for p in age_r.json().get("pairs", []) if p is not None and p.get("chainId") == "bsc"]
+            _age_json = age_r.json() or {}
+            _age_raw  = _age_json.get("pairs") or []
+            if not isinstance(_age_raw, list): _age_raw = []
+            bsc_pairs = [p for p in _age_raw if p is not None and p.get("chainId") == "bsc"]
             if bsc_pairs:
                 created_at = bsc_pairs[0].get("pairCreatedAt", 0)
                 if created_at:
