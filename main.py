@@ -206,7 +206,7 @@ if SUPABASE_URL and SUPABASE_KEY:
 knowledge_base = {
     "dex":      {"uniswap": {}, "pancakeswap": {}, "aerodrome": {}, "raydium": {}, "jupiter": {}},
     "bsc":      {"new_tokens": [], "trending": [], "scams": [], "safu_tokens": []},
-    "airdrops": {"active": [], "upcoming": [], "ended": []},
+    "airdrops": {"active": [], "upcoming": [], "ended": []},  # kept for compatibility
     "trading":  {"news": [], "fear_greed": {}, "market_data": {}}
 }
 
@@ -831,10 +831,8 @@ def _assess_capabilities() -> dict:
     cap["airdrop_evaluation"]["tested"] = tracked_drops
     cap["airdrop_evaluation"]["score"]  = min(10, 2 + tracked_drops // 5 + success_patterns // 3)
 
-    # ── Code Debugging — solutions library size ───────────────────────
-    solutions = len(brain["coding"]["solutions_library"])
-    cap["code_debugging"]["tested"] = solutions
-    cap["code_debugging"]["score"]  = min(10, 3 + solutions // 2)
+    # Code debugging capability — static score (coding removed)
+    cap["code_debugging"]["score"] = 0
 
     return cap
 
@@ -992,7 +990,7 @@ def update_self_awareness():
         self_awareness["memory_summary"]["total_patterns_learned"]   = mem_total
         self_awareness["memory_summary"]["tokens_blacklisted"]       = len(_brain.get("trading", {})["token_blacklist"])
         self_awareness["memory_summary"]["tokens_whitelisted"]       = len(_brain.get("trading", {})["token_whitelist"])
-        self_awareness["memory_summary"]["airdrop_projects_tracked"] = len(brain["airdrop"]["active_projects"])
+        self_awareness["memory_summary"]["airdrop_projects_tracked"] = 0
         self_awareness["memory_summary"]["strategy_notes_count"]     = len(_brain.get("trading", {})["strategy_notes"])
         self_awareness["memory_summary"]["memory_health"]            = (
             "RICH"    if mem_total > 50  else
@@ -2179,57 +2177,8 @@ def fetch_market_data():
 # ========== AIRDROP HUNTER ================================
 # ==========================================================
 
-def fetch_defillama_airdrops() -> List[Dict]:
-    results = []
-    try:
-        r = requests.get("https://api.llama.fi/raises", timeout=12)
-        if r.status_code == 200:
-            cutoff = (datetime.utcnow() - timedelta(days=30)).timestamp()
-            for item in r.json().get("raises", [])[:50]:
-                if float(item.get("date", 0) or 0) > cutoff:
-                    results.append({
-                        "name":        item.get("name", "Unknown"),
-                        "category":    item.get("category", "DeFi"),
-                        "amount_usd":  item.get("amount", 0),
-                        "chains":      item.get("chains", []),
-                        "source":      "DeFiLlama",
-                        "status":      "upcoming",
-                        "description": f"Raised ${item.get('amount', 0)}M — potential airdrop",
-                        "url":         "https://defillama.com/raises"
-                    })
-    except Exception as e:
-        print(f"⚠️ DeFiLlama error: {e}")
-    return results[:15]
 
-def fetch_coinmarketcap_airdrops() -> List[Dict]:
-    results = []
-    try:
-        r = requests.get(
-            "https://api.coinmarketcap.com/data-api/v3/cryptocurrency/listing/new",
-            params={"start": 1, "limit": 20, "sortBy": "date_added"}, timeout=12
-        )
-        if r.status_code == 200:
-            for t in r.json().get("data", {}).get("recentlyAddedList", [])[:10]:
-                if any(tag in ["binance-smart-chain", "bsc"] for tag in t.get("tags", [])):
-                    results.append({
-                        "name":        t.get("name", "Unknown"),
-                        "symbol":      t.get("symbol", ""),
-                        "chains":      ["BSC"],
-                        "source":      "CoinMarketCap",
-                        "status":      "active",
-                        "description": f"New BSC token — {t.get('dateAdded', '')[:10]}",
-                        "url":         f"https://coinmarketcap.com/currencies/{t.get('slug', '')}"
-                    })
-    except Exception as e:
-        print(f"⚠️ CMC error: {e}")
-    return results
 
-def run_airdrop_hunter():
-    print("🪂 Airdrop Hunter starting...")
-    all_airdrops  = fetch_defillama_airdrops() + fetch_coinmarketcap_airdrops()
-    knowledge_base["airdrops"]["active"]   = [a for a in all_airdrops if a.get("status") == "active"]
-    knowledge_base["airdrops"]["upcoming"] = [a for a in all_airdrops if a.get("status") == "upcoming"]
-    print(f"🪂 Airdrops — Active:{len(knowledge_base['airdrops']['active'])} Upcoming:{len(knowledge_base['airdrops']['upcoming'])}")
 
 def fetch_pancakeswap_data():
     try:
@@ -2257,13 +2206,13 @@ brain: Dict = {
         "last_updated":     None
     },
     "airdrop": {
-        "active_projects":  [],   # Currently tracking
-        "completed":        [],   # Done — did they deliver?
-        "success_patterns": [],   # What made airdrops successful
-        "fail_patterns":    [],   # What caused airdrop failures
-        "wallet_notes":     [],   # Wallet strategy learnings
+        "active_projects":  [],
+        "completed":        [],
+        "success_patterns": [],
+        "fail_patterns":    [],
+        "wallet_notes":     [],
         "last_updated":     None
-    },
+    },  # kept for DB compatibility — not actively used
     "coding": {
         "solutions_library": [],  # Code problems + solutions
         "common_errors":     [],  # Errors encountered + fixes
@@ -2325,9 +2274,7 @@ def _ensure_brain_structure():
                 "fail_patterns","wallet_notes"]:
         if not isinstance(brain["airdrop"].get(key), list):
             brain["airdrop"][key] = []
-    for key in ["solutions_library","common_errors","useful_snippets","deployment_notes"]:
-        if not isinstance(brain["coding"].get(key), list):
-            brain["coding"][key] = []
+
 
 def _load_brain_from_db():
     """Load brain from Supabase on startup."""
@@ -2434,70 +2381,6 @@ def _learn_trading_patterns():
     except Exception as e:
         print(f"⚠️ Trading learning error: {e}")
 
-def _learn_airdrop_patterns():
-    """Fix 4: Airdrop Completion Tracking — 30 din baad token launch check, success/fail patterns."""
-    try:
-        now = datetime.utcnow()
-        for project in knowledge_base["airdrops"]["active"]:
-            name = project.get("name","")
-            if name and name not in [p.get("name") for p in brain["airdrop"]["active_projects"]]:
-                brain["airdrop"]["active_projects"].append({
-                    "name": name, "source": project.get("source",""),
-                    "chains": project.get("chains",[]), "amount_usd": float(project.get("amount_usd",0) or 0),
-                    "added_at": now.isoformat(), "status": "tracking",
-                    "check_after": (now + timedelta(days=30)).isoformat(), "delivered": None
-                })
-
-        # 30-day completion check
-        for project in brain["airdrop"]["active_projects"]:
-            if project.get("delivered") is not None: continue
-            try:
-                if datetime.fromisoformat(project.get("check_after","")) > now: continue
-            except Exception: continue
-            name = project.get("name","")
-            if not name: continue
-            try:
-                r = requests.get("https://api.coingecko.com/api/v3/search",
-                                 params={"query": name}, timeout=8)
-                if r.status_code == 200:
-                    launched = any(name.lower() in c.get("name","").lower()
-                                   for c in r.json().get("coins",[])[:5])
-                    project.update({"delivered": launched, "checked_at": now.isoformat()})
-                    if launched:
-                        brain["airdrop"]["completed"].append(
-                            {"name": name, "result": "DELIVERED",
-                             "source": project.get("source",""),
-                             "amount_usd": project.get("amount_usd",0), "time": now.isoformat()})
-                        brain["airdrop"]["success_patterns"].append(
-                            f"SUCCESS: {name} — {project.get('source','')} — ${project.get('amount_usd',0)}M")
-                        print(f"✅ Airdrop delivered: {name}")
-                    else:
-                        brain["airdrop"]["fail_patterns"].append(
-                            {"name": name, "reason": "Not on CoinGecko after 30d", "time": now.isoformat()})
-                        print(f"❌ Airdrop not delivered: {name}")
-            except Exception as ce:
-                print(f"⚠️ Airdrop check {name}: {ce}")
-
-        # Pattern updates
-        funded = [p for p in brain["airdrop"]["active_projects"] if float(p.get("amount_usd",0)) > 5]
-        if funded:
-            brain["airdrop"]["success_patterns"].append(
-                f"Projects >$5M: {len(funded)} tracked — higher delivery probability")
-        bsc = [p for p in brain["airdrop"]["active_projects"] if "BSC" in p.get("chains",[])]
-        if bsc:
-            brain["airdrop"]["wallet_notes"].append(
-                {"note": f"{len(bsc)} BSC airdrop projects active", "timestamp": now.isoformat()})
-
-        brain["airdrop"]["active_projects"]  = brain["airdrop"]["active_projects"][-200:]
-        brain["airdrop"]["success_patterns"] = list(set(brain["airdrop"]["success_patterns"]))[-30:]
-        brain["airdrop"]["fail_patterns"]    = brain["airdrop"]["fail_patterns"][-30:]
-        brain["airdrop"]["wallet_notes"]     = brain["airdrop"]["wallet_notes"][-30:]
-        brain["airdrop"]["last_updated"]     = now.isoformat()
-
-        delivered_c = sum(1 for p in brain["airdrop"]["active_projects"] if p.get("delivered") == True)
-        print(f"🪂 Airdrop: {len(brain['airdrop']['active_projects'])} tracked | {delivered_c} delivered")
-    except Exception as e:
-        print(f"⚠️ Airdrop learning error: {e}")
 
 def _learn_from_new_pairs():
     """
@@ -2581,18 +2464,11 @@ def _get_brain_context_for_llm() -> str:
             recent_addrs = list(discovered_addresses.keys())[-10:]
             parts.append(f"RecentAddresses:{[a[:10] for a in recent_addrs]}")
 
-        # Airdrop insights
-        active_drops = brain["airdrop"]["active_projects"]
-        if active_drops:
-            confirmed_drops = [p for p in active_drops if p.get("status") == "confirmed"]
-            bsc_drops       = [p for p in active_drops if "BSC" in p.get("chains", [])]
-            parts.append(f"TrackedDrops:{len(active_drops)}(Confirmed:{len(confirmed_drops)} BSC:{len(bsc_drops)})")
+
         inet_insights = [n for n in brain["trading"]["strategy_notes"] if "[INTERNET-INSIGHT]" in n.get("note","")]
         if inet_insights:
             parts.append(f"InternetIntel:{inet_insights[-1].get('note','').replace('[INTERNET-INSIGHT]','').strip()[:50]}")
-        recent_tools = brain["coding"]["useful_snippets"][-2:]
-        if recent_tools:
-            parts.append(f"TrendingTools:{' | '.join([t.get('title','')[:20] for t in recent_tools])}")
+
 
         # Learning cycles
         parts.append(f"LearningCycles:{brain['total_learning_cycles']}")
@@ -2602,10 +2478,7 @@ def _get_brain_context_for_llm() -> str:
         cross_c = len([n for n in brain["trading"]["strategy_notes"] if "[CROSS-DOMAIN]" in n.get("note","")])
         if cross_c > 0:
             parts.append(f"CrossSignals:{cross_c}")
-        delivered = sum(1 for p in brain["airdrop"]["active_projects"] if p.get("delivered") == True)
-        failed_d  = sum(1 for p in brain["airdrop"]["active_projects"] if p.get("delivered") == False)
-        if delivered + failed_d > 0:
-            parts.append(f"AirdropDelivery:{round(delivered/(delivered+failed_d)*100)}%({delivered}/{delivered+failed_d})")
+
 
         return " | ".join(parts) if parts else ""
 
@@ -2642,9 +2515,9 @@ def learn_from_message(user_message: str, bot_reply: str, session_id: str):
         if any(w in msg_lower for w in ["token","scan","trade","buy","sell","chart","price","bnb","bsc"]):
             topics["trading_questions"] += 1; domain = "trading"
         elif any(w in msg_lower for w in ["airdrop","claim","free","reward","whitelist","drop"]):
-            topics["airdrop_questions"] += 1; domain = "airdrop"
+            topics["airdrop_questions"] += 1; domain = "general"  # airdrop removed
         elif any(w in msg_lower for w in ["code","error","bug","fix","python","deploy","flask","api"]):
-            topics["coding_questions"]  += 1; domain = "coding"
+            topics["coding_questions"]  += 1; domain = "general"  # coding domain removed
         else:
             topics["general_chat"] += 1
 
@@ -2657,12 +2530,7 @@ def learn_from_message(user_message: str, bot_reply: str, session_id: str):
             brain["user_pain_points"] = brain["user_pain_points"][-30:]
 
         if high_quality and len(user_message) > 10:
-            if domain == "coding":
-                brain["coding"]["solutions_library"].append({
-                    "title": f"Q: {user_message[:50]}", "answer": bot_reply[:100],
-                    "category": "conversation", "added_at": datetime.utcnow().isoformat()})
-                brain["coding"]["solutions_library"] = brain["coding"]["solutions_library"][-100:]
-            elif domain == "trading":
+            if domain == "trading":
                 brain["trading"]["strategy_notes"].append({
                     "note": f"[CONV] Q:{user_message[:40]} → A:{bot_reply[:60]}",
                     "timestamp": datetime.utcnow().isoformat(), "source": "conversation"})
@@ -2781,40 +2649,6 @@ def _deep_llm_learning():
         print(f"Deep learn error: {e}")
 
 
-# ── Tier 4b: Airdrop LLM analysis ──────────────────────────────────
-def _deep_airdrop_analysis():
-    """LLM se airdrop patterns analyze karwao."""
-    try:
-        active = brain["airdrop"]["active_projects"]
-        if len(active) < 2:
-            return
-
-        # High value projects (>$10M raised)
-        high_value = [p for p in active if float(p.get("amount_usd", 0)) > 10]
-        bsc_focused = [p for p in active if "BSC" in p.get("chains", [])]
-
-        # Pattern: What % of high-value projects have BSC?
-        if len(active) > 5:
-            bsc_pct = (len(bsc_focused) / len(active)) * 100
-            insight = f"{bsc_pct:.0f}% of tracked projects have BSC exposure — {'high' if bsc_pct > 40 else 'low'} BSC airdrop season"
-            existing = [n.get("note","") for n in brain["airdrop"]["wallet_notes"]]
-            if insight not in existing:
-                brain["airdrop"]["wallet_notes"].append({
-                    "note": insight,
-                    "timestamp": datetime.utcnow().isoformat()
-                })
-
-        if high_value:
-            brain["airdrop"]["success_patterns"].append(
-                f"{len(high_value)} high-value (>$10M) projects tracked — priority for airdrop hunting"
-            )
-            brain["airdrop"]["success_patterns"] = list(set(brain["airdrop"]["success_patterns"]))[-20:]
-
-    except Exception as e:
-        print(f"Airdrop analysis error: {e}")
-
-
-# ── Knowledge Application: Inject into decisions ───────────────────
 def get_learning_context_for_decision(token_address: str = None) -> str:
     """
     Before any decision (scan/trade), inject all relevant learned knowledge.
@@ -2955,122 +2789,6 @@ def _fetch_trading_intel():
         print(f"⚠️ Trading intel error: {e}")
 
 
-def _fetch_airdrop_intel():
-    """Airdrop: airdrops.io RSS + DeFiLlama raises"""
-    try:
-        import xml.etree.ElementTree as ET
-
-        # airdrops.io RSS
-        r = requests.get("https://airdrops.io/feed/", timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-        if r.status_code == 200:
-            try:
-                root = ET.fromstring(r.content)
-                added = 0
-                for item in root.findall(".//item")[:10]:
-                    title = item.findtext("title","")[:60]
-                    link  = item.findtext("link", "")[:80]
-                    if not title: continue
-                    entry = {"name": title, "url": link, "source": "airdrops_io",
-                             "chains": [], "status": "confirmed", "added_at": datetime.utcnow().isoformat()}
-                    if _quality_score(entry, "airdrop") >= 40:
-                        if title not in [p.get("name") for p in brain["airdrop"]["active_projects"]]:
-                            brain["airdrop"]["active_projects"].append(entry)
-                            added += 1
-                print(f"🪂 airdrops.io: {added} quality airdrops added")
-            except Exception as xe:
-                print(f"⚠️ airdrops.io XML: {xe}")
-
-        # DeFiLlama raises
-        r2 = requests.get("https://api.llama.fi/raises", timeout=12)
-        if r2.status_code == 200:
-            cutoff = (datetime.utcnow() - timedelta(days=7)).timestamp()
-            added  = 0
-            for item in r2.json().get("raises", [])[:30]:
-                if float(item.get("date", 0) or 0) < cutoff: continue
-                entry = {"name": item.get("name",""), "source": "defillama",
-                         "chains": item.get("chains",[]), "amount_usd": item.get("amount",0),
-                         "added_at": datetime.utcnow().isoformat(), "status": "fundraised"}
-                if _quality_score(entry, "airdrop") >= 30:
-                    if entry["name"] and entry["name"] not in [p.get("name") for p in brain["airdrop"]["active_projects"]]:
-                        brain["airdrop"]["active_projects"].append(entry)
-                        added += 1
-            print(f"💰 DeFiLlama: {added} quality raises added")
-
-        brain["airdrop"]["active_projects"] = brain["airdrop"]["active_projects"][-200:]
-        brain["airdrop"]["last_updated"]    = datetime.utcnow().isoformat()
-    except Exception as e:
-        print(f"⚠️ Airdrop intel error: {e}")
-
-
-def _fetch_coding_intel():
-    """Coding: GitHub Trending Python + Solidity + HackerNews"""
-    try:
-        import xml.etree.ElementTree as ET
-
-        # GitHub Python trending
-        r = requests.get("https://mshibanami.github.io/GitHubTrendingRSS/daily/python.xml",
-                         timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-        if r.status_code == 200:
-            try:
-                root  = ET.fromstring(r.content)
-                added = 0
-                for item in root.findall(".//item")[:8]:
-                    title = item.findtext("title","")[:60]
-                    link  = item.findtext("link", "")[:80]
-                    desc  = item.findtext("description","")[:100]
-                    if title:
-                        entry = {"title": title, "link": link, "desc": desc,
-                                 "source": "github_trending", "added_at": datetime.utcnow().isoformat()}
-                        if _quality_score(entry, "coding") >= 30:
-                            if title not in [s.get("title") for s in brain["coding"]["useful_snippets"]]:
-                                brain["coding"]["useful_snippets"].append(entry)
-                                added += 1
-                brain["coding"]["useful_snippets"] = brain["coding"]["useful_snippets"][-100:]
-                print(f"💻 GitHub Python: {added} repos added")
-            except Exception as xe:
-                print(f"⚠️ GitHub RSS: {xe}")
-
-        # HackerNews
-        r2 = requests.get("https://hacker-news.firebaseio.com/v0/topstories.json", timeout=10)
-        if r2.status_code == 200:
-            added = 0
-            for sid in r2.json()[:8]:
-                try:
-                    rs = requests.get(f"https://hacker-news.firebaseio.com/v0/item/{sid}.json", timeout=5)
-                    if rs.status_code == 200:
-                        s     = rs.json()
-                        entry = {"title": s.get("title","")[:60], "url": s.get("url","")[:80],
-                                 "score": s.get("score",0), "source": "hackernews",
-                                 "added_at": datetime.utcnow().isoformat()}
-                        if _quality_score(entry, "coding") >= 40:
-                            if entry["title"] and entry["title"] not in [x.get("title") for x in brain["coding"]["deployment_notes"]]:
-                                brain["coding"]["deployment_notes"].append(
-                                    {"note": f"HN: {entry['title']} (score:{entry['score']})",
-                                     "url": entry["url"], "added_at": entry["added_at"]})
-                                added += 1
-                except Exception: pass
-            brain["coding"]["deployment_notes"] = brain["coding"]["deployment_notes"][-100:]
-            print(f"📰 HackerNews: {added} stories added")
-
-        # GitHub Solidity trending
-        r3 = requests.get("https://mshibanami.github.io/GitHubTrendingRSS/daily/solidity.xml",
-                          timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-        if r3.status_code == 200:
-            try:
-                root = ET.fromstring(r3.content)
-                for item in root.findall(".//item")[:5]:
-                    title = item.findtext("title","")[:60]
-                    link  = item.findtext("link", "")[:80]
-                    if title and title not in [s.get("title") for s in brain["coding"]["solutions_library"]]:
-                        brain["coding"]["solutions_library"].append(
-                            {"title": title, "link": link, "category": "web3/solidity",
-                             "source": "github_trending", "added_at": datetime.utcnow().isoformat()})
-                brain["coding"]["solutions_library"] = brain["coding"]["solutions_library"][-100:]
-            except Exception: pass
-
-        brain["coding"]["last_updated"] = datetime.utcnow().isoformat()
-    except Exception as e:
-        print(f"⚠️ Coding intel error: {e}")
 
 
 def _learn_from_internet_data():
@@ -3087,7 +2805,7 @@ def _learn_from_internet_data():
                        f"Airdrops={len(brain['airdrop']['active_projects'])}, F&G={market_cache.get('fear_greed',50)}")
             prompt = (f"BSC bot ke liye internet data: {summary}. "
                       f"3 actionable insights JSON: "
-                      f'[{{"insight":"...","action":"...","domain":"trading/airdrop/coding","confidence":0-100}}]')
+                      f'[{{"insight":"...","action":"...","domain":"trading/airdrop","confidence":0-100}}]')
             try:
                 client   = _get_freeflow_client()
                 response = client.chat(model=MODEL_FAST,
@@ -3122,10 +2840,7 @@ def _learn_from_internet_data():
                                 brain["trading"]["strategy_notes"].append(note)
                             elif domain == "airdrop":
                                 brain["airdrop"]["success_patterns"].append(note["note"])
-                            elif domain == "coding":
-                                brain["coding"]["solutions_library"].append(
-                                    {"title": note["note"][:60], "category":"llm_insight",
-                                     "added_at": datetime.utcnow().isoformat()})
+
                     print(f"🧠 Internet LLM: {len(insights)} insights extracted")
             except Exception as le:
                 print(f"⚠️ Internet LLM error: {le}")
@@ -3144,14 +2859,13 @@ def fetch_internet_data_24x7():
             print("🌐 Fetching internet data...")
             t1 = threading.Thread(target=_fetch_trading_intel, daemon=True)
             t2 = threading.Thread(target=_fetch_airdrop_intel, daemon=True)
-            t3 = threading.Thread(target=_fetch_coding_intel,  daemon=True)
-            t1.start(); t2.start(); t3.start()
-            t1.join(timeout=30); t2.join(timeout=30); t3.join(timeout=30)
+            t1.start(); t2.start()
+            t1.join(timeout=30); t2.join(timeout=30)
             _learn_from_internet_data()
             threading.Thread(target=_save_brain_to_db, daemon=True).start()
             print(f"✅ Internet done | Trading:{len(brain['trading']['market_insights'])} | "
                   f"Airdrops:{len(brain['airdrop']['active_projects'])} | "
-                  f"Coding:{len(brain['coding']['solutions_library'])}")
+      )
         except Exception as e:
             print(f"⚠️ Internet engine error: {e}")
         time.sleep(1800)
@@ -3258,14 +2972,8 @@ def continuous_learning():
             except Exception as e:
                 print(f"Market fetch error: {e}")
 
-            try:
-                run_airdrop_hunter()
-            except Exception as e:
-                print(f"Airdrop fetch error: {e}")
-
             # Standard pattern learning
             _learn_trading_patterns()
-            _learn_airdrop_patterns()
             _learn_from_new_pairs()
 
             # T3 pe bhi cycle count save karo — restart pe reset nahi hoga
@@ -3286,8 +2994,7 @@ def continuous_learning():
                 print(f"🔬 Deep learning pass #{cycle}...")
 
                 _deep_llm_learning()
-                _deep_airdrop_analysis()
-                _cross_domain_learning()
+                    _cross_domain_learning()
 
                 # Update self-awareness after deep learning
                 update_self_awareness()
@@ -3306,8 +3013,8 @@ def continuous_learning():
                         "quality": "active" if len(brain["airdrop"]["active_projects"]) > 5 else "building"
                     },
                     "coding":   {
-                        "entries": len(brain["coding"]["solutions_library"]),
-                        "quality": "growing"
+                        "entries": 0,
+                        "quality": "removed"
                     },
                     "market":   {
                         "entries": len(brain["trading"]["market_insights"]),
@@ -3332,7 +3039,6 @@ def continuous_learning():
 
                     wins_c   = len(brain["trading"]["best_patterns"])
                     avoid_c  = len(brain["trading"]["avoid_patterns"])
-                    drops_c  = len(brain["airdrop"]["active_projects"])
                     fg       = market_cache.get("fear_greed", 50)
                     bnb      = market_cache.get("bnb_price", 0)
                     tiq      = self_awareness["performance_intelligence"]["trading_iq"]
@@ -3352,8 +3058,7 @@ def continuous_learning():
                         "Emotion: " + str(emotion) + " Conf: " + str(conf) + "%\n"
                         "Patterns W:" + str(wins_c) + " L:" + str(avoid_c) + "\n"
                         "Blacklisted: " + str(len(brain["trading"]["token_blacklist"])) + "\n"
-                        "Airdrops: " + str(drops_c) + "\n"
-                        "BNB: $" + str(round(bnb,1)) + " FG:" + str(fg) + "\n"
+                            "BNB: $" + str(round(bnb,1)) + " FG:" + str(fg) + "\n"
                         "Growing smarter every cycle!"
                     )
                     send_telegram(report_msg)
@@ -3376,7 +3081,6 @@ def _check_milestones():
             (len(brain["trading"]["token_blacklist"]) >= 10,  "Blacklisted 10 dangerous tokens 🛡️"),
             (len(brain["trading"]["best_patterns"])   >= 5,   "Learned 5 winning patterns 📈"),
             (brain.get("total_learning_cycles", 0)    >= 100, "100 learning cycles complete 🧠"),
-            (len(brain["airdrop"]["active_projects"])  >= 20, "Tracking 20 airdrop projects 🪂"),
             (self_awareness["performance_intelligence"]["trading_iq"] >= 70, "Trading IQ reached 70+ 🎯"),
         ]
 
@@ -3971,8 +3675,6 @@ def _get_freeflow_client():
 def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
     try:
         client       = _get_freeflow_client()
-        active_drops = knowledge_base["airdrops"]["active"][:3]
-        airdrop_ctx  = f" | Airdrops: {','.join(a.get('name','') for a in active_drops)}" if active_drops else ""
         trade_count  = session_data.get("trade_count", 0)
         win_count    = session_data.get("win_count",   0)
         win_rate_str = f"{round(win_count/trade_count*100,1)}%" if trade_count > 0 else "No trades yet"
@@ -3999,11 +3701,6 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
                 + (f" | Lessons:{recent_lessons}" if recent_lessons else "")
             )
 
-        # ── Airdrop context ─────────────────────────────────────────────
-        active_drops = knowledge_base["airdrops"]["active"][:3]
-        drop_ctx = ""
-        if active_drops:
-            drop_ctx = f" | Airdrops:{','.join(a.get('name','')[:8] for a in active_drops)}"
 
         # Recent scanned tokens
         _recent_scans = ""
@@ -4223,7 +3920,6 @@ def _startup_once():
             return _wrap
 
         threading.Thread(target=fetch_market_data,                   daemon=True).start()
-        threading.Thread(target=_delayed(run_airdrop_hunter,    5),  daemon=True).start()
         threading.Thread(target=_delayed(poll_new_pairs,        10), daemon=True).start()
         threading.Thread(target=_delayed(price_monitor_loop,    15), daemon=True).start()
         threading.Thread(target=_delayed(track_smart_wallets,   20), daemon=True).start()
@@ -4404,17 +4100,7 @@ def readiness():
 
 # ── Airdrops ──────────────────────────────────────────────
 @app.route("/airdrops", methods=["GET"])
-def airdrops():
-    return jsonify({
-        "active":   knowledge_base["airdrops"]["active"],
-        "upcoming": knowledge_base["airdrops"]["upcoming"],
-        "total":    len(knowledge_base["airdrops"]["active"]) + len(knowledge_base["airdrops"]["upcoming"]),
-        "updated":  market_cache.get("last_updated")
-    })
 
-# ── Health ────────────────────────────────────────────────
-
-@app.route("/self-awareness", methods=["GET"])
 def self_awareness_route():
     update_self_awareness()
     uptime_s = self_awareness["current_state"]["uptime_seconds"]
