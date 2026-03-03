@@ -1584,24 +1584,20 @@ auto_trade_stats = {
 
 
 def _auto_paper_buy(address, token_name, score, total, checklist_result):
-    print(f"🔔 _auto_paper_buy called: {address[:10]} score={score}/{total}")
     if not AUTO_TRADE_ENABLED:
-        print("Auto-buy blocked: AUTO_TRADE_ENABLED=False")
         return
     sess = get_or_create_session(AUTO_SESSION_ID)
     if sess.get("daily_loss", 0) >= 8.0:
-        print(f"Auto-buy blocked: daily loss limit {sess.get('daily_loss',0):.1f}%")
+        print("Auto-buy blocked: daily loss limit")
         return
     if len(auto_trade_stats["running_positions"]) >= AUTO_MAX_POSITIONS:
-        print(f"Auto-buy skipped: max positions {AUTO_MAX_POSITIONS} open")
+        print("Auto-buy skipped: max positions open")
         return
     if address in auto_trade_stats["running_positions"]:
-        print(f"Auto-buy skipped: already in positions {address[:10]}")
         return
     paper_balance = sess.get("paper_balance", 1.87)
-    print(f"Auto-buy balance check: {paper_balance:.4f} BNB needed: {AUTO_BUY_SIZE_BNB}")
     if paper_balance < AUTO_BUY_SIZE_BNB:
-        print(f"Auto-buy skipped: low balance {paper_balance:.4f} < {AUTO_BUY_SIZE_BNB}")
+        print("Auto-buy skipped: low balance")
         return
     entry_price = get_token_price_bnb(address)
     # FIX: Retry — naye tokens pe price aane mein time lagta hai
@@ -1611,26 +1607,21 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     if entry_price <= 0:
         import time as _t; _t.sleep(10)
         entry_price = get_token_price_bnb(address)
-    # FIX: Retry — naye tokens pe price aane mein time lagta hai
-    print(f"Auto-buy price fetch attempt 1: {address[:10]}")
+    # Retry — naye tokens pe price aane mein time lagta hai
     if entry_price <= 0:
         import time as _t; _t.sleep(5)
         entry_price = get_token_price_bnb(address)
-        print(f"Auto-buy price attempt 2: {entry_price}")
     if entry_price <= 0:
         import time as _t; _t.sleep(10)
         entry_price = get_token_price_bnb(address)
-        print(f"Auto-buy price attempt 3: {entry_price}")
     if entry_price <= 0:
         dex = checklist_result.get("dex_data", {})
         bnb_p = market_cache.get("bnb_price", 300) or 300
         entry_price = dex.get("price_usd", 0) / bnb_p if dex.get("price_usd", 0) > 0 else 0
-        print(f"Auto-buy price from dex_data: {entry_price}")
     if entry_price <= 0:
         addr_short = address[:10]
         print(f"Auto-buy skipped: no price for {addr_short}")
         return
-    print(f"Auto-buy price confirmed: {entry_price:.10f} BNB")
     # FIX: 0.5% buy slippage simulate karo — real trade jaisa
     entry_price = entry_price * 1.005
     size_bnb = min(AUTO_BUY_SIZE_BNB, paper_balance * 0.025)
