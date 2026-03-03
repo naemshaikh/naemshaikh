@@ -1348,7 +1348,7 @@ def poll_new_pairs():
     WSS_ENDPOINTS = [
         "wss://bsc.publicnode.com",
         "wss://bsc-ws-node.nariox.org:443",
-        "wss://bsc-mainnet.nodereal.io/ws/v1/",
+        
     ]
 
     print("\U0001f442 WebSocket Listener ACTIVE — PairCreated on-chain (1-3 sec)!")
@@ -1571,7 +1571,7 @@ monitor_lock = threading.Lock()  # Thread safety fix
 # ═══════════════════════════════════════════════
 AUTO_TRADE_ENABLED = True
 AUTO_BUY_SIZE_BNB  = 0.003
-AUTO_MAX_POSITIONS = 4
+AUTO_MAX_POSITIONS = 15
 AUTO_SESSION_ID    = "AUTO_TRADER"
 
 auto_trade_stats = {
@@ -1595,19 +1595,12 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         return
     if address in auto_trade_stats["running_positions"]:
         return
-    paper_balance = sess.get("paper_balance", 1.87)
+    paper_balance = sess.get("paper_balance", 5.0)
     if paper_balance < AUTO_BUY_SIZE_BNB:
         print("Auto-buy skipped: low balance")
         return
     entry_price = get_token_price_bnb(address)
     # FIX: Retry — naye tokens pe price aane mein time lagta hai
-    if entry_price <= 0:
-        import time as _t; _t.sleep(5)
-        entry_price = get_token_price_bnb(address)
-    if entry_price <= 0:
-        import time as _t; _t.sleep(10)
-        entry_price = get_token_price_bnb(address)
-    # Retry — naye tokens pe price aane mein time lagta hai
     if entry_price <= 0:
         import time as _t; _t.sleep(5)
         entry_price = get_token_price_bnb(address)
@@ -1683,7 +1676,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     sell_size  = size * (sell_pct / 100.0)
     return_bnb = sell_size * (1 + pnl_pct / 100.0)
     sess = get_or_create_session(AUTO_SESSION_ID)
-    sess["paper_balance"] = round(sess.get("paper_balance", 1.87) + return_bnb, 6)
+    sess["paper_balance"] = round(sess.get("paper_balance", 5.0) + return_bnb, 6)
     auto_trade_stats["auto_pnl_total"] += pnl_pct * (sell_pct / 100.0)
     auto_trade_stats["total_auto_sells"] += 1
     auto_trade_stats["last_action"] = f"SELL {sell_pct:.0f}% {token} PnL:{pnl_pct:+.1f}%"
@@ -1754,7 +1747,7 @@ def add_position_to_monitor(session_id: str, token_address: str, token_name: str
     with monitor_lock:
         # HARD BLOCK: zero price pe monitoring mein mat dalo
         if entry_price <= 0:
-            print(f"❌ Monitoring BLOCKED: price=0 for {address[:10]}")
+            print(f"❌ Monitoring BLOCKED: price=0 for {token_address[:10]}")
             return
         monitored_positions[token_address] = {
         "session_id":     session_id,
@@ -2032,7 +2025,7 @@ def get_or_create_session(session_id: str) -> dict:
         sessions[session_id] = {
             "session_id":       session_id,
             "mode":             "paper",
-            "paper_balance":    1.87,
+            "paper_balance":    5.0,
             "real_balance":     0.00,
             "positions":        [],
             "history":          [],
@@ -2083,7 +2076,7 @@ def _save_session_to_db(session_id: str):
             "session_id":       session_id,
             "role":             "user",
             "content":          "",
-            "paper_balance":    sess.get("paper_balance",    1.87),
+            "paper_balance":    sess.get("paper_balance",    5.0),
             "real_balance":     sess.get("real_balance",     0.00),
             "positions":        json.dumps(sess.get("positions",        [])),
             "history":          json.dumps(sess.get("history",          [])[-50:]),
@@ -4023,7 +4016,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
 
         # ── Auto trader real stats ──────────────────────────────
         _auto_sess      = get_or_create_session(AUTO_SESSION_ID)
-        _auto_balance   = _auto_sess.get("paper_balance", 1.87)
+        _auto_balance   = _auto_sess.get("paper_balance", 5.0)
         _auto_trades    = _auto_sess.get("trade_count", 0)
         _auto_wins      = _auto_sess.get("win_count", 0)
         _auto_wr        = round(_auto_wins / _auto_trades * 100, 1) if _auto_trades > 0 else 0
@@ -4093,7 +4086,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
         if trade_count > 0:
             wr = round(win_count / trade_count * 100, 1)
             memory_facts.append(f"Ab tak {trade_count} paper trades, win rate {wr}%")
-        if session_data.get("paper_balance", 1.87) != 1.87:
+        if session_data.get("paper_balance", 5.0) != 1.87:
             memory_facts.append(f"Paper balance: {session_data['paper_balance']:.3f} BNB")
 
         # Brain learnings
@@ -4266,7 +4259,7 @@ def init_session():
         "status":        "ok",
         "is_returning":  bool(sess.get("trade_count", 0) > 0 or sess.get("history")),
         "trade_count":   sess.get("trade_count", 0),
-        "paper_balance": sess.get("paper_balance", 1.87),
+        "paper_balance": sess.get("paper_balance", 5.0),
     })
 
 @app.route("/trading-data", methods=["GET", "POST"])
@@ -4278,7 +4271,7 @@ def trading_data():
 
     sess       = get_or_create_session(session_id)
     bnb_price  = market_cache.get("bnb_price", 0)
-    paper_bnb  = sess.get("paper_balance", 1.87)
+    paper_bnb  = sess.get("paper_balance", 5.0)
     trade_count= sess.get("trade_count", 0)
     win_count  = sess.get("win_count",   0)
     daily_loss = sess.get("daily_loss",  0.0)
@@ -4482,7 +4475,7 @@ def auto_stats_route():
         "total_buys":     auto_trade_stats["total_auto_buys"],
         "total_sells":    auto_trade_stats["total_auto_sells"],
         "total_pnl_pct":  round(auto_trade_stats["auto_pnl_total"], 2),
-        "paper_balance":  sess.get("paper_balance", 1.87),
+        "paper_balance":  sess.get("paper_balance", 5.0),
         "trade_count":    sess.get("trade_count", 0),
         "win_rate":       round(sess.get("win_count",0)/max(sess.get("trade_count",1),1)*100,1),
         "last_action":    auto_trade_stats["last_action"],
