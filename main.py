@@ -907,6 +907,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     auto_trade_stats["total_auto_sells"] += 1
 
     # FIX 4: Save to trade_history with correct variable names
+    if "trade_history" not in auto_trade_stats:
+        auto_trade_stats["trade_history"] = []
     auto_trade_stats["trade_history"].append({
         "token":     token,
         "address":   address,
@@ -953,6 +955,9 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
 # ========== AUTO POSITION MANAGER ==========
 def auto_position_manager():
     print("Auto Position Manager started!")
+    # BUG FIX 1: trade_history guard — restart pe crash hota tha
+    if "trade_history" not in auto_trade_stats:
+        auto_trade_stats["trade_history"] = []
     while True:
         for addr, pos in list(auto_trade_stats["running_positions"].items()):
             try:
@@ -2197,8 +2202,9 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
 _startup_done = False
 _startup_lock = threading.Lock()
 
-@app.before_request
 def _startup_once():
+    # BUG FIX 2: @app.before_request hata diya
+    # Render gunicorn startup pe port nahi milta tha — ab eager call se fix
     global _startup_done
     if _startup_done: return
     with _startup_lock:
@@ -2544,6 +2550,9 @@ def health():
         "telegram":      bool(TELEGRAM_TOKEN and TELEGRAM_CHAT_ID),
         "last_update":   market_cache.get("last_updated")
     })
+
+# BUG FIX 3: Eager startup — Render port detect kar sake
+_startup_once()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
