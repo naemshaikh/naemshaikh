@@ -1615,12 +1615,21 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         import time as _t; _t.sleep(10)
         entry_price = get_token_price_bnb(address)
     if entry_price <= 0:
+        import time as _t; _t.sleep(15)
+        entry_price = get_token_price_bnb(address)
+    if entry_price <= 0:
         dex = checklist_result.get("dex_data", {})
         bnb_p = market_cache.get("bnb_price", 300) or 300
         entry_price = dex.get("price_usd", 0) / bnb_p if dex.get("price_usd", 0) > 0 else 0
-    if entry_price <= 0:
+    # HARD BLOCK: Zero price pe kabhi buy mat karo
+    if entry_price <= 0 or entry_price is None:
         addr_short = address[:10]
-        print(f"Auto-buy skipped: no price for {addr_short}")
+        print(f"❌ Auto-buy BLOCKED: price=0 for {addr_short} — skipping")
+        return
+    # Sanity check: price bahut zyada suspicious nahi hona chahiye
+    if entry_price > 1.0:
+        addr_short = address[:10]
+        print(f"❌ Auto-buy BLOCKED: price={entry_price:.6f} suspicious for {addr_short}")
         return
     # FIX: 0.5% buy slippage simulate karo — real trade jaisa
     entry_price = entry_price * 1.005
