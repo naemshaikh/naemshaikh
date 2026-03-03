@@ -1590,12 +1590,20 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     if entry_price <= 0:
         import time as _t; _t.sleep(10)
         entry_price = get_token_price_bnb(address)
+    # FIX: Retry — naye tokens pe price aane mein time lagta hai
+    if entry_price <= 0:
+        import time as _t; _t.sleep(5)
+        entry_price = get_token_price_bnb(address)
+    if entry_price <= 0:
+        import time as _t; _t.sleep(10)
+        entry_price = get_token_price_bnb(address)
     if entry_price <= 0:
         dex = checklist_result.get("dex_data", {})
         bnb_p = market_cache.get("bnb_price", 300) or 300
         entry_price = dex.get("price_usd", 0) / bnb_p if dex.get("price_usd", 0) > 0 else 0
     if entry_price <= 0:
-        print(f"Auto-buy skipped: no price for {address[:10]}")
+        addr_short = address[:10]
+        print(f"Auto-buy skipped: no price for {addr_short}")
         return
     # FIX: 0.5% buy slippage simulate karo — real trade jaisa
     entry_price = entry_price * 1.005
@@ -4040,7 +4048,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
         _perm_rules = user_profile.get("user_rules", [])
         _perm_str = (" | UserRules: " + " | ".join(_perm_rules[-3:])) if _perm_rules else ""
         rules_reminder = (
-            f"\n[REAL_CYCLES={context.get(\'CYCLES\', 0)} — hamesha isi number ko use karo]" +
+            f"\n[REAL_CYCLES={brain.get('total_learning_cycles', 0)} — hamesha isi number ko use karo]" +
             "\n[REPLY RULES: "
             "1.Naam(Naem/bhai) ZERO baar — kabhi nahi. "
             "2.Simple sawaal=1-2 lines ONLY. "
