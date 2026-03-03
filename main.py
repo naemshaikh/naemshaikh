@@ -1127,29 +1127,43 @@ def track_smart_wallets():
 # ========== MARKET DATA ==========
 def fetch_market_data():
     bnb_fetched = False
-    for source, fn in [
-        ("CoinGecko", lambda: float(requests.get(
-            "https://api.coingecko.com/api/v3/simple/price",
-            params={"ids":"binancecoin","vs_currencies":"usd"}, timeout=20
-        ).json().get("binancecoin",{}).get("usd",0))),
-        ("Binance", lambda: float(requests.get(
+    # FIX: More sources + longer timeouts + retry loop
+    sources = [
+        ("Binance",      lambda: float(requests.get(
             "https://api.binance.com/api/v3/ticker/price",
-            params={"symbol":"BNBUSDT"}, timeout=15
-        ).json().get("price",0))),
-        ("CryptoCompare", lambda: float(requests.get(
+            params={"symbol":"BNBUSDT"}, timeout=25
+        ).json().get("price",0) or 0)),
+        ("CoinGecko",    lambda: float((requests.get(
+            "https://api.coingecko.com/api/v3/simple/price",
+            params={"ids":"binancecoin","vs_currencies":"usd"}, timeout=25
+        ).json() or {}).get("binancecoin",{}).get("usd",0) or 0)),
+        ("CryptoCompare",lambda: float(requests.get(
             "https://min-api.cryptocompare.com/data/price",
-            params={"fsym":"BNB","tsyms":"USD"}, timeout=15
-        ).json().get("USD",0))),
-    ]:
+            params={"fsym":"BNB","tsyms":"USD"}, timeout=25
+        ).json().get("USD",0) or 0)),
+        ("OKX",          lambda: float(((requests.get(
+            "https://www.okx.com/api/v5/market/ticker",
+            params={"instId":"BNB-USDT"}, timeout=20
+        ).json() or {}).get("data") or [{}])[0].get("last",0) or 0)),
+        ("GeckoTerminal", lambda: float(((requests.get(
+            "https://api.geckoterminal.com/api/v2/networks/bsc/pools/0x58f876857a02d6762e0101bb5c46a8c1ed44dc16",
+            headers={"Accept":"application/json;version=20230302"}, timeout=20
+        ).json() or {}).get("data",{}).get("attributes",{}).get("token_price_usd") or 0) or 0)),
+    ]
+    for attempt in range(2):  # 2 attempts
         if bnb_fetched: break
-        try:
-            price = fn()
-            if price:
-                market_cache["bnb_price"] = price
-                bnb_fetched = True
-                print(f"✅ BNB price ({source}): ${price:.2f}")
-        except Exception as e:
-            print(f"⚠️ BNB {source} error: {e}")
+        for source, fn in sources:
+            if bnb_fetched: break
+            try:
+                price = fn()
+                if price and float(price) > 10:  # sanity check
+                    market_cache["bnb_price"] = float(price)
+                    bnb_fetched = True
+                    print(f"✅ BNB price ({source}): ${float(price):.2f}")
+            except Exception as e:
+                print(f"⚠️ BNB {source} error: {str(e)[:50]}")
+        if not bnb_fetched and attempt == 0:
+            time.sleep(10)  # wait 10s before retry
 
     try:
         r2 = requests.get("https://api.alternative.me/fng/?limit=1", timeout=10)
