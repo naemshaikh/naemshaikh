@@ -980,7 +980,7 @@ def auto_position_manager():
                 elif pnl >= 50  and tp_sold < 50:         _auto_paper_sell(addr, "TP+50%",  25.0)
                 elif pnl >= 30  and tp_sold < 25:         _auto_paper_sell(addr, "TP+30%",  25.0)
                 elif pnl >= 20  and tp_sold < 1:
-                    pos["sl_pct"] = 2.0
+                    pos["sl_pct"] = 0.0  # break-even
                     pos["tp_sold"] = 1
             except Exception as e:
                 print(f"Auto manager err {addr[:10]}: {e}")
