@@ -2994,7 +2994,7 @@ def continuous_learning():
                 print(f"🔬 Deep learning pass #{cycle}...")
 
                 _deep_llm_learning()
-                    _cross_domain_learning()
+                _cross_domain_learning()
 
                 # Update self-awareness after deep learning
                 update_self_awareness()
