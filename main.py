@@ -1752,6 +1752,10 @@ def add_position_to_monitor(session_id: str, token_address: str, token_name: str
                              entry_price: float, size_bnb: float, stop_loss_pct: float = 15.0):
     """Add a position for real-time price monitoring."""
     with monitor_lock:
+        # HARD BLOCK: zero price pe monitoring mein mat dalo
+        if entry_price <= 0:
+            print(f"❌ Monitoring BLOCKED: price=0 for {address[:10]}")
+            return
         monitored_positions[token_address] = {
         "session_id":     session_id,
         "token":          token_name,
