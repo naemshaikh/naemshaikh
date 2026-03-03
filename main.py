@@ -1788,11 +1788,16 @@ def poll_new_pairs():
     FACTORY    = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
     PAIR_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
     WBNB_LOWER = WBNB.lower()
-    WSS_ENDPOINTS = ["wss://bsc.publicnode.com", "wss://bsc-ws-node.nariox.org:443"]
+    WSS_ENDPOINTS = [
+        "wss://bsc.publicnode.com",
+        "wss://bsc-rpc.publicnode.com",
+        "wss://bsc-ws-node.nariox.org:443",
+        "wss://bsc.drpc.org",
+    ]
 
     async def _listen(wss_url):
         try:
-            async with _ws.connect(wss_url, ping_interval=20, ping_timeout=10, close_timeout=5) as ws:
+            async with _ws.connect(wss_url, ping_interval=15, ping_timeout=8, close_timeout=5, max_size=2**20) as ws:
                 await ws.send(_json.dumps({
                     "id": 1, "method": "eth_subscribe",
                     "params": ["logs", {"address": [FACTORY, PANCAKE_V3_FACTORY], "topics": [[PAIR_TOPIC]]}],
@@ -1800,7 +1805,7 @@ def poll_new_pairs():
                 }))
                 await asyncio.wait_for(ws.recv(), timeout=10)
                 while True:
-                    msg  = await asyncio.wait_for(ws.recv(), timeout=90)
+                    msg  = await asyncio.wait_for(ws.recv(), timeout=60)
                     data = _json.loads(msg)
                     log  = (data.get("params") or {}).get("result") or {}
                     if not log: continue
@@ -1820,11 +1825,18 @@ def poll_new_pairs():
 
     async def _ws_loop():
         idx = 0
+        fail_count = 0
         while True:
-            try: await _listen(WSS_ENDPOINTS[idx % len(WSS_ENDPOINTS)])
-            except Exception as e: print(f"⚠️ WSS loop: {e}")
+            try:
+                print(f"🔌 WSS connecting: {WSS_ENDPOINTS[idx % len(WSS_ENDPOINTS)]}")
+                await _listen(WSS_ENDPOINTS[idx % len(WSS_ENDPOINTS)])
+                fail_count = 0
+            except Exception as e:
+                fail_count += 1
+                wait = min(5 * fail_count, 60)
+                print(f"⚠️ WSS loop fail #{fail_count}: {e} — retry in {wait}s")
+                await asyncio.sleep(wait)
             idx += 1
-            await asyncio.sleep(5)
 
     if _ws is not None:
         def _run_ws():
