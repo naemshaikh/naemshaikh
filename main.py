@@ -3994,6 +3994,25 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
         except Exception:
             pass
 
+        # ── Auto trader real stats ──────────────────────────────
+        _auto_sess      = get_or_create_session(AUTO_SESSION_ID)
+        _auto_balance   = _auto_sess.get("paper_balance", 1.87)
+        _auto_trades    = _auto_sess.get("trade_count", 0)
+        _auto_wins      = _auto_sess.get("win_count", 0)
+        _auto_wr        = round(_auto_wins / _auto_trades * 100, 1) if _auto_trades > 0 else 0
+        _auto_positions = len(auto_trade_stats.get("running_positions", {}))
+        _auto_pnl       = round(auto_trade_stats.get("auto_pnl_total", 0.0), 2)
+        _auto_buys      = auto_trade_stats.get("total_auto_buys", 0)
+        _auto_sells     = auto_trade_stats.get("total_auto_sells", 0)
+        _auto_last      = auto_trade_stats.get("last_action", "None")
+        _pos_detail = ""
+        for _addr, _pos in list(auto_trade_stats.get("running_positions", {}).items())[:4]:
+            _mon_data = monitored_positions.get(_addr, {})
+            _cur      = _mon_data.get("current", _pos.get("entry", 0))
+            _entry    = _pos.get("entry", 0)
+            _pnl      = round((_cur - _entry) / _entry * 100, 1) if _entry > 0 else 0
+            _pos_detail += f"{_pos.get('token','?')[:8]}:{_pnl:+.1f}% "
+
         ctx = (
             f"\n[BNB=${market_cache['bnb_price']:.2f} | F&G={market_cache['fear_greed']}/100"
             f" | Mode={session_data.get('mode','paper').upper()}"
@@ -4012,6 +4031,14 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
             + (f" | SelfAwareness:{sa_ctx}" if sa_ctx else "")
             + (f" | User:{user_ctx}" if user_ctx and user_ctx != "NEW_USER" else "")
             + f"]"
+            + f" | AUTO_BALANCE={_auto_balance:.4f}BNB"
+            + f" | AUTO_BUYS={_auto_buys}"
+            + f" | AUTO_SELLS={_auto_sells}"
+            + f" | AUTO_OPEN={_auto_positions}"
+            + f" | AUTO_WR={_auto_wr}%"
+            + f" | AUTO_PNL={_auto_pnl}%"
+            + f" | AUTO_LAST={_auto_last}"
+            + (f" | AUTO_POS={_pos_detail.strip()}" if _pos_detail else "")
         )
 
         # ── Cross-session persistent memory inject karo ──────────────
