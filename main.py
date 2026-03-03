@@ -1689,7 +1689,7 @@ def continuous_learning():
                 )
         except Exception as e:
             print(f"Learning cycle error: {e}")
-        time.sleep(300)
+        time.sleep(60)
 
 # ========== FEEDBACK LOOP ==========
 feedback_log = []
