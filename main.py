@@ -3462,7 +3462,7 @@ def run_full_sniper_checklist(address: str) -> Dict:
         ] or "renounceOwnership" in bscscan_source
     )
 
-    add(      "pass" if verified  else "fail", "YES" if verified  else "NO",   1)
+    add(      "pass" if verified  else "fail", "YES" if verified  else "NO",   1, stage="Contract Verified")
     add("Mint Authority Disabled", "pass" if mint_ok   else "fail", "SAFE" if mint_ok  else "RISK", 1)
     add("Ownership Renounced",     "pass" if renounced else "warn", "YES" if renounced else "MAYBE",1)
 
