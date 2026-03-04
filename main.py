@@ -637,22 +637,6 @@ def get_or_create_session(session_id: str) -> dict:
         _load_session_from_db(session_id)
     return sessions[session_id]
 
-def save_session(session_id: str, sess: dict):
-    """Session ko memory aur Supabase dono mein save karo"""
-    sessions[session_id] = sess
-    if not supabase: return
-    try:
-        supabase.table("memory").upsert({
-            "session_id":    session_id,
-            "paper_balance": sess.get("paper_balance", 5.0),
-            "trade_count":   sess.get("trade_count", 0),
-            "win_count":     sess.get("win_count", 0),
-            "daily_loss":    sess.get("daily_loss", 0.0),
-            "open_positions":json.dumps(sess.get("open_positions", {})),
-            "updated_at":    datetime.utcnow().isoformat(),
-        }, on_conflict="session_id").execute()
-    except Exception as _e:
-        print(f"⚠️ save_session error: {_e}")
 
 def _load_session_from_db(session_id: str):
     if not supabase: return
@@ -695,7 +679,14 @@ def _load_session_from_db(session_id: str):
                     auto_trade_stats["auto_pnl_total"]   = raw.get("pnl_total", 0.0)
                     auto_trade_stats["last_action"]      = raw.get("last_action", "")
                     auto_trade_stats["trade_history"]    = raw.get("trade_history", [])
-                    print(f"✅ Auto stats restored: buys={auto_trade_stats['total_auto_buys']} history={len(auto_trade_stats['trade_history'])}")
+                    # total_scanned restore
+                    _sc = raw.get("total_scanned", 0)
+                    if _sc > 0 and _sc > len(discovered_addresses):
+                        brain["total_tokens_discovered_ever"] = _sc
+                    # wins/losses restore
+                    auto_trade_stats["wins"]   = raw.get("wins", 0)
+                    auto_trade_stats["losses"] = raw.get("losses", 0)
+                    print(f"✅ Auto stats restored: buys={auto_trade_stats['total_auto_buys']} sells={auto_trade_stats['total_auto_sells']} wins={auto_trade_stats['wins']} losses={auto_trade_stats['losses']} history={len(auto_trade_stats['trade_history'])} scanned={_sc}")
             print(f"✅ Session loaded: {session_id[:8]}... Balance:{sessions[session_id]['paper_balance']:.3f}BNB")
     except Exception as e:
         print(f"⚠️ Session load error: {e}")
@@ -707,11 +698,14 @@ def _save_session_to_db(session_id: str):
         extra = {}
         if session_id == AUTO_SESSION_ID:
             extra["pattern_database"] = json.dumps({
-                "total_buys":   auto_trade_stats.get("total_auto_buys", 0),
-                "total_sells":  auto_trade_stats.get("total_auto_sells", 0),
-                "pnl_total":    auto_trade_stats.get("auto_pnl_total", 0.0),
-                "last_action":  auto_trade_stats.get("last_action", ""),
+                "total_buys":    auto_trade_stats.get("total_auto_buys", 0),
+                "total_sells":   auto_trade_stats.get("total_auto_sells", 0),
+                "pnl_total":     auto_trade_stats.get("auto_pnl_total", 0.0),
+                "last_action":   auto_trade_stats.get("last_action", ""),
                 "trade_history": auto_trade_stats.get("trade_history", [])[-100:],
+                "total_scanned": max(len(discovered_addresses), brain.get("total_tokens_discovered_ever", 0)),
+                "wins":          auto_trade_stats.get("wins", 0),
+                "losses":        auto_trade_stats.get("losses", 0),
             })
         else:
             extra["pattern_database"] = json.dumps(sess.get("pattern_database", [])[-100:])
@@ -756,7 +750,9 @@ auto_trade_stats = {
     "auto_pnl_total":    0.0,
     "running_positions": {},
     "last_action":       "",
-    "trade_history":     [],  # FIX: was missing
+    "trade_history":     [],
+    "wins":              0,
+    "losses":            0,
 }
 
 # ========== TELEGRAM ==========
@@ -1102,6 +1098,11 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     if sell_pct >= 100.0:
         auto_trade_stats["running_positions"].pop(address, None)
         remove_position_from_monitor(address)
+        # Track wins/losses
+        if pnl >= 0:
+            auto_trade_stats["wins"] = auto_trade_stats.get("wins", 0) + 1
+        else:
+            auto_trade_stats["losses"] = auto_trade_stats.get("losses", 0) + 1
         # PERSIST: Sell ke baad Supabase update karo
         try:
             _ss = get_or_create_session(AUTO_SESSION_ID)
@@ -2798,8 +2799,12 @@ def auto_stats_route():
         current = monitored_positions.get(k, {}).get("current", entry)
         pnl     = ((current - entry) / entry * 100) if entry > 0 else 0
         # FIX 6: No duplicate keys, bought_at added
+        # Token name: agar address jaisa naam hai toh short address use karo
+        _tok = v.get("token", k[:8])
+        if not _tok or _tok.startswith("0x") or len(_tok) > 20:
+            _tok = k[2:8].upper()  # e.g. "3A5C1A"
         positions_info[k] = {
-            "token":     v.get("token", k[:8]),
+            "token":     _tok,
             "address":   k,
             "pnl_pct":   round(pnl, 2),
             "size":      float(v.get("size_bnb", 0) or 0),
@@ -2819,7 +2824,7 @@ def auto_stats_route():
     _open_trades = [
         {
             "address":   k,
-            "token":     v.get("token", k[:8]),
+            "token":     (v.get("token","") if v.get("token","") and not v.get("token","").startswith("0x") and len(v.get("token",""))<=20 else k[2:8].upper()),
             "entry":     f"${v.get('entry', 0):.10f}",
             "current":   f"${monitored_positions.get(k,{}).get('current', v.get('entry',0)):.10f}",
             "pnl":       round(
@@ -2842,8 +2847,8 @@ def auto_stats_route():
         "trade_count":    _tc,
         "win_rate":       round(_wc/max(_tc,1)*100, 1),
         "win_count":      _wc,
-        "wins":           _th_wins,
-        "losses":         max(0, _th_total - _th_wins),
+        "wins":           max(_th_wins, auto_trade_stats.get("wins", 0)),
+        "losses":         max(max(0, _th_total - _th_wins), auto_trade_stats.get("losses", 0)),
         "last_action":    auto_trade_stats["last_action"],
         "total_scanned":  max(len(discovered_addresses), brain.get("total_tokens_discovered_ever", 0)),
         "monitoring":     len(monitored_positions),
