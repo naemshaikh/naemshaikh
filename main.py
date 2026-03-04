@@ -1468,7 +1468,13 @@ def _load_brain_from_db():
             except Exception as je:
                 print(f"Brain JSON parse error: {je}")
                 stored = {}
-            if stored.get("brain_trading"): brain["trading"].update(stored["brain_trading"])
+            _bt = stored.get("brain_trading")
+            if _bt:
+                if isinstance(_bt, str):
+                    try: _bt = json.loads(_bt)
+                    except: _bt = {}
+                if isinstance(_bt, dict):
+                    brain["trading"].update(_bt)
             if stored.get("brain_airdrop"): brain["airdrop"].update(stored["brain_airdrop"])
             if stored.get("brain_coding"):  brain["coding"].update(stored["brain_coding"])
             brain["total_learning_cycles"] = stored.get("cycles", 0)
