@@ -985,6 +985,22 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         save_session(AUTO_SESSION_ID, sess)
     except Exception as _spe:
         print(f"⚠️ Position save error: {_spe}")
+    # PERSIST: Supabase mein save karo restart ke liye
+    try:
+        sess["open_positions"] = {
+            k: {
+                "token":     v.get("token", ""),
+                "entry":     v.get("entry", 0),
+                "size_bnb":  v.get("size_bnb", AUTO_BUY_SIZE_BNB),
+                "bought_at": v.get("bought_at", ""),
+                "sl_pct":    v.get("sl_pct", 15.0),
+                "tp_sold":   v.get("tp_sold", 0.0),
+            }
+            for k, v in auto_trade_stats["running_positions"].items()
+        }
+        save_session(AUTO_SESSION_ID, sess)
+    except Exception as _spe:
+        print(f"⚠️ Position save error: {_spe}")
     auto_trade_stats["total_auto_buys"] += 1
     # FIX: scanned count session mein save karo
     try:
@@ -1060,6 +1076,21 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     if sell_pct >= 100.0:
         auto_trade_stats["running_positions"].pop(address, None)
         remove_position_from_monitor(address)
+        # PERSIST: Sell ke baad Supabase update karo
+        try:
+            _ss = get_or_create_session(AUTO_SESSION_ID)
+            _ss["open_positions"] = {
+                k: {
+                    "token":     v.get("token", ""),
+                    "entry":     v.get("entry", 0),
+                    "size_bnb":  v.get("size_bnb", AUTO_BUY_SIZE_BNB),
+                    "bought_at": v.get("bought_at", ""),
+                }
+                for k, v in auto_trade_stats["running_positions"].items()
+            }
+            save_session(AUTO_SESSION_ID, _ss)
+        except Exception as _upe:
+            print(f"⚠️ Position update error: {_upe}")
         # PERSIST: Sell ke baad Supabase update karo
         try:
             _ss = get_or_create_session(AUTO_SESSION_ID)
@@ -2435,6 +2466,26 @@ def _startup_once():
         threading.Thread(target=_delayed(self_awareness_loop,   35),  daemon=True).start()
         threading.Thread(target=_delayed(fetch_internet_data_24x7, 45), daemon=True).start()
         threading.Thread(target=_delayed(feedback_validation_loop, 50), daemon=True).start()
+        # PERSIST: Restart ke baad positions restore karo
+        try:
+            _rs = get_or_create_session(AUTO_SESSION_ID)
+            _saved = _rs.get("open_positions", {})
+            if _saved:
+                for _addr, _pd in _saved.items():
+                    if _addr not in auto_trade_stats["running_positions"]:
+                        auto_trade_stats["running_positions"][_addr] = _pd
+                        add_position_to_monitor(
+                            AUTO_SESSION_ID, _addr,
+                            _pd.get("token", _addr[:10]),
+                            float(_pd.get("entry", 0)),
+                            float(_pd.get("size_bnb", AUTO_BUY_SIZE_BNB)),
+                            float(_pd.get("sl_pct", 15.0))
+                        )
+                print(f"✅ Restored {len(_saved)} positions from Supabase")
+            else:
+                print("ℹ️ No saved positions found")
+        except Exception as _rpe:
+            print(f"⚠️ Position restore error: {_rpe}")
         # PERSIST: Restart ke baad positions restore karo
         try:
             _rs = get_or_create_session(AUTO_SESSION_ID)
