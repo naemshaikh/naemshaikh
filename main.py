@@ -1075,7 +1075,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     auto_trade_stats["total_auto_sells"] += 1
 
     # FIX 4: Save to trade_history with correct variable names
-    if "trade_history" not in auto_trade_stats:
+    if not isinstance(auto_trade_stats.get("trade_history"), list):
         auto_trade_stats["trade_history"] = []
     auto_trade_stats["trade_history"].append({
         "token":     token,
@@ -1174,7 +1174,7 @@ def auto_position_manager():
     except Exception as _e:
         print(f"⚠️ Startup reset error: {_e}")
     # BUG FIX 1: trade_history guard — restart pe crash hota tha
-    if "trade_history" not in auto_trade_stats:
+    if not isinstance(auto_trade_stats.get("trade_history"), list):
         auto_trade_stats["trade_history"] = []
     while True:
         for addr, pos in list(auto_trade_stats["running_positions"].items()):
@@ -2530,7 +2530,8 @@ def _startup_once():
                                 auto_trade_stats["total_auto_sells"] = _pdb.get("total_sells", 0)
                                 auto_trade_stats["auto_pnl_total"]   = _pdb.get("pnl_total", 0.0)
                                 auto_trade_stats["last_action"]      = _pdb.get("last_action", "")
-                                auto_trade_stats["trade_history"]    = list(_pdb.get("trade_history", []))
+                                _th = _pdb.get("trade_history", [])
+                                auto_trade_stats["trade_history"] = list(_th) if isinstance(_th, list) else []
                                 auto_trade_stats["wins"]             = _pdb.get("wins", 0)
                                 auto_trade_stats["losses"]           = _pdb.get("losses", 0)
                                 _sc = _pdb.get("total_scanned", 0)
