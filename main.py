@@ -902,6 +902,10 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     # Step 2: On-chain fallback
     if entry_price <= 0:
         entry_price = get_token_price_bnb(address)
+    # FIX: Block zero price BEFORE slippage
+    if entry_price <= 0:
+        print(f"❌ ZERO PRICE BLOCKED: {address[:10]} — skipping buy")
+        return
 
     # Step 3: Fresh DexScreener call (last resort)
     if entry_price <= 0:
