@@ -1855,7 +1855,7 @@ def _auto_check_new_pair(pair_address: str):
     if overall == "SAFE" and score >= int(total * 0.40):  # FIX2: 50%→40%
         try: _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
         except Exception as e: print(f"Auto buy error: {e}")
-    elif overall == "CAUTION" and score >= int(total * 0.35):  # FIX2: 45%→35%
+    elif overall == "CAUTION" and score >= int(total * 0.40):  # FIX2: 45%→35%  # FIX2: 40%
         try: _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
         except Exception as e: print(f"Auto buy caution error: {e}")
 
