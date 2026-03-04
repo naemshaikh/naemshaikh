@@ -858,37 +858,36 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     paper_balance = sess.get("paper_balance", 5.0)
     if paper_balance < AUTO_BUY_SIZE_BNB:
         return
-    entry_price = get_token_price_bnb(address)
-    for _wait in [3, 5, 8]:
-        if entry_price <= 0:
-            time.sleep(_wait)
-            entry_price = get_token_price_bnb(address)
+    # Step 1: DexScreener price use karo (checklist mein already fetch hua)
+    dex   = checklist_result.get("dex_data", {})
+    bnb_p = market_cache.get("bnb_price", 300) or 300
+    entry_price = float(dex.get("price_bnb", 0) or 0)
+    if entry_price <= 0 and float(dex.get("price_usd", 0) or 0) > 0:
+        entry_price = dex["price_usd"] / bnb_p
+
+    # Step 2: On-chain fallback
     if entry_price <= 0:
-        dex = checklist_result.get("dex_data", {})
-        bnb_p = market_cache.get("bnb_price", 300) or 300
-        entry_price = dex.get("price_usd", 0) / bnb_p if dex.get("price_usd", 0) > 0 else 0
+        entry_price = get_token_price_bnb(address)
+
+    # Step 3: Fresh DexScreener call (last resort)
+    if entry_price <= 0:
+        time.sleep(5)
+        try:
+            _r = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{address}", timeout=10)
+            if _r.status_code == 200:
+                _bsc = [p for p in (_r.json() or {}).get("pairs", []) or [] if p and p.get("chainId") == "bsc"]
+                if _bsc:
+                    _pusd = float(_bsc[0].get("priceUsd", 0) or 0)
+                    if _pusd > 0:
+                        entry_price = _pusd / bnb_p
+        except Exception as _pe:
+            print(f"⚠️ Price fallback error: {_pe}")
+
     if entry_price <= 0:
         print(f"❌ Auto-buy BLOCKED: price=0 for {address[:10]}")
         return
     if entry_price > 1.0:
-        print(f"❌ Auto-buy BLOCKED: suspicious price={entry_price:.6f}")
-        return
-
-    # ── STRICT: Ek baar aur verify karo buy se pehle ─────
-    verify_price = get_token_price_bnb(address)
-    if verify_price > 0:
-        # Dono prices ke beech zyada gap nahi hona chahiye
-        diff_pct = abs(verify_price - entry_price) / entry_price * 100
-        if diff_pct > 50:
-            print(f"❌ Auto-buy BLOCKED: price mismatch {entry_price:.8f} vs {verify_price:.8f} ({diff_pct:.0f}% diff)")
-            return
-        entry_price = verify_price  # Fresh price use karo
-    elif verify_price <= 0:
-        print(f"❌ Auto-buy BLOCKED: verify price=0 for {address[:10]}")
-        return
-
-    if entry_price <= 0:
-        print(f"❌ Auto-buy BLOCKED: final price=0 for {address[:10]}")
+        print(f"❌ Auto-buy BLOCKED: suspicious price={entry_price:.6f} for {address[:10]}")
         return
 
     entry_price = entry_price * 1.005
