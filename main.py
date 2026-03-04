@@ -2635,6 +2635,11 @@ def auto_stats_route():
             "age":       "Active",
             "bought_at": v.get("bought_at", ""),  # FIX: added
         }
+    # FIX: trade_count from both session AND trade_history (more accurate)
+    _th_total = len(auto_trade_stats.get("trade_history", []))
+    _th_wins  = sum(1 for t in auto_trade_stats.get("trade_history", []) if t.get("result") == "win")
+    _tc = max(sess.get("trade_count", 0), _th_total)
+    _wc = max(sess.get("win_count",   0), _th_wins)
     return jsonify({
         "enabled":        AUTO_TRADE_ENABLED,
         "open_positions": len(auto_trade_stats["running_positions"]),
@@ -2643,13 +2648,13 @@ def auto_stats_route():
         "total_sells":    auto_trade_stats["total_auto_sells"],
         "total_pnl_pct":  round(auto_trade_stats["auto_pnl_total"], 2),
         "paper_balance":  sess.get("paper_balance", 5.0),
-        "trade_count":    sess.get("trade_count", 0),
-        "win_rate":       round(sess.get("win_count",0)/max(sess.get("trade_count",1),1)*100, 1),
-        "win_count":      sess.get("win_count", 0),
-        "wins":           sess.get("win_count", 0),
-        "losses":         max(0, sess.get("trade_count",0) - sess.get("win_count",0)),
+        "trade_count":    _tc,
+        "win_rate":       round(_wc/max(_tc,1)*100, 1),
+        "win_count":      _wc,
+        "wins":           _th_wins,
+        "losses":         max(0, _th_total - _th_wins),
         "last_action":    auto_trade_stats["last_action"],
-        "total_scanned":  len(discovered_addresses),
+        "total_scanned":  max(len(discovered_addresses), brain.get("total_tokens_discovered_ever", 0)),
         "monitoring":     len(monitored_positions),
         "bnb_price":      market_cache.get("bnb_price", 0),
         "open_trades": [
