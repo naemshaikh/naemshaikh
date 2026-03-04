@@ -1099,7 +1099,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         auto_trade_stats["running_positions"].pop(address, None)
         remove_position_from_monitor(address)
         # Track wins/losses
-        if pnl >= 0:
+        if pnl_pct >= 0:
             auto_trade_stats["wins"] = auto_trade_stats.get("wins", 0) + 1
         else:
             auto_trade_stats["losses"] = auto_trade_stats.get("losses", 0) + 1
