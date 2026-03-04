@@ -1448,6 +1448,23 @@ def _save_brain_to_db():
         print(f"⚠️ Brain save error: {e}")
 
 def _ensure_brain_structure():
+    # Always ensure brain["trading"] is a dict, never string
+    if not isinstance(brain.get("trading"), dict):
+        brain["trading"] = {
+        "best_patterns":  [],
+        "avoid_patterns": [],
+        "market_insights":[],
+        "token_blacklist":[],
+        "token_whitelist":[],
+        "strategy_notes": [],
+        "last_updated":   None
+    }
+    for key in ["best_patterns","avoid_patterns","market_insights","token_blacklist","token_whitelist","strategy_notes"]:
+        if not isinstance(brain["trading"].get(key), list):
+            brain["trading"][key] = []
+    # Always ensure trade_history is a list
+    if not isinstance(auto_trade_stats.get("trade_history"), list):
+        auto_trade_stats["trade_history"] = []
     for key in ["best_patterns","avoid_patterns","token_blacklist","token_whitelist","strategy_notes","market_insights"]:
         if not isinstance(brain["trading"].get(key), list):
             brain["trading"][key] = []
@@ -1682,6 +1699,7 @@ def _learn_trading_patterns():
         print(f"⚠️ Trading learning error: {e}")
 
 def _learn_from_new_pairs():
+    _ensure_brain_structure()
     try:
         for pair in knowledge_base["bsc"]["new_tokens"][-10:]:
             addr    = pair.get("address", "")
@@ -1777,6 +1795,7 @@ def _deep_llm_learning():
         print(f"Deep learn error: {e}")
 
 def _fetch_trading_intel():
+    _ensure_brain_structure()
     try:
         r = requests.get("https://api.coingecko.com/api/v3/search/trending", timeout=10)
         if r.status_code == 200:
