@@ -2771,18 +2771,35 @@ def auto_stats_route():
             "token":     v.get("token", k[:8]),
             "address":   k,
             "pnl_pct":   round(pnl, 2),
-            "size":      v.get("size_bnb"),
+            "size":      float(v.get("size_bnb", 0) or 0),
+            "size_bnb":  float(v.get("size_bnb", 0) or 0),
             "entry":     f"${entry:.10f}",
             "current":   f"${current:.10f}",
             "mcap":      "MCap ?",
             "age":       "Active",
-            "bought_at": v.get("bought_at", ""),  # FIX: added
+            "bought_at": v.get("bought_at", ""),
         }
     # FIX: trade_count from both session AND trade_history (more accurate)
     _th_total = len(auto_trade_stats.get("trade_history", []))
     _th_wins  = sum(1 for t in auto_trade_stats.get("trade_history", []) if t.get("result") == "win")
     _tc = max(sess.get("trade_count", 0), _th_total)
     _wc = max(sess.get("win_count",   0), _th_wins)
+    # Build clean open_trades list (single, no duplicate)
+    _open_trades = [
+        {
+            "address":   k,
+            "token":     v.get("token", k[:8]),
+            "entry":     f"${v.get('entry', 0):.10f}",
+            "current":   f"${monitored_positions.get(k,{}).get('current', v.get('entry',0)):.10f}",
+            "pnl":       round(
+                ((monitored_positions.get(k,{}).get('current', v.get('entry',0)) - v.get('entry',0))
+                 / max(v.get('entry',0), 1e-18)) * 100, 2),
+            "size":      f"{float(v.get('size_bnb', 0) or 0):.4f} BNB",
+            "size_bnb":  float(v.get('size_bnb', 0) or 0),
+            "bought_at": v.get("bought_at", ""),
+        }
+        for k, v in auto_trade_stats.get("running_positions", {}).items()
+    ]
     return jsonify({
         "enabled":        AUTO_TRADE_ENABLED,
         "open_positions": len(auto_trade_stats["running_positions"]),
@@ -2799,33 +2816,10 @@ def auto_stats_route():
         "last_action":    auto_trade_stats["last_action"],
         "total_scanned":  max(len(discovered_addresses), brain.get("total_tokens_discovered_ever", 0)),
         "monitoring":     len(monitored_positions),
-        "open_trades":    [
-            {
-                "address":   k,
-                "token":     v.get("token", k[:8]),
-                "entry":     v.get("entry", "—"),
-                "current":   monitored_positions.get(k, {}).get("current", v.get("entry", 0)),
-                "pnl":       round(((float(monitored_positions.get(k,{}).get("current", v.get("entry",0)) or 0)) - float(v.get("entry",0) or 0)) / float(v.get("entry",1) or 1) * 100, 2),
-                "size":      f"{float(v.get('size_bnb', 0) or 0):.4f} BNB",
-                "bought_at": v.get("bought_at", ""),
-            }
-            for k, v in auto_trade_stats["running_positions"].items()
-        ],
+        "open_trades":    _open_trades,
         "bnb_price":      market_cache.get("bnb_price", 0),
-        "open_trades": [
-            {
-                "token":     v.get("token", k[:8]),
-                "address":   k,
-                "entry":     f"${v.get('entry', 0):.10f}",
-                "current":   f"${monitored_positions.get(k,{}).get('current',v.get('entry',0)):.10f}",
-                "pnl":       round(((monitored_positions.get(k,{}).get('current',v.get('entry',0))-v.get('entry',0))/max(v.get('entry',0),1e-18))*100, 2),
-                "size":      f"{v.get('size_bnb',0):.4f} BNB",
-                "age":       "Active",
-                "bought_at": v.get("bought_at",""),
-            }
-            for k, v in auto_trade_stats.get("running_positions", {}).items()
-        ],
-        "trade_history": auto_trade_stats.get("trade_history", [])[-20:],
+        "fear_greed":     market_cache.get("fear_greed", 50),
+        "trade_history":  auto_trade_stats.get("trade_history", [])[-20:],
     })
 
 @app.route("/health")
