@@ -1848,14 +1848,13 @@ def _auto_check_new_pair(pair_address: str):
     overall = result.get("overall", "UNKNOWN")
     print(f"🔍 Auto-check {pair_address[:10]}: {overall} ({score}/{total})")
     print(f"📊 Score: {score}/{total} = {round(score/max(total,1)*100)}% | SAFE needs:{int(total*0.40)} CAUTION needs:{int(total*0.35)}")  # FIX3: debug
-    print(f"📊 Score: {score}/{total} = {round(score/max(total,1)*100)}% | SAFE needs:{int(total*0.40)} CAUTION needs:{int(total*0.35)}")  # FIX3: debug
 
     if overall in ["SAFE", "CAUTION"]:
         telegram_new_token_alert(pair_address, score, total, rec)
     if overall == "SAFE" and score >= int(total * 0.40):  # FIX2: 50%→40%
         try: _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
         except Exception as e: print(f"Auto buy error: {e}")
-    elif overall == "CAUTION" and score >= int(total * 0.40):  # FIX2: 45%→35%  # FIX2: 40%
+    elif overall == "CAUTION" and score >= int(total * 0.35):  # FIX2: 45%→35%  # FIX2: 40%
         try: _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
         except Exception as e: print(f"Auto buy caution error: {e}")
 
