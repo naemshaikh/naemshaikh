@@ -697,7 +697,7 @@ def _save_session_to_db(session_id: str):
         sess = sessions.get(session_id, {})
         extra = {}
         if session_id == AUTO_SESSION_ID:
-            extra["pattern_database"] = json.dumps({
+            extra["pattern_database"] = {
                 "total_buys":    auto_trade_stats.get("total_auto_buys", 0),
                 "total_sells":   auto_trade_stats.get("total_auto_sells", 0),
                 "pnl_total":     auto_trade_stats.get("auto_pnl_total", 0.0),
@@ -706,9 +706,9 @@ def _save_session_to_db(session_id: str):
                 "total_scanned": max(len(discovered_addresses), brain.get("total_tokens_discovered_ever", 0)),
                 "wins":          auto_trade_stats.get("wins", 0),
                 "losses":        auto_trade_stats.get("losses", 0),
-            })
+            }
         else:
-            extra["pattern_database"] = json.dumps(sess.get("pattern_database", [])[-100:])
+            extra["pattern_database"] = sess.get("pattern_database", [])
         supabase.table("memory").upsert({
             "session_id":       session_id,
             "role":             "user",
@@ -1432,8 +1432,7 @@ def _save_brain_to_db():
             "role":       "system",
             "content":    "",
             "history":    json.dumps([]),
-            "pattern_database": json.dumps(brain["trading"]["best_patterns"][-50:] +
-                                           brain["trading"]["avoid_patterns"][-50:]),
+            "pattern_database": {"best_patterns": brain["trading"]["best_patterns"][-50:], "avoid_patterns": brain["trading"]["avoid_patterns"][-50:]},
             "updated_at": datetime.utcnow().isoformat(),
             "positions":  json.dumps({
                 "brain_trading":  brain["trading"],
