@@ -950,6 +950,10 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     if entry <= 0:
         return
 
+    if current <= 0:
+        print(f"⚠️ Sell SKIP: price=0 for {address[:10]}")
+        return
+
     current = current * 0.995  # 0.5% sell slippage
     pnl_pct   = ((current - entry) / entry) * 100
     sell_size = size * (sell_pct / 100.0)
@@ -1023,7 +1027,7 @@ def auto_position_manager():
                 high    = mon.get("high", entry)
                 tp_sold = pos.get("tp_sold", 0.0)
                 sl_pct  = pos.get("sl_pct", 15.0)
-                if current <= 0 or entry <= 0:
+                if current <= 0 or entry <= 0:  # FIX v4: skip, never sell on price=0
                     print(f"⚠️ Skipping {addr[:10]}: current={current:.8f} entry={entry:.8f}")
                     continue
                 pnl     = ((current - entry) / entry) * 100
@@ -1036,7 +1040,7 @@ def auto_position_manager():
                 elif pnl >= 50  and tp_sold < 50:         _auto_paper_sell(addr, "TP+50%",  25.0)
                 elif pnl >= 30  and tp_sold < 25:         _auto_paper_sell(addr, "TP+30%",  25.0)
                 elif pnl >= 20  and tp_sold < 1:
-                    pos["sl_pct"] = 0.0  # break-even
+                    pos["sl_pct"] = 2.0   # FIX v4: was 0.0  # break-even
                     pos["tp_sold"] = 1
             except Exception as e:
                 print(f"Auto manager err {addr[:10]}: {e}")
