@@ -2697,6 +2697,18 @@ def auto_stats_route():
         "last_action":    auto_trade_stats["last_action"],
         "total_scanned":  max(len(discovered_addresses), brain.get("total_tokens_discovered_ever", 0)),
         "monitoring":     len(monitored_positions),
+        "open_trades":    [
+            {
+                "address":   k,
+                "token":     v.get("token", k[:8]),
+                "entry":     v.get("entry", "—"),
+                "current":   monitored_positions.get(k, {}).get("current", v.get("entry", 0)),
+                "pnl":       round(((float(monitored_positions.get(k,{}).get("current", v.get("entry",0)) or 0)) - float(v.get("entry",0) or 0)) / float(v.get("entry",1) or 1) * 100, 2),
+                "size":      f"{float(v.get('size_bnb', 0) or 0):.4f} BNB",
+                "bought_at": v.get("bought_at", ""),
+            }
+            for k, v in auto_trade_stats["running_positions"].items()
+        ],
         "bnb_price":      market_cache.get("bnb_price", 0),
         "open_trades": [
             {
