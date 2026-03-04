@@ -647,13 +647,20 @@ def _load_session_from_db(session_id: str):
                 if not val: return default
                 try: return json.loads(val)
                 except: return default
+            _loaded_daily_loss = float(row.get("daily_loss") or 0.0)
+            _saved_date = str(row.get("updated_at") or "")[:10]
+            _today = datetime.utcnow().strftime("%Y-%m-%d")
+            if _saved_date != _today:
+                print(f"🔄 Session load: resetting stale daily_loss={_loaded_daily_loss:.2f} (saved {_saved_date})")
+                _loaded_daily_loss = 0.0
             sessions[session_id].update({
                 "paper_balance":    float(row.get("paper_balance") or 5.0),
                 "real_balance":     float(row.get("real_balance")  or 0.00),
                 "positions":        _safe_json(row.get("positions"),        []),
                 "history":          _safe_json(row.get("history"),          []),
                 "pnl_24h":          float(row.get("pnl_24h")       or 0.0),
-                "daily_loss":       float(row.get("daily_loss")     or 0.0),
+                "daily_loss":       _loaded_daily_loss,
+                "daily_loss_date":  _today,
                 "trade_count":      int(row.get("trade_count")      or 0),
                 "win_count":        int(row.get("win_count")        or 0),
                 "pattern_database": _safe_json(row.get("pattern_database"), []),
@@ -847,16 +854,26 @@ def remove_position_from_monitor(token_address: str):
 # ========== AUTO PAPER BUY ==========
 def _auto_paper_buy(address, token_name, score, total, checklist_result):
     if not AUTO_TRADE_ENABLED:
+        print(f"⏸️ Auto-buy DISABLED")
         return
     sess = get_or_create_session(AUTO_SESSION_ID)
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    if sess.get("daily_loss_date", "") != today:
+        print(f"🔄 New day reset: daily_loss={sess.get('daily_loss',0):.2f} → 0")
+        sess["daily_loss"] = 0.0
+        sess["daily_loss_date"] = today
     if sess.get("daily_loss", 0) >= 8.0:
+        print(f"🛑 Auto-buy BLOCKED: daily_loss={sess.get('daily_loss',0):.2f} >= 8.0")
         return
     if len(auto_trade_stats["running_positions"]) >= AUTO_MAX_POSITIONS:
+        print(f"🛑 Auto-buy BLOCKED: max {AUTO_MAX_POSITIONS} positions reached")
         return
     if address in auto_trade_stats["running_positions"]:
+        print(f"🛑 Auto-buy BLOCKED: {address[:10]} already open")
         return
     paper_balance = sess.get("paper_balance", 5.0)
     if paper_balance < AUTO_BUY_SIZE_BNB:
+        print(f"🛑 Auto-buy BLOCKED: balance={paper_balance:.4f} too low")
         return
     # Step 1: DexScreener price use karo (checklist mein already fetch hua)
     dex   = checklist_result.get("dex_data", {})
