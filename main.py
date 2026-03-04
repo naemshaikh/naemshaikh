@@ -2500,27 +2500,7 @@ def _startup_once():
         try:
             _rs = get_or_create_session(AUTO_SESSION_ID)
             _saved = _rs.get("open_positions", {})
-            if _saved:
-                for _addr, _pd in _saved.items():
-                    if _addr not in auto_trade_stats["running_positions"]:
-                        auto_trade_stats["running_positions"][_addr] = _pd
-                        add_position_to_monitor(
-                            AUTO_SESSION_ID, _addr,
-                            _pd.get("token", _addr[:10]),
-                            float(_pd.get("entry", 0)),
-                            float(_pd.get("size_bnb", AUTO_BUY_SIZE_BNB)),
-                            float(_pd.get("sl_pct", 15.0))
-                        )
-                print(f"✅ Restored {len(_saved)} positions from Supabase")
-            else:
-                print("ℹ️ No saved positions found")
-        except Exception as _rpe:
-            print(f"⚠️ Position restore error: {_rpe}")
-        # PERSIST: Restart ke baad positions restore karo
-        try:
-            _rs = get_or_create_session(AUTO_SESSION_ID)
-            _saved = _rs.get("open_positions", {})
-            if _saved:
+            if _saved and isinstance(_saved, dict):
                 for _addr, _pd in _saved.items():
                     if _addr not in auto_trade_stats["running_positions"]:
                         auto_trade_stats["running_positions"][_addr] = _pd
