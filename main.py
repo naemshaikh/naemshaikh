@@ -2370,6 +2370,12 @@ def _startup_once():
                 _time.sleep(delay)
                 fn()
             return _wrap
+        # FIX: AUTO session pehle load karo — UI pe data turant dikhega
+        try:
+            get_or_create_session(AUTO_SESSION_ID)
+            print(f"✅ AUTO session preloaded: trades={len(auto_trade_stats.get('trade_history',[]))}")
+        except Exception as _se:
+            print(f"⚠️ AUTO session preload: {_se}")
         threading.Thread(target=fetch_market_data,                    daemon=True).start()
 
         # BNB price verify + retry
@@ -2513,6 +2519,12 @@ def readiness():
 
 @app.route("/activity", methods=["GET"])
 def activity_route():
+    # FIX: Agar koi data nahi to Supabase se load karo
+    if not auto_trade_stats.get("trade_history") and not auto_trade_stats.get("running_positions") and supabase:
+        try:
+            _load_session_from_db(AUTO_SESSION_ID)
+        except Exception as _le:
+            print(f"⚠️ activity lazy load: {_le}")
     from datetime import datetime as _dt
     acts = []
     for addr, pos in list(auto_trade_stats.get("running_positions",{}).items()):
@@ -2571,6 +2583,12 @@ def activity_route():
 
 @app.route("/trade-history", methods=["GET"])
 def trade_history_route():
+    # FIX: Force load from Supabase agar history empty hai
+    if not auto_trade_stats.get("trade_history") and supabase:
+        try:
+            _load_session_from_db(AUTO_SESSION_ID)
+        except Exception as _le:
+            print(f"⚠️ trade-history lazy load: {_le}")
     hist   = auto_trade_stats.get("trade_history", [])
     filt   = request.args.get("filter", "all")
     search = request.args.get("q", "").lower()
@@ -2643,6 +2661,12 @@ def introspect():
 @app.route("/auto-stats", methods=["GET"])
 def auto_stats_route():
     sess = get_or_create_session(AUTO_SESSION_ID)
+    # FIX: Agar trade_history empty hai to Supabase se force load karo
+    if not auto_trade_stats.get("trade_history") and supabase:
+        try:
+            _load_session_from_db(AUTO_SESSION_ID)
+        except Exception as _le:
+            print(f"⚠️ auto-stats lazy load: {_le}")
     positions_info = {}
     for k, v in auto_trade_stats["running_positions"].items():
         entry   = v.get("entry", 0)
