@@ -200,7 +200,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
     <div class="hdr-logo">M</div>
     <div>
       <div class="hdr-name">MrBlack</div>
-      <div class="hdr-sub">BSC SNIPER · PAPER MODE</div>
+      <div class="hdr-sub" id="hdr-mode">BSC SNIPER · PAPER MODE</div>
     </div>
   </div>
   <div class="hdr-right">
@@ -247,7 +247,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
   </div>
 
   <div class="sep">Open Positions</div>
-  <div class="pos-hscroll" id="pos-hscroll"><div class="pos-empty-h">⏳ Connecting...</div></div>
+  <div class="pos-hscroll" id="pos-hscroll"><div class="pos-empty-h">⏳ Loading positions...</div></div>
 
   <div class="sep">Live Feed</div>
   <div class="feed-card">
@@ -256,7 +256,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
         <button class="tb on" onclick="switchTab('trades',this)">Open Trades</button>
         <button class="tb"    onclick="switchTab('activity',this)">Buy / Sell</button>
       </div>
-      <div id="tab-trades"><div id="trades-wrap"><div class="empty-state">Loading...</div></div></div>
+      <div id="tab-trades"><div id="trades-wrap"><div class="empty-state">⏳ Loading trades...</div></div></div>
       <div id="tab-activity" style="display:none;"><div id="act-wrap"><div class="empty-state">Loading...</div></div></div>
     </div>
     <div class="foot-note" id="ts">Connecting...</div>
@@ -403,7 +403,7 @@ function renderPos(posObj){
       </div>
       <div class="mini-sym">${p.token&&!p.token.startsWith('0x')?p.token.slice(0,10):sym}</div>
       <div class="mini-pnl ${cls}">${pnl>=0?'+':''}${pnl.toFixed(1)}%</div>
-      <div class="mini-bnb">${Number(p.size||0).toFixed(4)} BNB</div>
+      <div class="mini-bnb">${Number(p.size_bnb||p.size||0).toFixed(4)} BNB</div>
       <div class="mini-hold">${holdTime(p.bought_at)}</div>
     </div>`;
   }).join('');
@@ -412,7 +412,7 @@ function onPosClick(addr){
   const p=_posCache[addr];if(!p)return;
   setChart(addr,p.token);
   const pnl=parseFloat(p.pnl_pct||0),cls=pnl>=0?'p':'n',sym=symOf(p.token,addr),bnp=bp();
-  const pnlB=((p.size||0)*Math.abs(pnl)/100).toFixed(4),pnlU=(parseFloat(pnlB)*bnp).toFixed(2);
+  const sz=parseFloat(p.size_bnb||p.size||0);const pnlB=(sz*Math.abs(pnl)/100).toFixed(4),pnlU=(parseFloat(pnlB)*bnp).toFixed(2);
   document.getElementById('modal-title').textContent=sym;
   document.getElementById('modal-sub').textContent=addr.slice(0,12)+'...'+addr.slice(-4)+' · BSC';
   document.getElementById('modal-pnl').className='pnl-big '+cls;
@@ -425,7 +425,7 @@ function onPosClick(addr){
     <div class="mrow"><span class="mlbl">PnL</span><span class="mval ${cls}">${pnl>=0?'+':''}${pnl.toFixed(2)}%</span></div>
     <div class="mrow"><span class="mlbl">PnL BNB</span><span class="mval ${cls}">${pnl>=0?'+':'-'}${pnlB} BNB</span></div>
     <div class="mrow"><span class="mlbl">PnL USD</span><span class="mval ${cls}">${pnl>=0?'+$':'-$'}${pnlU}</span></div>
-    <div class="mrow"><span class="mlbl">Size</span><span class="mval">${Number(p.size||0).toFixed(4)} BNB</span></div>
+    <div class="mrow"><span class="mlbl">Size</span><span class="mval">${Number(p.size_bnb||p.size||0).toFixed(4)} BNB</span></div>
     <div class="mrow"><span class="mlbl">Holding</span><span class="mval">${holdTime(p.bought_at)}</span></div>`;
   document.getElementById('modal-actions').innerHTML=`
     <button class="mbtn dark" onclick="closeModal()">✕ Close</button>
@@ -607,6 +607,11 @@ async function fetchStats(){
   ]);
   if(!_as&&!_td){setConn(false,'⚡ Server se data nahi aa rha — retry...');return false;}
   setConn(true,'✅ MrBlack Connected');
+  // Dynamic mode label
+  const _modeEl=document.getElementById('hdr-mode');
+  if(_modeEl&&_as){
+    _modeEl.textContent=_as.enabled?'BSC SNIPER · AUTO ON':'BSC SNIPER · PAPER MODE';
+  }
 
   const bnb=parseFloat((_as&&_as.bnb_price)||(_td&&_td.bnb_price)||0);
   const fg=(_td&&_td.fear_greed!=null)?_td.fear_greed:((_as&&_as.fear_greed)||50);
@@ -628,11 +633,33 @@ async function fetchStats(){
 
   document.getElementById('b-wr').textContent='Win Rate: '+(_as?_as.win_rate:0)+'%';
   document.getElementById('sg-scan').textContent=((_as&&_as.total_scanned)||(_td&&_td.new_pairs_found)||0).toLocaleString();
-  document.getElementById('sg-watch').textContent=(_as&&_as.monitoring!=null?_as.monitoring:(_td&&_td.monitoring)||0);
+  document.getElementById('sg-watch').textContent=(_as&&_as.open_positions!=null?_as.open_positions:(_as&&_as.monitoring!=null?_as.monitoring:(_td&&_td.monitoring)||0));
   document.getElementById('sg-wins').textContent=(_as&&_as.wins)||0;
   document.getElementById('sg-losses').textContent=(_as&&_as.losses)||0;
 
-  if(_as){renderPos(_as.positions||{});renderTrades(_as.open_trades||[]);}
+  if(_as){
+    // Positions: backend "positions" obj use karo
+    renderPos(_as.positions||{});
+    // Open Trades: backend "open_trades" list prefer karo,
+    // fallback: positions object se bana lo
+    if(_as.open_trades&&_as.open_trades.length){
+      renderTrades(_as.open_trades);
+    } else if(_as.positions&&Object.keys(_as.positions).length){
+      // positions object ko trades list mein convert karo
+      const _tl=Object.entries(_as.positions).map(([addr,v])=>({
+        address:  addr,
+        token:    v.token||addr.slice(0,8),
+        entry:    v.entry||"—",
+        current:  v.current||"—",
+        pnl:      v.pnl_pct||0,
+        size:     (v.size_bnb||v.size||0)+" BNB",
+        bought_at:v.bought_at||"",
+      }));
+      renderTrades(_tl);
+    } else {
+      renderTrades([]);
+    }
+  }
   document.getElementById('ts').textContent='Live · '+nowIST();
   return true;
 }
@@ -651,6 +678,7 @@ async function init(){
     ok=await fetchStats();
     if(ok)break;
     const delay=i*3000; // 3,6,9,12,15,18s
+    setConn(false,`⏳ Connecting... (${i}/6) — ${Math.round(delay/1000)}s wait`);
     document.getElementById('conn-msg').textContent=`⏳ Retry ${i}/6 — server warm ho rha hai...`;
     await new Promise(r=>setTimeout(r,delay));
   }
