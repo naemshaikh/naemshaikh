@@ -2496,24 +2496,45 @@ def _startup_once():
         threading.Thread(target=_delayed(self_awareness_loop,   35),  daemon=True).start()
         threading.Thread(target=_delayed(fetch_internet_data_24x7, 45), daemon=True).start()
         threading.Thread(target=_delayed(feedback_validation_loop, 50), daemon=True).start()
-        # PERSIST: Restart ke baad positions restore karo
+        # PERSIST: Restart ke baad positions restore karo — seedha DB se
         try:
-            _rs = get_or_create_session(AUTO_SESSION_ID)
-            _saved = _rs.get("open_positions", {})
-            if _saved and isinstance(_saved, dict):
-                for _addr, _pd in _saved.items():
-                    if _addr not in auto_trade_stats["running_positions"]:
-                        auto_trade_stats["running_positions"][_addr] = _pd
-                        add_position_to_monitor(
-                            AUTO_SESSION_ID, _addr,
-                            _pd.get("token", _addr[:10]),
-                            float(_pd.get("entry", 0)),
-                            float(_pd.get("size_bnb", AUTO_BUY_SIZE_BNB)),
-                            float(_pd.get("sl_pct", 15.0))
-                        )
-                print(f"✅ Restored {len(_saved)} positions from Supabase")
+            if supabase:
+                _db_res = supabase.table("memory").select("open_positions,paper_balance,trade_count,win_count").eq("session_id", AUTO_SESSION_ID).order("updated_at", desc=True).limit(1).execute()
+                if _db_res.data:
+                    _row = _db_res.data[0]
+                    _raw = _row.get("open_positions", "{}")
+                    try:
+                        _saved = json.loads(_raw) if isinstance(_raw, str) else (_raw or {})
+                    except:
+                        _saved = {}
+                    # Session mein bhi update karo
+                    _sess = get_or_create_session(AUTO_SESSION_ID)
+                    _sess["open_positions"] = _saved
+                    if _row.get("paper_balance"):
+                        _sess["paper_balance"] = float(_row["paper_balance"])
+                    if _row.get("trade_count"):
+                        _sess["trade_count"] = int(_row["trade_count"])
+                    if _row.get("win_count"):
+                        _sess["win_count"] = int(_row["win_count"])
+                    sessions[AUTO_SESSION_ID] = _sess
+                    if _saved and isinstance(_saved, dict):
+                        for _addr, _pd in _saved.items():
+                            if _addr not in auto_trade_stats["running_positions"]:
+                                auto_trade_stats["running_positions"][_addr] = _pd
+                                add_position_to_monitor(
+                                    AUTO_SESSION_ID, _addr,
+                                    _pd.get("token", _addr[:10]),
+                                    float(_pd.get("entry", 0)),
+                                    float(_pd.get("size_bnb", AUTO_BUY_SIZE_BNB)),
+                                    float(_pd.get("sl_pct", 15.0))
+                                )
+                        print(f"✅ Restored {len(_saved)} positions from Supabase")
+                    else:
+                        print("ℹ️ No saved positions found")
+                else:
+                    print("ℹ️ No DB record found for AUTO_TRADER")
             else:
-                print("ℹ️ No saved positions found")
+                print("⚠️ Supabase not connected — skipping restore")
         except Exception as _rpe:
             print(f"⚠️ Position restore error: {_rpe}")
         print("✅ All background threads started")
