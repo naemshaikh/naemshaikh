@@ -945,6 +945,10 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     if entry_price > 1.0:
         print(f"❌ Auto-buy BLOCKED: suspicious price={entry_price:.6f} for {address[:10]}")
         return
+    # FIX: Minimum price check — dust/dead tokens block karo
+    if entry_price < 1e-12:  # 0.000000000001 BNB se kam = useless token
+        print(f"❌ Auto-buy BLOCKED: price too tiny={entry_price:.2e} for {address[:10]}")
+        return
 
     entry_price = entry_price * 1.005
     if entry_price <= 0:  # FIX: zero price guard
@@ -979,10 +983,10 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
     _display_name = token_name if (token_name and not token_name.startswith("0x") and len(token_name) < 20) else address[:12]
     send_telegram(
-        f"AUTO PAPER BUY\nToken: {_display_name}\nEntry: {entry_price:.8f} BNB\n"
+        f"AUTO PAPER BUY\nToken: {_display_name}\nEntry: {entry_price:.10f} BNB\n"
         f"Size: {size_bnb:.4f} BNB\nScore: {score}/{total}\nBalance: {sess['paper_balance']:.4f} BNB"
     )
-    print(f"AUTO BUY: {address[:10]} @ {entry_price:.8f} size={size_bnb:.4f}")
+    print(f"AUTO BUY: {address[:10]} @ {entry_price:.10f} size={size_bnb:.4f}")
 
 # ========== AUTO PAPER SELL ==========  FIX 3: All variable names fixed
 def _auto_paper_sell(address, reason, sell_pct=100.0):
