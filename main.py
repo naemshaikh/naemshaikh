@@ -943,6 +943,9 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         return
 
     entry_price = entry_price * 1.005
+    if entry_price <= 0:  # FIX: zero price guard
+        print(f"❌ BLOCKED: zero price for {address[:10]}")
+        return
     # FIX: Double check after slippage — price kabhi 0 nahi hona chahiye
     if entry_price <= 0:
         print(f"❌ Auto-buy BLOCKED (post-slippage): price=0 for {address[:10]}")
@@ -959,6 +962,11 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         "bought_at": datetime.utcnow().isoformat(),
     }
     auto_trade_stats["total_auto_buys"] += 1
+    # FIX: scanned count session mein save karo
+    try:
+        _sc = get_or_create_session(AUTO_SESSION_ID)
+        _sc["total_scanned"] = len(discovered_addresses)
+    except Exception: pass
     auto_trade_stats["last_action"] = f"BUY {token_name or address[:10]}"
     sess.setdefault("positions", []).append({
         "address": address, "token": token_name or address[:10],
