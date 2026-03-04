@@ -1846,13 +1846,14 @@ def _auto_check_new_pair(pair_address: str):
     rec     = result.get("recommendation", "")
     overall = result.get("overall", "UNKNOWN")
     print(f"🔍 Auto-check {pair_address[:10]}: {overall} ({score}/{total})")
+    print(f"📊 Score: {score}/{total} = {round(score/max(total,1)*100)}% | SAFE needs:{int(total*0.40)} CAUTION needs:{int(total*0.35)}")  # FIX3: debug
 
     if overall in ["SAFE", "CAUTION"]:
         telegram_new_token_alert(pair_address, score, total, rec)
-    if overall == "SAFE" and score >= int(total * 0.50):
+    if overall == "SAFE" and score >= int(total * 0.40):  # FIX2: 50%→40%
         try: _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
         except Exception as e: print(f"Auto buy error: {e}")
-    elif overall == "CAUTION" and score >= int(total * 0.45):
+    elif overall == "CAUTION" and score >= int(total * 0.35):  # FIX2: 45%→35%
         try: _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
         except Exception as e: print(f"Auto buy caution error: {e}")
 
@@ -2176,7 +2177,7 @@ def log_trade_internal(session_id: str, trade: Dict):
         sess["pnl_24h"]   += pnl
     else:
         # FIX v6: BNB mein track karo (pnl % tha, convert karo)
-        _size = pos.get("size_bnb", AUTO_BUY_SIZE_BNB) or AUTO_BUY_SIZE_BNB
+        _size = float(trade.get("size_bnb", AUTO_BUY_SIZE_BNB) or AUTO_BUY_SIZE_BNB)  # FIX1: pos→trade
         _bnb_lost = _size * abs(pnl) / 100.0
         sess["daily_loss"] = sess.get("daily_loss", 0) + _bnb_lost
         print(f"📉 daily_loss updated: +{_bnb_lost:.4f} BNB (pnl={pnl:.1f}%) total={sess['daily_loss']:.4f}")
