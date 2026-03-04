@@ -2497,65 +2497,67 @@ def _startup_once():
         threading.Thread(target=_delayed(self_awareness_loop,   35),  daemon=True).start()
         threading.Thread(target=_delayed(fetch_internet_data_24x7, 45), daemon=True).start()
         threading.Thread(target=_delayed(feedback_validation_loop, 50), daemon=True).start()
-        # PERSIST: Restart ke baad positions restore karo — seedha DB se
-        try:
-            if supabase:
-                _db_res = supabase.table("memory").select("open_positions,paper_balance,trade_count,win_count,pattern_database").eq("session_id", AUTO_SESSION_ID).order("updated_at", desc=True).limit(1).execute()
-                if _db_res.data:
-                    _row = _db_res.data[0]
-                    _raw = _row.get("open_positions", "{}")
-                    try:
-                        _saved = json.loads(_raw) if isinstance(_raw, str) else (_raw or {})
-                    except:
-                        _saved = {}
-                    # Session mein bhi update karo
-                    _sess = get_or_create_session(AUTO_SESSION_ID)
-                    _sess["open_positions"] = _saved
-                    if _row.get("paper_balance"):
-                        _sess["paper_balance"] = float(_row["paper_balance"])
-                    if _row.get("trade_count"):
-                        _sess["trade_count"] = int(_row["trade_count"])
-                    if _row.get("win_count"):
-                        _sess["win_count"] = int(_row["win_count"])
-                    # auto_trade_stats restore from pattern_database
-                    try:
-                        _pdb_raw = _row.get("pattern_database", "{}")
-                        _pdb = json.loads(_pdb_raw) if isinstance(_pdb_raw, str) else (_pdb_raw or {})
-                        if isinstance(_pdb, dict):
-                            auto_trade_stats["total_auto_buys"]  = _pdb.get("total_buys", 0)
-                            auto_trade_stats["total_auto_sells"] = _pdb.get("total_sells", 0)
-                            auto_trade_stats["auto_pnl_total"]   = _pdb.get("pnl_total", 0.0)
-                            auto_trade_stats["last_action"]      = _pdb.get("last_action", "")
-                            auto_trade_stats["trade_history"]    = list(_pdb.get("trade_history", []))
-                            auto_trade_stats["wins"]             = _pdb.get("wins", 0)
-                            auto_trade_stats["losses"]           = _pdb.get("losses", 0)
-                            _sc = _pdb.get("total_scanned", 0)
-                            if _sc > 0:
-                                brain["total_tokens_discovered_ever"] = _sc
-                            print(f"✅ Auto stats restored: buys={auto_trade_stats['total_auto_buys']} sells={auto_trade_stats['total_auto_sells']} wins={auto_trade_stats['wins']} losses={auto_trade_stats['losses']} history={len(auto_trade_stats['trade_history'])} scanned={_sc}")
-                    except Exception as _pdb_err:
-                        print(f"⚠️ Auto stats restore error: {_pdb_err}")
-                    sessions[AUTO_SESSION_ID] = _sess
-                    if _saved and isinstance(_saved, dict):
-                        for _addr, _pd in _saved.items():
-                            if _addr not in auto_trade_stats["running_positions"]:
-                                auto_trade_stats["running_positions"][_addr] = _pd
-                                add_position_to_monitor(
-                                    AUTO_SESSION_ID, _addr,
-                                    _pd.get("token", _addr[:10]),
-                                    float(_pd.get("entry", 0)),
-                                    float(_pd.get("size_bnb", AUTO_BUY_SIZE_BNB)),
-                                    float(_pd.get("sl_pct", 15.0))
-                                )
-                        print(f"✅ Restored {len(_saved)} positions from Supabase")
-                    else:
-                        print("ℹ️ No saved positions found")
+        def _startup_restore():
+    # PERSIST: Restart ke baad positions restore karo — seedha DB se
+    try:
+        if supabase:
+            _db_res = supabase.table("memory").select("open_positions,paper_balance,trade_count,win_count,pattern_database").eq("session_id", AUTO_SESSION_ID).order("updated_at", desc=True).limit(1).execute()
+            if _db_res.data:
+                _row = _db_res.data[0]
+                _raw = _row.get("open_positions", "{}")
+                try:
+                    _saved = json.loads(_raw) if isinstance(_raw, str) else (_raw or {})
+                except:
+                    _saved = {}
+                # Session mein bhi update karo
+                _sess = get_or_create_session(AUTO_SESSION_ID)
+                _sess["open_positions"] = _saved
+                if _row.get("paper_balance"):
+                    _sess["paper_balance"] = float(_row["paper_balance"])
+                if _row.get("trade_count"):
+                    _sess["trade_count"] = int(_row["trade_count"])
+                if _row.get("win_count"):
+                    _sess["win_count"] = int(_row["win_count"])
+                # auto_trade_stats restore from pattern_database
+                try:
+                    _pdb_raw = _row.get("pattern_database", "{}")
+                    _pdb = json.loads(_pdb_raw) if isinstance(_pdb_raw, str) else (_pdb_raw or {})
+                    if isinstance(_pdb, dict):
+                        auto_trade_stats["total_auto_buys"]  = _pdb.get("total_buys", 0)
+                        auto_trade_stats["total_auto_sells"] = _pdb.get("total_sells", 0)
+                        auto_trade_stats["auto_pnl_total"]   = _pdb.get("pnl_total", 0.0)
+                        auto_trade_stats["last_action"]      = _pdb.get("last_action", "")
+                        auto_trade_stats["trade_history"]    = list(_pdb.get("trade_history", []))
+                        auto_trade_stats["wins"]             = _pdb.get("wins", 0)
+                        auto_trade_stats["losses"]           = _pdb.get("losses", 0)
+                        _sc = _pdb.get("total_scanned", 0)
+                        if _sc > 0:
+                            brain["total_tokens_discovered_ever"] = _sc
+                        print(f"✅ Auto stats restored: buys={auto_trade_stats['total_auto_buys']} sells={auto_trade_stats['total_auto_sells']} wins={auto_trade_stats['wins']} losses={auto_trade_stats['losses']} history={len(auto_trade_stats['trade_history'])} scanned={_sc}")
+                except Exception as _pdb_err:
+                    print(f"⚠️ Auto stats restore error: {_pdb_err}")
+                sessions[AUTO_SESSION_ID] = _sess
+                if _saved and isinstance(_saved, dict):
+                    for _addr, _pd in _saved.items():
+                        if _addr not in auto_trade_stats["running_positions"]:
+                            auto_trade_stats["running_positions"][_addr] = _pd
+                            add_position_to_monitor(
+                                AUTO_SESSION_ID, _addr,
+                                _pd.get("token", _addr[:10]),
+                                float(_pd.get("entry", 0)),
+                                float(_pd.get("size_bnb", AUTO_BUY_SIZE_BNB)),
+                                float(_pd.get("sl_pct", 15.0))
+                            )
+                    print(f"✅ Restored {len(_saved)} positions from Supabase")
                 else:
-                    print("ℹ️ No DB record found for AUTO_TRADER")
+                    print("ℹ️ No saved positions found")
             else:
-                print("⚠️ Supabase not connected — skipping restore")
-        except Exception as _rpe:
-            print(f"⚠️ Position restore error: {_rpe}")
+                print("ℹ️ No DB record found for AUTO_TRADER")
+        else:
+            print("⚠️ Supabase not connected — skipping restore")
+    except Exception as _rpe:
+        print(f"⚠️ Position restore error: {_rpe}")
+        threading.Thread(target=_startup_restore, daemon=True).start()
         print("✅ All background threads started")
 
 
