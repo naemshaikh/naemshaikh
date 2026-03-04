@@ -857,13 +857,27 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         print(f"⏸️ Auto-buy DISABLED")
         return
     sess = get_or_create_session(AUTO_SESSION_ID)
+
+    # FIX v5: Naye din pe reset + stale value fix
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    if sess.get("daily_loss_date", "") != today:
+        print(f"🔄 New day — resetting daily_loss (was {sess.get('daily_loss',0):.4f} BNB)")
+        sess["daily_loss"] = 0.0
+        sess["daily_loss_date"] = today
+    elif sess.get("daily_loss", 0) > 10:
+        print(f"🔄 Stale daily_loss={sess.get('daily_loss',0):.2f} → resetting to 0")
+        sess["daily_loss"] = 0.0
+        sess["daily_loss_date"] = today
     today = datetime.utcnow().strftime("%Y-%m-%d")
     if sess.get("daily_loss_date", "") != today:
         print(f"🔄 New day reset: daily_loss={sess.get('daily_loss',0):.2f} → 0")
         sess["daily_loss"] = 0.0
         sess["daily_loss_date"] = today
-    if sess.get("daily_loss", 0) >= 8.0:
-        print(f"🛑 Auto-buy BLOCKED: daily_loss={sess.get('daily_loss',0):.2f} >= 8.0")
+        # FIX v5: daily_loss ab BNB mein hai, 15% of balance threshold
+    _balance = sess.get("paper_balance", 5.0) or 5.0
+    _daily_limit = _balance * 0.15  # 15% of current balance
+    if sess.get("daily_loss", 0) >= _daily_limit:
+        print(f"🛑 Auto-buy BLOCKED: daily_loss={sess.get('daily_loss',0):.4f} BNB >= {_daily_limit:.4f} BNB (15% of {_balance:.3f})")
         return
     if len(auto_trade_stats["running_positions"]) >= AUTO_MAX_POSITIONS:
         print(f"🛑 Auto-buy BLOCKED: max {AUTO_MAX_POSITIONS} positions reached")
@@ -2386,7 +2400,11 @@ def chat():
         return jsonify({"reply": "Kuch toh bolo! 😅", "session_id": session_id})
     sess = get_or_create_session(session_id)
     sess["mode"] = mode
-    if sess.get("daily_loss", 0) >= 8.0:
+        # FIX v5: daily_loss ab BNB mein hai, 15% of balance threshold
+    _balance = sess.get("paper_balance", 5.0) or 5.0
+    _daily_limit = _balance * 0.15  # 15% of current balance
+    if sess.get("daily_loss", 0) >= _daily_limit:
+        print(f"🛑 Auto-buy BLOCKED: daily_loss={sess.get('daily_loss',0):.4f} BNB >= {_daily_limit:.4f} BNB (15% of {_balance:.3f})")
         return jsonify({"reply": "🛑 Daily loss limit (8%) reach ho gaya. Kal fresh start karo!", "session_id": session_id})
     _extract_user_info_from_message(user_msg)
     sess["history"].append({"role": "user", "content": user_msg})
