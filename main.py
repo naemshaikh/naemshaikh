@@ -1048,10 +1048,11 @@ def auto_position_manager():
                 with monitor_lock:
                     mon = monitored_positions.get(addr, {})
                 current = mon.get("current", 0)
-                entry   = pos.get("entry", 0)
+                _pos_data = auto_trade_stats["running_positions"].get(addr, pos)  # FIX4
+                entry   = _pos_data.get("entry", 0)
                 high    = mon.get("high", entry)
-                tp_sold = pos.get("tp_sold", 0.0)
-                sl_pct  = pos.get("sl_pct", 15.0)
+                tp_sold = _pos_data.get("tp_sold", 0.0)  # FIX4
+                sl_pct  = _pos_data.get("sl_pct", 15.0)  # FIX4
                 if current <= 0 or entry <= 0:  # FIX v4: skip, never sell on price=0
                     print(f"⚠️ Skipping {addr[:10]}: current={current:.8f} entry={entry:.8f}")
                     continue
@@ -1065,8 +1066,8 @@ def auto_position_manager():
                 elif pnl >= 50  and tp_sold < 50:         _auto_paper_sell(addr, "TP+50%",  25.0)
                 elif pnl >= 30  and tp_sold < 25:         _auto_paper_sell(addr, "TP+30%",  25.0)
                 elif pnl >= 20  and tp_sold < 1:
-                    pos["sl_pct"] = 2.0   # FIX v4: was 0.0  # break-even
-                    pos["tp_sold"] = 1
+                    _pos_data["sl_pct"] = 2.0  # FIX4   # FIX v4: was 0.0  # break-even
+                    _pos_data["tp_sold"] = 1  # FIX4
             except Exception as e:
                 print(f"Auto manager err {addr[:10]}: {e}")
         time.sleep(10)
@@ -1846,6 +1847,7 @@ def _auto_check_new_pair(pair_address: str):
     rec     = result.get("recommendation", "")
     overall = result.get("overall", "UNKNOWN")
     print(f"🔍 Auto-check {pair_address[:10]}: {overall} ({score}/{total})")
+    print(f"📊 Score: {score}/{total} = {round(score/max(total,1)*100)}% | SAFE needs:{int(total*0.40)} CAUTION needs:{int(total*0.35)}")  # FIX3: debug
     print(f"📊 Score: {score}/{total} = {round(score/max(total,1)*100)}% | SAFE needs:{int(total*0.40)} CAUTION needs:{int(total*0.35)}")  # FIX3: debug
 
     if overall in ["SAFE", "CAUTION"]:
