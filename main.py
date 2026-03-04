@@ -828,8 +828,11 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
 # ========== POSITION MONITOR ==========
 def add_position_to_monitor(session_id, token_address, token_name, entry_price, size_bnb, stop_loss_pct=15.0):
     with monitor_lock:
-        if entry_price <= 0 or entry_price > 1.0:
-            print(f"❌ Monitoring BLOCKED: invalid price={entry_price} for {token_address[:10]}")
+        if entry_price <= 0:
+            print(f"❌ Monitoring BLOCKED: price=0 for {token_address[:10]}")
+            return
+        if entry_price > 1.0:
+            print(f"❌ Monitoring BLOCKED: price too high={entry_price:.6f} for {token_address[:10]}")
             return
         monitored_positions[token_address] = {
             "session_id":    session_id,
@@ -914,14 +917,36 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         except Exception as _pe:
             print(f"⚠️ Price fallback error: {_pe}")
 
+    # FIX: Price still 0 — ek aur retry 10s baad
     if entry_price <= 0:
-        print(f"❌ Auto-buy BLOCKED: price=0 for {address[:10]}")
+        print(f"⏳ Price=0 — 10s wait kar ke retry kar raha hoon: {address[:10]}")
+        import time as _rt
+        _rt.sleep(10)
+        entry_price = get_token_price_bnb(address)
+        if entry_price <= 0:
+            try:
+                _r2 = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{address}", timeout=12)
+                if _r2.status_code == 200:
+                    _bsc2 = [p for p in (_r2.json() or {}).get("pairs", []) or [] if p and p.get("chainId") == "bsc"]
+                    if _bsc2:
+                        _pusd2 = float(_bsc2[0].get("priceUsd", 0) or 0)
+                        bnb_p2 = market_cache.get("bnb_price", 300) or 300
+                        if _pusd2 > 0:
+                            entry_price = _pusd2 / bnb_p2
+            except Exception as _re:
+                print(f"⚠️ Retry price error: {_re}")
+    if entry_price <= 0:
+        print(f"❌ Auto-buy BLOCKED: price=0 even after retry for {address[:10]}")
         return
     if entry_price > 1.0:
         print(f"❌ Auto-buy BLOCKED: suspicious price={entry_price:.6f} for {address[:10]}")
         return
 
     entry_price = entry_price * 1.005
+    # FIX: Double check after slippage — price kabhi 0 nahi hona chahiye
+    if entry_price <= 0:
+        print(f"❌ Auto-buy BLOCKED (post-slippage): price=0 for {address[:10]}")
+        return
     size_bnb = max(min(AUTO_BUY_SIZE_BNB, paper_balance * 0.025), 0.001)
     sess["paper_balance"] = round(paper_balance - size_bnb, 6)
     add_position_to_monitor(AUTO_SESSION_ID, address, token_name or address[:10], entry_price, size_bnb, stop_loss_pct=15.0)
