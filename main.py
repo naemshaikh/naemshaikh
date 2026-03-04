@@ -668,7 +668,7 @@ def _load_session_from_db(session_id: str):
                 "daily_loss_date":  _today,
                 "trade_count":      int(row.get("trade_count")      or 0),
                 "win_count":        int(row.get("win_count")        or 0),
-                "pattern_database": _safe_json(row.get("pattern_database"), []),
+                "pattern_database": _safe_json(row.get("pattern_database"), {}),
             })
             # Restore auto_trade_stats if this is AUTO session
             if session_id == AUTO_SESSION_ID:
@@ -702,7 +702,7 @@ def _save_session_to_db(session_id: str):
                 "total_sells":   auto_trade_stats.get("total_auto_sells", 0),
                 "pnl_total":     auto_trade_stats.get("auto_pnl_total", 0.0),
                 "last_action":   auto_trade_stats.get("last_action", ""),
-                "trade_history": auto_trade_stats.get("trade_history", [])[-100:],
+                "trade_history": list(auto_trade_stats.get("trade_history", []))[-100:],
                 "total_scanned": max(len(discovered_addresses), brain.get("total_tokens_discovered_ever", 0)),
                 "wins":          auto_trade_stats.get("wins", 0),
                 "losses":        auto_trade_stats.get("losses", 0),
@@ -2500,7 +2500,7 @@ def _startup_once():
         # PERSIST: Restart ke baad positions restore karo — seedha DB se
         try:
             if supabase:
-                _db_res = supabase.table("memory").select("open_positions,paper_balance,trade_count,win_count").eq("session_id", AUTO_SESSION_ID).order("updated_at", desc=True).limit(1).execute()
+                _db_res = supabase.table("memory").select("open_positions,paper_balance,trade_count,win_count,pattern_database").eq("session_id", AUTO_SESSION_ID).order("updated_at", desc=True).limit(1).execute()
                 if _db_res.data:
                     _row = _db_res.data[0]
                     _raw = _row.get("open_positions", "{}")
@@ -2517,6 +2517,24 @@ def _startup_once():
                         _sess["trade_count"] = int(_row["trade_count"])
                     if _row.get("win_count"):
                         _sess["win_count"] = int(_row["win_count"])
+                    # auto_trade_stats restore from pattern_database
+                    try:
+                        _pdb_raw = _row.get("pattern_database", "{}")
+                        _pdb = json.loads(_pdb_raw) if isinstance(_pdb_raw, str) else (_pdb_raw or {})
+                        if isinstance(_pdb, dict):
+                            auto_trade_stats["total_auto_buys"]  = _pdb.get("total_buys", 0)
+                            auto_trade_stats["total_auto_sells"] = _pdb.get("total_sells", 0)
+                            auto_trade_stats["auto_pnl_total"]   = _pdb.get("pnl_total", 0.0)
+                            auto_trade_stats["last_action"]      = _pdb.get("last_action", "")
+                            auto_trade_stats["trade_history"]    = list(_pdb.get("trade_history", []))
+                            auto_trade_stats["wins"]             = _pdb.get("wins", 0)
+                            auto_trade_stats["losses"]           = _pdb.get("losses", 0)
+                            _sc = _pdb.get("total_scanned", 0)
+                            if _sc > 0:
+                                brain["total_tokens_discovered_ever"] = _sc
+                            print(f"✅ Auto stats restored: buys={auto_trade_stats['total_auto_buys']} sells={auto_trade_stats['total_auto_sells']} wins={auto_trade_stats['wins']} losses={auto_trade_stats['losses']} history={len(auto_trade_stats['trade_history'])} scanned={_sc}")
+                    except Exception as _pdb_err:
+                        print(f"⚠️ Auto stats restore error: {_pdb_err}")
                     sessions[AUTO_SESSION_ID] = _sess
                     if _saved and isinstance(_saved, dict):
                         for _addr, _pd in _saved.items():
