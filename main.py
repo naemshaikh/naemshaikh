@@ -1028,6 +1028,17 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
 # ========== AUTO POSITION MANAGER ==========
 def auto_position_manager():
     print("Auto Position Manager started!")
+    # FIX v6: Startup pe stale daily_loss reset karo
+    try:
+        _s = get_or_create_session(AUTO_SESSION_ID)
+        _dl = _s.get("daily_loss", 0)
+        _today = datetime.utcnow().strftime("%Y-%m-%d")
+        if _dl > 1.0 or _s.get("daily_loss_date", "") != _today:
+            print(f"🔄 Startup: daily_loss={_dl:.4f} → 0 (new day or stale)")
+            _s["daily_loss"] = 0.0
+            _s["daily_loss_date"] = _today
+    except Exception as _e:
+        print(f"⚠️ Startup reset error: {_e}")
     # BUG FIX 1: trade_history guard — restart pe crash hota tha
     if "trade_history" not in auto_trade_stats:
         auto_trade_stats["trade_history"] = []
@@ -2164,7 +2175,11 @@ def log_trade_internal(session_id: str, trade: Dict):
         sess["win_count"] += 1
         sess["pnl_24h"]   += pnl
     else:
-        sess["daily_loss"] += abs(pnl)
+        # FIX v6: BNB mein track karo (pnl % tha, convert karo)
+        _size = pos.get("size_bnb", AUTO_BUY_SIZE_BNB) or AUTO_BUY_SIZE_BNB
+        _bnb_lost = _size * abs(pnl) / 100.0
+        sess["daily_loss"] = sess.get("daily_loss", 0) + _bnb_lost
+        print(f"📉 daily_loss updated: +{_bnb_lost:.4f} BNB (pnl={pnl:.1f}%) total={sess['daily_loss']:.4f}")
     token_addr = trade.get("token_address", "")
     if token_addr:
         remove_position_from_monitor(token_addr)
@@ -2177,9 +2192,10 @@ def check_paper_to_real_readiness(session_id: str) -> Dict:
     win_count   = sess.get("win_count",   0)
     daily_loss  = sess.get("daily_loss",  0.0)
     win_rate    = round((win_count / trade_count * 100), 1) if trade_count > 0 else 0.0
-    ready       = trade_count >= 30 and win_rate >= 70.0 and daily_loss < 8.0
+    _bal_check  = sess.get("paper_balance", 5.0) or 5.0
+    ready       = trade_count >= 30 and win_rate >= 70.0 and daily_loss < (_bal_check * 0.15)
     return {
-        "ready": ready, "stop_trading": daily_loss >= 8.0,
+        "ready": ready, "stop_trading": daily_loss >= (sess.get("paper_balance", 5.0) * 0.15),
         "trade_count": trade_count, "win_count": win_count,
         "win_rate": win_rate, "daily_loss": round(daily_loss, 2),
         "message": "✅ Ready!" if ready else f"📝 Need 30+ trades ({trade_count}) & 70% WR ({win_rate:.0f}%).",
@@ -2385,7 +2401,7 @@ def trading_data():
         "trade_count":    sess.get("trade_count", 0),
         "win_rate":       round((sess.get("win_count",0)/sess.get("trade_count",1)*100),1) if sess.get("trade_count",0) > 0 else 0,
         "daily_loss":     round(sess.get("daily_loss", 0), 2),
-        "limit_reached":  sess.get("daily_loss", 0) >= 8.0,
+        "limit_reached":  sess.get("daily_loss", 0) >= (sess.get("paper_balance", 5.0) * 0.15),
         "new_pairs_found":len(new_pairs_queue),
         "monitoring":     len(monitored_positions)
     })
