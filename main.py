@@ -637,6 +637,23 @@ def get_or_create_session(session_id: str) -> dict:
         _load_session_from_db(session_id)
     return sessions[session_id]
 
+def save_session(session_id: str, sess: dict):
+    """Session ko memory aur Supabase dono mein save karo"""
+    sessions[session_id] = sess
+    if not supabase: return
+    try:
+        supabase.table("memory").upsert({
+            "session_id":    session_id,
+            "paper_balance": sess.get("paper_balance", 5.0),
+            "trade_count":   sess.get("trade_count", 0),
+            "win_count":     sess.get("win_count", 0),
+            "daily_loss":    sess.get("daily_loss", 0.0),
+            "open_positions":json.dumps(sess.get("open_positions", {})),
+            "updated_at":    datetime.utcnow().isoformat(),
+        }, on_conflict="session_id").execute()
+    except Exception as _e:
+        print(f"⚠️ save_session error: {_e}")
+
 def _load_session_from_db(session_id: str):
     if not supabase: return
     try:
@@ -647,6 +664,10 @@ def _load_session_from_db(session_id: str):
                 if not val: return default
                 try: return json.loads(val)
                 except: return default
+            # open_positions restore karo
+            _op = _safe_json(row.get("open_positions"), {})
+            if _op and isinstance(_op, dict):
+                sessions[session_id]["open_positions"] = _op
             _loaded_daily_loss = float(row.get("daily_loss") or 0.0)
             _saved_date = str(row.get("updated_at") or "")[:10]
             _today = datetime.utcnow().strftime("%Y-%m-%d")
@@ -982,7 +1003,15 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
             }
             for k, v in auto_trade_stats["running_positions"].items()
         }
-        save_session(AUTO_SESSION_ID, sess)
+        # Direct save: memory + Supabase
+        sessions[AUTO_SESSION_ID] = sess
+        if supabase:
+            supabase.table("memory").upsert({
+                "session_id":    AUTO_SESSION_ID,
+                "paper_balance": sess.get("paper_balance", 5.0),
+                "open_positions":json.dumps(sess.get("open_positions", {})),
+                "updated_at":    datetime.utcnow().isoformat(),
+            }, on_conflict="session_id").execute()
     except Exception as _spe:
         print(f"⚠️ Position save error: {_spe}")
     # PERSIST: Supabase mein save karo restart ke liye
@@ -998,7 +1027,15 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
             }
             for k, v in auto_trade_stats["running_positions"].items()
         }
-        save_session(AUTO_SESSION_ID, sess)
+        # Direct save: memory + Supabase
+        sessions[AUTO_SESSION_ID] = sess
+        if supabase:
+            supabase.table("memory").upsert({
+                "session_id":    AUTO_SESSION_ID,
+                "paper_balance": sess.get("paper_balance", 5.0),
+                "open_positions":json.dumps(sess.get("open_positions", {})),
+                "updated_at":    datetime.utcnow().isoformat(),
+            }, on_conflict="session_id").execute()
     except Exception as _spe:
         print(f"⚠️ Position save error: {_spe}")
     auto_trade_stats["total_auto_buys"] += 1
@@ -1088,7 +1125,15 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 }
                 for k, v in auto_trade_stats["running_positions"].items()
             }
-            save_session(AUTO_SESSION_ID, _ss)
+            # save_session: memory + Supabase dono update
+            sessions[AUTO_SESSION_ID] = _ss
+            if supabase:
+                supabase.table("memory").upsert({
+                    "session_id":    AUTO_SESSION_ID,
+                    "paper_balance": _ss.get("paper_balance", 5.0),
+                    "open_positions":json.dumps(_ss.get("open_positions", {})),
+                    "updated_at":    datetime.utcnow().isoformat(),
+                }, on_conflict="session_id").execute()
         except Exception as _upe:
             print(f"⚠️ Position update error: {_upe}")
         # PERSIST: Sell ke baad Supabase update karo
@@ -1103,7 +1148,15 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 }
                 for k, v in auto_trade_stats["running_positions"].items()
             }
-            save_session(AUTO_SESSION_ID, _ss)
+            # save_session: memory + Supabase dono update
+            sessions[AUTO_SESSION_ID] = _ss
+            if supabase:
+                supabase.table("memory").upsert({
+                    "session_id":    AUTO_SESSION_ID,
+                    "paper_balance": _ss.get("paper_balance", 5.0),
+                    "open_positions":json.dumps(_ss.get("open_positions", {})),
+                    "updated_at":    datetime.utcnow().isoformat(),
+                }, on_conflict="session_id").execute()
         except Exception as _upe:
             print(f"⚠️ Position update error: {_upe}")
         log_trade_internal(AUTO_SESSION_ID, {
