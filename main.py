@@ -71,6 +71,9 @@ def _get_dec(addr):
     if addr.lower() in _dec_cache: return _dec_cache[addr.lower()]
     try: d = w3.eth.contract(address=Web3.to_checksum_address(addr), abi=TOKEN_DEC_ABI).functions.decimals().call()
     except: d = 18
+    if len(_dec_cache) > 500:  # Cache size limit
+        for k in list(_dec_cache.keys())[:100]:
+            del _dec_cache[k]
     _dec_cache[addr.lower()] = d
     return d
 
@@ -618,6 +621,12 @@ brain: Dict = {
 sessions: Dict[str, dict] = {}
 
 def get_or_create_session(session_id: str) -> dict:
+    # Session cleanup — max 25 sessions
+    if len(sessions) > 25 and session_id not in sessions:
+        _keep = {"AUTO_TRADER", "default", session_id}
+        _candidates = [k for k in list(sessions.keys()) if k not in _keep]
+        for k in _candidates[:5]:  # Sirf 5 ek baar mein hatao
+            sessions.pop(k, None)
     if session_id not in sessions:
         sessions[session_id] = {
             "session_id":       session_id,
@@ -729,7 +738,7 @@ def _save_session_to_db(session_id: str):
         print(f"⚠️ Session save error: {e}")
 
 # ========== NEW PAIRS ==========
-new_pairs_queue: deque = deque(maxlen=50)
+new_pairs_queue: deque = deque(maxlen=30)
 discovered_addresses: dict = {}
 DISCOVERY_TTL = 7200
 PAIR_CREATED_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
@@ -1075,7 +1084,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         "reason":    reason,     # FIX: was sell_reason
     })
     if len(auto_trade_stats["trade_history"]) > 500:
-        auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-500:]
+        auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-200:]
 
     auto_trade_stats["last_action"] = f"SELL {sell_pct:.0f}% {token} PnL:{pnl_pct:+.1f}%"
 
@@ -1550,7 +1559,7 @@ def _fetch_trading_intel():
                 addr = tid.replace("bsc_", "") if tid else ""
                 if addr and liq > 2000:
                     threading.Thread(target=_process_new_token, args=(addr, addr, "GeckoTerminal"), daemon=True).start()
-        brain["trading"]["market_insights"] = brain["trading"]["market_insights"][-200:]
+        brain["trading"]["market_insights"] = brain["trading"]["market_insights"][-100:]
     except Exception as e:
         print(f"⚠️ Trading intel error: {e}")
 
@@ -1715,10 +1724,10 @@ def learn_from_message(user_msg: str, reply: str, session_id: str):
 # ========== END STEP-1 FIX ==========
 
 def _learn_from_new_pairs():
-    """Learn from recently discovered new pairs"""
+    """Learn from recently discovered new pairs — single definition"""
     try:
         _ensure_brain_structure()
-        pairs = list(new_pairs_queue)[-10:]
+        pairs = list(new_pairs_queue)[-10:]  # 10 rakhte hain — trading data ke liye zaroori
         for p in pairs:
             if not isinstance(p, dict):
                 continue
@@ -1728,66 +1737,16 @@ def _learn_from_new_pairs():
             src = p.get("source", "")
             if liq > 5000 and vol > 1000:
                 note = f"NEW_PAIR: {sym} liq=${liq:.0f} vol=${vol:.0f} src={src}"
-                if note not in brain["trading"]["market_insights"]:
-                    brain["trading"]["market_insights"].append({
+                insights = brain["trading"]["market_insights"]
+                # FIXED: string vs dict comparison bug bhi fix hua
+                if not any(i.get("observation") == note for i in insights[-20:]):
+                    insights.append({
                         "timestamp":   datetime.utcnow().isoformat(),
                         "observation": note,
                         "mood":        "NEW_PAIR",
                         "quality":     "MEDIUM"
                     })
-        brain["trading"]["market_insights"] = brain["trading"]["market_insights"][-200:]
-    except Exception as e:
-        print(f"_learn_from_new_pairs error: {e}")
-
-
-def _learn_from_new_pairs():
-    """Learn from recently discovered new pairs"""
-    try:
-        _ensure_brain_structure()
-        pairs = list(new_pairs_queue)[-10:]
-        for p in pairs:
-            if not isinstance(p, dict):
-                continue
-            sym = p.get("symbol", "")
-            liq = float(p.get("liquidity", 0) or 0)
-            vol = float(p.get("volume_24h", 0) or 0)
-            src = p.get("source", "")
-            if liq > 5000 and vol > 1000:
-                note = f"NEW_PAIR: {sym} liq=${liq:.0f} vol=${vol:.0f} src={src}"
-                if note not in brain["trading"]["market_insights"]:
-                    brain["trading"]["market_insights"].append({
-                        "timestamp":   datetime.utcnow().isoformat(),
-                        "observation": note,
-                        "mood":        "NEW_PAIR",
-                        "quality":     "MEDIUM"
-                    })
-        brain["trading"]["market_insights"] = brain["trading"]["market_insights"][-200:]
-    except Exception as e:
-        print(f"_learn_from_new_pairs error: {e}")
-
-
-def _learn_from_new_pairs():
-    """Learn from recently discovered new pairs"""
-    try:
-        _ensure_brain_structure()
-        pairs = list(new_pairs_queue)[-10:]
-        for p in pairs:
-            if not isinstance(p, dict):
-                continue
-            sym = p.get("symbol", "")
-            liq = float(p.get("liquidity", 0) or 0)
-            vol = float(p.get("volume_24h", 0) or 0)
-            src = p.get("source", "")
-            if liq > 5000 and vol > 1000:
-                note = f"NEW_PAIR: {sym} liq=${liq:.0f} vol=${vol:.0f} src={src}"
-                if note not in brain["trading"]["market_insights"]:
-                    brain["trading"]["market_insights"].append({
-                        "timestamp":   datetime.utcnow().isoformat(),
-                        "observation": note,
-                        "mood":        "NEW_PAIR",
-                        "quality":     "MEDIUM"
-                    })
-        brain["trading"]["market_insights"] = brain["trading"]["market_insights"][-200:]
+        brain["trading"]["market_insights"] = brain["trading"]["market_insights"][-100:]
     except Exception as e:
         print(f"_learn_from_new_pairs error: {e}")
 
@@ -1849,7 +1808,7 @@ def log_recommendation(address, overall, score, total):
         "validate_after": (datetime.utcnow() + timedelta(hours=24)).isoformat(),
         "validated": False, "outcome": None, "was_correct": None
     })
-    if len(feedback_log) > 500: feedback_log.pop(0)
+    if len(feedback_log) > 200: feedback_log.pop(0)
 
 def _validate_past_recommendations():
     now = datetime.utcnow()
@@ -2346,7 +2305,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
             memory_block = "\n\n[MRBLACK MEMORY]\n" + "\n".join(f"- {f}" for f in memory_facts) + "\n[END MEMORY]"
 
         messages = [{"role": "system", "content": SYSTEM_PROMPT + memory_block}]
-        messages += [{"role": m["role"], "content": m["content"]} for m in history[-20:]]
+        messages += [{"role": m["role"], "content": m["content"]} for m in history[-12:]]  # mem opt
 
         _perm_rules = user_profile.get("user_rules", [])
         _perm_str = (" | UserRules: " + " | ".join(_perm_rules[-3:])) if _perm_rules else ""
@@ -2806,7 +2765,7 @@ def self_introspect() -> str:
             "time": datetime.utcnow().isoformat(),
             "observation": obs
         })
-        self_awareness["introspection_log"] = self_awareness["introspection_log"][-50:]
+        self_awareness["introspection_log"] = self_awareness["introspection_log"][-20:]
         return obs
     except Exception as e:
         return f"Introspection error: {e}"
