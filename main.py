@@ -1504,36 +1504,25 @@ def _calculate_real_emotion() -> dict:
         return {"emotion": "INITIALIZING", "reason": "System warm-up", "intensity": 3}
 
 def _calculate_trading_iq() -> int:
+    """Calculate trading IQ based on win/loss ratio"""
     try:
-        all_trades = []
-        for sess in sessions.values():
-            _pd = sess.get("pattern_database", [])
-            prompt = (
-            f"Analyze BSC trading data and give 2 insights JSON: {data_summary} "
-            f'[{{"insight":"...","action":"...","confidence":0-100}}]'
-        )
-        try:
-            client = _get_freeflow_client()
-            response = client.chat(model=MODEL_FAST,
-                                   messages=[{"role":"system","content":"JSON only."},
-                                             {"role":"user","content":prompt}],
-                                   max_tokens=300)
-            reply = response if isinstance(response, str) else (
-                response.choices[0].message.content if hasattr(response,"choices") else str(response))
-            clean = reply.strip().replace("```json","").replace("```","").strip()
-            insights = json.loads(clean)
-            if isinstance(insights, list):
-                for item in insights:
-                    if isinstance(item, dict) and item.get("insight"):
-                        brain["trading"]["strategy_notes"].append({
-                            "note": f"[LLM-INSIGHT] {item['insight']} → {item.get('action','')}",
-                            "confidence": item.get("confidence",50),
-                            "timestamp": datetime.utcnow().isoformat()
-                        })
-        except Exception as llm_e:
-            print(f"Deep LLM error: {llm_e}")
+        wins   = auto_trade_stats.get("wins",   0)
+        losses = auto_trade_stats.get("losses", 0)
+        total  = wins + losses
+        if total == 0:
+            return 50
+        wr = (wins / total) * 100
+        if   wr >= 90: iq = 100
+        elif wr >= 70: iq = 80
+        elif wr >= 50: iq = 60
+        elif wr >= 30: iq = 45
+        else:          iq = 30
+        self_awareness["performance_intelligence"]["trading_iq"] = iq
+        return iq
     except Exception as e:
-        print(f"Deep learn error: {e}")
+        print(f"_calculate_trading_iq error: {e}")
+        return 50
+
 
 def _fetch_trading_intel():
     _ensure_brain_structure()
@@ -2416,6 +2405,23 @@ def _startup_once():
         print("✅ All background threads started")
 
 
+
+# ═══ DEEP FIX: Startup inside worker (after gunicorn fork) ═══
+_worker_started = False
+_worker_lock    = threading.Lock()
+
+@app.before_request
+def _worker_startup():
+    global _worker_started
+    if _worker_started:
+        return
+    with _worker_lock:
+        if _worker_started:
+            return
+        _worker_started = True
+        _startup_once()
+# ═══ END DEEP FIX ═══
+
 @app.route("/admin-reset-positions", methods=["POST"])
 def admin_reset_positions():
     try:
@@ -2697,6 +2703,29 @@ def self_awareness_route():
         },
     })
 
+
+def self_introspect() -> str:
+    """Simple self introspection — returns status string"""
+    try:
+        uptime  = int((datetime.utcnow() - BIRTH_TIME).total_seconds() / 60)
+        cycles  = brain.get("total_learning_cycles", 0)
+        wins    = auto_trade_stats.get("wins",   0)
+        losses  = auto_trade_stats.get("losses", 0)
+        obs = (
+            f"Uptime: {uptime}m | Cycles: {cycles} | "
+            f"W:{wins} L:{losses} | "
+            f"Positions: {len(auto_trade_stats.get('running_positions', {}))} | "
+            f"BNB: ${market_cache.get('bnb_price', 0):.2f}"
+        )
+        self_awareness["introspection_log"].append({
+            "time": datetime.utcnow().isoformat(),
+            "observation": obs
+        })
+        self_awareness["introspection_log"] = self_awareness["introspection_log"][-50:]
+        return obs
+    except Exception as e:
+        return f"Introspection error: {e}"
+
 @app.route("/introspect", methods=["GET"])
 def introspect():
     observation = self_introspect()
@@ -2785,7 +2814,7 @@ def health():
     })
 
 # BUG FIX 3: Eager startup — Render port detect kar sake
-_startup_once()
+# _startup_once() — moved to first_request handler below
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
