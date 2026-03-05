@@ -2573,6 +2573,16 @@ def airdrops_route():
     })
 
 @app.route("/self-awareness", methods=["GET"])
+
+def update_self_awareness():
+    """Placeholder for self-awareness update cycle - prevents thread crash"""
+    try:
+        print("🔄 Self-awareness cycle: checked & updated (placeholder)")
+        # Add real logic here later: e.g. market sentiment sync, balance check, etc.
+    except Exception as e:
+        print(f"⚠️ Self-awareness update failed: {e}")
+
+
 def self_awareness_route():
     update_self_awareness()
     uptime_s = self_awareness["current_state"]["uptime_seconds"]
