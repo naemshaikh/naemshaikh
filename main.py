@@ -2263,7 +2263,7 @@ def _startup_once():
         threading.Thread(target=_delayed(track_smart_wallets,   20),  daemon=True).start()
         threading.Thread(target=_delayed(continuous_learning,   25),  daemon=True).start()
         threading.Thread(target=_delayed(auto_position_manager, 30),  daemon=True).start()
-        threading.Thread(target=_delayed(self_awareness_loop,   35),  daemon=True).start()
+        threading.Thread(target=_delayed(self_awareness_route,   35),  daemon=True).start()
         threading.Thread(target=_delayed(fetch_internet_data_24x7, 45), daemon=True).start()
         threading.Thread(target=_delayed(feedback_validation_loop, 50), daemon=True).start()
         def _startup_restore():
