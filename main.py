@@ -1713,6 +1713,32 @@ def learn_from_message(user_msg: str, reply: str, session_id: str):
         print(f"learn_from_message error: {e}")
 
 # ========== END STEP-1 FIX ==========
+
+def _learn_from_new_pairs():
+    """Learn from recently discovered new pairs"""
+    try:
+        _ensure_brain_structure()
+        pairs = list(new_pairs_queue)[-10:]
+        for p in pairs:
+            if not isinstance(p, dict):
+                continue
+            sym = p.get("symbol", "")
+            liq = float(p.get("liquidity", 0) or 0)
+            vol = float(p.get("volume_24h", 0) or 0)
+            src = p.get("source", "")
+            if liq > 5000 and vol > 1000:
+                note = f"NEW_PAIR: {sym} liq=${liq:.0f} vol=${vol:.0f} src={src}"
+                if note not in brain["trading"]["market_insights"]:
+                    brain["trading"]["market_insights"].append({
+                        "timestamp":   datetime.utcnow().isoformat(),
+                        "observation": note,
+                        "mood":        "NEW_PAIR",
+                        "quality":     "MEDIUM"
+                    })
+        brain["trading"]["market_insights"] = brain["trading"]["market_insights"][-200:]
+    except Exception as e:
+        print(f"_learn_from_new_pairs error: {e}")
+
 def continuous_learning():
     print("🧠 Learning Engine started!")
     _load_brain_from_db()
