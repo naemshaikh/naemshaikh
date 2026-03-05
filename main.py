@@ -1017,6 +1017,8 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         sess["positions"] = []
     sess["positions"].append({
         "address": address, "token": token_name or address[:10],
+        if not isinstance(sess.get("positions"), list):
+            sess["positions"] = []
         "entry": entry_price, "size_bnb": size_bnb, "type": "auto"
     })
     threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
@@ -1116,6 +1118,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         })
         sess["positions"] = [p for p in sess.get("positions", []) if p.get("address") != address]
     else:
+        if not isinstance(sess.get("positions"), list):
+            sess["positions"] = []
         pos["size_bnb"] = size * (1 - sell_pct / 100.0)
         pos["tp_sold"]  = pos.get("tp_sold", 0) + sell_pct
 
@@ -1510,7 +1514,9 @@ def _calculate_trading_iq() -> int:
         if not all_trades: return 50
         total = len(all_trades)
         wins  = sum(1 for t in all_trades if t.get("win"))
-        wr    = (wins / total) * 100
+        _pd = sess.get("pattern_database", [])
+        if isinstance(_pd, list):
+            all_trades.extend([t for t in _pd if isinstance(t, dict)])
         wr_score = min(30, wr * 0.3)
         sample_score = min(10, total * 0.33)
         return int(wr_score + 40 + sample_score)
@@ -1732,11 +1738,15 @@ def _deep_llm_learning():
         for sess in sessions.values():
             all_trades.extend(sess.get("pattern_database", []))
         if len(all_trades) < 3: return
-        wins   = [t for t in all_trades if t.get("win")]
+        _pd = sess.get("pattern_database", [])
+        if isinstance(_pd, list):
+            all_trades.extend([t for t in _pd if isinstance(t, dict)])
         losses = [t for t in all_trades if not t.get("win")]
         if not wins and not losses: return
         data_summary = (
-            f"Trading data: {len(wins)} wins, {len(losses)} losses. "
+            _pd = sess.get("pattern_database", [])
+            if isinstance(_pd, list):
+                all_trades.extend([t for t in _pd if isinstance(t, dict)])
             f"Market: BNB=${market_cache.get('bnb_price',0):.0f} F&G={market_cache.get('fear_greed',50)}."
         )
         prompt = (
@@ -2302,6 +2312,8 @@ def log_trade_internal(session_id: str, trade: Dict):
         "lesson":           trade.get("lesson", ""),
         "timestamp":        datetime.utcnow().isoformat()
     }
+    if not isinstance(sess.get("pattern_database"), list):
+        sess["pattern_database"] = []
     sess["pattern_database"].append(lesson)
     sess["trade_count"] += 1
     if win:
