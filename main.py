@@ -740,8 +740,8 @@ monitor_lock = threading.Lock()
 
 # ========== AUTO TRADE STATS ==========  FIX 2: trade_history added
 AUTO_TRADE_ENABLED = True
-AUTO_BUY_SIZE_BNB  = 0.003
-AUTO_MAX_POSITIONS = 15
+AUTO_BUY_SIZE_BNB  = 0.01
+AUTO_MAX_POSITIONS = 50
 AUTO_SESSION_ID    = "AUTO_TRADER"
 
 auto_trade_stats = {
