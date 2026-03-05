@@ -1017,7 +1017,6 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         sess["positions"] = []
     sess["positions"].append({
         "address": address, "token": token_name or address[:10],
-        if not isinstance(sess.get("positions"), list):
             sess["positions"] = []
         "entry": entry_price, "size_bnb": size_bnb, "type": "auto"
     })
@@ -1510,7 +1509,9 @@ def _calculate_trading_iq() -> int:
     try:
         all_trades = []
         for sess in sessions.values():
-            all_trades.extend(sess.get("pattern_database", []))
+            _pd = sess.get("pattern_database", [])
+            if isinstance(_pd, list):
+                all_trades.extend([t for t in _pd if isinstance(t, dict)])
         if not all_trades: return 50
         total = len(all_trades)
         wins  = sum(1 for t in all_trades if t.get("win"))
@@ -1736,7 +1737,9 @@ def _deep_llm_learning():
     try:
         all_trades = []
         for sess in sessions.values():
-            all_trades.extend(sess.get("pattern_database", []))
+            _pd = sess.get("pattern_database", [])
+            if isinstance(_pd, list):
+                all_trades.extend([t for t in _pd if isinstance(t, dict)])
         if len(all_trades) < 3: return
         _pd = sess.get("pattern_database", [])
         if isinstance(_pd, list):
