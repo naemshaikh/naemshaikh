@@ -661,7 +661,7 @@ def _load_session_from_db(session_id: str):
             sessions[session_id].update({
                 "paper_balance":    float(row.get("paper_balance") or 5.0),
                 "real_balance":     float(row.get("real_balance")  or 0.00),
-                "positions":        _safe_json(row.get("positions"),        []),
+                "positions":        [x for x in _safe_json(row.get("positions"), []) if isinstance(x, dict)],
                 "history":          _safe_json(row.get("history"),          []),
                 "pnl_24h":          float(row.get("pnl_24h")       or 0.0),
                 "daily_loss":       _loaded_daily_loss,
@@ -1005,24 +1005,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
     except Exception as _spe:
         print(f"⚠️ Position save error: {_spe}")
-    # PERSIST: Supabase mein save karo restart ke liye
-    try:
-        sess["open_positions"] = {
-            k: {
-                "token":     v.get("token", ""),
-                "entry":     v.get("entry", 0),
-                "size_bnb":  v.get("size_bnb", AUTO_BUY_SIZE_BNB),
-                "bought_at": v.get("bought_at", ""),
-                "sl_pct":    v.get("sl_pct", 15.0),
-                "tp_sold":   v.get("tp_sold", 0.0),
-            }
-            for k, v in auto_trade_stats["running_positions"].items()
-        }
-        # Direct save: memory update + async DB save
-        sessions[AUTO_SESSION_ID] = sess
-        threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
-    except Exception as _spe:
-        print(f"⚠️ Position save error: {_spe}")
+
     auto_trade_stats["total_auto_buys"] += 1
     # FIX: scanned count session mein save karo
     try:
@@ -1030,7 +1013,9 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         _sc["total_scanned"] = len(discovered_addresses)
     except Exception: pass
     auto_trade_stats["last_action"] = f"BUY {token_name or address[:10]}"
-    sess.setdefault("positions", []).append({
+    if not isinstance(sess.get("positions"), list):
+        sess["positions"] = []
+    sess["positions"].append({
         "address": address, "token": token_name or address[:10],
         "entry": entry_price, "size_bnb": size_bnb, "type": "auto"
     })
@@ -1120,23 +1105,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
             threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
         except Exception as _upe:
             print(f"⚠️ Position update error: {_upe}")
-        # PERSIST: Sell ke baad Supabase update karo
-        try:
-            _ss = get_or_create_session(AUTO_SESSION_ID)
-            _ss["open_positions"] = {
-                k: {
-                    "token":     v.get("token", ""),
-                    "entry":     v.get("entry", 0),
-                    "size_bnb":  v.get("size_bnb", AUTO_BUY_SIZE_BNB),
-                    "bought_at": v.get("bought_at", ""),
-                }
-                for k, v in auto_trade_stats["running_positions"].items()
-            }
-            # save_session: memory update + async DB save
-            sessions[AUTO_SESSION_ID] = _ss
-            threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
-        except Exception as _upe:
-            print(f"⚠️ Position update error: {_upe}")
+
         log_trade_internal(AUTO_SESSION_ID, {
             "token_address": address,
             "entry_price":   entry,
@@ -1668,7 +1637,11 @@ def _learn_trading_patterns():
     try:
         all_trades = []
         for sess in sessions.values():
-            all_trades.extend(sess.get("pattern_database", []))
+            _pd = sess.get("pattern_database", [])
+            if isinstance(_pd, list):
+                all_trades.extend([t for t in _pd if isinstance(t, dict)])
+            elif isinstance(_pd, dict):
+                pass  # old format — skip
         if not all_trades: return
         wins   = [t for t in all_trades if t.get("win")]
         losses = [t for t in all_trades if not t.get("win")]
@@ -2505,13 +2478,14 @@ def _startup_once():
             return _wrap
         threading.Thread(target=fetch_market_data,                    daemon=True).start()
 
-        # BNB price verify + retry
-        import time as _st
-        _st.sleep(8)
-        if market_cache.get("bnb_price", 0) == 0:
-            print("⚠️ BNB price not loaded, retrying...")
-            threading.Thread(target=fetch_market_data, daemon=True).start()
+        # BNB price verify + retry (NON-BLOCKING FIX)
+        def _delayed_bnb_retry():
+            import time as _st
             _st.sleep(8)
+            if market_cache.get("bnb_price", 0) == 0:
+                print("⚠️ BNB price not loaded, retrying...")
+                fetch_market_data()
+        threading.Thread(target=_delayed_bnb_retry, daemon=True).start()
 
         threading.Thread(target=_delayed(poll_new_pairs,        10),  daemon=True).start()
         threading.Thread(target=_delayed(price_monitor_loop,    15),  daemon=True).start()
