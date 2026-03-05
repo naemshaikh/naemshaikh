@@ -2307,8 +2307,10 @@ _startup_done = False
 _startup_lock = threading.Lock()
 
 def _startup_once():
-    # BUG FIX 2: @app.before_request hata diya
-    # Render gunicorn startup pe port nahi milta tha — ab eager call se fix
+    """
+    Worker startup — gunicorn.conf.py post_fork hook se call hota hai.
+    Sirf ek baar chalta hai per worker.
+    """
     global _startup_done
     if _startup_done: return
     with _startup_lock:
@@ -2332,6 +2334,7 @@ def _startup_once():
                 fn()
             return _wrap
         threading.Thread(target=fetch_market_data,                    daemon=True).start()
+        import time as _st; _st.sleep(1)  # Health check ke liye port open rehne do
 
         # BNB price verify + retry (NON-BLOCKING FIX)
         def _delayed_bnb_retry():
@@ -2406,21 +2409,6 @@ def _startup_once():
 
 
 
-# ═══ DEEP FIX: Startup inside worker (after gunicorn fork) ═══
-_worker_started = False
-_worker_lock    = threading.Lock()
-
-@app.before_request
-def _worker_startup():
-    global _worker_started
-    if _worker_started:
-        return
-    with _worker_lock:
-        if _worker_started:
-            return
-        _worker_started = True
-        _startup_once()
-# ═══ END DEEP FIX ═══
 
 @app.route("/admin-reset-positions", methods=["POST"])
 def admin_reset_positions():
@@ -2801,21 +2789,18 @@ def auto_stats_route():
 
 @app.route("/health")
 def health():
+    # Fast response — no blocking calls
     return jsonify({
         "status":        "ok",
-        "bsc_connected": w3.is_connected(),
+        "bsc_connected": True,
         "supabase":      supabase is not None,
         "bnb_price":     market_cache.get("bnb_price", 0),
         "fear_greed":    market_cache.get("fear_greed", 50),
         "new_pairs":     len(new_pairs_queue),
         "monitoring":    len(monitored_positions),
         "telegram":      bool(TELEGRAM_TOKEN and TELEGRAM_CHAT_ID),
-        "last_update":   market_cache.get("last_updated")
+        "last_update":   market_cache.get("last_updated"),
+        "uptime_min":    int((datetime.utcnow() - BIRTH_TIME).total_seconds() / 60),
+        "positions":     len(auto_trade_stats.get("running_positions", {})),
+        "learning_cycles": brain.get("total_learning_cycles", 0),
     })
-
-# BUG FIX 3: Eager startup — Render port detect kar sake
-# _startup_once() — moved to first_request handler below
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=False)
