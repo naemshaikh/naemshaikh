@@ -2488,6 +2488,25 @@ def _startup_once():
 
 
 
+
+# ═══ SAFE STARTUP — first request pe ek baar ═══
+_started = False
+import threading as _thr
+_start_lock = _thr.Lock()
+
+@app.before_request
+def _safe_startup():
+    global _started
+    if _started:
+        return
+    with _start_lock:
+        if _started:
+            return
+        _started = True
+        import threading as _t
+        _t.Thread(target=_startup_once, daemon=True).start()
+# ═══ END SAFE STARTUP ═══
+
 @app.route("/admin-reset-positions", methods=["POST"])
 def admin_reset_positions():
     try:
