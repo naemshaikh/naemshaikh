@@ -1629,6 +1629,101 @@ def _check_milestones():
     except Exception as e:
         print(f"Milestone error: {e}")
 
+
+# ========== STEP-1 FIX: MISSING FUNCTIONS ==========
+
+def _learn_trading_patterns():
+    """Learn from recent trade history"""
+    try:
+        _ensure_brain_structure()
+        history = auto_trade_stats.get("trade_history", [])[-20:]
+        for t in history:
+            if not isinstance(t, dict):
+                continue
+            pnl    = t.get("pnl_pct", 0)
+            reason = t.get("reason", "?")
+            result = t.get("result", "")
+            if result == "win" and pnl > 10:
+                pat = f"WIN: {reason} | PnL:{pnl:.1f}%"
+                if pat not in brain["trading"]["best_patterns"]:
+                    brain["trading"]["best_patterns"].append(pat)
+            elif result == "loss":
+                pat = f"LOSS: {reason} | PnL:{pnl:.1f}%"
+                if pat not in brain["trading"]["avoid_patterns"]:
+                    brain["trading"]["avoid_patterns"].append(pat)
+        brain["trading"]["best_patterns"]  = brain["trading"]["best_patterns"][-100:]
+        brain["trading"]["avoid_patterns"] = brain["trading"]["avoid_patterns"][-100:]
+        brain["trading"]["last_updated"]   = datetime.utcnow().isoformat()
+    except Exception as e:
+        print(f"_learn_trading_patterns error: {e}")
+
+
+def _deep_llm_learning():
+    """Deep learning cycle — runs every 15 mins"""
+    try:
+        _learn_from_internet_data()
+        _ensure_brain_structure()
+        print(f"Deep learning done | W:{len(brain['trading']['best_patterns'])} L:{len(brain['trading']['avoid_patterns'])}")
+    except Exception as e:
+        print(f"_deep_llm_learning error: {e}")
+
+
+def _get_brain_context_for_llm() -> str:
+    """Brain context for LLM"""
+    try:
+        w  = len(brain["trading"].get("best_patterns",  []))
+        l  = len(brain["trading"].get("avoid_patterns", []))
+        bl = len(brain["trading"].get("token_blacklist", []))
+        cy = brain.get("total_learning_cycles", 0)
+        if w == 0 and l == 0:
+            return ""
+        return f"W:{w} L:{l} BL:{bl} C:{cy}"
+    except:
+        return ""
+
+
+def get_self_awareness_context_for_llm() -> str:
+    """Self awareness context for LLM"""
+    try:
+        emotion = self_awareness.get("emotional_intelligence", {}).get("current_emotion", "FOCUSED")
+        iq      = self_awareness.get("performance_intelligence", {}).get("trading_iq", 50)
+        uptime  = int((datetime.utcnow() - BIRTH_TIME).total_seconds() / 60)
+        return f"E:{emotion} IQ:{iq} UP:{uptime}m"
+    except:
+        return ""
+
+
+def get_learning_context_for_decision() -> str:
+    """Recent learning notes for LLM"""
+    try:
+        notes = brain["trading"].get("strategy_notes", [])[-3:]
+        if not notes:
+            return ""
+        return " | ".join(n.get("note", "")[:40] for n in notes if isinstance(n, dict) and n.get("note"))
+    except:
+        return ""
+
+
+def learn_from_message(user_msg: str, reply: str, session_id: str):
+    """Learn from each user message"""
+    try:
+        _extract_user_info_from_message(user_msg)
+        _relationship["total_messages_exchanged"] = _relationship.get("total_messages_exchanged", 0) + 1
+        if _relationship["first_message_time"] is None:
+            _relationship["first_message_time"] = datetime.utcnow().isoformat()
+        msg_l = user_msg.lower()
+        if any(w in msg_l for w in ["scan", "token", "0x", "rug", "buy", "sell"]):
+            brain["user_interaction_patterns"]["trading_questions"] += 1
+        elif any(w in msg_l for w in ["airdrop", "claim", "free"]):
+            brain["user_interaction_patterns"]["airdrop_questions"] += 1
+        elif any(w in msg_l for w in ["code", "error", "bug", "fix", "function"]):
+            brain["user_interaction_patterns"]["coding_questions"] += 1
+        else:
+            brain["user_interaction_patterns"]["general_chat"] += 1
+    except Exception as e:
+        print(f"learn_from_message error: {e}")
+
+# ========== END STEP-1 FIX ==========
 def continuous_learning():
     print("🧠 Learning Engine started!")
     _load_brain_from_db()
