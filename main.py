@@ -2428,11 +2428,20 @@ def _startup_once():
                         except Exception as _pdb_err:
                             print(f"⚠️ Auto stats restore error: {_pdb_err}")
                         if _saved:
+                            _restored = 0
+                            _skipped  = 0
                             for _addr, _pd in _saved.items():
                                 if _addr not in auto_trade_stats["running_positions"]:
+                                    _entry = float(_pd.get("entry", 0) or 0)
+                                    if _entry <= 0:
+                                        _skipped += 1
+                                        continue
                                     auto_trade_stats["running_positions"][_addr] = _pd
-                                    add_position_to_monitor(AUTO_SESSION_ID, _addr, _pd.get("token", _addr[:10]), float(_pd.get("entry", 0)), float(_pd.get("size_bnb", AUTO_BUY_SIZE_BNB)), float(_pd.get("sl_pct", 15.0)))
-                            print(f"✅ Restored {len(_saved)} positions from Supabase")
+                                    add_position_to_monitor(AUTO_SESSION_ID, _addr, _pd.get("token", _addr[:10]), _entry, float(_pd.get("size_bnb", AUTO_BUY_SIZE_BNB)), float(_pd.get("sl_pct", 15.0)))
+                                    _restored += 1
+                            if _skipped:
+                                print(f"🧹 Removed {_skipped} dead/invalid positions on startup")
+                            print(f"✅ Restored {_restored} positions from Supabase")
                         else:
                             print("ℹ️ No saved positions found")
                     else:
