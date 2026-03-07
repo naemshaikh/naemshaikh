@@ -1885,6 +1885,50 @@ def _auto_check_new_pair(pair_address: str):
     })
     knowledge_base["bsc"]["new_tokens"] = knowledge_base["bsc"]["new_tokens"][-20:]
 
+
+# ========== FOUR.MEME NEW TOKEN POLLER ==========
+FOUR_MEME_CONTRACT = "0x5c952063c7fc8610ffdb798152d69f0b9550762b"
+
+def poll_four_meme():
+    """four.meme se naye BSC meme tokens fetch karo via BSCScan"""
+    time.sleep(60)  # startup delay
+    while True:
+        try:
+            if not BSC_SCAN_KEY:
+                time.sleep(300)
+                continue
+            url = (
+                f"{BSC_SCAN_API}?module=account&action=txlist"
+                f"&address={FOUR_MEME_CONTRACT}"
+                f"&startblock=0&endblock=99999999"
+                f"&page=1&offset=10&sort=desc"
+                f"&apikey={BSC_SCAN_KEY}"
+            )
+            r = requests.get(url, timeout=10)
+            if r.status_code != 200:
+                time.sleep(300)
+                continue
+            txns = r.json().get("result", [])
+            if not isinstance(txns, list):
+                time.sleep(300)
+                continue
+            for tx in txns[:5]:  # sirf latest 5, RAM bachao
+                token_addr = tx.get("contractAddress", "")
+                if not token_addr or token_addr == "0x":
+                    # input data se token address nikalo
+                    inp = tx.get("input", "")
+                    if len(inp) >= 74:
+                        token_addr = "0x" + inp[34:74]
+                if token_addr and len(token_addr) == 42:
+                    threading.Thread(
+                        target=_process_new_token,
+                        args=(token_addr, token_addr, "FourMeme"),
+                        daemon=True
+                    ).start()
+        except Exception as e:
+            print(f"⚠️ four.meme poll error: {e}")
+        time.sleep(300)  # har 5 min mein check karo
+
 # ========== POLL NEW PAIRS ==========
 def poll_new_pairs():
     import asyncio, json as _json
@@ -2383,6 +2427,7 @@ def _startup_once():
         threading.Thread(target=_delayed_bnb_retry, daemon=True).start()
 
         threading.Thread(target=_delayed(poll_new_pairs,        10),  daemon=True).start()
+        threading.Thread(target=_delayed(poll_four_meme,         20),  daemon=True).start()
         threading.Thread(target=_delayed(price_monitor_loop,    15),  daemon=True).start()
         threading.Thread(target=_delayed(track_smart_wallets,   20),  daemon=True).start()
         threading.Thread(target=_delayed(continuous_learning,   25),  daemon=True).start()
