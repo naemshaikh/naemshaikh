@@ -422,7 +422,7 @@ function setChart(addr,sym){
 
 // ─── POSITIONS ──────────────────────────────────────────────
 function renderPos(posObj){
-  _posCache=posObj||{};const wrap=document.getElementById('pos-hscroll');const keys=Object.keys(posObj||{});
+  _posCache=posObj||{};const wrap=document.getElementById('holding-list-wrap');const keys=Object.keys(posObj||{});
   if(!keys.length){wrap.innerHTML='<div class="pos-empty-h">No open positions</div>';return;}
   if(keys.length&&activeAddr==='0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c')setChart(keys[0],posObj[keys[0]].token);
   wrap.innerHTML=keys.map(addr=>{
@@ -465,7 +465,7 @@ function onPosClick(addr){
 
 // ─── TRADES ──────────────────────────────────────────────────
 function renderTrades(trades){
-  const el=document.getElementById('trades-wrap');
+  const el=document.getElementById('trades-list-wrap');
   if(!trades||!trades.length){el.innerHTML='<div class="empty-state">No open trades</div>';return;}
   el.innerHTML=trades.map(t=>{
     const pnl=parseFloat(t.pnl||0),cls=pnl>=0?'p':'n',sym=symOf(t.token,t.address);
@@ -503,7 +503,7 @@ function openTrade(t){
 
 // ─── ACTIVITY ────────────────────────────────────────────────
 function renderActivity(acts){
-  _actCache=acts||[];const el=document.getElementById('act-wrap');
+  _actCache=acts||[];const el=document.getElementById('act-wrap');if(!el)return;
   if(!acts||!acts.length){el.innerHTML='<div class="empty-state">No activity yet</div>';return;}
   el.innerHTML=acts.map((a,i)=>`
     <div class="act-item" onclick="openAct(${i})">
@@ -595,8 +595,8 @@ function showModal(){document.getElementById('modal-bg').classList.add('on');doc
 function closeModal(){document.getElementById('modal-bg').classList.remove('on');document.getElementById('modal-sheet').classList.remove('on');}
 function switchTab(n,el){
   document.querySelectorAll('.tb').forEach(t=>t.classList.remove('on'));el.classList.add('on');
-  document.getElementById('tab-trades').style.display=n==='trades'?'':'none';
-  document.getElementById('tab-activity').style.display=n==='activity'?'':'none';
+  document.getElementById('gtab-trades').style.display=n==='trades'?'':'none';
+  // tab-activity removed
 }
 
 // ─── CHAT ────────────────────────────────────────────────────
