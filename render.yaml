@@ -1,11 +1,10 @@
 services:
   - type: web
     name: mrblack
-    env: python
+    runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn main:app -c gunicorn.conf.py
     healthCheckPath: /health
-    port: 10000
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
