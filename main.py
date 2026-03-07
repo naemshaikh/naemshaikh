@@ -2855,6 +2855,7 @@ def auto_stats_route():
 @app.route("/health")
 def health():
     # Fast response — no blocking calls
+    import gc; gc.collect()  # free RAM every 60s
     return jsonify({
         "status":        "ok",
         "bsc_connected": True,
