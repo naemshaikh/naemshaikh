@@ -740,6 +740,7 @@ def _save_session_to_db(session_id: str):
 # ========== NEW PAIRS ==========
 new_pairs_queue: deque = deque(maxlen=30)
 discovered_addresses: dict = {}
+_token_semaphore = threading.Semaphore(4)  # max 4 threads ek saath
 DISCOVERY_TTL = 7200
 PAIR_CREATED_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
 
@@ -808,6 +809,8 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
     _now = time.time()
     if _now - discovered_addresses.get(token_address, 0) <= DISCOVERY_TTL:
         return
+    if not _token_semaphore.acquire(blocking=False):
+        return  # Max threads already running, skip
     if any(token_address.lower() == str(q).lower() for q in list(new_pairs_queue)):
         return
     try:
@@ -850,6 +853,7 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
         "source":     source,
     })
     print(f"🆕 [{source}] {token_symbol} | {token_name} ({token_address[:10]})")
+    _token_semaphore.release()
     threading.Thread(target=_auto_check_new_pair, args=(token_address,), daemon=True).start()
 
 # ========== POSITION MONITOR ==========
@@ -2010,7 +2014,7 @@ def poll_new_pairs():
                 rb = requests.get("https://api.dexscreener.com/token-boosts/latest/v1", timeout=10)
                 if rb.status_code == 200:
                     boosts = rb.json() if isinstance(rb.json(), list) else []
-                    for item in boosts[:20]:
+                    for item in boosts[:5]:  # max 5, RAM bachao
                         if item.get("chainId") == "bsc":
                             addr = item.get("tokenAddress","")
                             if addr:
@@ -2022,11 +2026,11 @@ def poll_new_pairs():
             try:
                 rs = requests.get(f"https://api.dexscreener.com/latest/dex/search?q={q}", timeout=10)
                 if rs.status_code == 200:
-                    for p in (rs.json() or {}).get("pairs",[]) or []:
-                        if p and p.get("chainId") == "bsc":
-                            addr = (p.get("baseToken") or {}).get("address","")
-                            if addr:
-                                threading.Thread(target=_process_new_token, args=(addr, p.get("pairAddress",""), "DexSearch"), daemon=True).start()
+                    _dex_pairs = [p for p in (rs.json() or {}).get("pairs",[]) or [] if p and p.get("chainId") == "bsc"]
+                    for p in _dex_pairs[:5]:  # max 5, RAM bachao
+                        addr = (p.get("baseToken") or {}).get("address","")
+                        if addr:
+                            threading.Thread(target=_process_new_token, args=(addr, p.get("pairAddress",""), "DexSearch"), daemon=True).start()
             except Exception: pass
         except Exception as e:
             print(f"⚠️ Fallback error: {e}")
