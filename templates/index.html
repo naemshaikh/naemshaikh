@@ -768,7 +768,7 @@ window._renderHPage = function(){
     const pnl = parseFloat(p.pnl||0);
     const sz  = parseFloat(p.size_bnb||0);
     const ic  = iconClr(sym);
-    return '<div class="hold-row" onclick='openHoldDetail('+JSON.stringify(JSON.stringify({...p,address:addr}))+')'>'+
+    var _hd=JSON.stringify({...p,address:addr});return '<div class="hold-row" onclick="openHoldDetail(\'' + JSON.stringify(_hd) + '\')">' +
       '<div class="hold-left">'+
         '<div class="hold-icon" style="background:'+ic+'22;color:'+ic+'">'+sym.slice(0,2)+'</div>'+
         '<div>'+
@@ -833,9 +833,9 @@ function openHoldDetail(json){
       _dBox('Size', sz.toFixed(4)+' BNB')+
       _dBox('Entry', gFmtP(t.entry))+
     '</div>'+
-    '<button class="mbtn dark" onclick="window.open('https://dexscreener.com/bsc/'+addr+'','_blank')">↗ Open DexScreener</button>';
+    '<button class="mbtn dark" onclick="window.open(\'https://dexscreener.com/bsc/\'+addr+\'\',\'_blank\')">↗ Open DexScreener</button>';
 
-  openModal();
+  showModal();
 }
 
 
