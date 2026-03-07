@@ -189,6 +189,35 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 .csend{width:42px;height:42px;border-radius:50%;flex-shrink:0;border:none;background:linear-gradient(135deg,var(--em),#00bcd4);cursor:pointer;display:flex;align-items:center;justify-content:center;}
 .csend:disabled{opacity:.4;}
 .csend:active{transform:scale(.88);}
+
+/* ── GMGN Tabs ── */
+.gmgn-tabs{display:flex;gap:4px;margin-bottom:10px;}
+.gtab{flex:1;padding:8px 0;font-size:12px;font-weight:600;border-radius:8px;border:1px solid var(--line);background:var(--ink3);color:var(--txt2);cursor:pointer;font-family:'JetBrains Mono',monospace;transition:all .2s;}
+.gtab.active{background:var(--em);color:#000;border-color:var(--em);}
+.hold-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--ink2);border:1px solid var(--line);border-radius:10px;margin-bottom:7px;cursor:pointer;transition:background .15s;}
+.hold-row:active{background:var(--ink3);}
+.hold-left{display:flex;align-items:center;gap:10px;}
+.hold-icon{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;font-family:'JetBrains Mono',monospace;flex-shrink:0;border:1px solid var(--line);}
+.hold-sym{font-size:13px;font-weight:600;font-family:'JetBrains Mono',monospace;color:var(--txt1);}
+.hold-time{font-size:10px;color:var(--txt3);margin-top:2px;}
+.hold-right{text-align:right;}
+.hold-pnl{font-size:13px;font-weight:700;font-family:'JetBrains Mono',monospace;}
+.hold-bnb{font-size:10px;color:var(--txt3);margin-top:2px;}
+.col-hdr{display:grid;grid-template-columns:60px 1fr 80px 70px;padding:0 4px 8px;font-size:9px;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;gap:6px;}
+.col-hdr span:nth-child(3){text-align:center;}
+.col-hdr span:last-child{text-align:right;}
+.trd-row{display:grid;grid-template-columns:60px 1fr 80px 70px;align-items:center;padding:9px 4px;border-bottom:1px solid var(--line);gap:6px;}
+.trd-type{font-size:11px;font-weight:700;font-family:'JetBrains Mono',monospace;}
+.trd-type.buy{color:var(--em);}
+.trd-type.sell{color:var(--red);}
+.trd-age{font-size:9px;color:var(--txt3);margin-top:2px;}
+.trd-tok{font-size:12px;font-weight:600;font-family:'JetBrains Mono',monospace;color:var(--txt1);}
+.trd-addr{font-size:9px;color:var(--txt3);margin-top:1px;}
+.trd-amt{text-align:center;font-size:11px;font-family:'JetBrains Mono',monospace;}
+.trd-price{text-align:right;font-size:11px;font-family:'JetBrains Mono',monospace;}
+.load-more{text-align:center;padding:12px;font-size:12px;color:var(--txt3);cursor:pointer;font-family:'JetBrains Mono',monospace;border-top:1px solid var(--line);transition:color .15s;}
+.load-more:active{color:var(--txt1);}
+
 </style>
 </head>
 <body>
@@ -246,18 +275,19 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
     <iframe id="chart-frame" src="https://dexscreener.com/bsc/0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c?embed=1&theme=dark&trades=0&info=0" allowtransparency="true" frameborder="0"></iframe>
   </div>
 
-  <div class="sep">Open Positions</div>
-  <div class="pos-hscroll" id="pos-hscroll"><div class="pos-empty-h">⏳ Loading positions...</div></div>
-
-  <div class="sep">Live Feed</div>
-  <div class="feed-card">
-    <div style="padding:12px 12px 8px;">
-      <div class="tabbar">
-        <button class="tb on" onclick="switchTab('trades',this)">Open Trades</button>
-        <button class="tb"    onclick="switchTab('activity',this)">Buy / Sell</button>
+      <div class="gmgn-tabs">
+        <button class="gtab active" onclick="gTab('holding',this)">Holding</button>
+        <button class="gtab"        onclick="gTab('trades',this)">Trades</button>
       </div>
-      <div id="tab-trades"><div id="trades-wrap"><div class="empty-state">⏳ Loading trades...</div></div></div>
-      <div id="tab-activity" style="display:none;"><div id="act-wrap"><div class="empty-state">Loading...</div></div></div>
+      <div id="gtab-holding">
+        <div id="holding-list-wrap"><div class="empty-state">⏳ Loading...</div></div>
+      </div>
+      <div id="gtab-trades" style="display:none;">
+        <div class="col-hdr">
+          <span>Type/Age</span><span>Token</span><span>Amount</span><span>Price</span>
+        </div>
+        <div id="trades-list-wrap"><div class="empty-state">⏳ Loading...</div></div>
+      </div>
     </div>
     <div class="foot-note" id="ts">Connecting...</div>
   </div>
@@ -640,6 +670,9 @@ async function fetchStats(){
   if(_as){
     // Positions: backend "positions" obj use karo
     renderPos(_as.positions||{});
+    renderGHolding(_as.positions||{});
+    window._lastStats=_as;
+    if(document.getElementById('gtab-trades')&&document.getElementById('gtab-trades').style.display!=='none')window._renderTPage();
     // Open Trades: backend "open_trades" list prefer karo,
     // fallback: positions object se bana lo
     if(_as.open_trades&&_as.open_trades.length){
@@ -690,6 +723,157 @@ init();
 setInterval(fetchStats,8000);
 setInterval(fetchActivity,15000);
 setInterval(fetchHistory,30000);
+
+// ══════════════ GMGN UI ══════════════
+
+// Helpers
+const ICON_CLRS=['#00c853','#2979ff','#ff6d00','#d500f9','#00b0ff','#ff1744','#ffd600'];
+function iconClr(s){let h=0;for(let c of(s||'X'))h=(h*31+c.charCodeAt(0))&255;return ICON_CLRS[h%ICON_CLRS.length];}
+function pSign(v){return parseFloat(v)>=0?'+':'';}
+function pClr(v){return parseFloat(v)>=0?'var(--em)':'var(--red)';}
+function gHoldTime(iso){
+  if(!iso)return '—';
+  const s=Math.floor((Date.now()-new Date(iso))/1000);
+  if(s<60)return s+'s';if(s<3600)return Math.floor(s/60)+'m';
+  if(s<86400)return Math.floor(s/3600)+'h';return Math.floor(s/86400)+'d';
+}
+function gShortA(a){return a?(a.slice(0,6)+'...'+a.slice(-4)):'—';}
+function gFmtP(p){
+  const n=parseFloat(p||0);if(!n)return '—';
+  if(n<0.000001)return '$'+n.toExponential(2);
+  if(n<0.01)return '$'+n.toFixed(6);
+  return '$'+n.toFixed(4);
+}
+
+// ── Tab switch ──
+function gTab(name,el){
+  document.querySelectorAll('.gtab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('gtab-holding').style.display=name==='holding'?'':'none';
+  document.getElementById('gtab-trades').style.display =name==='trades' ?'':'none';
+  if(name==='trades') window._renderTPage();
+}
+
+// ── HOLDING — window globals for pagination ──
+window._hPage    = 1;
+window._hData    = [];
+
+window._renderHPage = function(){
+  const wrap  = document.getElementById('holding-list-wrap');
+  const PAGE  = 8;
+  const items = window._hData.slice(0, PAGE * window._hPage);
+  if(!items.length){wrap.innerHTML='<div class="empty-state">No open positions</div>';return;}
+  wrap.innerHTML = items.map(function(d){
+    const sym = d.sym; const p = d.p; const addr = d.addr;
+    const pnl = parseFloat(p.pnl||0);
+    const sz  = parseFloat(p.size_bnb||0);
+    const ic  = iconClr(sym);
+    return '<div class="hold-row" onclick='openHoldDetail('+JSON.stringify(JSON.stringify({...p,address:addr}))+')'>'+
+      '<div class="hold-left">'+
+        '<div class="hold-icon" style="background:'+ic+'22;color:'+ic+'">'+sym.slice(0,2)+'</div>'+
+        '<div>'+
+          '<div class="hold-sym">'+sym.slice(0,10)+'</div>'+
+          '<div class="hold-time">'+gHoldTime(p.bought_at)+' · '+sz.toFixed(4)+' BNB</div>'+
+        '</div>'+
+      '</div>'+
+      '<div class="hold-right">'+
+        '<div class="hold-pnl" style="color:'+pClr(pnl)+'">'+pSign(pnl)+pnl.toFixed(2)+'%</div>'+
+        '<div class="hold-bnb" style="color:'+pClr(pnl)+'">'+pSign(sz*pnl/100)+(sz*pnl/100).toFixed(4)+' BNB</div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+  if(items.length < window._hData.length){
+    wrap.innerHTML += '<div class="load-more" onclick="window._hPage++;window._renderHPage()">'+
+      'Load more ('+(window._hData.length-items.length)+' remaining) ↓</div>';
+  }
+};
+
+function renderGHolding(posObj){
+  window._hPage = 1;
+  window._hData = Object.keys(posObj||{}).map(function(addr){
+    return {addr:addr, sym:(posObj[addr].token||addr.slice(2,8)).toUpperCase(), p:posObj[addr]};
+  });
+  window._renderHPage();
+}
+
+function _dBox(lbl,val,clr){
+  return '<div style="background:var(--ink3);border:1px solid var(--line);border-radius:10px;padding:10px 12px;">'+
+    '<div style="font-size:10px;color:var(--txt3);margin-bottom:3px;">'+lbl+'</div>'+
+    '<div style="font-size:12px;font-weight:600;font-family:JetBrains Mono,monospace;'+(clr?'color:'+clr:'')+'">'+(val||'—')+'</div>'+
+  '</div>';
+}
+
+// ── HOLDING DETAIL — reuses existing modal ──
+function openHoldDetail(json){
+  let t; try{t=JSON.parse(json);}catch(e){return;}
+  const sym  = (t.token||(t.address||'').slice(2,8)||'UNKNOWN').toUpperCase();
+  const addr = t.address||'';
+  const pnl  = parseFloat(t.pnl||0);
+  const sz   = parseFloat(t.size_bnb||0);
+  const ic   = iconClr(sym);
+  const unreal = sz*pnl/100;
+
+  document.getElementById('modal-title').innerHTML =
+    '<div style="display:flex;align-items:center;gap:8px;">'+
+      '<div style="width:28px;height:28px;border-radius:50%;background:'+ic+'22;color:'+ic+';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;">'+sym.slice(0,2)+'</div>'+
+      '<div><div style="font-size:14px;font-weight:700;">'+sym+'</div>'+
+      '<div style="font-size:10px;color:var(--txt3);">'+gShortA(addr)+'</div></div>'+
+    '</div>';
+
+  document.getElementById('modal-body').innerHTML =
+    '<div style="margin:-4px -4px 12px;border-radius:10px;overflow:hidden;height:230px;background:#000;">'+
+      '<iframe src="https://dexscreener.com/bsc/'+addr+'?embed=1&theme=dark&trades=0&info=0"'+
+      ' style="width:100%;height:100%;border:none;" allow="fullscreen"></iframe>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">'+
+      _dBox('PnL', pSign(pnl)+pnl.toFixed(2)+'%', pClr(pnl))+
+      _dBox('Unrealized', pSign(unreal)+unreal.toFixed(4)+' BNB', pClr(unreal))+
+      _dBox('Avg Cost', gFmtP(t.entry))+
+      _dBox('Duration', gHoldTime(t.bought_at))+
+      _dBox('Size', sz.toFixed(4)+' BNB')+
+      _dBox('Entry', gFmtP(t.entry))+
+    '</div>'+
+    '<button class="mbtn dark" onclick="window.open('https://dexscreener.com/bsc/'+addr+'','_blank')">↗ Open DexScreener</button>';
+
+  openModal();
+}
+
+
+// ── TRADES — window globals for pagination ──
+window._tPage = 1;
+window._tData = [];
+
+window._renderTPage = function(){
+  const wrap  = document.getElementById('trades-list-wrap');
+  const PAGE  = 10;
+  const items = window._tData.slice(0, PAGE * window._tPage);
+  if(!items.length){wrap.innerHTML='<div class="empty-state">No trades yet</div>';return;}
+  wrap.innerHTML = items.map(function(t){
+    const sym   = (t.token||'?').toUpperCase();
+    const isBuy = (t.type||'buy').toLowerCase()==='buy';
+    const ago   = gHoldTime(t.timestamp||t.bought_at||t.sold_at);
+    const amt   = parseFloat(t.size_bnb||0).toFixed(4);
+    const price = gFmtP(t.price||t.entry||t.exit);
+    const gas   = t.gas?'$'+parseFloat(t.gas).toFixed(4):'—';
+    return '<div class="trd-row">'+
+      '<div><div class="trd-type '+(isBuy?'buy':'sell')+'">'+(isBuy?'Buy':'Sell')+'</div><div class="trd-age">'+ago+'</div></div>'+
+      '<div><div class="trd-tok">'+sym.slice(0,8)+'</div><div class="trd-addr">'+gShortA(t.address)+'</div></div>'+
+      '<div class="trd-amt">'+amt+'<br><span style="font-size:9px;color:var(--txt3)">'+(t.tokens_amount||'—')+'</span></div>'+
+      '<div class="trd-price">'+price+'<br><span style="font-size:9px;color:var(--txt3)">'+gas+'</span></div>'+
+    '</div>';
+  }).join('');
+  if(items.length < window._tData.length){
+    wrap.innerHTML += '<div class="load-more" onclick="window._tPage++;window._renderTPage()">'+
+      'Load more ('+(window._tData.length-items.length)+' remaining) ↓</div>';
+  }
+};
+
+function renderGTrades(){
+  window._tPage = 1;
+  window._tData = ((window._lastStats&&window._lastStats.trade_history)||[]).slice().reverse();
+  window._renderTPage();
+}
+
 </script>
 </body>
 </html>
