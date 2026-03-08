@@ -191,18 +191,24 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 .csend:active{transform:scale(.88);}
 
 /* ── GMGN Tabs ── */
-.gmgn-tabs{display:flex;gap:4px;margin-bottom:10px;}
-.gtab{flex:1;padding:8px 0;font-size:12px;font-weight:600;border-radius:8px;border:1px solid var(--line);background:var(--ink3);color:var(--txt2);cursor:pointer;font-family:'JetBrains Mono',monospace;transition:all .2s;}
-.gtab.active{background:var(--em);color:#000;border-color:var(--em);}
-.hold-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--ink2);border:1px solid var(--line);border-radius:10px;margin-bottom:7px;cursor:pointer;transition:background .15s;}
-.hold-row:active{background:var(--ink3);}
-.hold-left{display:flex;align-items:center;gap:10px;}
-.hold-icon{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;font-family:'JetBrains Mono',monospace;flex-shrink:0;border:1px solid var(--line);}
-.hold-sym{font-size:13px;font-weight:600;font-family:'JetBrains Mono',monospace;color:var(--txt1);}
+/* ── GMGN Tabs ── */
+.gmgn-tabs{display:flex;gap:0;margin-bottom:0;border-bottom:1px solid var(--line);}
+.gtab{flex:0;padding:10px 18px;font-size:14px;font-weight:700;border-radius:0;border:none;background:transparent;color:var(--txt3);cursor:pointer;font-family:'JetBrains Mono',monospace;border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .2s;}
+.gtab.active{color:var(--txt1);border-bottom:2px solid var(--em);}
+/* ── GMGN Holding rows ── */
+.hold-row{display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;gap:10px;}
+.hold-row:active{opacity:.6;}
+.hold-icon{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;}
+.hold-sym{font-size:13px;font-weight:700;color:var(--txt1);font-family:'JetBrains Mono',monospace;line-height:1.2;}
 .hold-time{font-size:10px;color:var(--txt3);margin-top:2px;}
-.hold-right{text-align:right;}
+.hold-mid{text-align:right;}
+.hold-bal{font-size:11px;color:var(--txt1);font-family:'JetBrains Mono',monospace;}
+.hold-bought{font-size:10px;color:var(--txt3);}
+.hold-right{text-align:right;min-width:80px;}
 .hold-pnl{font-size:13px;font-weight:700;font-family:'JetBrains Mono',monospace;}
-.hold-bnb{font-size:10px;color:var(--txt3);margin-top:2px;}
+.hold-pct{font-size:11px;font-family:'JetBrains Mono',monospace;}
+/* ── GMGN Col header ── */
+.col-hdr{display:grid;grid-template-columns:60px 1fr 80px 70px;padding:8px 0;font-size:10px;color:var(--txt3);letter-spacing:.3px;gap:6px;border-bottom:1px solid var(--line);}
 .col-hdr{display:grid;grid-template-columns:60px 1fr 80px 70px;padding:0 4px 8px;font-size:9px;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;gap:6px;}
 .col-hdr span:nth-child(3){text-align:center;}
 .col-hdr span:last-child{text-align:right;}
@@ -755,118 +761,126 @@ function gTab(name,el){
 }
 
 // ── HOLDING — window globals for pagination ──
-window._hPage    = 1;
-window._hData    = [];
 
+// ══ GMGN HOLDING ROWS ══
 window._renderHPage = function(){
   const wrap  = document.getElementById('holding-list-wrap');
   const PAGE  = 8;
   const items = window._hData.slice(0, PAGE * window._hPage);
   if(!items.length){wrap.innerHTML='<div class="empty-state">No open positions</div>';return;}
   wrap.innerHTML = items.map(function(d){
-    const sym = d.sym; const p = d.p; const addr = d.addr;
-    const pnl = parseFloat(p.pnl||0);
-    const sz  = parseFloat(p.size_bnb||0);
-    const ic  = iconClr(sym);
-    var _hd=JSON.stringify({...p,address:addr});return '<div class="hold-row" onclick="openHoldDetail(\'' + JSON.stringify(_hd) + '\')">' +
-      '<div class="hold-left">'+
-        '<div class="hold-icon" style="background:'+ic+'22;color:'+ic+'">'+sym.slice(0,2)+'</div>'+
-        '<div>'+
-          '<div class="hold-sym">'+sym.slice(0,10)+'</div>'+
-          '<div class="hold-time">'+gHoldTime(p.bought_at)+' · '+sz.toFixed(4)+' BNB</div>'+
-        '</div>'+
+    const sym  = d.sym;
+    const p    = d.p;
+    const addr = d.addr;
+    const ic   = iconClr(sym);
+    const sz   = parseFloat(p.size_bnb||0);
+    const pnl  = parseFloat(p.pnl||0);
+    const pnlB = sz * pnl / 100;
+    const clr  = pClr(pnl);
+    return '<div class="hold-row" onclick='openHoldDetail('+JSON.stringify(JSON.stringify({...p,address:addr}))+')'>'+
+      '<div class="hold-icon" style="background:'+ic+'22;color:'+ic+'">'+sym.slice(0,2)+'</div>'+
+      '<div>'+
+        '<div class="hold-sym">'+sym.slice(0,10)+'</div>'+
+        '<div class="hold-time">'+gHoldTime(p.bought_at)+'</div>'+
+      '</div>'+
+      '<div class="hold-mid">'+
+        '<div class="hold-bal">'+sz.toFixed(4)+'</div>'+
+        '<div class="hold-bought">BNB</div>'+
       '</div>'+
       '<div class="hold-right">'+
-        '<div class="hold-pnl" style="color:'+pClr(pnl)+'">'+pSign(pnl)+pnl.toFixed(2)+'%</div>'+
-        '<div class="hold-bnb" style="color:'+pClr(pnl)+'">'+pSign(sz*pnl/100)+(sz*pnl/100).toFixed(4)+' BNB</div>'+
+        '<div class="hold-pnl" style="color:'+clr+'">'+pSign(pnlB)+pnlB.toFixed(4)+'</div>'+
+        '<div class="hold-pct" style="color:'+clr+'">'+pSign(pnl)+pnl.toFixed(2)+'%</div>'+
       '</div>'+
     '</div>';
   }).join('');
   if(items.length < window._hData.length){
     wrap.innerHTML += '<div class="load-more" onclick="window._hPage++;window._renderHPage()">'+
-      'Load more ('+(window._hData.length-items.length)+' remaining) ↓</div>';
+      'Load more ('+(window._hData.length-items.length)+') ↓</div>';
   }
 };
 
-function renderGHolding(posObj){
-  window._hPage = 1;
-  window._hData = Object.keys(posObj||{}).map(function(addr){
-    return {addr:addr, sym:(posObj[addr].token||addr.slice(2,8)).toUpperCase(), p:posObj[addr]};
-  });
-  window._renderHPage();
-}
-
-function _dBox(lbl,val,clr){
-  return '<div style="background:var(--ink3);border:1px solid var(--line);border-radius:10px;padding:10px 12px;">'+
-    '<div style="font-size:10px;color:var(--txt3);margin-bottom:3px;">'+lbl+'</div>'+
-    '<div style="font-size:12px;font-weight:600;font-family:JetBrains Mono,monospace;'+(clr?'color:'+clr:'')+'">'+(val||'—')+'</div>'+
+// ── Grid box helper (GMGN style) ──
+function _gBox(lbl, val, sub, subClr){
+  return '<div style="background:var(--ink2);padding:10px 12px;">'+
+    '<div style="font-size:10px;color:var(--txt3);margin-bottom:4px;">'+lbl+'</div>'+
+    '<div style="font-size:13px;font-weight:700;color:var(--txt1);font-family:JetBrains Mono,monospace;">'+val+'</div>'+
+    (sub?'<div style="font-size:11px;color:'+(subClr||'var(--txt3)')+';">'+sub+'</div>':'')+
   '</div>';
 }
 
-// ── HOLDING DETAIL — reuses existing modal ──
-function openHoldDetail(json){
-  let t; try{t=JSON.parse(json);}catch(e){return;}
-  const sym  = (t.token||(t.address||'').slice(2,8)||'UNKNOWN').toUpperCase();
-  const addr = t.address||'';
-  const pnl  = parseFloat(t.pnl||0);
-  const sz   = parseFloat(t.size_bnb||0);
-  const ic   = iconClr(sym);
-  const unreal = sz*pnl/100;
-
-  document.getElementById('modal-title').innerHTML =
-    '<div style="display:flex;align-items:center;gap:8px;">'+
-      '<div style="width:28px;height:28px;border-radius:50%;background:'+ic+'22;color:'+ic+';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;">'+sym.slice(0,2)+'</div>'+
-      '<div><div style="font-size:14px;font-weight:700;">'+sym+'</div>'+
-      '<div style="font-size:10px;color:var(--txt3);">'+gShortA(addr)+'</div></div>'+
-    '</div>';
-
-  document.getElementById('modal-body').innerHTML =
-    '<div style="margin:-4px -4px 12px;border-radius:10px;overflow:hidden;height:230px;background:#000;">'+
-      '<iframe src="https://dexscreener.com/bsc/'+addr+'?embed=1&theme=dark&trades=0&info=0"'+
-      ' style="width:100%;height:100%;border:none;" allow="fullscreen"></iframe>'+
+// ── Activity row helper ──
+function _actRow(type, ts, amt, price){
+  const isBuy = type==='Buy';
+  const clr   = isBuy?'var(--em)':'var(--red)';
+  return '<div style="display:grid;grid-template-columns:60px 1fr auto;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.04);gap:6px;">'+
+    '<div>'+
+      '<div style="font-size:12px;font-weight:700;color:'+clr+'">'+type+'</div>'+
+      '<div style="font-size:10px;color:var(--txt3)">'+gHoldTime(ts)+'</div>'+
     '</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">'+
-      _dBox('PnL', pSign(pnl)+pnl.toFixed(2)+'%', pClr(pnl))+
-      _dBox('Unrealized', pSign(unreal)+unreal.toFixed(4)+' BNB', pClr(unreal))+
-      _dBox('Avg Cost', gFmtP(t.entry))+
-      _dBox('Duration', gHoldTime(t.bought_at))+
-      _dBox('Size', sz.toFixed(4)+' BNB')+
-      _dBox('Entry', gFmtP(t.entry))+
+    '<div style="font-size:12px;font-family:JetBrains Mono,monospace;color:var(--txt1);">'+amt+'</div>'+
+    '<div style="text-align:right;">'+
+      '<div style="font-size:12px;font-family:JetBrains Mono,monospace;color:var(--txt1);">'+price+'</div>'+
+      '<div style="font-size:10px;color:var(--txt3);">—</div>'+
     '</div>'+
-    '<button class="mbtn dark" onclick="window.open(\'https://dexscreener.com/bsc/\'+addr+\'\',\'_blank\')">↗ Open DexScreener</button>';
-
-  showModal();
+  '</div>';
 }
 
+// ══ GMGN DETAIL MODAL — exact screenshot copy ══
+function openHoldDetail(json){
+  let t; try{t=JSON.parse(json);}catch(e){return;}
+  const sym   = (t.token||(t.address||'').slice(2,10)).toUpperCase();
+  const addr  = t.address||'';
+  const ic    = iconClr(sym);
+  const sz    = parseFloat(t.size_bnb||0);
+  const pnl   = parseFloat(t.pnl||0);
+  const pnlB  = sz*pnl/100;
+  const clr   = pClr(pnl);
+  const entry = parseFloat(t.entry||0);
 
-// ── TRADES — window globals for pagination ──
-window._tPage = 1;
-window._tData = [];
-
-window._renderTPage = function(){
-  const wrap  = document.getElementById('trades-list-wrap');
-  const PAGE  = 10;
-  const items = window._tData.slice(0, PAGE * window._tPage);
-  if(!items.length){wrap.innerHTML='<div class="empty-state">No trades yet</div>';return;}
-  wrap.innerHTML = items.map(function(t){
-    const sym   = (t.token||'?').toUpperCase();
-    const isBuy = (t.type||'buy').toLowerCase()==='buy';
-    const ago   = gHoldTime(t.timestamp||t.bought_at||t.sold_at);
-    const amt   = parseFloat(t.size_bnb||0).toFixed(4);
-    const price = gFmtP(t.price||t.entry||t.exit);
-    const gas   = t.gas?'$'+parseFloat(t.gas).toFixed(4):'—';
-    return '<div class="trd-row">'+
-      '<div><div class="trd-type '+(isBuy?'buy':'sell')+'">'+(isBuy?'Buy':'Sell')+'</div><div class="trd-age">'+ago+'</div></div>'+
-      '<div><div class="trd-tok">'+sym.slice(0,8)+'</div><div class="trd-addr">'+gShortA(t.address)+'</div></div>'+
-      '<div class="trd-amt">'+amt+'<br><span style="font-size:9px;color:var(--txt3)">'+(t.tokens_amount||'—')+'</span></div>'+
-      '<div class="trd-price">'+price+'<br><span style="font-size:9px;color:var(--txt3)">'+gas+'</span></div>'+
+  // Modal title — token name + price
+  document.getElementById('modal-title').innerHTML =
+    '<div style="display:flex;align-items:center;gap:10px;">'+
+      '<div style="width:36px;height:36px;border-radius:50%;background:'+ic+'33;color:'+ic+';display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;">'+sym.slice(0,2)+'</div>'+
+      '<div>'+
+        '<div style="font-size:15px;font-weight:800;color:var(--txt1);">'+sym+'</div>'+
+        '<div style="font-size:11px;color:var(--txt3);">'+gShortA(addr)+'</div>'+
+      '</div>'+
     '</div>';
-  }).join('');
-  if(items.length < window._tData.length){
-    wrap.innerHTML += '<div class="load-more" onclick="window._tPage++;window._renderTPage()">'+
-      'Load more ('+(window._tData.length-items.length)+' remaining) ↓</div>';
-  }
-};
+
+  // Modal body — GMGN exact layout
+  document.getElementById('modal-body').innerHTML =
+    // Chart
+    '<div style="margin:0 -4px 14px;border-radius:10px;overflow:hidden;height:220px;background:#000;">'+
+      '<iframe src="https://dexscreener.com/bsc/'+addr+'?embed=1&theme=dark&trades=0&info=0"'+
+      ' style="width:100%;height:100%;border:none;" loading="lazy"></iframe>'+
+    '</div>'+
+
+    // PnL + Unrealized — 2 big numbers top
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border-radius:10px;overflow:hidden;margin-bottom:12px;">'+
+      _gBox('PnL', pSign(pnlB)+pnlB.toFixed(4)+' BNB', pSign(pnl)+pnl.toFixed(2)+'%', clr)+
+      _gBox('Unrealized', pSign(pnlB)+pnlB.toFixed(4)+' BNB', pSign(pnl)+pnl.toFixed(2)+'%', clr)+
+    '</div>'+
+
+    // 4 stats — Balance, Duration, Avg Cost, Bought
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border-radius:10px;overflow:hidden;margin-bottom:12px;">'+
+      _gBox('Balance', sz.toFixed(4)+' BNB', null, null)+
+      _gBox('Holding Duration', gHoldTime(t.bought_at), null, null)+
+      _gBox('Avg Cost', gFmtP(entry), null, null)+
+      _gBox('Bought', sz.toFixed(4)+' BNB', '1 TX', 'var(--em)')+
+    '</div>'+
+
+    // Activities header
+    '<div style="font-size:13px;font-weight:700;color:var(--txt1);margin-bottom:8px;">Activities</div>'+
+    '<div style="display:grid;grid-template-columns:60px 1fr auto;font-size:10px;color:var(--txt3);padding-bottom:6px;border-bottom:1px solid var(--line);gap:6px;">'+
+      '<span>Type/Age</span><span>Amount</span><span>Price/Gas</span>'+
+    '</div>'+
+    _actRow('Buy', t.bought_at||'', sz.toFixed(4)+' BNB', gFmtP(entry))+
+
+    // DexScreener button
+    '<button class="mbtn dark" style="margin-top:12px;" onclick="window.open('https://dexscreener.com/bsc/'+addr+'','_blank')">↗ Open DexScreener</button>';
+
+  openModal();
+}
 
 function renderGTrades(){
   window._tPage = 1;
