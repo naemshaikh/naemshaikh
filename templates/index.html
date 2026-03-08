@@ -679,7 +679,7 @@ async function fetchStats(){
   if(_as){
     // Positions: backend "positions" obj use karo
     renderPos(_as.positions||{});
-    renderGHolding(_as.positions||{});
+    renderGHolding(_as.open_trades||_as.positions||[]);
     window._lastStats=_as;
     if(document.getElementById('gtab-trades')&&document.getElementById('gtab-trades').style.display!=='none')window._renderTPage();
     // Open Trades: backend "open_trades" list prefer karo,
@@ -887,9 +887,13 @@ function openHoldDetail(json){
 
 function renderGHolding(posObj){
   window._hPage = 1;
-  window._hData = Object.keys(posObj||{}).map(function(addr){
-    var p = posObj[addr];
-    var sym = (p.token||addr.slice(2,8)).toUpperCase();
+  // Support both array (open_trades) and object (positions) format
+  var arr = Array.isArray(posObj) ? posObj : Object.keys(posObj||{}).map(function(addr){
+    var p = posObj[addr]; p.address = p.address||addr; return p;
+  });
+  window._hData = arr.map(function(p){
+    var addr = p.address||'';
+    var sym  = (p.token||addr.slice(2,8)).toUpperCase();
     return {addr:addr, sym:sym, p:p};
   });
   window._renderHPage();
