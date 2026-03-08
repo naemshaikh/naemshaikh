@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>MrBlack</title>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+{% raw %}
 <style>
 :root{
   --ink:#05080d;--ink2:#090e16;--ink3:#0d1520;
@@ -225,6 +226,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 .load-more:active{color:var(--txt1);}
 
 </style>
+{% endraw %}
 </head>
 <body>
 
@@ -361,6 +363,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
   </div>
 </div>
 
+{% raw %}
 <script>
 // ─── SESSION ────────────────────────────────────────────────
 const SID=(()=>{let s=localStorage.getItem('mb_sid3');if(!s){s='mb-'+Date.now();localStorage.setItem('mb_sid3',s);}return s;})();
@@ -899,5 +902,6 @@ function renderGTrades(){
 }
 
 </script>
+{% endraw %}
 </body>
 </html>
