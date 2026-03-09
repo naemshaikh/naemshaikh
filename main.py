@@ -2747,20 +2747,27 @@ def toggle_auto():
 
 @app.route("/close-one", methods=["POST"])
 def close_one_position():
-    positions = list(auto_trade_stats["running_positions"].items())
+    positions = auto_trade_stats["running_positions"]
     if not positions:
         return jsonify({"status": "empty", "message": "Koi open position nahi hai"})
-    def _get_pnl(item):
-        addr, pos = item
-        entry   = pos.get("entry", 0)
-        current = monitored_positions.get(addr, {}).get("current", entry)
-        return ((current - entry) / entry * 100) if entry > 0 else 0
-    positions.sort(key=_get_pnl)
-    addr, pos = positions[0]
+    # User ne specific address diya?
+    data = request.get_json(silent=True) or {}
+    addr = data.get("address", "")
+    if addr and addr in positions:
+        pos = positions[addr]
+    else:
+        # Fallback: worst PnL wali position
+        def _get_pnl(item):
+            a, p = item
+            entry   = p.get("entry", 0)
+            current = monitored_positions.get(a, {}).get("current", entry)
+            return ((current - entry) / entry * 100) if entry > 0 else 0
+        addr, pos = sorted(positions.items(), key=_get_pnl)[0]
     tok = pos.get("token", addr[:8])
+    remaining = len(positions) - 1
     threading.Thread(target=_auto_paper_sell, args=(addr, "Manual close via UI", 100.0), daemon=True).start()
     print(f"🔴 Manual close: {tok} ({addr[:10]})")
-    return jsonify({"status": "closing", "address": addr, "token": tok, "remaining": len(positions) - 1})
+    return jsonify({"status": "closing", "address": addr, "token": tok, "remaining": remaining})
 
 @app.route("/health")
 def health():

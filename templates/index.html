@@ -562,9 +562,20 @@ async function sendMsg(){
 // ─── MAIN FETCH — FIX: Independent fetches + retry logic ────
 async function fetchStats(){
   // FIX: Fetch independently — one failure won't block the other
+  // Fast partial load from /trading-data (201 bytes), full from /auto-stats (32KB)
+  const _tdFast = fetchJSON('/trading-data?session_id='+SID,{},10000).then(td=>{
+    if(td){
+      const bnb=parseFloat(td.bnb_price||0);
+      if(bnb>0){_bnbReal=bnb;document.getElementById('h-bnb').textContent='$'+bnb.toFixed(0);}
+      const fg=td.fear_greed||50;
+      const fgEl=document.getElementById('h-fg');
+      fgEl.textContent=fg;fgEl.style.color=fg>60?'var(--em)':fg<40?'var(--red)':'var(--gold)';
+    }
+    return td;
+  });
   const [_as,_td]=await Promise.all([
-    fetchJSON('/auto-stats',{},30000),
-    fetchJSON('/trading-data?session_id='+SID,{},30000)
+    fetchJSON('/auto-stats',{},45000),
+    _tdFast
   ]);
   if(!_as&&!_td){setConn(false,'⚡ Server se data nahi aa rha — retry...');return false;}
   setConn(true,'✅ MrBlack Connected');
@@ -678,16 +689,53 @@ async function toggleAuto(){
 }
 
 async function closeOne(){
-  const btn=document.getElementById('close-one-btn');btn.classList.add('disabled');
-  const d=await fetchJSON('/close-one',{method:'POST'},10000);
-  setTimeout(()=>btn.classList.remove('disabled'),2000);
-  if(!d){showToast('❌ Server error');_ctrlLog('Close one failed');return;}
-  if(d.status==='empty'){showToast('ℹ️ Koi position nahi');_ctrlLog('No positions');return;}
-  const tok=d.token||d.address?.slice(0,8)||'?';
-  showToast('🔴 Closing: '+tok);
-  _ctrlLog('Closing '+tok+' — '+d.remaining+' remaining');
+  // Position picker modal
+  const stats = window._lastStats;
+  const pos = stats&&stats.positions ? stats.positions : {};
+  const trades = stats&&stats.open_trades ? stats.open_trades : [];
+  let items = [];
+  if(trades.length){
+    items = trades.map(t=>({addr:t.address||'', tok:t.token||t.address?.slice(0,8)||'?', pnl:parseFloat(t.pnl||0), sz:t.size||'—'}));
+  } else {
+    items = Object.entries(pos).map(([addr,p])=>({addr, tok:p.token||addr.slice(2,8), pnl:parseFloat(p.pnl_pct||0), sz:(p.size_bnb||p.size||0)+' BNB'}));
+  }
+  if(!items.length){showToast('ℹ️ Koi open position nahi');_ctrlLog('No positions');return;}
+  document.getElementById('modal-title').textContent='🔴 Close Position';
+  document.getElementById('modal-sub').textContent='Jis position ko band karna hai usse select karo';
+  document.getElementById('modal-pnl').textContent='';
+  document.getElementById('modal-pnl').className='pnl-big';
+  document.getElementById('modal-body').innerHTML = items.map((it)=>{
+    const cls=it.pnl>=0?'var(--em)':'var(--red)';
+    const sym=(it.tok&&!it.tok.startsWith('0x'))?it.tok.slice(0,10).toUpperCase():it.addr.slice(2,8).toUpperCase();
+    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--line);cursor:pointer;" onclick="confirmClose(''+it.addr+'',''+sym+'')">'+
+      '<div style="display:flex;align-items:center;gap:10px;">'+
+        '<div style="width:36px;height:36px;border-radius:10px;background:var(--ink3);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:var(--em);font-family:JetBrains Mono,monospace;">'+sym.slice(0,4)+'</div>'+
+        '<div>'+
+          '<div style="font-size:13px;font-weight:700;">'+sym+'</div>'+
+          '<div style="font-size:10px;color:var(--txt2);font-family:JetBrains Mono,monospace;">'+it.sz+'</div>'+
+        '</div>'+
+      '</div>'+
+      '<div style="text-align:right;">'+
+        '<div style="font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:'+cls+'">'+(it.pnl>=0?'+':'')+it.pnl.toFixed(1)+'%</div>'+
+        '<div style="font-size:10px;color:var(--red);font-weight:700;">TAP TO CLOSE</div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+  document.getElementById('modal-actions').innerHTML='<button class="mbtn dark" onclick="closeModal()">✕ Cancel</button>';
+  showModal();
+}
+
+async function confirmClose(addr, sym){
+  closeModal();
+  showToast('🔴 Closing '+sym+'...');
+  _ctrlLog('Closing '+sym+' ('+addr.slice(0,10)+')...');
+  const d = await fetchJSON('/close-one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({address:addr})},15000);
+  if(!d){showToast('❌ Server error');_ctrlLog('Close failed');return;}
+  if(d.status==='empty'){showToast('ℹ️ Position nahi mili');return;}
+  showToast('✅ '+sym+' closed!');
+  _ctrlLog('✅ Closed '+sym+' — '+d.remaining+' remaining');
   document.getElementById('close-one-sub').textContent=d.remaining+' remaining';
-  setTimeout(fetchStats,2000);
+  setTimeout(fetchStats,1500);
 }
 
 async function resetAll(){
