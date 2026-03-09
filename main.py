@@ -144,13 +144,35 @@ def _get_dexpaprika_price_bnb(token_address):
     except: pass
     return 0.0
 
+# FIX: Single method price fetch — Router only (fast BSC RPC, no HTTP fallbacks)
+# Fallbacks only used at BUY time via get_token_price_bnb_full()
+_monitor_price_cache = {}  # {addr: (price, timestamp)}
+
 def get_token_price_bnb(token_address: str) -> float:
+    import time as _t
+    # Cache: same token 1s ke andar dobara call nahi
+    _cached = _monitor_price_cache.get(token_address)
+    if _cached and (_t.time() - _cached[1]) < 1.0:
+        return _cached[0]
     try:
         dec = _get_dec(token_address)
         amt = w3.eth.contract(address=Web3.to_checksum_address(PANCAKE_ROUTER), abi=ROUTER_ABI_PRICE).functions.getAmountsOut(
             10**dec, [Web3.to_checksum_address(token_address), Web3.to_checksum_address(WBNB)]).call()
-        if amt[1] > 0: return amt[1] / 1e18
+        if amt[1] > 0:
+            price = amt[1] / 1e18
+            _monitor_price_cache[token_address] = (price, _t.time())
+            # Cache cleanup — max 50 entries
+            if len(_monitor_price_cache) > 50:
+                oldest = sorted(_monitor_price_cache.items(), key=lambda x: x[1][1])[:10]
+                for k, _ in oldest: del _monitor_price_cache[k]
+            return price
     except: pass
+    return 0.0
+
+def get_token_price_bnb_full(token_address: str) -> float:
+    """Full fallback chain — sirf BUY time pe use karo, monitor mein nahi"""
+    p = get_token_price_bnb(token_address)
+    if p > 0: return p
     try:
         pair = _get_v2_pair(token_address)
         if pair:
@@ -164,12 +186,12 @@ def get_token_price_bnb(token_address: str) -> float:
     try:
         v3pool = _get_v3_pool(token_address)
         if v3pool:
-            p = _get_v3_price_bnb(v3pool, token_address)
-            if p > 0: return p
+            pr = _get_v3_price_bnb(v3pool, token_address)
+            if pr > 0: return pr
     except: pass
     try:
-        p = _get_dexpaprika_price_bnb(token_address)
-        if p > 0: return p
+        pr = _get_dexpaprika_price_bnb(token_address)
+        if pr > 0: return pr
     except: pass
     try:
         resp = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{token_address}", timeout=8)
@@ -742,6 +764,9 @@ def add_position_to_monitor(session_id, token_address, token_name, entry_price, 
         if entry_price > 1.0:
             print(f"❌ Monitoring BLOCKED: price too high={entry_price:.6f} for {token_address[:10]}")
             return
+        if len(monitored_positions) >= 15 and token_address not in monitored_positions:
+            print(f"⚠️ Monitor cap (15) reached — skipping {token_address[:10]}")
+            return
         monitored_positions[token_address] = {
             "session_id":    session_id,
             "token":         token_name,
@@ -1113,7 +1138,7 @@ def price_monitor_loop():
                     telegram_price_alert(token, addr, "DUMP -50% FROM HIGH", "Exit 50%")
             except Exception as e:
                 print(f"⚠️ Price monitor error ({addr}): {e}")
-        time.sleep(10)
+        time.sleep(1)  # FIX: 10s → 1s — meme coins fast die, stop loss needs instant trigger
 
 # ========== DEXSCREENER ==========
 def get_dexscreener_token_data(token_address: str) -> Dict:
@@ -2198,7 +2223,12 @@ def _startup_once():
                         if _saved:
                             _restored = 0
                             _skipped  = 0
-                            for _addr, _pd in _saved.items():
+                            _MAX_RESTORE = 10  # FIX: max 10 positions — 50 positions * BSC calls = memory exceed
+                            _sorted_saved = sorted(_saved.items(), key=lambda x: x[1].get("bought_at",""), reverse=True)
+                            for _addr, _pd in _sorted_saved:
+                                if _restored >= _MAX_RESTORE:
+                                    _skipped += 1
+                                    continue
                                 if _addr not in auto_trade_stats["running_positions"]:
                                     _entry = float(_pd.get("entry", 0) or 0)
                                     if _entry <= 0:
@@ -2208,8 +2238,8 @@ def _startup_once():
                                     add_position_to_monitor(AUTO_SESSION_ID, _addr, _pd.get("token", _addr[:10]), _entry, float(_pd.get("size_bnb", AUTO_BUY_SIZE_BNB)), float(_pd.get("sl_pct", 15.0)))
                                     _restored += 1
                             if _skipped:
-                                print(f"🧹 Removed {_skipped} dead/invalid positions on startup")
-                            print(f"✅ Restored {_restored} positions from Supabase")
+                                print(f"🧹 Skipped {_skipped} positions on startup (cap=10 or invalid)")
+                            print(f"✅ Restored {_restored} positions from Supabase (capped at {_MAX_RESTORE})")
                         else:
                             print("ℹ️ No saved positions found")
                     else:
@@ -2330,6 +2360,8 @@ def chat():
         return jsonify({"reply": "🛑 Daily loss limit (8%) reach ho gaya. Kal fresh start karo!", "session_id": session_id})
     _extract_user_info_from_message(user_msg)
     sess["history"].append({"role": "user", "content": user_msg})
+    if len(sess["history"]) > 20:  # FIX: cap chat history — prevents RAM leak
+        sess["history"] = sess["history"][-20:]
     reply = get_llm_reply(user_msg, sess["history"], sess)
     sess["history"].append({"role": "assistant", "content": reply})
     threading.Thread(target=learn_from_message, args=(user_msg, reply, session_id), daemon=True).start()
