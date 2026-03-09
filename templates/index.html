@@ -55,11 +55,28 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 .sg-item{background:var(--ink2);border:1px solid var(--line);border-radius:var(--r2);padding:10px 6px;text-align:center;}
 .sg-val{font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;}
 .sg-lbl{font-size:9px;color:var(--txt2);text-transform:uppercase;letter-spacing:0.5px;margin-top:3px;line-height:1.3;}
-.chart-wrap{border-radius:var(--r);border:1px solid var(--line);background:#000;}
-.chart-topbar{display:flex;align-items:center;justify-content:space-between;padding:7px 12px;background:var(--ink2);border-bottom:1px solid var(--line);}
-.chart-token-lbl{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:var(--em);}
-.chart-hint{font-size:9px;color:var(--txt3);font-style:italic;}
-.chart-wrap iframe{width:100%;height:280px;border:none;display:block;border-radius:0 0 var(--r) var(--r);}
+/* Control Panel */
+.ctrl-panel{background:var(--ink2);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;}
+.ctrl-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line);}
+.ctrl-title{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--txt2);}
+.ctrl-status{display:flex;align-items:center;gap:6px;font-size:10px;font-family:'JetBrains Mono',monospace;}
+.ctrl-dot{width:7px;height:7px;border-radius:50%;}
+.ctrl-dot.on{background:var(--em);box-shadow:0 0 8px var(--em);animation:blink 2s infinite;}
+.ctrl-dot.off{background:var(--red);}
+.ctrl-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);}
+.ctrl-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:16px 10px;background:var(--ink2);border:none;cursor:pointer;transition:background 0.15s;-webkit-tap-highlight-color:transparent;}
+.ctrl-btn:active{background:var(--ink3);}
+.ctrl-icon{width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;}
+.ctrl-lbl{font-size:11px;font-weight:700;color:var(--txt);}
+.ctrl-sub{font-size:9px;color:var(--txt3);font-family:'JetBrains Mono',monospace;}
+.ctrl-btn.danger .ctrl-icon{background:var(--red-dim);border:1px solid rgba(255,71,87,0.3);}
+.ctrl-btn.ice .ctrl-icon{background:var(--ice-dim);border:1px solid rgba(64,196,255,0.3);}
+.ctrl-btn.gold .ctrl-icon{background:var(--gold-dim);border:1px solid rgba(240,192,64,0.3);}
+.ctrl-btn.disabled{opacity:0.4;pointer-events:none;}
+.auto-toggle{width:100%;padding:14px;border:none;border-radius:12px;cursor:pointer;font-family:'Outfit',sans-serif;font-size:14px;font-weight:800;letter-spacing:0.5px;display:flex;align-items:center;justify-content:center;gap:10px;transition:all 0.2s;}
+.auto-toggle.on{background:linear-gradient(135deg,#ff4757,#c0392b);color:#fff;box-shadow:0 4px 16px rgba(255,71,87,0.35);}
+.auto-toggle.off{background:linear-gradient(135deg,#00e676,#00bcd4);color:#000;box-shadow:0 4px 16px rgba(0,230,118,0.35);}
+.auto-toggle:active{transform:scale(0.97);}
 .feed-card{background:var(--ink2);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;}
 .empty-state{text-align:center;padding:20px 16px;color:var(--txt3);font-size:12px;}
 .foot-note{text-align:center;font-size:10px;color:var(--txt3);padding:8px;font-family:'JetBrains Mono',monospace;}
@@ -244,13 +261,46 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
     <div class="sg-item"><div class="sg-val" id="sg-losses" style="color:var(--red)">—</div><div class="sg-lbl">Loss Trades</div></div>
   </div>
 
-  <div class="sep">Live Chart</div>
-  <div class="chart-wrap">
-    <div class="chart-topbar">
-      <div class="chart-token-lbl" id="chart-lbl">BNB/USD</div>
-      <div class="chart-hint">tap position → chart changes</div>
+  <div class="sep">Bot Controls</div>
+  <div class="ctrl-panel">
+    <div class="ctrl-header">
+      <div class="ctrl-title">Manual Control</div>
+      <div class="ctrl-status">
+        <div class="ctrl-dot" id="auto-dot"></div>
+        <span id="auto-status-lbl" style="color:var(--txt2)">Loading...</span>
+      </div>
     </div>
-    <iframe id="chart-frame" src="https://dexscreener.com/bsc/0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c?embed=1&theme=dark&trades=0&info=0" allowtransparency="true" frameborder="0"></iframe>
+    <div style="padding:12px 12px 0;">
+      <button class="auto-toggle off" id="auto-toggle-btn" onclick="toggleAuto()">
+        <span id="auto-toggle-icon">&#9654;</span>
+        <span id="auto-toggle-text">START AUTO TRADE</span>
+      </button>
+    </div>
+    <div class="ctrl-grid" style="margin-top:1px;">
+      <button class="ctrl-btn danger" id="close-one-btn" onclick="closeOne()">
+        <div class="ctrl-icon">&#128308;</div>
+        <div class="ctrl-lbl">Close One</div>
+        <div class="ctrl-sub" id="close-one-sub">Worst position</div>
+      </button>
+      <button class="ctrl-btn danger" onclick="resetAll()">
+        <div class="ctrl-icon">&#128163;</div>
+        <div class="ctrl-lbl">Close All</div>
+        <div class="ctrl-sub">Reset positions</div>
+      </button>
+      <button class="ctrl-btn ice" onclick="doHealthCheck()">
+        <div class="ctrl-icon">&#129686;</div>
+        <div class="ctrl-lbl">Health Check</div>
+        <div class="ctrl-sub" id="health-sub">BSC + Supabase</div>
+      </button>
+      <button class="ctrl-btn gold" onclick="forceRefresh()">
+        <div class="ctrl-icon">&#128260;</div>
+        <div class="ctrl-lbl">Refresh Data</div>
+        <div class="ctrl-sub">Sync live data</div>
+      </button>
+    </div>
+    <div style="padding:8px 14px;border-top:1px solid var(--line);margin-top:1px;">
+      <div style="font-size:10px;color:var(--txt3);font-family:'JetBrains Mono',monospace;" id="last-ctrl-action">— awaiting command —</div>
+    </div>
   </div>
 
       <div class="gmgn-tabs">
@@ -338,7 +388,6 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 // ─── SESSION ────────────────────────────────────────────────
 const SID=(()=>{let s=localStorage.getItem('mb_sid3');if(!s){s='mb-'+Date.now();localStorage.setItem('mb_sid3',s);}return s;})();
 let chatOpen=false,unread=0,histFilter='all';
-let activeAddr='0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c';
 let _bnbReal=0,_serverOk=false;
 
 // ─── SAFE FETCH (FIX: No AbortSignal.timeout — not supported on old browsers) ──
@@ -390,15 +439,6 @@ function setConn(ok,msg){
   else{bar.className='conn-bar show';dot.className='live-dot dead';_serverOk=false;}
 }
 
-// ─── CHART ──────────────────────────────────────────────────
-function setChart(addr,sym){
-  if(addr===activeAddr)return;activeAddr=addr;
-  document.getElementById('chart-frame').src=`https://dexscreener.com/bsc/${addr}?embed=1&theme=dark&trades=0&info=0`;
-  document.getElementById('chart-lbl').textContent=(sym||addr.slice(0,8)).toUpperCase()+'/USD';
-  document.querySelectorAll('.mini-card').forEach(c=>c.classList.remove('sel'));
-  const el=document.querySelector(`.mini-card[data-a="${addr}"]`);if(el)el.classList.add('sel');
-}
-
 // ─── TRADES ──────────────────────────────────────────────────
 function renderTrades(trades){
   const el=document.getElementById('trades-list-wrap');
@@ -431,8 +471,8 @@ function openTrade(t){
     <div class="mrow"><span class="mlbl">Size</span><span class="mval">${t.size||'—'}</span></div>
     <div class="mrow"><span class="mlbl">Holding</span><span class="mval">${holdTime(t.bought_at)}</span></div>`;
   document.getElementById('modal-actions').innerHTML=addr?`
-    <button class="mbtn dark" onclick="setChart('${addr}','${sym}');closeModal()">📊 Chart</button>
-    <a class="mbtn gold" href="https://pancakeswap.finance/swap?outputCurrency=${addr}" target="_blank">🥞 PancakeSwap</a>`
+    <button class="mbtn dark" onclick="copyAddr('${addr}');closeModal()">📋 Copy</button>
+    <a class="mbtn gold" href="https://dexscreener.com/bsc/${addr}" target="_blank">📊 DexScreener</a>`
     :'<button class="mbtn dark" onclick="closeModal()">Close</button>';
   showModal();
 }
@@ -528,6 +568,10 @@ async function fetchStats(){
   ]);
   if(!_as&&!_td){setConn(false,'⚡ Server se data nahi aa rha — retry...');return false;}
   setConn(true,'✅ MrBlack Connected');
+
+  // Sync auto-toggle button state
+  if(_as) _setAutoUI(!!_as.enabled);
+
   // Dynamic mode label
   const _modeEl=document.getElementById('hdr-mode');
   if(_modeEl&&_as){
@@ -560,13 +604,6 @@ async function fetchStats(){
 
   if(_as){
     renderGHolding(_as.open_trades||_as.positions||[]);
-    // First position auto-select chart
-    const _keys=_as.open_trades&&_as.open_trades.length?_as.open_trades:Object.keys(_as.positions||{});
-    if(_keys.length&&activeAddr==='0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'){
-      const _first=Array.isArray(_keys)?_keys[0]:_keys[0];
-      const _addr=typeof _first==='object'?_first.address:_first;
-      if(_addr)setChart(_addr,(_as.positions||{})[_addr]?.token||_addr.slice(0,8));
-    }
     window._lastStats=_as;
     // Trades tab — only render if visible
     if(document.getElementById('gtab-trades')&&document.getElementById('gtab-trades').style.display!=='none')window._renderTPage();
@@ -608,6 +645,74 @@ async function init(){
 init();
 setInterval(fetchStats,8000);
 setInterval(fetchHistory,30000);
+
+
+// ─── CONTROL PANEL ──────────────────────────────────────────
+let _autoEnabled = false;
+
+function _setAutoUI(enabled){
+  _autoEnabled = enabled;
+  const btn=document.getElementById('auto-toggle-btn');
+  const dot=document.getElementById('auto-dot');
+  const lbl=document.getElementById('auto-status-lbl');
+  const icon=document.getElementById('auto-toggle-icon');
+  const text=document.getElementById('auto-toggle-text');
+  if(!btn)return;
+  if(enabled){
+    btn.className='auto-toggle on';icon.textContent='⏸';text.textContent='STOP AUTO TRADE';
+    dot.className='ctrl-dot on';lbl.textContent='AUTO ON';lbl.style.color='var(--em)';
+  } else {
+    btn.className='auto-toggle off';icon.textContent='▶';text.textContent='START AUTO TRADE';
+    dot.className='ctrl-dot off';lbl.textContent='AUTO OFF';lbl.style.color='var(--red)';
+  }
+}
+function _ctrlLog(msg){const el=document.getElementById('last-ctrl-action');if(el)el.textContent='['+nowIST()+'] '+msg;}
+
+async function toggleAuto(){
+  const btn=document.getElementById('auto-toggle-btn');btn.disabled=true;
+  const d=await fetchJSON('/toggle-auto',{method:'POST'},10000);btn.disabled=false;
+  if(!d){showToast('❌ Server error');_ctrlLog('Toggle failed');return;}
+  _setAutoUI(d.enabled);
+  const msg=d.enabled?'✅ Auto Trade STARTED':'⏸️ Auto Trade STOPPED';
+  showToast(msg);_ctrlLog(msg);
+}
+
+async function closeOne(){
+  const btn=document.getElementById('close-one-btn');btn.classList.add('disabled');
+  const d=await fetchJSON('/close-one',{method:'POST'},10000);
+  setTimeout(()=>btn.classList.remove('disabled'),2000);
+  if(!d){showToast('❌ Server error');_ctrlLog('Close one failed');return;}
+  if(d.status==='empty'){showToast('ℹ️ Koi position nahi');_ctrlLog('No positions');return;}
+  const tok=d.token||d.address?.slice(0,8)||'?';
+  showToast('🔴 Closing: '+tok);
+  _ctrlLog('Closing '+tok+' — '+d.remaining+' remaining');
+  document.getElementById('close-one-sub').textContent=d.remaining+' remaining';
+  setTimeout(fetchStats,2000);
+}
+
+async function resetAll(){
+  if(!confirm('⚠️ Sari positions close ho jayengi. Confirm?'))return;
+  const d=await fetchJSON('/admin-reset-positions',{method:'POST'},10000);
+  if(!d){showToast('❌ Server error');return;}
+  showToast('💣 '+d.closed+' positions closed');
+  _ctrlLog('RESET ALL — '+d.closed+' closed');
+  setTimeout(fetchStats,1500);
+}
+
+async function doHealthCheck(){
+  const sub=document.getElementById('health-sub');sub.textContent='Checking...';
+  const d=await fetchJSON('/health',{},8000);
+  if(!d){sub.textContent='❌ No response';showToast('❌ Health failed');return;}
+  sub.textContent='BSC '+(d.bsc_connected?'✅':'❌')+' DB '+(d.supabase?'✅':'❌');
+  _ctrlLog('Health: BSC='+d.bsc_connected+' DB='+d.supabase+' BNB=$'+(d.bnb_price||0)+' UP='+d.uptime_min+'m');
+  showToast(d.bsc_connected&&d.supabase?'✅ All OK':'⚠️ Issues found');
+}
+
+async function forceRefresh(){
+  showToast('🔄 Refreshing...');
+  await fetchStats();await fetchHistory();
+  _ctrlLog('Manual refresh done');showToast('✅ Refreshed');
+}
 
 // ══════════════ GMGN UI ══════════════
 

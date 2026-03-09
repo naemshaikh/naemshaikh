@@ -2735,6 +2735,33 @@ def auto_stats_route():
         "trade_history":  auto_trade_stats.get("trade_history", [])[-20:],
     })
 
+
+@app.route("/toggle-auto", methods=["POST"])
+def toggle_auto():
+    global AUTO_TRADE_ENABLED
+    AUTO_TRADE_ENABLED = not AUTO_TRADE_ENABLED
+    status = "STARTED" if AUTO_TRADE_ENABLED else "PAUSED"
+    send_telegram(f"🤖 Auto Trade {status} — manually via UI")
+    print(f"🤖 Auto Trade toggled: {status}")
+    return jsonify({"enabled": AUTO_TRADE_ENABLED, "status": status})
+
+@app.route("/close-one", methods=["POST"])
+def close_one_position():
+    positions = list(auto_trade_stats["running_positions"].items())
+    if not positions:
+        return jsonify({"status": "empty", "message": "Koi open position nahi hai"})
+    def _get_pnl(item):
+        addr, pos = item
+        entry   = pos.get("entry", 0)
+        current = monitored_positions.get(addr, {}).get("current", entry)
+        return ((current - entry) / entry * 100) if entry > 0 else 0
+    positions.sort(key=_get_pnl)
+    addr, pos = positions[0]
+    tok = pos.get("token", addr[:8])
+    threading.Thread(target=_auto_paper_sell, args=(addr, "Manual close via UI", 100.0), daemon=True).start()
+    print(f"🔴 Manual close: {tok} ({addr[:10]})")
+    return jsonify({"status": "closing", "address": addr, "token": tok, "remaining": len(positions) - 1})
+
 @app.route("/health")
 def health():
     # Fast response — no blocking calls
