@@ -611,7 +611,8 @@ def _save_session_to_db(session_id: str):
 # ========== NEW PAIRS ==========
 new_pairs_queue: deque = deque(maxlen=30)
 discovered_addresses: dict = {}
-_token_semaphore = threading.Semaphore(4)  # max 4 threads ek saath
+_token_semaphore  = threading.Semaphore(4)   # max 4 threads ek saath
+_check_semaphore  = threading.Semaphore(10)  # max 10 check threads — safe, no trade miss
 DISCOVERY_TTL = 7200
 PAIR_CREATED_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
 
@@ -1705,40 +1706,46 @@ def feedback_validation_loop():
 
 # ========== AUTO CHECK NEW PAIR ==========
 def _auto_check_new_pair(pair_address: str):
-    print(f"⏳ Waiting 3 min: {pair_address[:10]}")
-    time.sleep(180)
+    if not _check_semaphore.acquire(blocking=False):
+        print(f"⏭️ Check skipped (10 already running): {pair_address[:10]}")
+        return
     try:
-        _ar = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{pair_address}", timeout=8)
-        if _ar.status_code == 200:
-            _bp = [p for p in (_ar.json() or {}).get("pairs",[]) or [] if p and p.get("chainId")=="bsc"]
-            if _bp:
-                _ct = _bp[0].get("pairCreatedAt", 0) or 0
-                if _ct and (time.time() - _ct/1000)/60 > 10080:
-                    return
-    except Exception: pass
+        print(f"⏳ Waiting 3 min: {pair_address[:10]}")
+        time.sleep(180)
+        try:
+            _ar = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{pair_address}", timeout=8)
+            if _ar.status_code == 200:
+                _bp = [p for p in (_ar.json() or {}).get("pairs",[]) or [] if p and p.get("chainId")=="bsc"]
+                if _bp:
+                    _ct = _bp[0].get("pairCreatedAt", 0) or 0
+                    if _ct and (time.time() - _ct/1000)/60 > 10080:
+                        return
+        except Exception: pass
 
-    result  = run_full_sniper_checklist(pair_address)
-    score   = result.get("score", 0)
-    total   = result.get("total", 1)
-    rec     = result.get("recommendation", "")
-    overall = result.get("overall", "UNKNOWN")
-    print(f"🔍 Auto-check {pair_address[:10]}: {overall} ({score}/{total})")
-    print(f"📊 Score: {score}/{total} = {round(score/max(total,1)*100)}% | SAFE needs:{int(total*0.40)} CAUTION needs:{int(total*0.35)}")  # FIX3: debug
+        result  = run_full_sniper_checklist(pair_address)
+        score   = result.get("score", 0)
+        total   = result.get("total", 1)
+        rec     = result.get("recommendation", "")
+        overall = result.get("overall", "UNKNOWN")
+        print(f"🔍 Auto-check {pair_address[:10]}: {overall} ({score}/{total})")
+        print(f"📊 Score: {score}/{total} = {round(score/max(total,1)*100)}% | SAFE needs:{int(total*0.40)} CAUTION needs:{int(total*0.35)}")  # FIX3: debug
 
-    if overall in ["SAFE", "CAUTION"]:
-        telegram_new_token_alert(pair_address, score, total, rec)
-    if overall == "SAFE" and score >= int(total * 0.40):  # FIX2: 50%→40%
-        try: _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
-        except Exception as e: print(f"Auto buy error: {e}")
-    elif overall == "CAUTION" and score >= int(total * 0.35):  # FIX2: 45%→35%  # FIX2: 40%
-        try: _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
-        except Exception as e: print(f"Auto buy caution error: {e}")
+        if overall in ["SAFE", "CAUTION"]:
+            telegram_new_token_alert(pair_address, score, total, rec)
+        if overall == "SAFE" and score >= int(total * 0.40):  # FIX2: 50%→40%
+            try: _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
+            except Exception as e: print(f"Auto buy error: {e}")
+        elif overall == "CAUTION" and score >= int(total * 0.35):  # FIX2: 45%→35%  # FIX2: 40%
+            try: _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
+            except Exception as e: print(f"Auto buy caution error: {e}")
 
-    knowledge_base["bsc"]["new_tokens"].append({
-        "address": pair_address, "overall": overall,
-        "score": score, "total": total, "time": datetime.utcnow().isoformat()
-    })
-    knowledge_base["bsc"]["new_tokens"] = knowledge_base["bsc"]["new_tokens"][-20:]
+        knowledge_base["bsc"]["new_tokens"].append({
+            "address": pair_address, "overall": overall,
+            "score": score, "total": total, "time": datetime.utcnow().isoformat()
+        })
+        knowledge_base["bsc"]["new_tokens"] = knowledge_base["bsc"]["new_tokens"][-20:]
+    finally:
+        _check_semaphore.release()
 
 
 # ========== FOUR.MEME NEW TOKEN POLLER ==========
