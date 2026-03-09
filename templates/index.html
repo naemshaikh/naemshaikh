@@ -586,6 +586,8 @@ async function fetchStats(){
   tdPromise.then(td=>{ if(td) _applyTD(td); });
   const [_as,_td] = await Promise.all([asPromise, tdPromise]);
   if(!_as && !_td){setConn(false,'⚡ Retry...');console.error('fetchStats: both null',{as:_as,td:_td});return false;}
+  // FIX: agar server still starting hai toh bhi false return karo — retry karega
+  if(_as && _as.status === 'starting' && !_td){setConn(false,'⏳ Server init...');return false;}
   setConn(true,'✅ MrBlack Connected');
   if(_as) _setAutoUI(!!_as.enabled);
   const _modeEl=document.getElementById('hdr-mode');
@@ -634,14 +636,14 @@ async function init(){
   setConn(false,'⏳ MrBlack server se connect ho rha hai...');
   try{await safeFetch('/init-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_id:SID})},5000);}catch(e){}
 
-  // FIX: Retry loop — handles Render cold start (30-60s delay)
+  // FIX: Retry loop — handles Render cold start + _startup_done delay
   let ok=false;
-  for(let i=1;i<=6;i++){
+  for(let i=1;i<=12;i++){
     ok=await fetchStats();
     if(ok)break;
-    const delay=i*3000; // 3,6,9,12,15,18s
-    setConn(false,`⏳ Connecting... (${i}/6) — ${Math.round(delay/1000)}s wait`);
-    document.getElementById('conn-msg').textContent=`⏳ Retry ${i}/6 — server warm ho rha hai...`;
+    const delay=Math.min(i*4000, 20000);
+    setConn(false,`⏳ Connecting... (${i}/12) — ${Math.round(delay/1000)}s wait`);
+    document.getElementById('conn-msg').textContent=`⏳ Retry ${i}/12 — server init ho rha hai...`;
     await new Promise(r=>setTimeout(r,delay));
   }
   if(!ok)setConn(false,'❌ Server respond nahi kar rha. Page refresh karo.');
