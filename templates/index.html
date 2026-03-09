@@ -752,7 +752,9 @@ async function closeOne(){
   document.getElementById('modal-actions').innerHTML='<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Cancel</button>';
   showModal();
 }
-async function confirmClose(addr, sym){
+async function confirmClose(el){
+  var addr=el.getAttribute('data-addr');
+  var sym=el.getAttribute('data-sym');
   closeModal();
   showToast('🔴 Closing '+sym+'...');
   _ctrlLog('Closing '+sym+' ('+addr.slice(0,10)+')...');
@@ -836,7 +838,7 @@ window._renderHPage = function(){
     const pnl  = parseFloat(p.pnl||0);
     const pnlB = sz * pnl / 100;
     const clr  = pClr(pnl);
-    return '<div class="hold-row" onclick='openHoldDetail('+JSON.stringify(JSON.stringify({...p,address:addr}))+')'>'+
+    return '<div class="hold-row" onclick="openHoldDetail(+JSON.stringify(JSON.stringify({...p,address:addr}))+)">'+
       '<div class="hold-icon" style="background:'+ic+'22;color:'+ic+'">'+sym.slice(0,2)+'</div>'+
       '<div>'+
         '<div class="hold-sym">'+sym.slice(0,10)+'</div>'+
@@ -936,7 +938,7 @@ function openHoldDetail(json){
     _actRow('Buy', t.bought_at||'', sz.toFixed(4)+' BNB', gFmtP(entry))+
 
     // DexScreener button
-    '<button class="mbtn dark" style="margin-top:12px;" onclick="window.open('https://dexscreener.com/bsc/'+addr+'','_blank')">↗ Open DexScreener</button>';
+    '<button class="mbtn dark" style="margin-top:12px;" onclick="window.open(\"https://dexscreener.com/bsc/\"+addr,\"_blank\")">↗ Open DexScreener</button>';
 
   showModal();
 }
