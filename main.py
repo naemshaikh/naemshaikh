@@ -1690,57 +1690,76 @@ def poll_new_pairs():
     FACTORY    = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
     PAIR_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
     WBNB_LOWER = WBNB.lower()
-    WSS_ENDPOINTS = [
-        "wss://bsc.publicnode.com",
-        "wss://bsc-rpc.publicnode.com",
-        "wss://bsc-ws-node.nariox.org:443",
-        "wss://bsc.drpc.org",
-    ]
+    # P2 UPDATED: WSS Stabilise + 1013 Fix + MEMORY SAFE
+WSS_ENDPOINTS = [
+    "wss://bsc-rpc.publicnode.com",
+    "wss://bsc.publicnode.com",
+    "wss://bsc-ws-node.nariox.org:443",
+    "wss://bsc.drpc.org",
+    "wss://bsc-ws-rpc.publicnode.com",
+]
 
-    async def _listen(wss_url):
+import gc
+
+async def _listen(wss_url):
+    try:
+        async with _ws.connect(wss_url, ping_interval=10, ping_timeout=8, close_timeout=5, max_size=2**20) as ws:
+            await ws.send(_json.dumps({
+                "id": 1, "method": "eth_subscribe",
+                "params": ["logs", {"address": [FACTORY, PANCAKE_V3_FACTORY], "topics": [[PAIR_TOPIC]]}],
+                "jsonrpc": "2.0"
+            }))
+            await asyncio.wait_for(ws.recv(), timeout=10)
+            while True:
+                msg  = await asyncio.wait_for(ws.recv(), timeout=60)
+                data = _json.loads(msg)
+                log  = (data.get("params") or {}).get("result") or {}
+                if not log: continue
+                topics   = log.get("topics") or []
+                raw_data = log.get("data", "0x")
+                token0 = ("0x" + topics[1][-40:]) if len(topics) > 1 else ""
+                token1 = ("0x" + topics[2][-40:]) if len(topics) > 2 else ""
+                pair_addr = ""
+                if len(raw_data) >= 66:
+                    pair_addr = "0x" + raw_data[26:66]
+                new_token = token0 if (token0 and token0.lower() != WBNB_LOWER) else (
+                            token1 if (token1 and token1.lower() != WBNB_LOWER) else "")
+                if new_token:
+                    threading.Thread(target=_process_new_token, args=(new_token, pair_addr, "WebSocket"), daemon=True).start()
+    except Exception as e:
+        err_str = str(e).lower()
+        if "1013" in err_str or "timeout" in err_str or "connection" in err_str:
+            print(f"⚠️ WSS error: received 1013 — switching RPC")
+        else:
+            print(f"Warning: WSS error: {str(e)[:80]}")
+        gc.collect()  # ← MEMORY CLEANUP
+
+async def _ws_loop():
+    idx = 0
+    fail_count = 0
+    last_mem_print = 0
+    while True:
         try:
-            async with _ws.connect(wss_url, ping_interval=15, ping_timeout=8, close_timeout=5, max_size=2**20) as ws:
-                await ws.send(_json.dumps({
-                    "id": 1, "method": "eth_subscribe",
-                    "params": ["logs", {"address": [FACTORY, PANCAKE_V3_FACTORY], "topics": [[PAIR_TOPIC]]}],
-                    "jsonrpc": "2.0"
-                }))
-                await asyncio.wait_for(ws.recv(), timeout=10)
-                while True:
-                    msg  = await asyncio.wait_for(ws.recv(), timeout=60)
-                    data = _json.loads(msg)
-                    log  = (data.get("params") or {}).get("result") or {}
-                    if not log: continue
-                    topics   = log.get("topics") or []
-                    raw_data = log.get("data", "0x")
-                    token0 = ("0x" + topics[1][-40:]) if len(topics) > 1 else ""
-                    token1 = ("0x" + topics[2][-40:]) if len(topics) > 2 else ""
-                    pair_addr = ""
-                    if len(raw_data) >= 66:
-                        pair_addr = "0x" + raw_data[26:66]
-                    new_token = token0 if (token0 and token0.lower() != WBNB_LOWER) else (
-                                token1 if (token1 and token1.lower() != WBNB_LOWER) else "")
-                    if new_token:
-                        threading.Thread(target=_process_new_token, args=(new_token, pair_addr, "WebSocket"), daemon=True).start()
+            url = WSS_ENDPOINTS[idx % len(WSS_ENDPOINTS)]
+            print(f"🔌 WSS connecting: {url}")
+            await _listen(url)
+            fail_count = 0
         except Exception as e:
-            print(f"⚠️ WSS error: {str(e)[:50]}")
+            fail_count += 1
+            wait = min(8 * fail_count, 120) if "1013" in str(e).lower() else min(5 * fail_count, 60)
+            print(f"Warning: WSS loop fail #{fail_count} — retry in {wait}s")
+            await asyncio.sleep(wait)
+            if fail_count % 10 == 0:
+                gc.collect()
+                print("🧹 Memory cleanup done")
+        idx += 1
 
-    async def _ws_loop():
-        idx = 0
-        fail_count = 0
-        while True:
-            try:
-                print(f"🔌 WSS connecting: {WSS_ENDPOINTS[idx % len(WSS_ENDPOINTS)]}")
-                await _listen(WSS_ENDPOINTS[idx % len(WSS_ENDPOINTS)])
-                fail_count = 0
-            except Exception as e:
-                fail_count += 1
-                wait = min(5 * fail_count, 60)
-                print(f"⚠️ WSS loop fail #{fail_count}: {e} — retry in {wait}s")
-                await asyncio.sleep(wait)
-            idx += 1
-
-    if _ws is not None:
+if _ws is not None:
+    def _run_ws():
+        try: asyncio.run(_ws_loop())
+        except Exception as ex: print(f"Warning: WSS thread: {ex}")
+    threading.Thread(target=_run_ws, daemon=True).start()
+if _ws is not None:
         def _run_ws():
             try: asyncio.run(_ws_loop())
             except Exception as ex: print(f"⚠️ WSS thread: {ex}")
