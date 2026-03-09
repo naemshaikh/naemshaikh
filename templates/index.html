@@ -60,24 +60,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 .chart-token-lbl{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:var(--em);}
 .chart-hint{font-size:9px;color:var(--txt3);font-style:italic;}
 .chart-wrap iframe{width:100%;height:280px;border:none;display:block;border-radius:0 0 var(--r) var(--r);}
-.pos-hscroll{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 6px;-webkit-overflow-scrolling:touch;min-height:80px;align-items:flex-start;}
-.pos-hscroll::-webkit-scrollbar{height:0;}
-.pos-empty-h{display:flex;align-items:center;justify-content:center;width:100%;color:var(--txt3);font-size:12px;padding:16px;}
-.mini-card{min-width:115px;max-width:115px;background:var(--ink2);border:1.5px solid var(--line);border-radius:10px;padding:9px;cursor:pointer;flex-shrink:0;position:relative;transition:border-color 0.2s;}
-.mini-card.sel{border-color:var(--em);box-shadow:0 0 10px rgba(0,230,118,0.2);}
-.mini-card:active{opacity:0.8;}
-.mini-sym{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--em);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.mini-pnl{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;margin-top:3px;}
-.mini-pnl.p{color:var(--em);}
-.mini-pnl.n{color:var(--red);}
-.mini-bnb{font-size:9px;color:var(--txt3);font-family:'JetBrains Mono',monospace;margin-top:2px;}
-.mini-hold{font-size:9px;color:var(--txt2);margin-top:2px;}
-.mini-copy{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:6px;background:var(--ink3);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;}
-.mini-copy svg{width:11px;height:11px;stroke:var(--txt2);}
 .feed-card{background:var(--ink2);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;}
-.tabbar{display:flex;background:var(--ink3);border-radius:10px;padding:3px;gap:3px;margin-bottom:10px;}
-.tb{flex:1;padding:8px 4px;border-radius:8px;background:none;border:none;cursor:pointer;font-family:'Outfit',sans-serif;font-size:11px;font-weight:600;color:var(--txt2);transition:all 0.2s;}
-.tb.on{background:var(--ink2);color:var(--txt);box-shadow:0 1px 4px rgba(0,0,0,0.4);}
 .empty-state{text-align:center;padding:20px 16px;color:var(--txt3);font-size:12px;}
 .foot-note{text-align:center;font-size:10px;color:var(--txt3);padding:8px;font-family:'JetBrains Mono',monospace;}
 .trade-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);cursor:pointer;transition:background 0.15s;}
@@ -92,18 +75,6 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 .t-pnl.p{color:var(--em);}
 .t-pnl.n{color:var(--red);}
 .t-sub{font-size:9px;color:var(--txt3);margin-top:2px;}
-.act-item{display:flex;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line);align-items:flex-start;cursor:pointer;}
-.act-item:last-child{border-bottom:none;}
-.act-item:active{background:rgba(255,255,255,0.03);}
-.act-badge{flex-shrink:0;padding:3px 7px;border-radius:20px;font-size:9px;font-weight:800;margin-top:1px;}
-.act-badge.buy{background:var(--em-dim);color:var(--em);border:1px solid rgba(0,230,118,0.25);}
-.act-badge.sell{background:var(--red-dim);color:var(--red);border:1px solid rgba(255,71,87,0.25);}
-.act-badge.scan{background:var(--ice-dim);color:var(--ice);border:1px solid rgba(64,196,255,0.2);}
-.act-badge.warn{background:var(--gold-dim);color:var(--gold);border:1px solid rgba(240,192,64,0.2);}
-.act-body{flex:1;min-width:0;}
-.act-main{color:var(--txt);font-size:11px;line-height:1.5;}
-.act-meta{color:var(--txt3);font-size:10px;margin-top:1px;font-family:'JetBrains Mono',monospace;}
-.act-time{flex-shrink:0;color:var(--txt2);font-size:10px;font-family:'JetBrains Mono',monospace;margin-top:1px;font-weight:600;}
 .hist-filters{display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;-webkit-overflow-scrolling:touch;}
 .hist-filters::-webkit-scrollbar{height:0;}
 .hf{flex-shrink:0;padding:5px 12px;border-radius:20px;border:1px solid var(--line2);background:var(--ink3);color:var(--txt2);font-size:11px;font-weight:600;cursor:pointer;font-family:'Outfit',sans-serif;}
@@ -209,8 +180,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 .hold-pnl{font-size:13px;font-weight:700;font-family:'JetBrains Mono',monospace;}
 .hold-pct{font-size:11px;font-family:'JetBrains Mono',monospace;}
 /* ── GMGN Col header ── */
-.col-hdr{display:grid;grid-template-columns:60px 1fr 80px 70px;padding:8px 0;font-size:10px;color:var(--txt3);letter-spacing:.3px;gap:6px;border-bottom:1px solid var(--line);}
-.col-hdr{display:grid;grid-template-columns:60px 1fr 80px 70px;padding:0 4px 8px;font-size:9px;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;gap:6px;}
+.col-hdr{display:grid;grid-template-columns:60px 1fr 80px 70px;padding:0 4px 8px;font-size:9px;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;gap:6px;border-bottom:1px solid var(--line);}
 .col-hdr span:nth-child(3){text-align:center;}
 .col-hdr span:last-child{text-align:right;}
 .trd-row{display:grid;grid-template-columns:60px 1fr 80px 70px;align-items:center;padding:9px 4px;border-bottom:1px solid var(--line);gap:6px;}
@@ -367,11 +337,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 <script>
 // ─── SESSION ────────────────────────────────────────────────
 const SID=(()=>{let s=localStorage.getItem('mb_sid3');if(!s){s='mb-'+Date.now();localStorage.setItem('mb_sid3',s);}return s;})();
-
-// Force fetch immediately
-setTimeout(() => { fetchStats(); fetchActivity(); fetchHistory(); }, 100);
-
-let chatOpen=false,unread=0,histFilter='all',_actCache=[],_posCache={};
+let chatOpen=false,unread=0,histFilter='all';
 let activeAddr='0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c';
 let _bnbReal=0,_serverOk=false;
 
@@ -433,49 +399,6 @@ function setChart(addr,sym){
   const el=document.querySelector(`.mini-card[data-a="${addr}"]`);if(el)el.classList.add('sel');
 }
 
-// ─── POSITIONS ──────────────────────────────────────────────
-function renderPos(posObj){
-  _posCache=posObj||{};const wrap=document.getElementById('holding-list-wrap');const keys=Object.keys(posObj||{});
-  if(!keys.length){wrap.innerHTML='<div class="pos-empty-h">No open positions</div>';return;}
-  if(keys.length&&activeAddr==='0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c')setChart(keys[0],posObj[keys[0]].token);
-  wrap.innerHTML=keys.map(addr=>{
-    const p=posObj[addr],pnl=parseFloat(p.pnl_pct||0),cls=pnl>=0?'p':'n',sym=symOf(p.token,addr),isSel=addr===activeAddr?' sel':'';
-    return `<div class="mini-card${isSel}" data-a="${addr}" onclick="onPosClick('${addr}')">
-      <div class="mini-copy" onclick="event.stopPropagation();copyAddr('${addr}')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-      </div>
-      <div class="mini-sym">${p.token&&!p.token.startsWith('0x')?p.token.slice(0,10):sym}</div>
-      <div class="mini-pnl ${cls}">${pnl>=0?'+':''}${pnl.toFixed(1)}%</div>
-      <div class="mini-bnb">${Number(p.size_bnb||p.size||0).toFixed(4)} BNB</div>
-      <div class="mini-hold">${holdTime(p.bought_at)}</div>
-    </div>`;
-  }).join('');
-}
-function onPosClick(addr){
-  const p=_posCache[addr];if(!p)return;
-  setChart(addr,p.token);
-  const pnl=parseFloat(p.pnl_pct||0),cls=pnl>=0?'p':'n',sym=symOf(p.token,addr),bnp=bp();
-  const sz=parseFloat(p.size_bnb||p.size||0);const pnlB=(sz*Math.abs(pnl)/100).toFixed(4),pnlU=(parseFloat(pnlB)*bnp).toFixed(2);
-  document.getElementById('modal-title').textContent=sym;
-  document.getElementById('modal-sub').textContent=addr.slice(0,12)+'...'+addr.slice(-4)+' · BSC';
-  document.getElementById('modal-pnl').className='pnl-big '+cls;
-  document.getElementById('modal-pnl').textContent=(pnl>=0?'+':'')+pnl.toFixed(2)+'%';
-  document.getElementById('modal-body').innerHTML=`
-    <div class="maddr-row"><div class="maddr">${addr}</div><button class="mcopy-btn" onclick="copyAddr('${addr}')">📋 Copy</button></div>
-    <div class="mrow"><span class="mlbl">Token</span><span class="mval">${p.token&&!p.token.startsWith('0x')?p.token:sym}</span></div>
-    <div class="mrow"><span class="mlbl">Entry</span><span class="mval">${p.entry||'—'}</span></div>
-    <div class="mrow"><span class="mlbl">Current</span><span class="mval">${p.current||'—'}</span></div>
-    <div class="mrow"><span class="mlbl">PnL</span><span class="mval ${cls}">${pnl>=0?'+':''}${pnl.toFixed(2)}%</span></div>
-    <div class="mrow"><span class="mlbl">PnL BNB</span><span class="mval ${cls}">${pnl>=0?'+':'-'}${pnlB} BNB</span></div>
-    <div class="mrow"><span class="mlbl">PnL USD</span><span class="mval ${cls}">${pnl>=0?'+$':'-$'}${pnlU}</span></div>
-    <div class="mrow"><span class="mlbl">Size</span><span class="mval">${Number(p.size_bnb||p.size||0).toFixed(4)} BNB</span></div>
-    <div class="mrow"><span class="mlbl">Holding</span><span class="mval">${holdTime(p.bought_at)}</span></div>`;
-  document.getElementById('modal-actions').innerHTML=`
-    <button class="mbtn dark" onclick="closeModal()">✕ Close</button>
-    <a class="mbtn gold" href="https://pancakeswap.finance/swap?outputCurrency=${addr}" target="_blank">🥞 PancakeSwap</a>`;
-  showModal();
-}
-
 // ─── TRADES ──────────────────────────────────────────────────
 function renderTrades(trades){
   const el=document.getElementById('trades-list-wrap');
@@ -510,46 +433,6 @@ function openTrade(t){
   document.getElementById('modal-actions').innerHTML=addr?`
     <button class="mbtn dark" onclick="setChart('${addr}','${sym}');closeModal()">📊 Chart</button>
     <a class="mbtn gold" href="https://pancakeswap.finance/swap?outputCurrency=${addr}" target="_blank">🥞 PancakeSwap</a>`
-    :'<button class="mbtn dark" onclick="closeModal()">Close</button>';
-  showModal();
-}
-
-// ─── ACTIVITY ────────────────────────────────────────────────
-function renderActivity(acts){
-  _actCache=acts||[];const el=document.getElementById('act-wrap');if(!el)return;
-  if(!acts||!acts.length){el.innerHTML='<div class="empty-state">No activity yet</div>';return;}
-  el.innerHTML=acts.map((a,i)=>`
-    <div class="act-item" onclick="openAct(${i})">
-      <div class="act-badge ${a.type||'scan'}">${(a.type||'scan').toUpperCase()}</div>
-      <div class="act-body"><div class="act-main">${a.main||''}</div><div class="act-meta">${a.meta||''}</div></div>
-      <div class="act-time">${toIST(a.t)}</div>
-    </div>`).join('');
-}
-function openAct(i){
-  const a=_actCache[i];if(!a)return;
-  const pnl=a.pnl!=null?parseFloat(a.pnl):null,cls=pnl!=null?(pnl>=0?'p':'n'):'';
-  const addr=a.address||'',sym=a.token&&!a.token.startsWith('0x')?a.token:(addr?addr.slice(2,8).toUpperCase():'?');
-  const pnlBnb=a.pnl_bnb!=null?a.pnl_bnb:null;
-  document.getElementById('modal-title').textContent=sym+' — '+(a.type||'').toUpperCase();
-  document.getElementById('modal-sub').textContent=toIST(a.t)+' IST';
-  document.getElementById('modal-pnl').className='pnl-big '+(cls||'');
-  document.getElementById('modal-pnl').textContent=pnl!=null?(pnl>=0?'+':'')+pnl.toFixed(2)+'%':'';
-  document.getElementById('modal-body').innerHTML=`
-    ${addr?`<div class="maddr-row"><div class="maddr">${addr}</div><button class="mcopy-btn" onclick="copyAddr('${addr}')">📋 Copy</button></div>`:''}
-    <div class="mrow"><span class="mlbl">Type</span><span class="mval">${(a.type||'').toUpperCase()}</span></div>
-    <div class="mrow"><span class="mlbl">Token</span><span class="mval">${sym}</span></div>
-    ${a.entry?`<div class="mrow"><span class="mlbl">Entry</span><span class="mval">${a.entry}</span></div>`:''}
-    ${a.exit?`<div class="mrow"><span class="mlbl">Exit</span><span class="mval">${a.exit}</span></div>`:''}
-    ${pnl!=null?`<div class="mrow"><span class="mlbl">PnL</span><span class="mval ${cls}">${pnl>=0?'+':''}${pnl.toFixed(2)}%</span></div>`:''}
-    ${pnlBnb!=null?`<div class="mrow"><span class="mlbl">PnL BNB</span><span class="mval ${cls}">${pnlBnb>=0?'+':'-'}${Math.abs(pnlBnb).toFixed(4)} BNB</span></div>`:''}
-    ${pnlBnb!=null?`<div class="mrow"><span class="mlbl">PnL USD</span><span class="mval ${cls}">${pnlBnb>=0?'+$':'-$'}${(Math.abs(pnlBnb)*bp()).toFixed(2)}</span></div>`:''}
-    ${a.size?`<div class="mrow"><span class="mlbl">Size</span><span class="mval">${a.size}</span></div>`:''}
-    ${a.bought_at?`<div class="mrow"><span class="mlbl">Buy Time</span><span class="mval">${toIST(a.bought_at.slice(11,16))}</span></div>`:''}
-    ${a.sold_at?`<div class="mrow"><span class="mlbl">Sell Time</span><span class="mval">${toIST(a.sold_at.slice(11,16))}</span></div>`:''}
-    ${a.bought_at&&a.sold_at?`<div class="mrow"><span class="mlbl">Holding</span><span class="mval">${holdBetween(a.bought_at,a.sold_at)}</span></div>`:''}`;
-  document.getElementById('modal-actions').innerHTML=addr?`
-    <button class="mbtn dark" onclick="copyAddr('${addr}');closeModal()">📋 Copy</button>
-    <a class="mbtn gold" href="https://bscscan.com/token/${addr}" target="_blank">🔍 BSCScan</a>`
     :'<button class="mbtn dark" onclick="closeModal()">Close</button>';
   showModal();
 }
@@ -606,11 +489,6 @@ function openHist(t){
 // ─── MODAL ──────────────────────────────────────────────────
 function showModal(){document.getElementById('modal-bg').classList.add('on');document.getElementById('modal-sheet').classList.add('on');}
 function closeModal(){document.getElementById('modal-bg').classList.remove('on');document.getElementById('modal-sheet').classList.remove('on');}
-function switchTab(n,el){
-  document.querySelectorAll('.tb').forEach(t=>t.classList.remove('on'));el.classList.add('on');
-  document.getElementById('gtab-trades').style.display=n==='trades'?'':'none';
-  // tab-activity removed
-}
 
 // ─── CHAT ────────────────────────────────────────────────────
 document.getElementById('init-t').textContent=nowIST();
@@ -681,25 +559,23 @@ async function fetchStats(){
   document.getElementById('sg-losses').textContent=(_as&&_as.losses)||0;
 
   if(_as){
-    // Positions: backend "positions" obj use karo
-    renderPos(_as.positions||{});
     renderGHolding(_as.open_trades||_as.positions||[]);
+    // First position auto-select chart
+    const _keys=_as.open_trades&&_as.open_trades.length?_as.open_trades:Object.keys(_as.positions||{});
+    if(_keys.length&&activeAddr==='0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'){
+      const _first=Array.isArray(_keys)?_keys[0]:_keys[0];
+      const _addr=typeof _first==='object'?_first.address:_first;
+      if(_addr)setChart(_addr,(_as.positions||{})[_addr]?.token||_addr.slice(0,8));
+    }
     window._lastStats=_as;
+    // Trades tab — only render if visible
     if(document.getElementById('gtab-trades')&&document.getElementById('gtab-trades').style.display!=='none')window._renderTPage();
-    // Open Trades: backend "open_trades" list prefer karo,
-    // fallback: positions object se bana lo
+    // Open trades list
     if(_as.open_trades&&_as.open_trades.length){
       renderTrades(_as.open_trades);
     } else if(_as.positions&&Object.keys(_as.positions).length){
-      // positions object ko trades list mein convert karo
       const _tl=Object.entries(_as.positions).map(([addr,v])=>({
-        address:  addr,
-        token:    v.token||addr.slice(0,8),
-        entry:    v.entry||"—",
-        current:  v.current||"—",
-        pnl:      v.pnl_pct||0,
-        size:     (v.size_bnb||v.size||0)+" BNB",
-        bought_at:v.bought_at||"",
+        address:addr,token:v.token||addr.slice(0,8),entry:v.entry||'—',current:v.current||'—',pnl:v.pnl_pct||0,size:(v.size_bnb||v.size||0)+' BNB',bought_at:v.bought_at||'',
       }));
       renderTrades(_tl);
     } else {
@@ -708,9 +584,6 @@ async function fetchStats(){
   }
   document.getElementById('ts').textContent='Live · '+nowIST();
   return true;
-}
-async function fetchActivity(){
-  const d=await fetchJSON('/activity',{},20000);if(d)renderActivity(d.activity||[]);
 }
 
 // ─── INIT — retry on cold start ──────────────────────────────
@@ -729,20 +602,12 @@ async function init(){
     await new Promise(r=>setTimeout(r,delay));
   }
   if(!ok)setConn(false,'❌ Server respond nahi kar rha. Page refresh karo.');
-  await Promise.all([fetchActivity(),fetchHistory()]);
+  await fetchHistory();
 }
 
-// Pehle ek baar call
-fetchStats();
-fetchActivity();
-fetchHistory();
-
-// Phir interval
-setInterval(fetchStats,8000);
-setInterval(fetchActivity,15000);
-setInterval(fetchHistory,30000);
-
 init();
+setInterval(fetchStats,8000);
+setInterval(fetchHistory,30000);
 
 // ══════════════ GMGN UI ══════════════
 
@@ -915,6 +780,23 @@ function renderGTrades(){
   window._tData = ((window._lastStats&&window._lastStats.trade_history)||[]).slice().reverse();
   window._renderTPage();
 }
+
+// FIX: _renderTPage was undefined — caused JS error on Trades tab click
+window._renderTPage = function(){
+  const wrap = document.getElementById('trades-list-wrap');
+  if(!wrap) return;
+  const data = window._lastStats&&window._lastStats.open_trades||[];
+  if(!data.length){wrap.innerHTML='<div class="empty-state">No open trades</div>';return;}
+  wrap.innerHTML = data.map(t=>{
+    const pnl=parseFloat(t.pnl||0),cls=pnl>=0?'p':'n',sym=symOf(t.token,t.address);
+    return `<div class="trd-row" onclick='openTrade(${JSON.stringify(t)})'>
+      <div><div class="trd-type buy">BUY</div><div class="trd-age">${holdTime(t.bought_at)}</div></div>
+      <div><div class="trd-tok">${sym}</div><div class="trd-addr">${(t.address||'').slice(0,8)}...</div></div>
+      <div class="trd-amt">${t.size||'—'}</div>
+      <div class="trd-price" style="color:${cls==='p'?'var(--em)':'var(--red)'}">${pnl>=0?'+':''}${pnl.toFixed(1)}%</div>
+    </div>`;
+  }).join('');
+};
 
 </script>
 {% endraw %}
