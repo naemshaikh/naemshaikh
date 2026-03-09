@@ -208,7 +208,7 @@ def get_token_price_bnb_full(token_address: str) -> float:
     return 0.0
 
 w3 = Web3(Web3.HTTPProvider(BSC_RPC))
-print(f"✅ BSC Connected: {w3.is_connected()}")
+threading.Thread(target=lambda: print(f"✅ BSC: {w3.is_connected()}"), daemon=True).start()
 
 # ========== SUPABASE ==========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
