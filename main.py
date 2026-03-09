@@ -1691,141 +1691,114 @@ def poll_new_pairs():
     PAIR_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
     WBNB_LOWER = WBNB.lower()
     # P2 UPDATED: WSS Stabilise + 1013 Fix + MEMORY SAFE
-WSS_ENDPOINTS = [
-    "wss://bsc-rpc.publicnode.com",
-    "wss://bsc.publicnode.com",
-    "wss://bsc-ws-node.nariox.org:443",
-    "wss://bsc.drpc.org",
-    "wss://bsc-ws-rpc.publicnode.com",
-]
+    WSS_ENDPOINTS = [
+        "wss://bsc-rpc.publicnode.com",
+        "wss://bsc.publicnode.com",
+        "wss://bsc-ws-node.nariox.org:443",
+        "wss://bsc.drpc.org",
+        "wss://bsc-ws-rpc.publicnode.com",
+    ]
 
-import gc
+    import gc
 
-async def _listen(wss_url):
-    try:
-        async with _ws.connect(wss_url, ping_interval=10, ping_timeout=8, close_timeout=5, max_size=2**20) as ws:
-            await ws.send(_json.dumps({
-                "id": 1, "method": "eth_subscribe",
-                "params": ["logs", {"address": [FACTORY, PANCAKE_V3_FACTORY], "topics": [[PAIR_TOPIC]]}],
-                "jsonrpc": "2.0"
-            }))
-            await asyncio.wait_for(ws.recv(), timeout=10)
-            while True:
-                msg  = await asyncio.wait_for(ws.recv(), timeout=60)
-                data = _json.loads(msg)
-                log  = (data.get("params") or {}).get("result") or {}
-                if not log: continue
-                topics   = log.get("topics") or []
-                raw_data = log.get("data", "0x")
-                token0 = ("0x" + topics[1][-40:]) if len(topics) > 1 else ""
-                token1 = ("0x" + topics[2][-40:]) if len(topics) > 2 else ""
-                pair_addr = ""
-                if len(raw_data) >= 66:
-                    pair_addr = "0x" + raw_data[26:66]
-                new_token = token0 if (token0 and token0.lower() != WBNB_LOWER) else (
-                            token1 if (token1 and token1.lower() != WBNB_LOWER) else "")
-                if new_token:
-                    threading.Thread(target=_process_new_token, args=(new_token, pair_addr, "WebSocket"), daemon=True).start()
-    except Exception as e:
-        err_str = str(e).lower()
-        if "1013" in err_str or "timeout" in err_str or "connection" in err_str:
-            print(f"⚠️ WSS error: received 1013 — switching RPC")
-        else:
-            print(f"Warning: WSS error: {str(e)[:80]}")
-        gc.collect()  # ← MEMORY CLEANUP
-
-async def _ws_loop():
-    idx = 0
-    fail_count = 0
-    last_mem_print = 0
-    while True:
+    async def _listen(wss_url):
         try:
-            url = WSS_ENDPOINTS[idx % len(WSS_ENDPOINTS)]
-            print(f"🔌 WSS connecting: {url}")
-            await _listen(url)
-            fail_count = 0
+            async with _ws.connect(wss_url, ping_interval=10, ping_timeout=8, close_timeout=5, max_size=2**20) as ws:
+                await ws.send(_json.dumps({
+                    "id": 1, "method": "eth_subscribe",
+                    "params": ["logs", {"address": [FACTORY, PANCAKE_V3_FACTORY], "topics": [[PAIR_TOPIC]]}],
+                    "jsonrpc": "2.0"
+                }))
+                await asyncio.wait_for(ws.recv(), timeout=10)
+                while True:
+                    msg  = await asyncio.wait_for(ws.recv(), timeout=60)
+                    data = _json.loads(msg)
+                    log  = (data.get("params") or {}).get("result") or {}
+                    if not log: continue
+                    topics   = log.get("topics") or []
+                    raw_data = log.get("data", "0x")
+                    token0 = ("0x" + topics[1][-40:]) if len(topics) > 1 else ""
+                    token1 = ("0x" + topics[2][-40:]) if len(topics) > 2 else ""
+                    pair_addr = ""
+                    if len(raw_data) >= 66:
+                        pair_addr = "0x" + raw_data[26:66]
+                    new_token = token0 if (token0 and token0.lower() != WBNB_LOWER) else (
+                                token1 if (token1 and token1.lower() != WBNB_LOWER) else "")
+                    if new_token:
+                        threading.Thread(target=_process_new_token, args=(new_token, pair_addr, "WebSocket"), daemon=True).start()
         except Exception as e:
-            fail_count += 1
-            wait = min(8 * fail_count, 120) if "1013" in str(e).lower() else min(5 * fail_count, 60)
-            print(f"Warning: WSS loop fail #{fail_count} — retry in {wait}s")
-            await asyncio.sleep(wait)
-            if fail_count % 10 == 0:
-                gc.collect()
-                print("🧹 Memory cleanup done")
-        idx += 1
+            err_str = str(e).lower()
+            if "1013" in err_str or "timeout" in err_str or "connection" in err_str:
+                print(f"⚠️ WSS error: received 1013 — switching RPC")
+            else:
+                print(f"Warning: WSS error: {str(e)[:80]}")
+            gc.collect()  # ← MEMORY CLEANUP
 
-if _ws is not None:
-    def _run_ws():
-        try: asyncio.run(_ws_loop())
-        except Exception as ex: print(f"Warning: WSS thread: {ex}")
-    threading.Thread(target=_run_ws, daemon=True).start()
-if _ws is not None:
+    async def _ws_loop():
+        idx = 0
+        fail_count = 0
+        last_mem_print = 0
+        while True:
+            try:
+                url = WSS_ENDPOINTS[idx % len(WSS_ENDPOINTS)]
+                print(f"🔌 WSS connecting: {url}")
+                await _listen(url)
+                fail_count = 0
+            except Exception as e:
+                fail_count += 1
+                wait = min(8 * fail_count, 120) if "1013" in str(e).lower() else min(5 * fail_count, 60)
+                print(f"Warning: WSS loop fail #{fail_count} — retry in {wait}s")
+                await asyncio.sleep(wait)
+                if fail_count % 10 == 0:
+                    gc.collect()
+                    print("🧹 Memory cleanup done")
+            idx += 1
+
+    if _ws is not None:
         def _run_ws():
             try: asyncio.run(_ws_loop())
-            except Exception as ex: print(f"⚠️ WSS thread: {ex}")
+            except Exception as ex: print(f"Warning: WSS thread: {ex}")
         threading.Thread(target=_run_ws, daemon=True).start()
 
-_cycle = 0
-while True:
-    try:
-        _cycle += 1
-        _nc = time.time()
-        # Cleanup old entries
-        discovered_addresses_clean = {k: v for k, v in discovered_addresses.items() if _nc - v < DISCOVERY_TTL}
-        discovered_addresses.clear()
-        discovered_addresses.update(discovered_addresses_clean)
 
+
+def _fallback_token_poller():
+    """DexScreener fallback — har 5 min mein naye tokens dhundta hai"""
+    _cycle = 0
+    while True:
         try:
-            rb = requests.get("https://api.dexscreener.com/token-boosts/latest/v1", timeout=10)
-            if rb.status_code == 200:
-                boosts = rb.json() if isinstance(rb.json(), list) else []
-                for item in boosts[:5]:
-                    if item.get("chainId") == "bsc":
-                        addr = item.get("tokenAddress", "")
+            _cycle += 1
+            _nc = time.time()
+            # Cleanup old entries
+            discovered_addresses_clean = {k: v for k, v in discovered_addresses.items() if _nc - v < DISCOVERY_TTL}
+            discovered_addresses.clear()
+            discovered_addresses.update(discovered_addresses_clean)
+
+            try:
+                rb = requests.get("https://api.dexscreener.com/token-boosts/latest/v1", timeout=10)
+                if rb.status_code == 200:
+                    boosts = rb.json() if isinstance(rb.json(), list) else []
+                    for item in boosts[:5]:
+                        if item.get("chainId") == "bsc":
+                            addr = item.get("tokenAddress", "")
+                            if addr:
+                                threading.Thread(target=_process_new_token, args=(addr, addr, "DexBoost"), daemon=True).start()
+            except Exception: pass
+
+            queries = ["new","moon","pepe","meme","inu","doge","safe","baby","elon","based"]
+            q = queries[_cycle % len(queries)]
+            try:
+                rs = requests.get(f"https://api.dexscreener.com/latest/dex/search?q={q}", timeout=10)
+                if rs.status_code == 200:
+                    _dex_pairs = [p for p in (rs.json() or {}).get("pairs", []) if p and p.get("chainId") == "bsc"]
+                    for p in _dex_pairs[:5]:
+                        addr = (p.get("baseToken") or {}).get("address", "")
                         if addr:
-                            threading.Thread(target=_process_new_token, args=(addr, addr, "DexBoost"), daemon=True).start()
-        except Exception: pass
-
-        queries = ["new","moon","pepe","meme","inu","doge","safe","baby","elon","based"]
-        q = queries[_cycle % len(queries)]
-        try:
-            rs = requests.get(f"https://api.dexscreener.com/latest/dex/search?q={q}", timeout=10)
-            if rs.status_code == 200:
-                _dex_pairs = [p for p in (rs.json() or {}).get("pairs", []) if p and p.get("chainId") == "bsc"]
-                for p in _dex_pairs[:5]:
-                    addr = (p.get("baseToken") or {}).get("address", "")
-                    if addr:
-                        threading.Thread(target=_process_new_token, args=(addr, p.get("pairAddress", ""), "DexSearch"), daemon=True).start()
-        except Exception: pass
-    except Exception as e:
-        print(f"Warning: Fallback error: {e}")
-    time.sleep(300)
-@app.route("/trading-data")
-def trading_data():
-    try:
-        positions = len(monitored_positions) + len(auto_trade_stats.get("running_positions", {}))
-        scanned = len(new_pairs_queue) + 1247
-        watching = len(monitored_positions)
-        profit = auto_trade_stats.get("win_count", 0)
-        loss = auto_trade_stats.get("loss_count", 0)
-        pnl = auto_trade_stats.get("total_pnl", 0.0)
-        paper_bal = 5.0
-        if "sess" in globals():
-            paper_bal = sess.get("paper_balance", 5.0)
-        
-        return jsonify({
-            "paper_balance": round(paper_bal, 2),
-            "scanned": scanned,
-            "watching": watching,
-            "profit_trades": profit,
-            "loss_trades": loss,
-            "total_pnl": round(pnl, 2),
-            "win_rate": round((profit / (profit + loss) * 100) if (profit + loss) > 0 else 0, 1),
-            "status": "live"
-        })
-    except:
-        return jsonify({"paper_balance":5.0,"scanned":1247,"watching":3,"profit_trades":12,"loss_trades":4,"total_pnl":1.23,"win_rate":75.0,"status":"demo"})
-
+                            threading.Thread(target=_process_new_token, args=(addr, p.get("pairAddress", ""), "DexSearch"), daemon=True).start()
+            except Exception: pass
+        except Exception as e:
+            print(f"Warning: Fallback error: {e}")
+        time.sleep(300)
 def run_full_sniper_checklist(address: str) -> Dict:
     result = {
         "address": address, "checklist": [],
@@ -2222,6 +2195,7 @@ def _startup_once():
 
         threading.Thread(target=_delayed(poll_new_pairs,        10),  daemon=True).start()
         threading.Thread(target=_delayed(poll_four_meme,         20),  daemon=True).start()
+        threading.Thread(target=_fallback_token_poller,               daemon=True).start()
         threading.Thread(target=_delayed(price_monitor_loop,    15),  daemon=True).start()
         threading.Thread(target=_delayed(continuous_learning,   25),  daemon=True).start()
         threading.Thread(target=_delayed(auto_position_manager, 30),  daemon=True).start()
