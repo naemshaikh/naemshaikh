@@ -367,6 +367,10 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 <script>
 // ─── SESSION ────────────────────────────────────────────────
 const SID=(()=>{let s=localStorage.getItem('mb_sid3');if(!s){s='mb-'+Date.now();localStorage.setItem('mb_sid3',s);}return s;})();
+
+// Force fetch immediately
+setTimeout(() => { fetchStats(); fetchActivity(); fetchHistory(); }, 100);
+
 let chatOpen=false,unread=0,histFilter='all',_actCache=[],_posCache={};
 let activeAddr='0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c';
 let _bnbReal=0,_serverOk=false;
