@@ -667,14 +667,6 @@ def telegram_price_alert(token, address, alert_type, value):
         urgent="stop_loss" in alert_type.lower()
     )
 
-def telegram_smart_wallet_alert(wallet, token_address, action):
-    send_telegram(
-        f"👁️ <b>SMART WALLET MOVE</b>\n"
-        f"Wallet: <code>{wallet[:10]}...{wallet[-4:]}</code>\n"
-        f"Action: <b>{action}</b>\nToken: <code>{token_address}</code>",
-        urgent=True
-    )
-
 # ========== PROCESS NEW TOKEN ==========
 def _process_new_token(token_address: str, pair_address: str, source: str = "websocket"):
     global discovered_addresses
@@ -1162,56 +1154,6 @@ def get_dexscreener_token_data(token_address: str) -> Dict:
         print(f"⚠️ DexScreener error: {e}")
     return result
 
-def get_moralis_wallet_tokens(wallet_address: str) -> List[Dict]:
-    if not MORALIS_API_KEY: return []
-    try:
-        r = requests.get(
-            f"https://deep-index.moralis.io/api/v2.2/{wallet_address}/erc20",
-            headers={"X-API-Key": MORALIS_API_KEY}, params={"chain": "bsc"}, timeout=10
-        )
-        if r.status_code == 200:
-            return r.json().get("result", [])
-    except Exception as e:
-        print(f"⚠️ Moralis wallet error: {e}")
-    return []
-
-# ========== SMART WALLET TRACKER ==========
-smart_wallet_snapshots: Dict[str, set] = {}
-
-def track_smart_wallets():
-    if not SMART_WALLETS:
-        print("ℹ️ No SMART_WALLETS configured")
-        return
-    print(f"🧠 Smart Wallet Tracker started — {len(SMART_WALLETS)} wallets")
-    while True:
-        token_buy_signals: Dict[str, List[str]] = {}
-        for wallet in SMART_WALLETS:
-            try:
-                if not MORALIS_API_KEY:
-                    continue
-                holdings = get_moralis_wallet_tokens(wallet)
-                current_tokens = {h.get("token_address", "").lower() for h in holdings}
-                prev_tokens = smart_wallet_snapshots.get(wallet, set())
-                for token_addr in current_tokens - prev_tokens:
-                    if token_addr:
-                        telegram_smart_wallet_alert(wallet, token_addr, "BUY 🟢")
-                        token_buy_signals.setdefault(token_addr, []).append(wallet)
-                for token_addr in prev_tokens - current_tokens:
-                    if token_addr:
-                        telegram_smart_wallet_alert(wallet, token_addr, "SELL 🔴")
-                smart_wallet_snapshots[wallet] = current_tokens
-            except Exception as e:
-                print(f"⚠️ Smart wallet {wallet[:10]}: {e}")
-
-        for token_addr, buying_wallets in token_buy_signals.items():
-            if len(buying_wallets) >= 2:
-                send_telegram(
-                    f"🔥 <b>MULTI-WALLET SIGNAL</b>\n{len(buying_wallets)} smart wallets buying!\n"
-                    f"Token: <code>{token_addr}</code>", urgent=True
-                )
-                threading.Thread(target=_auto_check_new_pair, args=(token_addr,), daemon=True).start()
-        time.sleep(120)
-
 # ========== MARKET DATA ==========
 def fetch_market_data():
     bnb_fetched = False
@@ -1389,82 +1331,6 @@ def _calculate_trading_iq() -> int:
         return 50
 
 
-def _fetch_trading_intel():
-    _ensure_brain_structure()
-    try:
-        r = requests.get("https://api.coingecko.com/api/v3/search/trending", timeout=10)
-        if r.status_code == 200:
-            trending = []
-            for c in r.json().get("coins", [])[:7]:
-                item = c.get("item", {})
-                trending.append({"name": item.get("name",""), "symbol": item.get("symbol",""), "source": "coingecko"})
-            brain["trading"]["market_insights"].append({
-                "timestamp": datetime.utcnow().isoformat(),
-                "observation": f"Trending: {[t['symbol'] for t in trending]}",
-                "mood": "TRENDING", "data": trending, "quality": "HIGH"
-            })
-
-        r2 = requests.get("https://api.geckoterminal.com/api/v2/networks/bsc/new_pools",
-                          params={"page":1}, headers={"Accept":"application/json;version=20230302"}, timeout=10)
-        if r2.status_code == 200:
-            for pool in r2.json().get("data", [])[:10]:
-                attr = pool.get("attributes", {})
-                liq  = float(attr.get("reserve_in_usd", 0) or 0)
-                rel  = pool.get("relationships", {})
-                tid  = rel.get("base_token", {}).get("data", {}).get("id", "")
-                addr = tid.replace("bsc_", "") if tid else ""
-                if addr and liq > 2000:
-                    threading.Thread(target=_process_new_token, args=(addr, addr, "GeckoTerminal"), daemon=True).start()
-        brain["trading"]["market_insights"] = brain["trading"]["market_insights"][-30:]
-    except Exception as e:
-        print(f"⚠️ Trading intel error: {e}")
-
-def _learn_from_internet_data():
-    try:
-        recent = [i for i in brain["trading"]["market_insights"][-10:] if i.get("quality") == "HIGH"]
-        trending_symbols = []
-        for ins in recent:
-            trending_symbols.extend([d.get("symbol","") for d in ins.get("data",[])])
-        if trending_symbols:
-            summary = f"Trending={trending_symbols[:3]}, F&G={market_cache.get('fear_greed',50)}"
-            prompt = (f"BSC bot insights: {summary}. 2 actionable JSON: "
-                      f'[{{"insight":"...","action":"...","confidence":0-100}}]')
-            try:
-                client = _get_freeflow_client()
-                response = client.chat(model=MODEL_FAST,
-                                       messages=[{"role":"system","content":"JSON only."},
-                                                 {"role":"user","content":prompt}],
-                                       max_tokens=200)
-                reply = response if isinstance(response, str) else (
-                    response.choices[0].message.content if hasattr(response,"choices") else str(response))
-                _raw = reply.strip().replace("```json","").replace("```","").strip()
-                _raw = re.sub(r',\s*([}\]])', r'', _raw)
-                _match = re.search(r'\[.*\]', _raw, re.DOTALL)
-                if _match:
-                    insights = json.loads(_match.group(0))
-                    if isinstance(insights, list):
-                        for item in insights:
-                            if isinstance(item, dict) and item.get("insight"):
-                                brain["trading"]["strategy_notes"].append({
-                                    "note": f"[INTERNET-INSIGHT] {item['insight']}",
-                                    "timestamp": datetime.utcnow().isoformat()
-                                })
-            except Exception as le:
-                print(f"⚠️ Internet LLM error: {le}")
-    except Exception as e:
-        print(f"⚠️ Internet learning error: {e}")
-
-def fetch_internet_data_24x7():
-    print("🌐 Internet Data Engine started!")
-    time.sleep(45)
-    while True:
-        try:
-            _fetch_trading_intel()
-            _learn_from_internet_data()
-            threading.Thread(target=_save_brain_to_db, daemon=True).start()
-        except Exception as e:
-            print(f"⚠️ Internet engine error: {e}")
-        time.sleep(3600)  # RAM opt: har 60 min (was 30)
 
 def _check_milestones():
     try:
@@ -2291,10 +2157,8 @@ def _startup_once():
         threading.Thread(target=_delayed(poll_new_pairs,        10),  daemon=True).start()
         threading.Thread(target=_delayed(poll_four_meme,         20),  daemon=True).start()
         threading.Thread(target=_delayed(price_monitor_loop,    15),  daemon=True).start()
-        threading.Thread(target=_delayed(track_smart_wallets,   20),  daemon=True).start()
         threading.Thread(target=_delayed(continuous_learning,   25),  daemon=True).start()
         threading.Thread(target=_delayed(auto_position_manager, 30),  daemon=True).start()
-        threading.Thread(target=_delayed(fetch_internet_data_24x7, 45), daemon=True).start()
         threading.Thread(target=_delayed(feedback_validation_loop, 50), daemon=True).start()
         def _startup_restore():
             try:
