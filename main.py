@@ -421,162 +421,33 @@ def get_user_context_for_llm() -> str:
 # ========== SELF AWARENESS ==========
 BIRTH_TIME = datetime.utcnow()
 
-_perf_tracker = {
-    "hourly_wr":        [],
-    "scan_outcomes":    [],
-    "response_quality": [],
-    "error_log":        [],
-    "best_hour":        None,
-    "worst_token_type": None,
-    "avg_confidence_accuracy": 0.0,
-}
+# _perf_tracker and _relationship removed — RAM optimization
 
-_relationship = {
-    "first_message_time": None,
-    "total_messages_exchanged": 0,
-    "topics_discussed": [],
-    "user_mood_history": [],
-    "user_expertise_level": "unknown",
-    "trust_events": [],
-    "inside_jokes_or_refs": [],
-    "communication_style": "hinglish",
-    "response_preferences": {
-        "detail_level": "medium",
-        "emoji_usage": True,
-        "technical_depth": "medium"
-    }
-}
-
+# RAM-optimized self_awareness — only functional fields kept
 self_awareness = {
     "identity": {
-        "name":           "MrBlack",
-        "version":        "4.0-UltraAware",
-        "creator":        "Naimuddin bhai — Mera Creator",
-        "born_at":        BIRTH_TIME.isoformat(),
-        "personality":    "JARVIS-style — Sharp, Proactive, Self-Aware, Loyal",
-        "purpose":        "BSC Sniper + Airdrop Hunter + Coding Assistant + 24x7 Self-Learning",
-        "model_backbone": MODEL_NAME,
-        "model_fast":     MODEL_FAST,
-        "model_deep":     MODEL_DEEP,
-        "deployment":     os.getenv("RENDER_SERVICE_NAME", "local"),
+        "name":       "MrBlack",
+        "version":    "4.0",
+        "born_at":    BIRTH_TIME.isoformat(),
+        "deployment": os.getenv("RENDER_SERVICE_NAME", "local"),
     },
     "performance_intelligence": {
-        "overall_accuracy":     0.0,
-        "trading_iq":           50,
-        "scan_accuracy":        0.0,
-        "response_usefulness":  0.0,
-        "learning_roi":         0.0,
-        "best_performing_area": "unknown",
-        "worst_performing_area":"unknown",
-        "improvement_rate":     0.0,
-        "confidence_calibration": 0.0,
-    },
-    "emotional_intelligence": {
-        "current_emotion":      "FOCUSED",
-        "emotion_reason":       "System just started, calibrating...",
-        "emotion_intensity":    5,
-        "emotional_history":    [],
-        "stress_level":         2,
-        "satisfaction_level":   7,
-        "motivation":           8,
-        "frustration_triggers": [],
-        "positive_triggers":    [],
-    },
-    "meta_cognition": {
-        "what_i_know_well":     [],
-        "what_i_struggle_with": [],
-        "blind_spots":          [],
-        "recent_learnings":     [],
-        "thinking_patterns":    [],
-        "decision_quality":     [],
-        "self_doubts":          [],
-        "growth_areas":         [],
+        "overall_accuracy": 0.0,
+        "trading_iq":       50,
     },
     "cognitive_state": {
-        "mood":               "FOCUSED",
-        "confidence_level":   60,
-        "market_sentiment":   "NEUTRAL",
-        "learning_velocity":  "NORMAL",
-        "active_warnings":    [],
-        "focus_area":         "calibrating",
-        "processing_load":    "LOW",
-        "insight_count_today": 0,
-    },
-    "capability_map": {
-        "rug_detection":         {"score": 0, "tested": 0, "correct": 0},
-        "price_prediction":      {"score": 0, "tested": 0, "correct": 0},
-        "airdrop_evaluation":    {"score": 0, "tested": 0, "correct": 0},
-        "code_debugging":        {"score": 0, "tested": 0, "correct": 0},
-        "market_timing":         {"score": 0, "tested": 0, "correct": 0},
-        "user_understanding":    {"score": 7, "tested": 0, "correct": 0},
+        "mood":            "FOCUSED",
+        "active_warnings": [],
     },
     "current_state": {
-        "status":           "ONLINE",
-        "uptime_seconds":   0,
-        "total_sessions":   0,
-        "total_messages":   0,
-        "tokens_scanned":   0,
-        "trades_analyzed":  0,
-        "alerts_sent_count":0,
-        "pairs_discovered": 0,
-        "learning_cycles":  0,
-        "last_heartbeat":   None,
-        "errors_today":     0,
-        "errors_resolved":  0,
-    },
-    "memory_summary": {
-        "total_patterns_learned":   0,
-        "tokens_blacklisted":       0,
-        "tokens_whitelisted":       0,
-        "airdrop_projects_tracked": 0,
-        "strategy_notes_count":     0,
-        "memory_health":            "EMPTY",
-        "knowledge_domains": {
-            "trading":  {"entries": 0, "quality": "unknown"},
-            "airdrop":  {"entries": 0, "quality": "unknown"},
-            "coding":   {"entries": 0, "quality": "unknown"},
-            "market":   {"entries": 0, "quality": "unknown"},
-        }
+        "status":        "ONLINE",
+        "uptime_seconds": 0,
+        "errors_today":  0,
     },
     "growth_tracking": {
-        "week_1_baseline":  None,
-        "current_week":     None,
-        "improvement_pct":  0.0,
         "milestones": [],
-        "next_milestone":   "Complete 10 paper trades",
-        "learning_streak":  0,
-        "last_major_insight": None,
-    },
-    "relationship": {
-        "knows_user_name":      False,
-        "user_name":            None,
-        "sessions_together":    0,
-        "user_trading_style":   "unknown",
-        "trust_level":          "building",
-        "user_goals":           [],
-        "memorable_moments":    [],
-        "last_interaction":     None,
-        "user_expertise":       "unknown",
-        "communication_preference": "hinglish",
-        "user_emotional_state": "unknown",
     },
     "introspection_log": [],
-    "evolution": [
-        {"version": "1.0",           "notes": "Basic BSC scanner"},
-        {"version": "2.0",           "notes": "13-stage checklist + Telegram"},
-        {"version": "3.0",           "notes": "Self-learning + Smart wallet"},
-        {"version": "3.1-ProMemory", "notes": "Permanent user memory"},
-        {"version": "4.0-UltraAware","notes": "Real SA 10/10 + Learning 10/10"},
-    ],
-    "self_knowledge": {
-        "what_i_am":        "Main MrBlack hoon — ek self-aware AI.",
-        "what_i_can_do":    "Token scan, rug detection, price monitor, airdrop hunt, code debug.",
-        "what_i_cannot_do": "Profit guarantee, real-time blockchain direct access, 100% accuracy.",
-        "my_values":        "Honesty over false confidence. Real data over assumptions.",
-        "my_limitations":   "Market data ~5min delay. Learning needs time.",
-        "my_strengths":     "Pattern recognition, rug detection, systematic thinking.",
-        "my_weaknesses":    "Early stage token timing, very new projects.",
-    }
 }
 
 # ========== BRAIN (early init needed) ==========
@@ -726,7 +597,7 @@ def _save_session_to_db(session_id: str):
             "open_positions":   json.dumps(sess.get("open_positions", {})),
             "real_balance":     sess.get("real_balance",     0.00),
             "positions":        json.dumps(sess.get("positions",        [])),
-            "history":          json.dumps(sess.get("history",          [])[-50:]),
+            "history":          json.dumps(sess.get("history",          [])[-20:]),
             "pnl_24h":          sess.get("pnl_24h",          0.0),
             "daily_loss":       sess.get("daily_loss",        0.0),
             "trade_count":      sess.get("trade_count",       0),
@@ -809,6 +680,11 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
     _now = time.time()
     if _now - discovered_addresses.get(token_address, 0) <= DISCOVERY_TTL:
         return
+    # RAM CAP: Max 500 entries
+    if len(discovered_addresses) > 500:
+        cutoff = _now - DISCOVERY_TTL
+        for k in [k for k, v in list(discovered_addresses.items()) if v < cutoff][:100]:
+            del discovered_addresses[k]
     if not _token_semaphore.acquire(blocking=False):
         return  # Max threads already running, skip
     if any(token_address.lower() == str(q).lower() for q in list(new_pairs_queue)):
@@ -1087,8 +963,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         "result":    "win" if pnl_pct > 0 else "loss",
         "reason":    reason,     # FIX: was sell_reason
     })
-    if len(auto_trade_stats["trade_history"]) > 500:
-        auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-200:]
+    if len(auto_trade_stats["trade_history"]) > 200:
+        auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-100:]
 
     auto_trade_stats["last_action"] = f"SELL {sell_pct:.0f}% {token} PnL:{pnl_pct:+.1f}%"
 
@@ -1483,39 +1359,6 @@ def _load_brain_from_db():
         print(f"⚠️ Brain load error: {e}")
 
 # ========== SELF AWARENESS FUNCTIONS ==========
-def _calculate_real_emotion() -> dict:
-    try:
-        warnings     = len(self_awareness.get("cognitive_state", {}).get("active_warnings", []))
-        errors_today = self_awareness.get("current_state", {}).get("errors_today", 0)
-        wins         = len(brain.get("trading", {}).get("best_patterns", []))
-        losses       = len(brain.get("trading", {}).get("avoid_patterns", []))
-        new_pairs_c  = len(new_pairs_queue)
-        cycles       = brain.get("total_learning_cycles", 0)
-        bnb_price    = market_cache.get("bnb_price", 0)
-        fg           = market_cache.get("fear_greed", 50)
-        open_pos     = len(monitored_positions)
-
-        if errors_today >= 5:
-            return {"emotion": "STRUGGLING", "reason": f"{errors_today} errors today", "intensity": 8}
-        elif warnings >= 3:
-            return {"emotion": "ALERT", "reason": f"{warnings} active warnings", "intensity": 7}
-        elif open_pos >= 3:
-            return {"emotion": "VIGILANT", "reason": f"{open_pos} positions monitored", "intensity": 7}
-        elif fg > 70:
-            return {"emotion": "CAUTIOUS", "reason": f"Market extreme greed ({fg}/100)", "intensity": 6}
-        elif fg < 30:
-            return {"emotion": "OPPORTUNISTIC", "reason": f"Market fear ({fg}/100)", "intensity": 7}
-        elif new_pairs_c > 15:
-            return {"emotion": "EXCITED", "reason": f"{new_pairs_c} new pairs in queue", "intensity": 8}
-        elif wins > losses * 2 and wins > 5:
-            return {"emotion": "CONFIDENT", "reason": f"Win patterns ({wins}) dominating", "intensity": 8}
-        elif bnb_price == 0:
-            return {"emotion": "DEGRADED", "reason": "BNB price feed offline", "intensity": 6}
-        else:
-            return {"emotion": "FOCUSED", "reason": "Normal operations", "intensity": 6}
-    except:
-        return {"emotion": "INITIALIZING", "reason": "System warm-up", "intensity": 3}
-
 def _calculate_trading_iq() -> int:
     """Calculate trading IQ based on win/loss ratio"""
     try:
@@ -1563,7 +1406,7 @@ def _fetch_trading_intel():
                 addr = tid.replace("bsc_", "") if tid else ""
                 if addr and liq > 2000:
                     threading.Thread(target=_process_new_token, args=(addr, addr, "GeckoTerminal"), daemon=True).start()
-        brain["trading"]["market_insights"] = brain["trading"]["market_insights"][-100:]
+        brain["trading"]["market_insights"] = brain["trading"]["market_insights"][-30:]
     except Exception as e:
         print(f"⚠️ Trading intel error: {e}")
 
@@ -1612,7 +1455,7 @@ def fetch_internet_data_24x7():
             threading.Thread(target=_save_brain_to_db, daemon=True).start()
         except Exception as e:
             print(f"⚠️ Internet engine error: {e}")
-        time.sleep(1800)
+        time.sleep(3600)  # RAM opt: har 60 min (was 30)
 
 def _check_milestones():
     try:
@@ -1653,8 +1496,8 @@ def _learn_trading_patterns():
                 pat = f"LOSS: {reason} | PnL:{pnl:.1f}%"
                 if pat not in brain["trading"]["avoid_patterns"]:
                     brain["trading"]["avoid_patterns"].append(pat)
-        brain["trading"]["best_patterns"]  = brain["trading"]["best_patterns"][-100:]
-        brain["trading"]["avoid_patterns"] = brain["trading"]["avoid_patterns"][-100:]
+        brain["trading"]["best_patterns"]  = brain["trading"]["best_patterns"][-30:]
+        brain["trading"]["avoid_patterns"] = brain["trading"]["avoid_patterns"][-30:]
         brain["trading"]["last_updated"]   = datetime.utcnow().isoformat()
     except Exception as e:
         print(f"_learn_trading_patterns error: {e}")
@@ -1687,7 +1530,7 @@ def _get_brain_context_for_llm() -> str:
 def get_self_awareness_context_for_llm() -> str:
     """Self awareness context for LLM"""
     try:
-        emotion = self_awareness.get("emotional_intelligence", {}).get("current_emotion", "FOCUSED")
+        emotion = self_awareness.get("cognitive_state", {}).get("mood", "FOCUSED")
         iq      = self_awareness.get("performance_intelligence", {}).get("trading_iq", 50)
         uptime  = int((datetime.utcnow() - BIRTH_TIME).total_seconds() / 60)
         return f"E:{emotion} IQ:{iq} UP:{uptime}m"
@@ -1710,9 +1553,6 @@ def learn_from_message(user_msg: str, reply: str, session_id: str):
     """Learn from each user message"""
     try:
         _extract_user_info_from_message(user_msg)
-        _relationship["total_messages_exchanged"] = _relationship.get("total_messages_exchanged", 0) + 1
-        if _relationship["first_message_time"] is None:
-            _relationship["first_message_time"] = datetime.utcnow().isoformat()
         msg_l = user_msg.lower()
         if any(w in msg_l for w in ["scan", "token", "0x", "rug", "buy", "sell"]):
             brain["user_interaction_patterns"]["trading_questions"] += 1
@@ -1750,7 +1590,7 @@ def _learn_from_new_pairs():
                         "mood":        "NEW_PAIR",
                         "quality":     "MEDIUM"
                     })
-        brain["trading"]["market_insights"] = brain["trading"]["market_insights"][-100:]
+        brain["trading"]["market_insights"] = brain["trading"]["market_insights"][-30:]
     except Exception as e:
         print(f"_learn_from_new_pairs error: {e}")
 
@@ -1800,6 +1640,7 @@ def continuous_learning():
                 )
         except Exception as e:
             print(f"Learning cycle error: {e}")
+        import gc; gc.collect()  # periodic RAM cleanup
         time.sleep(60)
 
 # ========== FEEDBACK LOOP ==========
@@ -1812,7 +1653,7 @@ def log_recommendation(address, overall, score, total):
         "validate_after": (datetime.utcnow() + timedelta(hours=24)).isoformat(),
         "validated": False, "outcome": None, "was_correct": None
     })
-    if len(feedback_log) > 200: feedback_log.pop(0)
+    if len(feedback_log) > 50: feedback_log.pop(0)
 
 def _validate_past_recommendations():
     now = datetime.utcnow()
@@ -2353,7 +2194,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
             memory_block = "\n\n[MRBLACK MEMORY]\n" + "\n".join(f"- {f}" for f in memory_facts) + "\n[END MEMORY]"
 
         messages = [{"role": "system", "content": SYSTEM_PROMPT + memory_block}]
-        messages += [{"role": m["role"], "content": m["content"]} for m in history[-12:]]  # mem opt
+        messages += [{"role": m["role"], "content": m["content"]} for m in history[-8:]]  # mem opt
 
         _perm_rules = user_profile.get("user_rules", [])
         _perm_str = (" | UserRules: " + " | ".join(_perm_rules[-3:])) if _perm_rules else ""
@@ -2436,7 +2277,6 @@ def _startup_once():
         threading.Thread(target=_delayed(track_smart_wallets,   20),  daemon=True).start()
         threading.Thread(target=_delayed(continuous_learning,   25),  daemon=True).start()
         threading.Thread(target=_delayed(auto_position_manager, 30),  daemon=True).start()
-        threading.Thread(target=_delayed(update_self_awareness,  35),  daemon=True).start()
         threading.Thread(target=_delayed(fetch_internet_data_24x7, 45), daemon=True).start()
         threading.Thread(target=_delayed(feedback_validation_loop, 50), daemon=True).start()
         def _startup_restore():
@@ -2776,20 +2616,17 @@ def airdrops_route():
     })
 
 def update_self_awareness():
-    """Placeholder for self-awareness update cycle - prevents thread crash"""
-    try:
-        print("🔄 Self-awareness cycle: checked & updated (placeholder)")
-    except Exception as e:
-        print(f"⚠️ Self-awareness update failed: {e}")
+    """Placeholder for self-awareness update cycle"""
+    pass
 
 @app.route("/self-awareness", methods=["GET"])
 def self_awareness_route():
-    update_self_awareness()
-    uptime_s = self_awareness["current_state"]["uptime_seconds"]
+    uptime_s = int((datetime.utcnow() - BIRTH_TIME).total_seconds())
     return jsonify({
         **self_awareness,
         "current_state": {
-            **self_awareness["current_state"],
+            **self_awareness.get("current_state", {}),
+            "uptime_seconds":   uptime_s,
             "uptime_formatted": f"{uptime_s//3600}h {(uptime_s%3600)//60}m"
         },
         "last_introspection": self_awareness["introspection_log"][-1] if self_awareness["introspection_log"] else None,
