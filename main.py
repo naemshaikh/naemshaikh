@@ -696,7 +696,7 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
     if _now - discovered_addresses.get(token_address, 0) <= DISCOVERY_TTL:
         return
     # RAM CAP: Max 500 entries
-    if len(discovered_addresses) > 500:
+    if len(discovered_addresses) > 150:
         cutoff = _now - DISCOVERY_TTL
         for k in [k for k, v in list(discovered_addresses.items()) if v < cutoff][:100]:
             del discovered_addresses[k]
@@ -709,11 +709,11 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
     except Exception:
         return
 
-    if len(discovered_addresses) > 500:
+    if len(discovered_addresses) > 150:
         cutoff = _now - DISCOVERY_TTL
         for k in [k for k, v in list(discovered_addresses.items()) if v < cutoff][:100]:
             del discovered_addresses[k]
-    if len(discovered_addresses) > 500:
+    if len(discovered_addresses) > 150:
         cutoff = _now - DISCOVERY_TTL
         for k in [k for k, v in list(discovered_addresses.items()) if v < cutoff][:100]:
             del discovered_addresses[k]
@@ -753,7 +753,14 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
     })
     print(f"🆕 [{source}] {token_symbol} | {token_name} ({token_address[:10]})")
     _token_semaphore.release()
-    threading.Thread(target=_auto_check_new_pair, args=(token_address,), daemon=True).start()
+    # MEM FIX: max 3 concurrent checkers
+    if not hasattr(_process_new_token, "_sem"):
+        _process_new_token._sem = threading.Semaphore(3)
+    def _run_check():
+        if not _process_new_token._sem.acquire(blocking=False): return
+        try: _auto_check_new_pair(token_address)
+        finally: _process_new_token._sem.release()
+    threading.Thread(target=_run_check, daemon=True).start()
 
 # ========== POSITION MONITOR ==========
 def add_position_to_monitor(session_id, token_address, token_name, entry_price, size_bnb, stop_loss_pct=15.0):
@@ -989,8 +996,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         "result":    "win" if pnl_pct > 0 else "loss",
         "reason":    reason,     # FIX: was sell_reason
     })
-    if len(auto_trade_stats["trade_history"]) > 200:
-        auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-100:]
+    if len(auto_trade_stats["trade_history"]) > 50:
+        auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-50:]
 
     auto_trade_stats["last_action"] = f"SELL {sell_pct:.0f}% {token} PnL:{pnl_pct:+.1f}%"
 
@@ -1138,7 +1145,7 @@ def price_monitor_loop():
                     telegram_price_alert(token, addr, "DUMP -50% FROM HIGH", "Exit 50%")
             except Exception as e:
                 print(f"⚠️ Price monitor error ({addr}): {e}")
-        time.sleep(1)  # FIX: 10s → 1s — meme coins fast die, stop loss needs instant trigger
+        time.sleep(5)  # MEM FIX: 1s→5s saves 80% RAM
 
 # ========== DEXSCREENER ==========
 def get_dexscreener_token_data(token_address: str) -> Dict:
@@ -1270,7 +1277,7 @@ def _save_brain_to_db():
             "pattern_database": {"best_patterns": brain["trading"]["best_patterns"][-50:], "avoid_patterns": brain["trading"]["avoid_patterns"][-50:]},
             "updated_at": datetime.utcnow().isoformat(),
             "positions":  json.dumps({
-                "brain_trading":  brain["trading"],
+                "brain_trading":  {k: v[-30:] if isinstance(v, list) else v for k, v in brain["trading"].items()},
                 "brain_airdrop":  brain["airdrop"],
                 "brain_coding":   brain["coding"],
                 "cycles":         brain["total_learning_cycles"],
@@ -1590,7 +1597,8 @@ def feedback_validation_loop():
     while True:
         try: _validate_past_recommendations()
         except Exception as e: print(f"⚠️ Feedback loop: {e}")
-        time.sleep(3600)
+        import gc; gc.collect()  # MEM FIX
+        time.sleep(1800)  # MEM FIX: 3600→1800
 
 # ========== AUTO CHECK NEW PAIR ==========
 def _auto_check_new_pair(pair_address: str):
@@ -2267,6 +2275,7 @@ def _startup_once():
                 print(f"⚠️ Position restore error: {_rpe}")
         threading.Thread(target=_startup_restore, daemon=True).start()
         print("✅ All background threads started")
+        import gc; gc.collect()  # MEM FIX: free memory after startup
 
 
 
