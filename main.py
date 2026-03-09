@@ -1765,41 +1765,41 @@ if _ws is not None:
             except Exception as ex: print(f"⚠️ WSS thread: {ex}")
         threading.Thread(target=_run_ws, daemon=True).start()
 
-    _cycle = 0
-    while True:
+_cycle = 0
+while True:
+    try:
+        _cycle += 1
+        _nc = time.time()
+        # Cleanup old entries
+        discovered_addresses_clean = {k: v for k, v in discovered_addresses.items() if _nc - v < DISCOVERY_TTL}
+        discovered_addresses.clear()
+        discovered_addresses.update(discovered_addresses_clean)
+
         try:
-            _cycle += 1
-            _nc = time.time()
-            # Cleanup old entries
-            discovered_addresses_clean = {k: v for k, v in discovered_addresses.items() if _nc - v < DISCOVERY_TTL}
-            discovered_addresses.clear()
-            discovered_addresses.update(discovered_addresses_clean)
-
-            try:
-                rb = requests.get("https://api.dexscreener.com/token-boosts/latest/v1", timeout=10)
-                if rb.status_code == 200:
-                    boosts = rb.json() if isinstance(rb.json(), list) else []
-                    for item in boosts[:5]:
-                        if item.get("chainId") == "bsc":
-                            addr = item.get("tokenAddress", "")
-                            if addr:
-                                threading.Thread(target=_process_new_token, args=(addr, addr, "DexBoost"), daemon=True).start()
-            except Exception: pass
-
-            queries = ["new","moon","pepe","meme","inu","doge","safe","baby","elon","based"]
-            q = queries[_cycle % len(queries)]
-            try:
-                rs = requests.get(f"https://api.dexscreener.com/latest/dex/search?q={q}", timeout=10)
-                if rs.status_code == 200:
-                    _dex_pairs = [p for p in (rs.json() or {}).get("pairs", []) if p and p.get("chainId") == "bsc"]
-                    for p in _dex_pairs[:5]:
-                        addr = (p.get("baseToken") or {}).get("address", "")
+            rb = requests.get("https://api.dexscreener.com/token-boosts/latest/v1", timeout=10)
+            if rb.status_code == 200:
+                boosts = rb.json() if isinstance(rb.json(), list) else []
+                for item in boosts[:5]:
+                    if item.get("chainId") == "bsc":
+                        addr = item.get("tokenAddress", "")
                         if addr:
-                            threading.Thread(target=_process_new_token, args=(addr, p.get("pairAddress", ""), "DexSearch"), daemon=True).start()
-            except Exception: pass
-        except Exception as e:
-            print(f"⚠️ Fallback error: {e}")
-        time.sleep(300)
+                            threading.Thread(target=_process_new_token, args=(addr, addr, "DexBoost"), daemon=True).start()
+        except Exception: pass
+
+        queries = ["new","moon","pepe","meme","inu","doge","safe","baby","elon","based"]
+        q = queries[_cycle % len(queries)]
+        try:
+            rs = requests.get(f"https://api.dexscreener.com/latest/dex/search?q={q}", timeout=10)
+            if rs.status_code == 200:
+                _dex_pairs = [p for p in (rs.json() or {}).get("pairs", []) if p and p.get("chainId") == "bsc"]
+                for p in _dex_pairs[:5]:
+                    addr = (p.get("baseToken") or {}).get("address", "")
+                    if addr:
+                        threading.Thread(target=_process_new_token, args=(addr, p.get("pairAddress", ""), "DexSearch"), daemon=True).start()
+        except Exception: pass
+    except Exception as e:
+        print(f"Warning: Fallback error: {e}")
+    time.sleep(300)
 @app.route("/trading-data")
 def trading_data():
     try:
@@ -1826,42 +1826,6 @@ def trading_data():
     except:
         return jsonify({"paper_balance":5.0,"scanned":1247,"watching":3,"profit_trades":12,"loss_trades":4,"total_pnl":1.23,"win_rate":75.0,"status":"demo"})
 
-    while True:
-        try:
-            _cycle += 1
-            _nc = time.time()
-            # Cleanup old entries
-            discovered_addresses_clean = {k: v for k, v in discovered_addresses.items() if _nc - v < DISCOVERY_TTL}
-            discovered_addresses.clear()
-            discovered_addresses.update(discovered_addresses_clean)
-
-            try:
-                rb = requests.get("https://api.dexscreener.com/token-boosts/latest/v1", timeout=10)
-                if rb.status_code == 200:
-                    boosts = rb.json() if isinstance(rb.json(), list) else []
-                    for item in boosts[:5]:  # max 5, RAM bachao
-                        if item.get("chainId") == "bsc":
-                            addr = item.get("tokenAddress","")
-                            if addr:
-                                threading.Thread(target=_process_new_token, args=(addr, addr, "DexBoost"), daemon=True).start()
-            except Exception: pass
-
-            queries = ["new","moon","pepe","meme","inu","doge","safe","baby","elon","based"]
-            q = queries[_cycle % len(queries)]
-            try:
-                rs = requests.get(f"https://api.dexscreener.com/latest/dex/search?q={q}", timeout=10)
-                if rs.status_code == 200:
-                    _dex_pairs = [p for p in (rs.json() or {}).get("pairs",[]) or [] if p and p.get("chainId") == "bsc"]
-                    for p in _dex_pairs[:5]:  # max 5, RAM bachao
-                        addr = (p.get("baseToken") or {}).get("address","")
-                        if addr:
-                            threading.Thread(target=_process_new_token, args=(addr, p.get("pairAddress",""), "DexSearch"), daemon=True).start()
-            except Exception: pass
-        except Exception as e:
-            print(f"⚠️ Fallback error: {e}")
-        time.sleep(300)
-
-# ========== 13-STAGE CHECKLIST ==========
 def run_full_sniper_checklist(address: str) -> Dict:
     result = {
         "address": address, "checklist": [],
