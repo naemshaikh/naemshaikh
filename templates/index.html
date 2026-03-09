@@ -579,13 +579,13 @@ function _applyTD(td){
 }
 
 async function fetchStats(){
-  // Step 1: /trading-data se TURANT data dikhao (fast)
-  const tdPromise = fetchJSON('/trading-data?session_id='+SID,{},10000);
-  // Step 2: /auto-stats background mein
-  const asPromise = fetchJSON('/auto-stats',{},30000);
+  // Step 1: /trading-data fast (5s timeout)
+  const tdPromise = fetchJSON('/trading-data?session_id='+SID,{},5000);
+  // Step 2: /auto-stats (8s timeout)
+  const asPromise = fetchJSON('/auto-stats',{},8000);
   tdPromise.then(td=>{ if(td) _applyTD(td); });
   const [_as,_td] = await Promise.all([asPromise, tdPromise]);
-  if(!_as && !_td){setConn(false,'⚡ Server se data nahi aa rha — retry...');return false;}
+  if(!_as && !_td){setConn(false,'⚡ Retry...');console.error('fetchStats: both null',{as:_as,td:_td});return false;}
   setConn(true,'✅ MrBlack Connected');
   if(_as) _setAutoUI(!!_as.enabled);
   const _modeEl=document.getElementById('hdr-mode');
@@ -632,7 +632,7 @@ async function fetchStats(){
 // ─── INIT — retry on cold start ──────────────────────────────
 async function init(){
   setConn(false,'⏳ MrBlack server se connect ho rha hai...');
-  try{await safeFetch('/init-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_id:SID})},30000);}catch(e){}
+  try{await safeFetch('/init-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_id:SID})},5000);}catch(e){}
 
   // FIX: Retry loop — handles Render cold start (30-60s delay)
   let ok=false;
