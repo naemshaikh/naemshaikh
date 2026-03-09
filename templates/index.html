@@ -984,28 +984,12 @@ window._renderTPage = function(){
 {% endraw %}
 
 <script>
-// P3 FULL UI FIX — Data + Buttons
+// P3 FIXED — buttons only, data handled by fetchStats()
 document.addEventListener("DOMContentLoaded", () => {
-    function updateUI() {
-        fetch("/trading-data").then(r => r.json()).then(d => {
-            document.querySelectorAll(".loading").forEach(e => e.style.display="none");
-            document.getElementById("paper-balance").innerText = "$" + d.paper_balance;
-            document.getElementById("scanned").innerText = d.scanned;
-            document.getElementById("watching").innerText = d.watching;
-            document.getElementById("profit-trades").innerText = d.profit_trades;
-            document.getElementById("loss-trades").innerText = d.loss_trades;
-            document.getElementById("total-pnl").innerText = d.total_pnl;
-            document.getElementById("win-rate").innerText = d.win_rate + "%";
-        });
-    }
-    setInterval(updateUI, 5000);
-    updateUI();
-
-    // Button clicks
     document.querySelectorAll("button").forEach(b => {
-        if (b.innerText.includes("Health Check")) b.onclick = () => fetch("/health").then(r=>r.json()).then(d=>alert("✅ Health OK"));
-        if (b.innerText.includes("Refresh Data")) b.onclick = () => {updateUI(); alert("✅ Refreshed!");};
-        if (b.innerText.includes("Close All")) b.onclick = () => {if(confirm("Close all?")) fetch("/admin-reset-positions",{method:"POST"});};
+        if (b.innerText.includes("Health Check")) b.onclick = () => fetch("/health").then(r=>r.json()).then(d=>alert("BSC:"+d.bsc_connected+" DB:"+d.supabase+" BNB:$"+d.bnb_price+" UP:"+d.uptime_min+"m"));
+        if (b.innerText.includes("Refresh Data")) b.onclick = () => { if(typeof fetchStats==="function") fetchStats(); };
+        if (b.innerText.includes("Close All")) b.onclick = () => {if(confirm("Close all positions?")) fetch("/admin-reset-positions",{method:"POST"}).then(()=>setTimeout(()=>{if(typeof fetchStats==="function")fetchStats();},1500));};
     });
 });
 </script>
