@@ -1501,6 +1501,7 @@ def _learn_from_new_pairs():
         print(f"_learn_from_new_pairs error: {e}")
 
 def continuous_learning():
+    import gc
     print("🧠 Learning Engine started!")
     _load_brain_from_db()
     time.sleep(3)
@@ -1606,8 +1607,8 @@ def _auto_check_new_pair(pair_address: str):
         print(f"⏭️ Check skipped (10 already running): {pair_address[:10]}")
         return
     try:
-        print(f"⏳ Waiting 3 min: {pair_address[:10]}")
-        time.sleep(180)
+        print(f"⏳ Waiting 60s: {pair_address[:10]}")
+        time.sleep(60)
         try:
             _ar = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{pair_address}", timeout=8)
             if _ar.status_code == 200:
@@ -2203,11 +2204,13 @@ def _startup_once():
 
         threading.Thread(target=_delayed(poll_new_pairs,        10),  daemon=True).start()
         threading.Thread(target=_delayed(poll_four_meme,         20),  daemon=True).start()
-        threading.Thread(target=_fallback_token_poller,               daemon=True).start()
+        # MEM FIX: _fallback_token_poller disabled — WSS handles this
+        # threading.Thread(target=_fallback_token_poller, daemon=True).start()
         threading.Thread(target=_delayed(price_monitor_loop,    15),  daemon=True).start()
         threading.Thread(target=_delayed(continuous_learning,   25),  daemon=True).start()
         threading.Thread(target=_delayed(auto_position_manager, 30),  daemon=True).start()
-        threading.Thread(target=_delayed(feedback_validation_loop, 50), daemon=True).start()
+        # MEM FIX: feedback_validation_loop disabled — non-essential
+        # threading.Thread(target=_delayed(feedback_validation_loop, 50), daemon=True).start()
         def _startup_restore():
             try:
                 if supabase:
@@ -2275,7 +2278,14 @@ def _startup_once():
                 print(f"⚠️ Position restore error: {_rpe}")
         threading.Thread(target=_startup_restore, daemon=True).start()
         print("✅ All background threads started")
-        import gc; gc.collect()  # MEM FIX: free memory after startup
+        # MEM FIX: trim knowledge base
+        try:
+            for k in list(knowledge_base.get("bsc", {}).keys()):
+                v = knowledge_base["bsc"][k]
+                if isinstance(v, list) and len(v) > 20:
+                    knowledge_base["bsc"][k] = v[-20:]
+        except: pass
+        import gc; gc.collect()
 
 
 
