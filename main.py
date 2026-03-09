@@ -2322,6 +2322,8 @@ def home():
 
 @app.route("/init-session", methods=["POST"])
 def init_session():
+    if not _startup_done:
+        return jsonify({"status": "starting"})
     data = request.get_json() or {}
     client_id = data.get("client_id", "").strip()
     session_id = client_id if (client_id and len(client_id) > 10) else str(uuid.uuid4())
