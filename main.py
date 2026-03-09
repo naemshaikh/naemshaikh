@@ -71,7 +71,7 @@ def _get_dec(addr):
     if addr.lower() in _dec_cache: return _dec_cache[addr.lower()]
     try: d = w3.eth.contract(address=Web3.to_checksum_address(addr), abi=TOKEN_DEC_ABI).functions.decimals().call()
     except: d = 18
-    if len(_dec_cache) > 200:  # MEM FIX: was 500
+    if len(_dec_cache) > 200:  # Cache size limit
         for k in list(_dec_cache.keys())[:100]:
             del _dec_cache[k]
     _dec_cache[addr.lower()] = d
@@ -515,10 +515,10 @@ sessions: Dict[str, dict] = {}
 
 def get_or_create_session(session_id: str) -> dict:
     # Session cleanup — max 25 sessions
-    if len(sessions) > 10 and session_id not in sessions:  # MEM FIX: was 25
+    if len(sessions) > 10 and session_id not in sessions:
         _keep = {"AUTO_TRADER", "default", session_id}
         _candidates = [k for k in list(sessions.keys()) if k not in _keep]
-        for k in _candidates[:5]:
+        for k in _candidates[:5]:  # Sirf 5 ek baar mein hatao
             sessions.pop(k, None)
     if session_id not in sessions:
         sessions[session_id] = {
@@ -633,35 +633,10 @@ def _save_session_to_db(session_id: str):
 # ========== NEW PAIRS ==========
 new_pairs_queue: deque = deque(maxlen=30)
 discovered_addresses: dict = {}
+_token_semaphore  = threading.Semaphore(2)   # MEM FIX: was 4
+_check_semaphore  = threading.Semaphore(3)   # MEM FIX: was 10
 DISCOVERY_TTL = 7200
 PAIR_CREATED_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
-
-# ========== SINGLE QUEUE PROCESSOR (replaces all semaphores/threads) ==========
-import queue as _queue_mod
-_token_check_queue = _queue_mod.Queue(maxsize=50)  # max 50 pending tokens
-
-def _queue_worker():
-    """Single background thread — processes tokens one by one from queue.
-    Replaces _check_semaphore (10 threads) + _token_semaphore (4 threads).
-    RAM saving: ~80-100MB (no concurrent thread stacks sleeping 60s each)
-    """
-    print("🔄 Queue Worker started — single thread token processor")
-    while True:
-        try:
-            item = _token_check_queue.get(timeout=5)
-            if item is None:
-                continue
-            token_address, pair_address, source = item
-            try:
-                _auto_check_new_pair(token_address)
-            except Exception as e:
-                print(f"⚠️ Queue worker error: {e}")
-            finally:
-                _token_check_queue.task_done()
-        except _queue_mod.Empty:
-            continue
-        except Exception as e:
-            print(f"⚠️ Queue worker outer error: {e}")
 
 # ========== MONITORED POSITIONS ==========
 monitored_positions: Dict[str, dict] = {}
@@ -670,7 +645,7 @@ monitor_lock = threading.Lock()
 # ========== AUTO TRADE STATS ==========  FIX 2: trade_history added
 AUTO_TRADE_ENABLED = True
 AUTO_BUY_SIZE_BNB  = 0.01
-AUTO_MAX_POSITIONS = 15  # MEM FIX: was 50, monitor cap already 15 — synced
+AUTO_MAX_POSITIONS = 15  # MEM FIX: was 50
 AUTO_SESSION_ID    = "AUTO_TRADER"
 
 auto_trade_stats = {
@@ -716,25 +691,28 @@ def telegram_price_alert(token, address, alert_type, value):
 
 # ========== PROCESS NEW TOKEN ==========
 def _process_new_token(token_address: str, pair_address: str, source: str = "websocket"):
-    """Token ko queue mein daal do — koi thread spawn nahi hoga.
-    Queue worker (single thread) process karega sequentially.
-    """
     global discovered_addresses
     _now = time.time()
     if _now - discovered_addresses.get(token_address, 0) <= DISCOVERY_TTL:
         return
-
-    # Checksum validate karo
+    # RAM CAP: Max 500 entries
+    if len(discovered_addresses) > 150:
+        cutoff = _now - DISCOVERY_TTL
+        for k in [k for k, v in list(discovered_addresses.items()) if v < cutoff][:100]:
+            del discovered_addresses[k]
+    if not _token_semaphore.acquire(blocking=False):
+        return  # Max threads already running, skip
+    if any(token_address.lower() == str(q).lower() for q in list(new_pairs_queue)):
+        return
     try:
         token_address = Web3.to_checksum_address(token_address)
     except Exception:
         return
 
-    # Already in queue check
-    if any(token_address.lower() == str(q[0]).lower() for q in list(_token_check_queue.queue)):
-        return
-
-    # discovered_addresses update
+    if len(discovered_addresses) > 150:
+        cutoff = _now - DISCOVERY_TTL
+        for k in [k for k, v in list(discovered_addresses.items()) if v < cutoff][:100]:
+            del discovered_addresses[k]
     if len(discovered_addresses) > 150:
         cutoff = _now - DISCOVERY_TTL
         for k in [k for k, v in list(discovered_addresses.items()) if v < cutoff][:100]:
@@ -742,20 +720,21 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
     discovered_addresses[token_address] = _now
     brain["total_tokens_discovered_ever"] += 1
 
-    # Quick name/symbol fetch (lightweight — sirf display ke liye)
-    token_name   = "Unknown"
+    token_name = "Unknown"
     token_symbol = token_address[:6]
-    liquidity    = 0
-    volume_24h   = 0
+    liquidity = 0
+    volume_24h = 0
+
     try:
         nr = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{token_address}", timeout=6)
         if nr.status_code == 200:
-            _nraw = (nr.json() or {}).get("pairs") or []
+            _nj   = nr.json() or {}
+            _nraw = _nj.get("pairs") or []
             if not isinstance(_nraw, list): _nraw = []
             bsc_p = [p for p in _nraw if p and p.get("chainId") == "bsc"]
             if bsc_p:
                 bsc_p.sort(key=lambda x: float(((x.get("liquidity") or {}).get("usd") or 0)), reverse=True)
-                bt           = bsc_p[0].get("baseToken") or {}
+                bt = bsc_p[0].get("baseToken") or {}
                 token_name   = bt.get("name",   token_name)   or token_name
                 token_symbol = bt.get("symbol", token_symbol) or token_symbol
                 liquidity    = float(((bsc_p[0].get("liquidity") or {}).get("usd") or 0))
@@ -773,12 +752,15 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
         "source":     source,
     })
     print(f"🆕 [{source}] {token_symbol} | {token_name} ({token_address[:10]})")
-
-    # Queue mein daal do — koi thread spawn nahi
-    try:
-        _token_check_queue.put_nowait((token_address, pair_address, source))
-    except _queue_mod.Full:
-        print(f"⏭️ Queue full — skipping {token_address[:10]}")
+    _token_semaphore.release()
+    # MEM FIX: max 3 concurrent checkers
+    if not hasattr(_process_new_token, "_sem"):
+        _process_new_token._sem = threading.Semaphore(3)
+    def _run_check():
+        if not _process_new_token._sem.acquire(blocking=False): return
+        try: _auto_check_new_pair(token_address)
+        finally: _process_new_token._sem.release()
+    threading.Thread(target=_run_check, daemon=True).start()
 
 # ========== POSITION MONITOR ==========
 def add_position_to_monitor(session_id, token_address, token_name, entry_price, size_bnb, stop_loss_pct=15.0):
@@ -1531,7 +1513,7 @@ def continuous_learning():
             cycle += 1
             brain["total_learning_cycles"] = cycle
             now = time.time()
-            if now - last_fast >= 120:  # MEM FIX: was 60s, BNB price 2min old = negligible
+            if now - last_fast >= 120:  # MEM FIX: was 60
                 last_fast = now
             try:
                 fetch_market_data()
@@ -1621,7 +1603,9 @@ def feedback_validation_loop():
 
 # ========== AUTO CHECK NEW PAIR ==========
 def _auto_check_new_pair(pair_address: str):
-    # No semaphore needed — queue worker ensures single execution
+    if not _check_semaphore.acquire(blocking=False):
+        print(f"⏭️ Check skipped (10 already running): {pair_address[:10]}")
+        return
     try:
         print(f"⏳ Waiting 60s: {pair_address[:10]}")
         time.sleep(60)
@@ -1658,7 +1642,7 @@ def _auto_check_new_pair(pair_address: str):
         })
         knowledge_base["bsc"]["new_tokens"] = knowledge_base["bsc"]["new_tokens"][-20:]
     finally:
-        pass  # Queue worker handles next item automatically
+        _check_semaphore.release()
 
 
 # ========== FOUR.MEME NEW TOKEN POLLER ==========
@@ -2209,9 +2193,6 @@ def _startup_once():
         threading.Thread(target=fetch_market_data,                    daemon=True).start()
         import time as _st; _st.sleep(1)  # Health check ke liye port open rehne do
 
-        # ✅ Queue worker — single thread replaces all semaphore threads
-        threading.Thread(target=_queue_worker, daemon=True).start()
-
         # BNB price verify + retry (NON-BLOCKING FIX)
         def _delayed_bnb_retry():
             import time as _st
@@ -2417,8 +2398,8 @@ def chat():
         return jsonify({"reply": "🛑 Daily loss limit (8%) reach ho gaya. Kal fresh start karo!", "session_id": session_id})
     _extract_user_info_from_message(user_msg)
     sess["history"].append({"role": "user", "content": user_msg})
-    if len(sess["history"]) > 10:  # MEM FIX: was 20, LLM uses [-8:] anyway
-        sess["history"] = sess["history"][-10:]
+    if len(sess["history"]) > 10:  # MEM FIX: was 20
+        sess["history"] = sess["history"][-20:]
     reply = get_llm_reply(user_msg, sess["history"], sess)
     sess["history"].append({"role": "assistant", "content": reply})
     threading.Thread(target=learn_from_message, args=(user_msg, reply, session_id), daemon=True).start()
