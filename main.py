@@ -1770,6 +1770,7 @@ if _ws is not None:
         try:
             _cycle += 1
             _nc = time.time()
+            # Cleanup old entries
             discovered_addresses_clean = {k: v for k, v in discovered_addresses.items() if _nc - v < DISCOVERY_TTL}
             discovered_addresses.clear()
             discovered_addresses.update(discovered_addresses_clean)
@@ -1783,7 +1784,7 @@ if _ws is not None:
                             addr = item.get("tokenAddress","")
                             if addr:
                                 threading.Thread(target=_process_new_token, args=(addr, addr, "DexBoost"), daemon=True).start()
-            except: pass
+            except Exception: pass
 
             queries = ["new","moon","pepe","meme","inu","doge","safe","baby","elon","based"]
             q = queries[_cycle % len(queries)]
@@ -1795,11 +1796,10 @@ if _ws is not None:
                         addr = (p.get("baseToken") or {}).get("address","")
                         if addr:
                             threading.Thread(target=_process_new_token, args=(addr, p.get("pairAddress",""), "DexSearch"), daemon=True).start()
-            except: pass
+            except Exception: pass
         except Exception as e:
             print(f"⚠️ Fallback error: {e}")
         time.sleep(300)
-
 @app.route("/trading-data")
 def trading_data():
     try:
