@@ -270,17 +270,19 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
         <span id="auto-status-lbl" style="color:var(--txt2)">Loading...</span>
       </div>
     </div>
-    <div style="padding:12px 12px 0;">
-      <button class="auto-toggle off" id="auto-toggle-btn" onclick="toggleAuto()">
-        <span id="auto-toggle-icon">&#9654;</span>
-        <span id="auto-toggle-text">START AUTO TRADE</span>
+    <div style="padding:12px 12px 0;display:flex;gap:8px;">
+      <button class="auto-toggle on" id="auto-btn-start" onclick="startAuto()" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;">
+        <span>&#9654;</span><span>START</span>
+      </button>
+      <button class="auto-toggle" id="auto-btn-stop" onclick="stopAuto()" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--red);border-color:var(--red);opacity:0.4;pointer-events:none;">
+        <span>&#9646;&#9646;</span><span>STOP</span>
       </button>
     </div>
     <div class="ctrl-grid" style="margin-top:1px;">
       <button class="ctrl-btn danger" id="close-one-btn" onclick="closeOne()">
         <div class="ctrl-icon">&#128308;</div>
         <div class="ctrl-lbl">Close One</div>
-        <div class="ctrl-sub" id="close-one-sub">Worst position</div>
+        <div class="ctrl-sub" id="close-one-sub">Select to close</div>
       </button>
       <button class="ctrl-btn danger" onclick="resetAll()">
         <div class="ctrl-icon">&#128163;</div>
@@ -560,65 +562,57 @@ async function sendMsg(){
 }
 
 // ─── MAIN FETCH — FIX: Independent fetches + retry logic ────
+// ── Apply partial data from /trading-data immediately ──────────
+function _applyTD(td){
+  if(!td) return;
+  const bnb=parseFloat(td.bnb_price||0);
+  if(bnb>0){_bnbReal=bnb;document.getElementById('h-bnb').textContent='$'+bnb.toFixed(0);}
+  const fg=td.fear_greed||50;
+  const fgEl=document.getElementById('h-fg');
+  fgEl.textContent=fg;fgEl.style.color=fg>60?'var(--em)':fg<40?'var(--red)':'var(--gold)';
+  const bal=parseFloat(td.paper||5.0);
+  document.getElementById('b-bal').textContent=bal.toFixed(4)+' BNB';
+  if(bnb>0)document.getElementById('b-usd').textContent='approx $'+Math.round(bal*bnb).toLocaleString();
+  document.getElementById('sg-watch').textContent=td.monitoring||0;
+  document.getElementById('sg-scan').textContent=td.new_pairs_found||0;
+  setConn(true,'✅ Connected');
+}
+
 async function fetchStats(){
-  // FIX: Fetch independently — one failure won't block the other
-  // Fast partial load from /trading-data (201 bytes), full from /auto-stats (32KB)
-  const _tdFast = fetchJSON('/trading-data?session_id='+SID,{},10000).then(td=>{
-    if(td){
-      const bnb=parseFloat(td.bnb_price||0);
-      if(bnb>0){_bnbReal=bnb;document.getElementById('h-bnb').textContent='$'+bnb.toFixed(0);}
-      const fg=td.fear_greed||50;
-      const fgEl=document.getElementById('h-fg');
-      fgEl.textContent=fg;fgEl.style.color=fg>60?'var(--em)':fg<40?'var(--red)':'var(--gold)';
-    }
-    return td;
-  });
-  const [_as,_td]=await Promise.all([
-    fetchJSON('/auto-stats',{},45000),
-    _tdFast
-  ]);
-  if(!_as&&!_td){setConn(false,'⚡ Server se data nahi aa rha — retry...');return false;}
+  // Step 1: /trading-data se TURANT data dikhao (fast)
+  const tdPromise = fetchJSON('/trading-data?session_id='+SID,{},10000);
+  // Step 2: /auto-stats background mein
+  const asPromise = fetchJSON('/auto-stats',{},30000);
+  tdPromise.then(td=>{ if(td) _applyTD(td); });
+  const [_as,_td] = await Promise.all([asPromise, tdPromise]);
+  if(!_as && !_td){setConn(false,'⚡ Server se data nahi aa rha — retry...');return false;}
   setConn(true,'✅ MrBlack Connected');
-
-  // Sync auto-toggle button state
   if(_as) _setAutoUI(!!_as.enabled);
-
-  // Dynamic mode label
   const _modeEl=document.getElementById('hdr-mode');
   if(_modeEl&&_as){
     _modeEl.textContent=_as.enabled?'BSC SNIPER · AUTO ON':'BSC SNIPER · PAPER MODE';
   }
-
   const bnb=parseFloat((_as&&_as.bnb_price)||(_td&&_td.bnb_price)||0);
   const fg=(_td&&_td.fear_greed!=null)?_td.fear_greed:((_as&&_as.fear_greed)||50);
-
-  // FIX: Only show real BNB price — no fake animation
   if(bnb>0){_bnbReal=bnb;document.getElementById('h-bnb').textContent='$'+bnb.toFixed(0);}
-
   const fgEl=document.getElementById('h-fg');
   fgEl.textContent=fg;fgEl.style.color=fg>60?'var(--em)':fg<40?'var(--red)':'var(--gold)';
-
   const bal=_as?parseFloat(_as.paper_balance||5.0):parseFloat(_td&&_td.paper||5.0);
   document.getElementById('b-bal').textContent=bal.toFixed(4)+' BNB';
   if(bnb>0)document.getElementById('b-usd').textContent='approx $'+Math.round(bal*bnb).toLocaleString();
-
   const pnl=parseFloat((_as&&_as.total_pnl_pct)||0);
   const pEl=document.getElementById('b-pnl');
   pEl.textContent=(pnl>=0?'+':'')+pnl.toFixed(2)+'%';
   pEl.style.color=pnl>0?'var(--em)':pnl<0?'var(--red)':'var(--txt2)';
-
   document.getElementById('b-wr').textContent='Win Rate: '+(_as?_as.win_rate:0)+'%';
   document.getElementById('sg-scan').textContent=((_as&&_as.total_scanned)||(_td&&_td.new_pairs_found)||0).toLocaleString();
   document.getElementById('sg-watch').textContent=(_as&&_as.open_positions!=null?_as.open_positions:(_as&&_as.monitoring!=null?_as.monitoring:(_td&&_td.monitoring)||0));
   document.getElementById('sg-wins').textContent=(_as&&_as.wins)||0;
   document.getElementById('sg-losses').textContent=(_as&&_as.losses)||0;
-
   if(_as){
     renderGHolding(_as.open_trades||_as.positions||[]);
     window._lastStats=_as;
-    // Trades tab — only render if visible
     if(document.getElementById('gtab-trades')&&document.getElementById('gtab-trades').style.display!=='none')window._renderTPage();
-    // Open trades list
     if(_as.open_trades&&_as.open_trades.length){
       renderTrades(_as.open_trades);
     } else if(_as.positions&&Object.keys(_as.positions).length){
@@ -633,6 +627,7 @@ async function fetchStats(){
   document.getElementById('ts').textContent='Live · '+nowIST();
   return true;
 }
+
 
 // ─── INIT — retry on cold start ──────────────────────────────
 async function init(){
@@ -663,33 +658,64 @@ let _autoEnabled = false;
 
 function _setAutoUI(enabled){
   _autoEnabled = enabled;
-  const btn=document.getElementById('auto-toggle-btn');
   const dot=document.getElementById('auto-dot');
   const lbl=document.getElementById('auto-status-lbl');
-  const icon=document.getElementById('auto-toggle-icon');
-  const text=document.getElementById('auto-toggle-text');
-  if(!btn)return;
+  const btnStart=document.getElementById('auto-btn-start');
+  const btnStop=document.getElementById('auto-btn-stop');
   if(enabled){
-    btn.className='auto-toggle on';icon.textContent='⏸';text.textContent='STOP AUTO TRADE';
-    dot.className='ctrl-dot on';lbl.textContent='AUTO ON';lbl.style.color='var(--em)';
+    if(btnStart){btnStart.className='auto-toggle off';btnStart.style.opacity='0.4';btnStart.style.pointerEvents='none';}
+    if(btnStop){btnStop.style.opacity='1';btnStop.style.pointerEvents='auto';btnStop.className='auto-toggle on';}
+    if(dot)dot.className='ctrl-dot on';
+    if(lbl){lbl.textContent='AUTO ON';lbl.style.color='var(--em)';}
   } else {
-    btn.className='auto-toggle off';icon.textContent='▶';text.textContent='START AUTO TRADE';
-    dot.className='ctrl-dot off';lbl.textContent='AUTO OFF';lbl.style.color='var(--red)';
+    if(btnStart){btnStart.className='auto-toggle on';btnStart.style.opacity='1';btnStart.style.pointerEvents='auto';}
+    if(btnStop){btnStop.style.opacity='0.4';btnStop.style.pointerEvents='none';btnStop.className='auto-toggle off';}
+    if(dot)dot.className='ctrl-dot off';
+    if(lbl){lbl.textContent='AUTO OFF';lbl.style.color='var(--red)';}
   }
 }
 function _ctrlLog(msg){const el=document.getElementById('last-ctrl-action');if(el)el.textContent='['+nowIST()+'] '+msg;}
 
-async function toggleAuto(){
-  const btn=document.getElementById('auto-toggle-btn');btn.disabled=true;
-  const d=await fetchJSON('/toggle-auto',{method:'POST'},10000);btn.disabled=false;
-  if(!d){showToast('❌ Server error');_ctrlLog('Toggle failed');return;}
-  _setAutoUI(d.enabled);
-  const msg=d.enabled?'✅ Auto Trade STARTED':'⏸️ Auto Trade STOPPED';
-  showToast(msg);_ctrlLog(msg);
+async function startAuto(){
+  if(_autoEnabled){showToast('ℹ️ Already running');return;}
+  document.getElementById('modal-title').textContent='▶ Auto Trade Start?';
+  document.getElementById('modal-sub').textContent='Bot automatically tokens buy/sell karega';
+  document.getElementById('modal-pnl').textContent='';
+  document.getElementById('modal-pnl').className='pnl-big';
+  document.getElementById('modal-body').innerHTML='<div style="padding:16px 0 8px;font-size:13px;color:var(--txt2);line-height:1.6;">Auto Trade <b style="color:var(--em)">ON</b> karne ke baad bot apne aap paper positions lega aur close karega.<br><br>Confirm karo?</div>';
+  document.getElementById('modal-actions').innerHTML=
+    '<button class="mbtn dark" onclick="closeModal()" style="flex:1;">✕ Cancel</button>'+
+    '<button class="mbtn" onclick="closeModal();_doStartAuto();" style="flex:1;background:var(--em);color:#000;font-weight:800;">▶ YES, START</button>';
+  showModal();
+}
+async function _doStartAuto(){
+  const btn=document.getElementById('auto-btn-start');if(btn)btn.disabled=true;
+  const d=await fetchJSON('/toggle-auto',{method:'POST'},10000);if(btn)btn.disabled=false;
+  if(!d){showToast('❌ Server error');_ctrlLog('Start failed');return;}
+  _setAutoUI(true);
+  showToast('✅ Auto Trade STARTED');_ctrlLog('✅ Auto Trade STARTED');
+}
+async function stopAuto(){
+  if(!_autoEnabled){showToast('ℹ️ Already stopped');return;}
+  document.getElementById('modal-title').textContent='⏸ Auto Trade Stop?';
+  document.getElementById('modal-sub').textContent='Bot naye trades nahi lega';
+  document.getElementById('modal-pnl').textContent='';
+  document.getElementById('modal-pnl').className='pnl-big';
+  document.getElementById('modal-body').innerHTML='<div style="padding:16px 0 8px;font-size:13px;color:var(--txt2);line-height:1.6;">Auto Trade <b style="color:var(--red)">STOP</b> karne par bot koi naya trade nahi lega.<br><br>Existing open positions safe rahenge.<br><br>Confirm karo?</div>';
+  document.getElementById('modal-actions').innerHTML=
+    '<button class="mbtn dark" onclick="closeModal()" style="flex:1;">✕ Cancel</button>'+
+    '<button class="mbtn" onclick="closeModal();_doStopAuto();" style="flex:1;background:var(--red);color:#fff;font-weight:800;">⏸ YES, STOP</button>';
+  showModal();
+}
+async function _doStopAuto(){
+  const btn=document.getElementById('auto-btn-stop');if(btn)btn.disabled=true;
+  const d=await fetchJSON('/toggle-auto',{method:'POST'},10000);if(btn)btn.disabled=false;
+  if(!d){showToast('❌ Server error');_ctrlLog('Stop failed');return;}
+  _setAutoUI(false);
+  showToast('⏸️ Auto Trade STOPPED');_ctrlLog('⏸️ Auto Trade STOPPED');
 }
 
 async function closeOne(){
-  // Position picker modal
   const stats = window._lastStats;
   const pos = stats&&stats.positions ? stats.positions : {};
   const trades = stats&&stats.open_trades ? stats.open_trades : [];
@@ -699,32 +725,33 @@ async function closeOne(){
   } else {
     items = Object.entries(pos).map(([addr,p])=>({addr, tok:p.token||addr.slice(2,8), pnl:parseFloat(p.pnl_pct||0), sz:(p.size_bnb||p.size||0)+' BNB'}));
   }
-  if(!items.length){showToast('ℹ️ Koi open position nahi');_ctrlLog('No positions');return;}
-  document.getElementById('modal-title').textContent='🔴 Close Position';
-  document.getElementById('modal-sub').textContent='Jis position ko band karna hai usse select karo';
+  if(!items.length){showToast('ℹ️ Koi open position nahi hai');_ctrlLog('No open positions');return;}
+  items.sort((a,b)=>a.pnl-b.pnl);
+  document.getElementById('modal-title').textContent='🔴 Open Positions ('+items.length+')';
+  document.getElementById('modal-sub').textContent='Jo position close karni ho — tap karo';
   document.getElementById('modal-pnl').textContent='';
   document.getElementById('modal-pnl').className='pnl-big';
   document.getElementById('modal-body').innerHTML = items.map((it)=>{
     const cls=it.pnl>=0?'var(--em)':'var(--red)';
-    const sym=(it.tok&&!it.tok.startsWith('0x'))?it.tok.slice(0,10).toUpperCase():it.addr.slice(2,8).toUpperCase();
-    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--line);cursor:pointer;" onclick="confirmClose(''+it.addr+'',''+sym+'')">'+
-      '<div style="display:flex;align-items:center;gap:10px;">'+
-        '<div style="width:36px;height:36px;border-radius:10px;background:var(--ink3);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:var(--em);font-family:JetBrains Mono,monospace;">'+sym.slice(0,4)+'</div>'+
-        '<div>'+
-          '<div style="font-size:13px;font-weight:700;">'+sym+'</div>'+
-          '<div style="font-size:10px;color:var(--txt2);font-family:JetBrains Mono,monospace;">'+it.sz+'</div>'+
-        '</div>'+
-      '</div>'+
-      '<div style="text-align:right;">'+
-        '<div style="font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:'+cls+'">'+(it.pnl>=0?'+':'')+it.pnl.toFixed(1)+'%</div>'+
-        '<div style="font-size:10px;color:var(--red);font-weight:700;">TAP TO CLOSE</div>'+
-      '</div>'+
-    '</div>';
+    const sym=(it.tok&&!it.tok.startsWith('0x'))?it.tok.slice(0,12).toUpperCase():it.addr.slice(2,8).toUpperCase();
+    const badge=it.pnl<=-20?'🔴':it.pnl<0?'🟠':it.pnl>=50?'🟢':'🔵';
+    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--line);cursor:pointer;" onclick="confirmClose(''+it.addr+'',''+sym+'')">'
+      +'<div style="display:flex;align-items:center;gap:12px;">'
+        +'<div style="width:40px;height:40px;border-radius:12px;background:var(--ink3);border:1.5px solid var(--line2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:var(--em);font-family:JetBrains Mono,monospace;">'+sym.slice(0,4)+'</div>'
+        +'<div>'
+          +'<div style="font-size:14px;font-weight:800;">'+badge+' '+sym+'</div>'
+          +'<div style="font-size:10px;color:var(--txt2);font-family:JetBrains Mono,monospace;margin-top:2px;">'+it.sz+' · '+it.addr.slice(0,8)+'...</div>'
+        +'</div>'
+      +'</div>'
+      +'<div style="text-align:right;min-width:72px;">'
+        +'<div style="font-family:JetBrains Mono,monospace;font-size:15px;font-weight:900;color:'+cls+'">'+(it.pnl>=0?'+':'')+it.pnl.toFixed(1)+'%</div>'
+        +'<div style="font-size:9px;color:var(--red);font-weight:700;letter-spacing:0.5px;margin-top:2px;">● CLOSE</div>'
+      +'</div>'
+    +'</div>';
   }).join('');
-  document.getElementById('modal-actions').innerHTML='<button class="mbtn dark" onclick="closeModal()">✕ Cancel</button>';
+  document.getElementById('modal-actions').innerHTML='<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Cancel</button>';
   showModal();
 }
-
 async function confirmClose(addr, sym){
   closeModal();
   showToast('🔴 Closing '+sym+'...');
