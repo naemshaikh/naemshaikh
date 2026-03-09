@@ -1381,7 +1381,6 @@ def _learn_trading_patterns():
 def _deep_llm_learning():
     """Deep learning cycle — runs every 15 mins"""
     try:
-        _learn_from_internet_data()
         _ensure_brain_structure()
         print(f"Deep learning done | W:{len(brain['trading']['best_patterns'])} L:{len(brain['trading']['avoid_patterns'])}")
     except Exception as e:
@@ -1516,8 +1515,6 @@ def continuous_learning():
         except Exception as e:
             print(f"Learning cycle error: {e}")
         import gc; gc.collect()  # periodic RAM cleanup
-        import gc; gc.collect()
-        import gc; gc.collect()
         time.sleep(60)
 
 # ========== FEEDBACK LOOP ==========
@@ -1967,6 +1964,7 @@ def log_trade_internal(session_id: str, trade: Dict):
     if not isinstance(sess.get("pattern_database"), list):
         sess["pattern_database"] = []
     sess["pattern_database"].append(lesson)
+    sess["pattern_database"] = sess["pattern_database"][-100:]  # trim
     sess["trade_count"] += 1
     if win:
         sess["win_count"] += 1
@@ -2378,7 +2376,7 @@ def new_pairs():
 
 @app.route("/smart-wallets", methods=["GET"])
 def smart_wallets():
-    return jsonify({"wallets": SMART_WALLETS, "count": len(SMART_WALLETS), "tracking": len(smart_wallet_snapshots)})
+    return jsonify({"wallets": SMART_WALLETS, "count": len(SMART_WALLETS), "tracking": 0})
 
 @app.route("/log-trade", methods=["POST"])
 def log_trade_route():
