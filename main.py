@@ -1781,7 +1781,7 @@ if _ws is not None:
                     boosts = rb.json() if isinstance(rb.json(), list) else []
                     for item in boosts[:5]:
                         if item.get("chainId") == "bsc":
-                            addr = item.get("tokenAddress","")
+                            addr = item.get("tokenAddress", "")
                             if addr:
                                 threading.Thread(target=_process_new_token, args=(addr, addr, "DexBoost"), daemon=True).start()
             except Exception: pass
@@ -1791,11 +1791,11 @@ if _ws is not None:
             try:
                 rs = requests.get(f"https://api.dexscreener.com/latest/dex/search?q={q}", timeout=10)
                 if rs.status_code == 200:
-                    _dex_pairs = [p for p in (rs.json() or {}).get("pairs",[]) or [] if p and p.get("chainId") == "bsc"]
+                    _dex_pairs = [p for p in (rs.json() or {}).get("pairs", []) if p and p.get("chainId") == "bsc"]
                     for p in _dex_pairs[:5]:
-                        addr = (p.get("baseToken") or {}).get("address","")
+                        addr = (p.get("baseToken") or {}).get("address", "")
                         if addr:
-                            threading.Thread(target=_process_new_token, args=(addr, p.get("pairAddress",""), "DexSearch"), daemon=True).start()
+                            threading.Thread(target=_process_new_token, args=(addr, p.get("pairAddress", ""), "DexSearch"), daemon=True).start()
             except Exception: pass
         except Exception as e:
             print(f"⚠️ Fallback error: {e}")
