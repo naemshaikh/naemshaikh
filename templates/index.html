@@ -728,10 +728,17 @@ async function init(){
   await Promise.all([fetchActivity(),fetchHistory()]);
 }
 
-init();
+// Pehle ek baar call
+fetchStats();
+fetchActivity();
+fetchHistory();
+
+// Phir interval
 setInterval(fetchStats,8000);
 setInterval(fetchActivity,15000);
 setInterval(fetchHistory,30000);
+
+init();
 
 // ══════════════ GMGN UI ══════════════
 
