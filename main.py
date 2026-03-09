@@ -698,6 +698,10 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
         cutoff = _now - DISCOVERY_TTL
         for k in [k for k, v in list(discovered_addresses.items()) if v < cutoff][:100]:
             del discovered_addresses[k]
+    if len(discovered_addresses) > 500:
+        cutoff = _now - DISCOVERY_TTL
+        for k in [k for k, v in list(discovered_addresses.items()) if v < cutoff][:100]:
+            del discovered_addresses[k]
     discovered_addresses[token_address] = _now
     brain["total_tokens_discovered_ever"] += 1
 
@@ -1645,6 +1649,7 @@ def continuous_learning():
         except Exception as e:
             print(f"Learning cycle error: {e}")
         import gc; gc.collect()  # periodic RAM cleanup
+        import gc; gc.collect()
         import gc; gc.collect()
         time.sleep(60)
 
