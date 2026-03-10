@@ -2598,22 +2598,6 @@ def auto_stats_route():
         "open_positions": len(sess.get("positions", [])),
         "monitoring": len(monitored_positions)
     })
-        "paper_balance":  sess.get("paper_balance", 5.0),
-        "trade_count":    _tc,
-        "win_rate":       round(_wc/max(_tc,1)*100, 1),
-        "win_count":      _wc,
-        "wins":           max(_th_wins, auto_trade_stats.get("wins", 0)),
-        "losses":         max(max(0, _th_total - _th_wins), auto_trade_stats.get("losses", 0)),
-        "last_action":    auto_trade_stats["last_action"],
-        "total_scanned":  max(len(discovered_addresses), brain.get("total_tokens_discovered_ever", 0)),
-        "monitoring":     len(monitored_positions),
-        "open_trades":    _open_trades,
-        "bnb_price":      market_cache.get("bnb_price", 0),
-        "fear_greed":     market_cache.get("fear_greed", 50),
-        "trade_history":  auto_trade_stats.get("trade_history", [])[-20:],
-    })
-
-
 @app.route("/toggle-auto", methods=["POST"])
 def toggle_auto():
     global AUTO_TRADE_ENABLED
