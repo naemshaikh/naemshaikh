@@ -2577,57 +2577,20 @@ def introspect():
     observation = self_introspect()
     return jsonify({"status": "ok", "observation": observation})
 
+
 @app.route("/auto-stats", methods=["GET"])
 def auto_stats_route():
-
-
-    sess = sessions.get(AUTO_SESSION_ID, {"paper_balance":5.0,"trade_count":0,"win_count":0,"loss_count":0,"positions":[],"pnl":0,"total_scanned":0})
-    positions_info = {}
-    for k, v in auto_trade_stats["running_positions"].items():
-        entry   = v.get("entry", 0)
-        current = monitored_positions.get(k, {}).get("current", entry)
-        pnl     = ((current - entry) / entry * 100) if entry > 0 else 0
-        # FIX 6: No duplicate keys, bought_at added
-        # Token name: agar address jaisa naam hai toh short address use karo
-        _tok = v.get("token", k[:8])
-        if not _tok or _tok.startswith("0x") or len(_tok) > 20:
-            _tok = k[2:8].upper()  # e.g. "3A5C1A"
-        positions_info[k] = {
-            "token":     _tok,
-            "address":   k,
-            "pnl_pct":   round(pnl, 2),
-            "size":      float(v.get("size_bnb", 0) or 0),
-            "size_bnb":  float(v.get("size_bnb", 0) or 0),
-            "entry":     f"${entry:.10f}",
-            "current":   f"${current:.10f}",
-            "mcap":      "MCap ?",
-            "age":       "Active",
-            "bought_at": v.get("bought_at", ""),
-        }
-    # FIX: trade_count from both session AND trade_history (more accurate)
-    _th_total = len(auto_trade_stats.get("trade_history", []))
-    _th_wins  = sum(1 for t in auto_trade_stats.get("trade_history", []) if t.get("result") == "win")
-    _tc = max(sess.get("trade_count", 0), _th_total)
-    _wc = max(sess.get("win_count",   0), _th_wins)
-    # Build clean open_trades list (single, no duplicate)
-    _open_trades = [
-        {
-            "address":   k,
-            "token":     (v.get("token","") if v.get("token","") and not v.get("token","").startswith("0x") and len(v.get("token",""))<=20 else k[2:8].upper()),
-            "entry":     f"${v.get('entry', 0):.10f}",
-            "current":   f"${monitored_positions.get(k,{}).get('current', v.get('entry',0)):.10f}",
-            "pnl":       round(
-                ((monitored_positions.get(k,{}).get('current', v.get('entry',0)) - v.get('entry',0))
-                 / max(v.get('entry',0), 1e-18)) * 100, 2),
-            "size":      f"{float(v.get('size_bnb', 0) or 0):.4f} BNB",
-            "size_bnb":  float(v.get('size_bnb', 0) or 0),
-            "bought_at": v.get("bought_at", ""),
-        }
-        for k, v in auto_trade_stats.get("running_positions", {}).items()
-    ]
+    sess = sessions.get(AUTO_SESSION_ID, {"paper_balance":5.0,"trade_count":0,"win_count":0,"loss_count":0,"positions":[]})
     return jsonify({
-        "enabled":        AUTO_TRADE_ENABLED,
-        "open_positions": len(auto_trade_stats["running_positions"]),
+        "paper_balance": sess.get("paper_balance",5.0),
+        "trade_count": sess.get("trade_count",0),
+        "wins": sess.get("win_count",0),
+        "losses": sess.get("loss_count",0),
+        "total_scanned": len(new_pairs_queue),
+        "open_positions": len(sess.get("positions",[])),
+        "monitoring": len(monitored_positions)
+    })
+,
         "positions":      positions_info,
         "total_buys":     auto_trade_stats["total_auto_buys"],
         "total_sells":    auto_trade_stats["total_auto_sells"],
