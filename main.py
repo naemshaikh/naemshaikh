@@ -2153,6 +2153,12 @@ def _startup_once():
                 print("Brain loaded")
             except Exception as e:
                 print(f"Brain error: {e}")
+            try:
+                # AUTO session pre-warm — pehli HTTP request block na ho
+                get_or_create_session(AUTO_SESSION_ID)
+                print("✅ AUTO session ready")
+            except Exception as e:
+                print(f"Session error: {e}")
 
         threading.Thread(target=_bg_init,                             daemon=True).start()
         threading.Thread(target=fetch_market_data,                    daemon=True).start()
