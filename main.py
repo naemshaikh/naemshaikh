@@ -2581,22 +2581,28 @@ def introspect():
 
 @app.route("/auto-stats", methods=["GET"])
 def auto_stats_route():
-    sess = sessions.get(AUTO_SESSION_ID, {
-        "paper_balance": 5.0,
-        "trade_count": 0,
-        "win_count": 0,
-        "loss_count": 0,
-        "positions": []
-    })
+    try:
+        sess = sessions.get(AUTO_SESSION_ID, {
+            "paper_balance": 5.0,
+            "trade_count": 0,
+            "win_count": 0,
+            "loss_count": 0,
+            "positions": []
+        })
+    except Exception:
+        sess = {
+            "paper_balance": 5.0,
+            "trade_count": 0,
+            "win_count": 0,
+            "loss_count": 0,
+            "positions": []
+        }
 
     trade_count = sess.get("trade_count", 0)
     win_count = sess.get("win_count", 0)
     loss_count = sess.get("loss_count", 0)
 
-    # Calculate win_rate safely
     win_rate = round((win_count / max(trade_count, 1)) * 100, 1)
-
-    # Simple pnl calculation (replace with your actual logic)
     pnl = round((win_count - loss_count) * 0.5, 2)
 
     return jsonify({
