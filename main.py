@@ -2590,6 +2590,7 @@ def auto_stats_route():
             "positions": []
         })
     except Exception:
+        # Fallback agar Supabase query fail ho
         sess = {
             "paper_balance": 5.0,
             "trade_count": 0,
