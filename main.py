@@ -2323,9 +2323,9 @@ def trading_data():
         session_id = (request.get_json() or {}).get("session_id", "default")
     else:
         session_id = request.args.get("session_id", "default")
-    sess      = get_or_create_session(session_id)
+    sess      = sessions.get(session_id) or get_or_create_session(session_id)
     bnb_price = market_cache.get("bnb_price", 0)
-    _auto_sess_td = get_or_create_session(AUTO_SESSION_ID)
+    _auto_sess_td = sessions.get(AUTO_SESSION_ID, {"paper_balance": 5.0})
     return jsonify({
         "paper":          f"{_auto_sess_td.get('paper_balance', 5.0):.4f}",
         "real":           f"{sess.get('real_balance', 0):.3f}",
@@ -2581,7 +2581,7 @@ def introspect():
 def auto_stats_route():
 
 
-    sess = get_or_create_session(AUTO_SESSION_ID)
+    sess = sessions.get(AUTO_SESSION_ID, {"paper_balance": 5.0, "trade_count": 0, "win_count": 0})
     positions_info = {}
     for k, v in auto_trade_stats["running_positions"].items():
         entry   = v.get("entry", 0)
