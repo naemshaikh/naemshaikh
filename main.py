@@ -658,7 +658,8 @@ auto_trade_stats = {
     "losses":            0,
 }
 
-# Telegram removed — alerts via UI/logs only
+# Telegram removed
+
 
 # ========== PROCESS NEW TOKEN ==========
 def _process_new_token(token_address: str, pair_address: str, source: str = "websocket"):
@@ -913,7 +914,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     })
     threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
     _display_name = token_name if (token_name and not token_name.startswith("0x") and len(token_name) < 20) else address[:12]
-    pass  # telegram removed
+    pass
     print(f"AUTO BUY: {address[:10]} @ {entry_price:.10f} size={size_bnb:.4f}")
 
 # ========== AUTO PAPER SELL ==========  FIX 3: All variable names fixed
@@ -1012,7 +1013,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
 
     threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
     emoji = "GREEN" if pnl_pct > 0 else "RED"
-    print(f"AUTO SELL {sell_pct:.0f}%: {address[:10]} PnL:{pnl_pct:+.1f}% [{reason}] [{emoji}]")
+
+    print(f"AUTO SELL {sell_pct:.0f}%: {address[:10]} PnL:{pnl_pct:+.1f}% [{reason}]")
 
 # ========== AUTO POSITION MANAGER ==========
 def auto_position_manager():
@@ -1084,28 +1086,28 @@ def price_monitor_loop():
 
                 if pnl_pct <= -sl and "stop_loss" not in alerts_sent:
                     alerts_sent.append("stop_loss")
-                    pass  # telegram removed
+                    pass
                 if pnl_pct >= 200 and "tp_200" not in alerts_sent:
                     alerts_sent.append("tp_200")
-                    pass  # telegram removed
+                    pass
                 elif pnl_pct >= 100 and "tp_100" not in alerts_sent:
                     alerts_sent.append("tp_100")
-                    pass  # telegram removed
+                    pass
                 elif pnl_pct >= 50 and "tp_50" not in alerts_sent:
                     alerts_sent.append("tp_50")
-                    pass  # telegram removed
+                    pass
                 elif pnl_pct >= 30 and "tp_30" not in alerts_sent:
                     alerts_sent.append("tp_30")
-                    pass  # telegram removed
+                    pass
                 if drop_from_high <= -90 and "dump_90" not in alerts_sent:
                     alerts_sent.append("dump_90")
-                    pass  # telegram removed
+                    pass
                 elif drop_from_high <= -70 and "dump_70" not in alerts_sent:
                     alerts_sent.append("dump_70")
-                    pass  # telegram removed
+                    pass
                 elif drop_from_high <= -50 and "dump_50" not in alerts_sent:
                     alerts_sent.append("dump_50")
-                    pass  # telegram removed
+                    pass
             except Exception as e:
                 print(f"⚠️ Price monitor error ({addr}): {e}")
         time.sleep(5)  # MEM FIX: 1s→5s saves 80% RAM
@@ -1339,7 +1341,7 @@ def _check_milestones():
         for condition, title in checks:
             if condition and title not in achieved:
                 milestones.append({"title": title, "achieved_at": datetime.utcnow().isoformat()})
-                pass  # telegram removed
+                pass
         self_awareness["growth_tracking"]["milestones"] = milestones
     except Exception as e:
         print(f"Milestone error: {e}")
@@ -1494,7 +1496,7 @@ def continuous_learning():
                         "updated_at": datetime.utcnow().isoformat()
                     }).execute()
             except Exception: pass
-            if now - last_deep >= 300:  # was 900s — caused brain loss on restart
+            if now - last_deep >= 300:
                 last_deep = now
                 _deep_llm_learning()
                 update_self_awareness()
@@ -1503,6 +1505,7 @@ def continuous_learning():
             if now - last_hour >= 3600:
                 last_hour = now
                 _check_milestones()
+
         except Exception as e:
             print(f"Learning cycle error: {e}")
         import gc; gc.collect()  # periodic RAM cleanup
@@ -1586,7 +1589,7 @@ def _auto_check_new_pair(pair_address: str):
         print(f"📊 Score: {score}/{total} = {round(score/max(total,1)*100)}% | SAFE needs:{int(total*0.40)} CAUTION needs:{int(total*0.35)}")  # FIX3: debug
 
         if overall in ["SAFE", "CAUTION"]:
-            pass  # telegram removed
+            pass
         if overall == "SAFE" and score >= int(total * 0.40):  # FIX2: 50%→40%
             try: _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
             except Exception as e: print(f"Auto buy error: {e}")
@@ -2123,15 +2126,14 @@ _startup_lock = threading.Lock()
 
 def _startup_once():
     """
-    FIX: Koi bhi blocking call nahi — sab background threads mein.
-    Gunicorn turant respond karta hai, Render health check PASS hoga.
+    Worker startup — gunicorn.conf.py post_fork hook se call hota hai.
+    Sirf ek baar chalta hai per worker.
     """
     global _startup_done
     if _startup_done: return
     with _startup_lock:
         if _startup_done: return
-        _startup_done = True  # IMMEDIATELY done — routes unblock ho jayenge
-
+        _startup_done = True
         import time as _time
         def _delayed(fn, delay):
             def _wrap():
@@ -2139,36 +2141,32 @@ def _startup_once():
                 fn()
             return _wrap
 
-        # FIX: Supabase calls background mein — main thread NEVER block hoga
         def _bg_init():
             try:
                 _load_user_profile()
-                print(f"\u2705 Profile: {user_profile.get('name')}")
+                print("Profile loaded")
             except Exception as e:
-                print(f"\u26a0\ufe0f Profile error: {e}")
+                print(f"Profile error: {e}")
             try:
                 _load_brain_from_db()
                 _ensure_brain_structure()
-                print(f"\u2705 Brain: cycles={brain.get('total_learning_cycles',0)}")
+                print("Brain loaded")
             except Exception as e:
-                print(f"\u26a0\ufe0f Brain error: {e}")
+                print(f"Brain error: {e}")
 
-        threading.Thread(target=_bg_init,                                     daemon=True).start()
-        threading.Thread(target=fetch_market_data,                            daemon=True).start()
+        threading.Thread(target=_bg_init,                             daemon=True).start()
+        threading.Thread(target=fetch_market_data,                    daemon=True).start()
 
-        # BNB price retry if still 0 after 15s
-        def _delayed_bnb_retry():
+        def _bnb_retry():
             _time.sleep(15)
             if market_cache.get("bnb_price", 0) == 0:
-                print("\u26a0\ufe0f BNB price not loaded, retrying...")
                 fetch_market_data()
-        threading.Thread(target=_delayed_bnb_retry,                           daemon=True).start()
-
-        threading.Thread(target=_delayed(poll_new_pairs,        10),          daemon=True).start()
-        threading.Thread(target=_delayed(poll_four_meme,         20),         daemon=True).start()
-        threading.Thread(target=_delayed(price_monitor_loop,    15),          daemon=True).start()
-        threading.Thread(target=_delayed(continuous_learning,   25),          daemon=True).start()
-        threading.Thread(target=_delayed(auto_position_manager, 30),          daemon=True).start()
+        threading.Thread(target=_bnb_retry,                           daemon=True).start()
+        threading.Thread(target=_delayed(poll_new_pairs,        10),  daemon=True).start()
+        threading.Thread(target=_delayed(poll_four_meme,         20), daemon=True).start()
+        threading.Thread(target=_delayed(price_monitor_loop,    15),  daemon=True).start()
+        threading.Thread(target=_delayed(continuous_learning,   25),  daemon=True).start()
+        threading.Thread(target=_delayed(auto_position_manager, 30),  daemon=True).start()
         def _startup_restore():
             try:
                 if supabase:
@@ -2649,7 +2647,7 @@ def toggle_auto():
     global AUTO_TRADE_ENABLED
     AUTO_TRADE_ENABLED = not AUTO_TRADE_ENABLED
     status = "STARTED" if AUTO_TRADE_ENABLED else "PAUSED"
-    pass  # telegram removed
+    pass
     print(f"🤖 Auto Trade toggled: {status}")
     return jsonify({"enabled": AUTO_TRADE_ENABLED, "status": status})
 
