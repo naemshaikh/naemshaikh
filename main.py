@@ -2581,17 +2581,23 @@ def introspect():
 
 @app.route("/auto-stats", methods=["GET"])
 def auto_stats_route():
-    sess = sessions.get(AUTO_SESSION_ID, {"paper_balance":5.0,"trade_count":0,"win_count":0,"loss_count":0,"positions":[]})
-    return jsonify({
-        "paper_balance": sess.get("paper_balance",5.0),
-        "trade_count": sess.get("trade_count",0),
-        "wins": sess.get("win_count",0),
-        "losses": sess.get("loss_count",0),
-        "total_scanned": len(new_pairs_queue),
-        "open_positions": len(sess.get("positions",[])),
-        "monitoring": len(monitored_positions)
+    sess = sessions.get(AUTO_SESSION_ID, {
+        "paper_balance": 5.0,
+        "trade_count": 0,
+        "win_count": 0,
+        "loss_count": 0,
+        "positions": []
     })
-        "paper_balance": sess.get("paper_balance",5.0),
+
+    return jsonify({
+        "paper_balance": sess.get("paper_balance", 5.0),
+        "trade_count": sess.get("trade_count", 0),
+        "wins": sess.get("win_count", 0),
+        "losses": sess.get("loss_count", 0),
+        "total_scanned": len(new_pairs_queue),
+        "open_positions": len(sess.get("positions", [])),
+        "monitoring": len(monitored_positions)
+    }),
         "trade_count": sess.get("trade_count",0),
         "wins": sess.get("win_count",0),
         "losses": sess.get("loss_count",0),
