@@ -2589,11 +2589,23 @@ def auto_stats_route():
         "positions": []
     })
 
+    trade_count = sess.get("trade_count", 0)
+    win_count = sess.get("win_count", 0)
+    loss_count = sess.get("loss_count", 0)
+
+    # Calculate win_rate safely
+    win_rate = round((win_count / max(trade_count, 1)) * 100, 1)
+
+    # Simple pnl calculation (replace with your actual logic)
+    pnl = round((win_count - loss_count) * 0.5, 2)
+
     return jsonify({
         "paper_balance": sess.get("paper_balance", 5.0),
-        "trade_count": sess.get("trade_count", 0),
-        "wins": sess.get("win_count", 0),
-        "losses": sess.get("loss_count", 0),
+        "trade_count": trade_count,
+        "wins": win_count,
+        "losses": loss_count,
+        "win_rate": win_rate,
+        "pnl": pnl,
         "total_scanned": len(new_pairs_queue),
         "open_positions": len(sess.get("positions", [])),
         "monitoring": len(monitored_positions)
