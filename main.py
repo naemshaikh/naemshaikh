@@ -2589,8 +2589,8 @@ def auto_stats_route():
             "loss_count": 0,
             "positions": []
         })
-    except Exception:
-        # Fallback agar Supabase query fail ho
+    except Exception as e:
+        print("⚠️ Supabase error:", str(e))
         sess = {
             "paper_balance": 5.0,
             "trade_count": 0,
