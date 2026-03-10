@@ -2597,7 +2597,8 @@ def auto_stats_route():
         "total_scanned": len(new_pairs_queue),
         "open_positions": len(sess.get("positions", [])),
         "monitoring": len(monitored_positions)
-    }),
+    return jsonify({
+        "paper_balance": sess.get("paper_balance",5.0),
         "trade_count": sess.get("trade_count",0),
         "wins": sess.get("win_count",0),
         "losses": sess.get("loss_count",0),
@@ -2605,7 +2606,6 @@ def auto_stats_route():
         "open_positions": len(sess.get("positions",[])),
         "monitoring": len(monitored_positions)
     })
-,
         "positions":      positions_info,
         "total_buys":     auto_trade_stats["total_auto_buys"],
         "total_sells":    auto_trade_stats["total_auto_sells"],
