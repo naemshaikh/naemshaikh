@@ -2299,8 +2299,7 @@ def home():
 
 @app.route("/init-session", methods=["POST"])
 def init_session():
-    if not _startup_done:
-        return jsonify({"status": "starting"})
+
     data = request.get_json() or {}
     client_id = data.get("client_id", "").strip()
     session_id = client_id if (client_id and len(client_id) > 10) else str(uuid.uuid4())
@@ -2576,11 +2575,7 @@ def introspect():
 
 @app.route("/auto-stats", methods=["GET"])
 def auto_stats_route():
-    if not _startup_done:
-        return jsonify({"enabled":False,"paper_balance":5.0,"bnb_price":0,
-            "fear_greed":50,"open_positions":0,"open_trades":[],"positions":{},
-            "total_scanned":0,"wins":0,"losses":0,"win_rate":0,
-            "total_pnl_pct":0,"monitoring":0,"status":"starting"})
+
 
     sess = get_or_create_session(AUTO_SESSION_ID)
     positions_info = {}
