@@ -752,7 +752,7 @@ window.onerror=function(msg,src,line){dbg('❌ JS ERROR: '+msg+' L'+line);return
 
 async function fetchStats(){
   try {
-  const tdPromise = fetchJSON('/trading-data?session_id='+SID,{},10000);
+  const tdPromise = fetchJSON('/trading-data',{},10000);
   // Step 2: /auto-stats (8s timeout)
   const asPromise = fetchJSON('/auto-stats',{},15000);
   tdPromise.then(td=>{ if(td) _applyTD(td); });
