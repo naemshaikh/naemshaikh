@@ -8,4 +8,4 @@ timeout          = 120
 keepalive        = 5
 preload_app      = False
 loglevel         = "info"
-graceful_timeout = 10
+graceful_timeout = 30
