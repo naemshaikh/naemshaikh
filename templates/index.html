@@ -729,17 +729,20 @@ async function sendMsg(){
 // ── Apply partial data from /trading-data immediately ──────────
 function _applyTD(td){
   if(!td) return;
-  const bnb=parseFloat(td.bnb_price||0);
+  // FIX: bnb_price fallback 300 — kabhi 0 nahi dikhega
+  const bnb=parseFloat(td.bnb_price||0)||(_bnbReal||300);
   if(bnb>0)_bnbReal=bnb;
-  document.getElementById('h-bnb').textContent=bnb>0?'$'+bnb.toFixed(0):'$—';
-  const fg=td.fear_greed||50;
+  document.getElementById('h-bnb').textContent='$'+bnb.toFixed(0);
+  const fg=td.fear_greed!=null?td.fear_greed:50;
   const fgEl=document.getElementById('h-fg');
   fgEl.textContent=fg;fgEl.style.color=fg>60?'var(--em)':fg<40?'var(--red)':'var(--gold)';
-  const bal=parseFloat(td.paper||5.0);
+  // FIX: td.paper is string "5.0000" — parseFloat handles it correctly
+  const bal=parseFloat(td.paper||'5.0')||5.0;
   document.getElementById('b-bal').textContent=bal.toFixed(4)+' BNB';
-  document.getElementById('b-usd').textContent=bnb>0?'approx $'+Math.round(bal*bnb).toLocaleString():bal.toFixed(4)+' BNB';
+  document.getElementById('b-usd').textContent='approx $'+Math.round(bal*bnb).toLocaleString();
   document.getElementById('sg-watch').textContent=td.monitoring||0;
-  document.getElementById('sg-scan').textContent=td.new_pairs_found||0;
+  // FIX: sg-scan ko sirf /auto-stats se update karo — yahan mat karo (race condition fix)
+  // document.getElementById('sg-scan').textContent=td.new_pairs_found||0;
   setConn(true,'✅ Connected');
 }
 
@@ -771,13 +774,15 @@ async function fetchStats(){
   if(_modeEl&&_as){
     _modeEl.textContent=_as.enabled?'BSC SNIPER · AUTO ON':'BSC SNIPER · PAPER MODE';
   }
-  const bnb=parseFloat((_as&&_as.bnb_price)||(_td&&_td.bnb_price)||0);
-  const fg=(_td&&_td.fear_greed!=null)?_td.fear_greed:((_as&&_as.fear_greed)||50);
+  // FIX: bnb_price — 0 aaye toh _bnbReal ya 300 use karo, UI blank nahi rahegi
+  const bnb=parseFloat((_as&&_as.bnb_price)||(_td&&_td.bnb_price)||0)||(_bnbReal||300);
+  const fg=(_td&&_td.fear_greed!=null)?_td.fear_greed:((_as&&_as.fear_greed)!=null?_as.fear_greed:50);
   if(bnb>0)_bnbReal=bnb;
-  document.getElementById('h-bnb').textContent=bnb>0?'$'+bnb.toFixed(0):'$—';
+  document.getElementById('h-bnb').textContent='$'+bnb.toFixed(0);
   const fgEl=document.getElementById('h-fg');
   fgEl.textContent=fg;fgEl.style.color=fg>60?'var(--em)':fg<40?'var(--red)':'var(--gold)';
-  const bal=_as?parseFloat(_as.paper_balance||5.0):parseFloat(_td&&_td.paper||5.0);
+  // FIX: paper_balance safe parse — fallback 5.0
+  const bal=parseFloat((_as&&_as.paper_balance)||(_td&&_td.paper)||'5.0')||5.0;
   document.getElementById('b-bal').textContent=bal.toFixed(4)+' BNB';
   const _usdVal=bnb>0?'approx $'+Math.round(bal*bnb).toLocaleString():bal.toFixed(4)+' BNB';
   document.getElementById('b-usd').textContent=_usdVal;
@@ -786,7 +791,7 @@ async function fetchStats(){
   pEl.textContent=(pnl>=0?'+':'')+pnl.toFixed(2)+'%';
   pEl.style.color=pnl>0?'var(--em)':pnl<0?'var(--red)':'var(--txt2)';
   document.getElementById('b-wr').textContent='Win Rate: '+(_as?_as.win_rate:0)+'%';
-  document.getElementById('sg-scan').textContent=((_as&&_as.total_scanned)||(_td&&_td.new_pairs_found)||0).toLocaleString();
+  document.getElementById('sg-scan').textContent=((_as&&_as.total_scanned!=null?_as.total_scanned:null)||(_td&&_td.new_pairs_found)||0).toLocaleString();
   document.getElementById('sg-watch').textContent=(_as&&_as.open_positions!=null?_as.open_positions:(_as&&_as.monitoring!=null?_as.monitoring:(_td&&_td.monitoring)||0));
   document.getElementById('sg-wins').textContent=(_as&&_as.wins)||0;
   document.getElementById('sg-losses').textContent=(_as&&_as.losses)||0;
