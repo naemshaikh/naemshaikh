@@ -857,7 +857,7 @@ async function init(){
 }
 
 init();
-loadSettings();
+// loadSettings called via setInterval
 setInterval(fetchStats,8000);
 setInterval(fetchHistory,30000);
 setInterval(loadSettings,30000);
