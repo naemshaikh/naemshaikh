@@ -2430,7 +2430,12 @@ def admin_reset_positions():
 
 @app.route("/")
 def home():
-    return render_template("index.html")
+    from flask import make_response
+    response = make_response(render_template("index.html"))
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 @app.route("/init-session", methods=["POST"])
 def init_session():
