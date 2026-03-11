@@ -2284,13 +2284,16 @@ def init_session():
 
 @app.route("/trading-data", methods=["GET", "POST"])
 def trading_data():
+  try:
     if request.method == "POST":
         session_id = (request.get_json() or {}).get("session_id", "default")
     else:
         session_id = request.args.get("session_id", "default")
-    sess      = sessions.get(session_id) or get_or_create_session(session_id)
-    bnb_price = market_cache.get("bnb_price", 0)
-    _auto_sess_td = sessions.get(AUTO_SESSION_ID, {"paper_balance":5.0,"trade_count":0,"win_count":0,"loss_count":0,"positions":[],"pnl":0,"total_scanned":0})
+    sess         = sessions.get(session_id) or get_or_create_session(session_id)
+    bnb_price    = market_cache.get("bnb_price", 0) or 300
+    _auto_sess_td = sessions.get(AUTO_SESSION_ID, {"paper_balance":5.0,"trade_count":0,"win_count":0,"loss_count":0,"positions":[],"pnl":0})
+    trade_count  = sess.get("trade_count", 0)
+    win_rate     = round((sess.get("win_count",0) / trade_count * 100), 1) if trade_count > 0 else 0
     return jsonify({
         "paper":          f"{_auto_sess_td.get('paper_balance', 5.0):.4f}",
         "real":           f"{sess.get('real_balance', 0):.3f}",
@@ -2298,13 +2301,16 @@ def trading_data():
         "bnb_price":      bnb_price,
         "fear_greed":     market_cache.get("fear_greed", 50),
         "positions":      sess.get("positions", []),
-        "trade_count":    sess.get("trade_count", 0),
-        "win_rate":       round((sess.get("win_count",0)/sess.get("trade_count",1)*100),1) if sess.get("trade_count",0) > 0 else 0,
+        "trade_count":    trade_count,
+        "win_rate":       win_rate,
         "daily_loss":     round(sess.get("daily_loss", 0), 2),
         "limit_reached":  sess.get("daily_loss", 0) >= (sess.get("paper_balance", 5.0) * 0.15),
         "new_pairs_found":len(new_pairs_queue),
         "monitoring":     len(monitored_positions)
     })
+  except Exception as e:
+    print(f"❌ trading_data error: {e}")
+    return jsonify({"paper":"5.0000","real":"0.000","pnl":"+0.0%","bnb_price":300,"fear_greed":50,"positions":[],"trade_count":0,"win_rate":0,"daily_loss":0,"limit_reached":False,"new_pairs_found":0,"monitoring":0})
 
 @app.route("/chat", methods=["POST"])
 def chat():
@@ -2546,12 +2552,14 @@ def introspect():
 
 @app.route("/auto-stats", methods=["GET"])
 def auto_stats_route():
+  try:
     sess        = get_or_create_session(AUTO_SESSION_ID)
     trade_count = sess.get("trade_count", 0)
     win_count   = sess.get("win_count",   0)
     win_rate    = round(win_count / trade_count * 100, 1) if trade_count > 0 else 0.0
-    bnb_price   = market_cache.get("bnb_price", 0)
-    paper_bal   = sess.get("paper_balance", 5.0)
+    # FIX: bnb_price 0 hai toh 300 fallback use karo — UI blank nahi rahegi
+    bnb_price   = market_cache.get("bnb_price", 0) or 300
+    paper_bal   = float(sess.get("paper_balance") or 5.0)
 
     # Build open_trades array for UI
     open_trades = []
@@ -2587,7 +2595,7 @@ def auto_stats_route():
         "monitoring":      len(monitored_positions),
         "bnb_price":       bnb_price,
         "fear_greed":      market_cache.get("fear_greed", 50),
-        "bnb_usd":         round(paper_bal * bnb_price, 2) if bnb_price > 0 else 0,
+        "bnb_usd":         round(paper_bal * bnb_price, 2),
         "enabled":         AUTO_TRADE_ENABLED,
         "last_action":     auto_trade_stats.get("last_action", ""),
         "open_trades":     open_trades,
@@ -2598,6 +2606,17 @@ def auto_stats_route():
         "daily_loss":      round(sess.get("daily_loss", 0), 4),
         "auto_buys":       auto_trade_stats.get("total_auto_buys",  0),
         "auto_sells":      auto_trade_stats.get("total_auto_sells", 0),
+    })
+  except Exception as e:
+    print(f"❌ auto_stats_route error: {e}")
+    return jsonify({
+        "paper_balance": 5.0, "trade_count": 0, "wins": 0, "losses": 0,
+        "win_rate": 0, "total_pnl_pct": 0, "total_scanned": 0,
+        "open_positions": 0, "monitoring": 0, "bnb_price": 300,
+        "fear_greed": 50, "bnb_usd": 1500, "enabled": AUTO_TRADE_ENABLED,
+        "last_action": "", "open_trades": [], "positions": {},
+        "trade_history": [], "learning_cycles": 0, "new_pairs_found": 0,
+        "daily_loss": 0, "auto_buys": 0, "auto_sells": 0,
     })
 @app.route("/toggle-auto", methods=["POST"])
 def toggle_auto():
