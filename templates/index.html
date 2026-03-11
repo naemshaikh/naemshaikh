@@ -667,6 +667,7 @@ async function fetchHistory(){
       '</div>'+
     '</div>';
   }).join('');
+}
 function openHist(t){
   const cls=t.result==='win'?'p':'n',sym=symOf(t.token,t.address),pnl=t.pnl_pct||0;
   const pnlU=(Math.abs(t.pnl_bnb||0)*bp()).toFixed(2),addr=t.address||'';
@@ -1387,63 +1388,6 @@ function renderGTrades(){
 }
 
 // ══ GMGN TRADES TAB — Exact GMGN compact 3-col style (closed trades history) ══
-window._renderTPage = function(){
-  const wrap = document.getElementById('trades-list-wrap');
-  if(!wrap) return;
-  const history = (window._lastStats&&window._lastStats.trade_history)||[];
-  const raw = history.length ? history : (window._lastStats&&window._lastStats.open_trades||[]);
-  if(!raw.length){ wrap.innerHTML='<div class="empty-state">No trades yet</div>'; return; }
-
-  const groups = {};
-  raw.forEach(function(t){
-    const key = t.address||t.token||'unknown';
-    if(!groups[key]) groups[key]={trades:[],addr:t.address||'',token:t.token||''};
-    groups[key].trades.push(t);
-  });
-
-  const sorted = Object.values(groups).sort(function(a,b){
-    return new Date(b.trades[0].sold_at||b.trades[0].bought_at||0) - new Date(a.trades[0].sold_at||a.trades[0].bought_at||0);
-  });
-
-  let html = '';
-  sorted.forEach(function(g){
-    const trades=g.trades, addr=g.addr;
-    const sym=(g.token&&!g.token.startsWith('0x')&&g.token.length<20)?g.token.toUpperCase():symOf(g.token,addr);
-    const ic=iconClr(sym);
-    const totalPnlB=trades.reduce(function(s,t){return s+(parseFloat(t.pnl_bnb||0)||(parseFloat(t.size_bnb||0)*parseFloat(t.pnl_pct||0)/100));},0);
-    const totalSz=trades.reduce(function(s,t){return s+parseFloat(t.size_bnb||0);},0);
-    const wins=trades.filter(function(t){return parseFloat(t.pnl_pct||0)>=0;}).length;
-    const losses=trades.length-wins;
-    const clr=totalPnlB>=0?'var(--em)':'var(--red)';
-    const timeAgo=gHoldTime(trades[0].sold_at||trades[0].bought_at);
-    const encoded=encodeURIComponent(JSON.stringify({sym:sym,addr:addr,trades:trades,totalPnlB:totalPnlB,totalSz:totalSz,wins:wins,losses:losses}));
-
-    html+='<div style="display:flex;align-items:center;padding:11px 8px;border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;gap:10px;" onclick="openGroupTradeDetail(\''+encoded+'\')">'+
-      '<div style="position:relative;flex-shrink:0;">'+
-        '<div style="width:38px;height:38px;border-radius:50%;background:'+ic+'22;border:2px solid '+ic+'44;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:'+ic+';font-family:JetBrains Mono,monospace;">'+sym.slice(0,2)+'</div>'+
-        '<div style="position:absolute;bottom:-1px;right:-1px;width:14px;height:14px;border-radius:50%;background:'+(totalPnlB>=0?'var(--em)':'var(--red)')+';border:2px solid var(--ink2);display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:900;">'+(totalPnlB>=0?'↑':'↓')+'</div>'+
-      '</div>'+
-      '<div style="flex:1;min-width:0;">'+
-        '<div style="display:flex;align-items:center;gap:6px;">'+
-          '<span style="font-size:13px;font-weight:800;color:var(--txt1);font-family:JetBrains Mono,monospace;">'+sym.slice(0,10)+'</span>'+
-          '<span style="font-size:9px;padding:1px 6px;border-radius:10px;background:rgba(255,255,255,0.06);color:var(--txt3);">'+trades.length+'x</span>'+
-          '<span onclick="event.stopPropagation();copyAddr(\''+addr+'\')" style="font-size:8px;color:var(--txt3);cursor:pointer;">⧉</span>'+
-        '</div>'+
-        '<div style="display:flex;align-items:center;gap:8px;margin-top:3px;">'+
-          '<span style="font-size:10px;color:var(--txt3);">'+timeAgo+'</span>'+
-          '<span style="font-size:10px;color:var(--em);">'+wins+'W</span>'+
-          '<span style="font-size:10px;color:var(--red);">'+losses+'L</span>'+
-        '</div>'+
-      '</div>'+
-      '<div style="text-align:right;flex-shrink:0;">'+
-        '<div style="font-size:13px;font-weight:900;color:'+clr+';font-family:JetBrains Mono,monospace;">'+(totalPnlB>=0?'+':'')+totalPnlB.toFixed(4)+' BNB</div>'+
-        '<div style="font-size:10px;color:var(--txt3);margin-top:2px;">'+totalSz.toFixed(4)+' invested</div>'+
-      '</div>'+
-    '</div>';
-  });
-  wrap.innerHTML = html;
-};
-
 function openGroupTradeDetail(encoded){
   let g; try{g=JSON.parse(decodeURIComponent(encoded));}catch(e){return;}
   const sym=g.sym,addr=g.addr,trades=g.trades;
