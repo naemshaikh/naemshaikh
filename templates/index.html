@@ -1593,9 +1593,9 @@ async function openChecklistSettings(){
           '<div style="font-size:10px;color:var(--txt3);">'+f.unit+'</div>'+
         '</div>'+
         '<div style="display:flex;align-items:center;gap:6px;">'+
-          '<button onclick="_csAdj(''+f.key+'','+(-f.step)+')" style="width:28px;height:28px;border-radius:50%;background:var(--ink2);border:1px solid var(--line2);color:var(--txt);font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;">−</button>'+
+          '<button onclick="_csAdj(\''+f.key+'\','+(-f.step)+')" style="width:28px;height:28px;border-radius:50%;background:var(--ink2);border:1px solid var(--line2);color:var(--txt);font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;">−</button>'+
           '<div id="cs-val-'+f.key+'" style="min-width:52px;text-align:center;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:800;color:var(--em);">'+val+'</div>'+
-          '<button onclick="_csAdj(''+f.key+'','+f.step+')" style="width:28px;height:28px;border-radius:50%;background:var(--ink2);border:1px solid var(--line2);color:var(--txt);font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;">+</button>'+
+          '<button onclick="_csAdj(\''+f.key+'\','+f.step+')" style="width:28px;height:28px;border-radius:50%;background:var(--ink2);border:1px solid var(--line2);color:var(--txt);font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;">+</button>'+
         '</div>'+
       '</div>';
     });
