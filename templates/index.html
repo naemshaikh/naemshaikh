@@ -550,7 +550,7 @@ function toIST(v){
 }
 function holdTime(b){
   if(!b)return 'Active';
-  try{const ms=Date.now()-new Date(b).getTime(),m=Math.floor(ms/60000);if(m<1)return 'Just now';if(m<60)return m+'m';return Math.floor(m/60)+'h '+(m%60?m%60+'m':'');}catch(e){return 'Active';}
+  try{const ms=Date.now()-new Date(b).getTime();if(ms<0)return 'Active';const m=Math.floor(ms/60000);if(m<1)return 'Just now';if(m<60)return m+'m';const h=Math.floor(m/60);const rm=m%60;return h+'h'+(rm?' '+rm+'m':'');}catch(e){return 'Active';}
 }
 function holdBetween(a,b){
   if(!a||!b)return '—';
@@ -1346,8 +1346,8 @@ function openHoldDetail(json){
 
     // Trade details rows
     '<div style="background:var(--ink3);border-radius:10px;overflow:hidden;margin-bottom:10px;">'+
-      '<div class="mrow" style="padding:10px 12px;"><span class="mlbl">Entry Price</span><span class="mval" style="font-family:JetBrains Mono,monospace;font-size:12px;">'+entry.toExponential(4)+' BNB</span></div>'+
-      '<div class="mrow" style="padding:10px 12px;"><span class="mlbl">Current Price</span><span class="mval '+(pnl>=0?'p':'n')+'" style="font-family:JetBrains Mono,monospace;font-size:12px;">'+current.toExponential(4)+' BNB</span></div>'+
+      '<div class="mrow" style="padding:10px 12px;"><span class="mlbl">Entry Price</span><span class="mval" style="font-family:JetBrains Mono,monospace;font-size:12px;">'+fmtBNBPrice(entry)+'</span></div>'+
+      '<div class="mrow" style="padding:10px 12px;"><span class="mlbl">Current Price</span><span class="mval '+(pnl>=0?'p':'n')+'" style="font-family:JetBrains Mono,monospace;font-size:12px;">'+fmtBNBPrice(current)+'</span></div>'+
       '<div class="mrow" style="padding:10px 12px;"><span class="mlbl">Stop Loss</span><span class="mval n">-'+(t.sl_pct||15)+'%</span></div>'+
       '<div style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center;">'+
         '<span class="mlbl">Holding Time</span>'+
@@ -1512,8 +1512,8 @@ function openTradeDetail(json){
 
     // Detail rows
     '<div style="background:var(--ink3);border-radius:10px;overflow:hidden;">'+
-      '<div class="mrow" style="padding:10px 12px;"><span class="mlbl">Entry Price</span><span class="mval" style="font-size:11px;font-family:JetBrains Mono,monospace;">'+(entry>0?entry.toExponential(4):'—')+'</span></div>'+
-      '<div class="mrow" style="padding:10px 12px;"><span class="mlbl">Exit Price</span><span class="mval '+(isWin?'p':'n')+'" style="font-size:11px;font-family:JetBrains Mono,monospace;">'+(exit>0?exit.toExponential(4):'—')+'</span></div>'+
+      '<div class="mrow" style="padding:10px 12px;"><span class="mlbl">Entry Price</span><span class="mval" style="font-size:11px;font-family:JetBrains Mono,monospace;">'+(entry>0?fmtBNBPrice(entry):'—')+'</span></div>'+
+      '<div class="mrow" style="padding:10px 12px;"><span class="mlbl">Exit Price</span><span class="mval '+(isWin?'p':'n')+'" style="font-size:11px;font-family:JetBrains Mono,monospace;">'+(exit>0?fmtBNBPrice(exit):'—')+'</span></div>'+
       '<div class="mrow" style="padding:10px 12px;"><span class="mlbl">Reason</span><span class="mval" style="font-size:11px;">'+(t.reason||'Auto')+'</span></div>'+
       '<div class="mrow" style="padding:10px 12px;"><span class="mlbl">Bought</span><span class="mval" style="font-size:11px;">'+gHoldTime(t.bought_at)+' ago</span></div>'+
       '<div style="padding:10px 12px;display:flex;justify-content:space-between;"><span class="mlbl">Sold</span><span class="mval" style="font-size:11px;">'+gHoldTime(t.sold_at)+' ago</span></div>'+
