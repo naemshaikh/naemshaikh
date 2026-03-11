@@ -514,11 +514,10 @@ brain: Dict = {
 sessions: Dict[str, dict] = {}
 
 def get_or_create_session(session_id: str) -> dict:
-    # Session cleanup — max 25 sessions
-    if len(sessions) > 10 and session_id not in sessions:
+    # Session cleanup — sirf AUTO_TRADER aur default rakhte hain, baki sab delete
+    if len(sessions) > 3 and session_id not in sessions:
         _keep = {"AUTO_TRADER", "default", session_id}
-        _candidates = [k for k in list(sessions.keys()) if k not in _keep]
-        for k in _candidates[:5]:  # Sirf 5 ek baar mein hatao
+        for k in [k for k in list(sessions.keys()) if k not in _keep]:
             sessions.pop(k, None)
     if session_id not in sessions:
         sessions[session_id] = {
@@ -2449,26 +2448,26 @@ def init_session():
 @app.route("/trading-data", methods=["GET", "POST"])
 def trading_data():
   try:
-    if request.method == "POST":
-        session_id = (request.get_json() or {}).get("session_id", "default")
-    else:
-        session_id = request.args.get("session_id", "default")
-    sess         = sessions.get(session_id) or get_or_create_session(session_id)
-    bnb_price    = market_cache.get("bnb_price", 0) or 300
-    _auto_sess_td = sessions.get(AUTO_SESSION_ID, {"paper_balance":5.0,"trade_count":0,"win_count":0,"loss_count":0,"positions":[],"pnl":0})
-    trade_count  = sess.get("trade_count", 0)
-    win_rate     = round((sess.get("win_count",0) / trade_count * 100), 1) if trade_count > 0 else 0
+    # FIX: Hamesha AUTO_SESSION_ID ka data do — random SID se ghost sessions mat banao
+    # Random SID se get_or_create_session call hoti thi → memory leak
+    _auto_sess_td = sessions.get(AUTO_SESSION_ID) or {"paper_balance":5.0,"trade_count":0,"win_count":0,"loss_count":0,"positions":[],"pnl":0,"daily_loss":0}
+    bnb_price     = market_cache.get("bnb_price", 0) or 300
+    trade_count   = _auto_sess_td.get("trade_count", 0)
+    win_count     = _auto_sess_td.get("win_count", 0)
+    win_rate      = round((win_count / trade_count * 100), 1) if trade_count > 0 else 0
+    paper_bal     = float(_auto_sess_td.get("paper_balance") or 5.0)
+    daily_loss    = float(_auto_sess_td.get("daily_loss") or 0)
     return jsonify({
-        "paper":          f"{_auto_sess_td.get('paper_balance', 5.0):.4f}",
-        "real":           f"{sess.get('real_balance', 0):.3f}",
-        "pnl":            f"+{sess.get('pnl_24h', 0):.1f}%",
+        "paper":          f"{paper_bal:.4f}",
+        "real":           "0.000",
+        "pnl":            f"+{_auto_sess_td.get('pnl_24h', 0):.1f}%",
         "bnb_price":      bnb_price,
         "fear_greed":     market_cache.get("fear_greed", 50),
-        "positions":      sess.get("positions", []),
+        "positions":      list(auto_trade_stats.get("running_positions", {}).keys()),
         "trade_count":    trade_count,
         "win_rate":       win_rate,
-        "daily_loss":     round(sess.get("daily_loss", 0), 2),
-        "limit_reached":  sess.get("daily_loss", 0) >= (sess.get("paper_balance", 5.0) * 0.15),
+        "daily_loss":     round(daily_loss, 4),
+        "limit_reached":  daily_loss >= (paper_bal * 0.15),
         "new_pairs_found":len(new_pairs_queue),
         "monitoring":     len(monitored_positions)
     })
