@@ -1176,6 +1176,8 @@ function gTab(name,el){
 // ══ GMGN HOLDING ROWS — Exact GMGN compact 3-col style ══
 window._renderHPage = function(){
   const wrap  = document.getElementById('holding-list-wrap');
+  if(!wrap) return;
+  if(!window._hData){ wrap.innerHTML='<div class="empty-state">Loading positions...</div>'; return; }
   const PAGE  = 15;
   const items = window._hData.slice(0, PAGE * window._hPage);
   if(!items.length){wrap.innerHTML='<div class="empty-state">No open positions</div>';return;}
@@ -1200,6 +1202,7 @@ window._renderHPage = function(){
     const tokenName = (p.token && !p.token.startsWith('0x') && p.token.length < 20) ? p.token.toUpperCase() : sym;
     const current = parseFloat(p.current||p.entry||0);
 
+    const entry  = parseFloat(p.entry||0);
     const _isLive = current > 0 && current !== entry;
     const _rowBg  = _isLive ? (pnl>=0?'rgba(0,230,118,0.03)':'rgba(255,71,87,0.03)') : 'transparent';
     return '<div style="display:grid;grid-template-columns:1fr 90px 100px;align-items:center;padding:8px 4px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;gap:4px;background:'+_rowBg+';" onclick="openHoldDetail(\''+encodeURIComponent(JSON.stringify(Object.assign({},p,{address:addr})))+'\')">'+
@@ -1368,6 +1371,7 @@ function renderGTrades(){
 
 // ══ GMGN TRADES TAB — Exact GMGN compact 3-col style (closed trades history) ══
 window._renderTPage = function(){
+  if(!window._tPage) window._tPage = 1;
   const wrap = document.getElementById('trades-list-wrap');
   if(!wrap) return;
 
