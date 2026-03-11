@@ -2036,11 +2036,7 @@ def log_trade_internal(session_id: str, trade: Dict):
     if win:
         sess["win_count"] += 1
         sess["pnl_24h"]   += pnl
-        # SYNC: auto_trade_stats se bhi sync rakho
-        auto_trade_stats["wins"] = auto_trade_stats.get("wins", 0)
     else:
-        # SYNC: losses bhi sync
-        auto_trade_stats["losses"] = auto_trade_stats.get("losses", 0)
         # FIX v6: BNB mein track karo (pnl % tha, convert karo)
         _size = float(trade.get("size_bnb", AUTO_BUY_SIZE_BNB) or AUTO_BUY_SIZE_BNB)  # FIX1: pos→trade
         _bnb_lost = _size * abs(pnl) / 100.0
@@ -2707,12 +2703,23 @@ def introspect():
 def auto_stats_route():
   try:
     sess        = get_or_create_session(AUTO_SESSION_ID)
-    # FIX PNL: wins/losses ek hi jagah se lo — auto_trade_stats
-    # Pehle sess["win_count"] aur auto_trade_stats["wins"] alag the — mismatch hota tha
-    wins        = auto_trade_stats.get("wins", 0)
-    losses      = auto_trade_stats.get("losses", 0)
+    # BUG FIX: wins/losses trade_history se calculate karo grouped by position
+    # (partial TP ke baad SL pe counter galat tha — ab total pnl_bnb per position se)
+    _hist_all = auto_trade_stats.get("trade_history", [])
+    _pos_pnl  = {}
+    for _t in _hist_all:
+        _key = _t.get("address", "") + "|" + _t.get("bought_at", "")[:16]
+        _pos_pnl[_key] = _pos_pnl.get(_key, 0) + float(_t.get("pnl_bnb", 0) or 0)
+    if _pos_pnl:
+        wins   = sum(1 for v in _pos_pnl.values() if v > 0)
+        losses = sum(1 for v in _pos_pnl.values() if v <= 0)
+    else:
+        wins   = auto_trade_stats.get("wins", 0)
+        losses = auto_trade_stats.get("losses", 0)
     trade_count = wins + losses
     win_rate    = round(wins / trade_count * 100, 1) if trade_count > 0 else 0.0
+
+
     # FIX: bnb_price 0 hai toh 300 fallback use karo — UI blank nahi rahegi
     bnb_price   = market_cache.get("bnb_price", 0) or 300
     paper_bal   = float(sess.get("paper_balance") or 5.0)
