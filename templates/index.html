@@ -219,6 +219,15 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 
 <div class="conn-bar" id="conn-bar"><span id="conn-msg">⏳ Connecting...</span></div>
 
+<!-- DEBUG PANEL — tap to see raw API response -->
+<div id="debug-panel" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:9999;background:#0d1520;border-top:2px solid #00e676;padding:10px;max-height:60vh;overflow-y:auto;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+    <span style="color:#00e676;font-weight:800;font-size:12px;">🔍 DEBUG LOG</span>
+    <button onclick="document.getElementById('debug-panel').style.display='none'" style="background:var(--red);color:#fff;border:none;padding:4px 10px;border-radius:6px;font-size:11px;">✕ Close</button>
+  </div>
+  <div id="debug-log" style="font-family:JetBrains Mono,monospace;font-size:10px;color:#dce8f5;white-space:pre-wrap;line-height:1.6;"></div>
+</div>
+
 <header class="hdr">
   <div class="hdr-brand">
     <div class="hdr-logo">M</div>
@@ -355,7 +364,9 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
         <div id="trades-list-wrap"><div class="empty-state">⏳ Loading...</div></div>
       </div>
     </div>
-    <div class="foot-note" id="ts">Connecting...</div>
+    <div class="foot-note" id="ts" onclick="document.getElementById('debug-panel').style.display='block';dbg('--- Manual debug open ---');" style="cursor:pointer;">
+      Connecting... <span style="color:var(--txt3);font-size:9px;">(tap for debug)</span>
+    </div>
   </div>
 
   <div class="sep">Trading History</div>
@@ -602,17 +613,26 @@ async function sendMsg(){
 function _applyTD(td){
   if(!td) return;
   const bnb=parseFloat(td.bnb_price||0);
-  if(bnb>0){_bnbReal=bnb;document.getElementById('h-bnb').textContent='$'+bnb.toFixed(0);}
+  if(bnb>0)_bnbReal=bnb;
+  document.getElementById('h-bnb').textContent=bnb>0?'$'+bnb.toFixed(0):'$—';
   const fg=td.fear_greed||50;
   const fgEl=document.getElementById('h-fg');
   fgEl.textContent=fg;fgEl.style.color=fg>60?'var(--em)':fg<40?'var(--red)':'var(--gold)';
   const bal=parseFloat(td.paper||5.0);
   document.getElementById('b-bal').textContent=bal.toFixed(4)+' BNB';
-  if(bnb>0)document.getElementById('b-usd').textContent='approx $'+Math.round(bal*bnb).toLocaleString();
+  document.getElementById('b-usd').textContent=bnb>0?'approx $'+Math.round(bal*bnb).toLocaleString():bal.toFixed(4)+' BNB';
   document.getElementById('sg-watch').textContent=td.monitoring||0;
   document.getElementById('sg-scan').textContent=td.new_pairs_found||0;
   setConn(true,'✅ Connected');
 }
+
+// ── DEBUG HELPER ──
+function dbg(msg){
+  const el=document.getElementById('debug-log');
+  if(el){el.textContent=(new Date().toLocaleTimeString('en-IN')+' '+msg+'\n')+el.textContent;}
+  console.log('[MrBlack]',msg);
+}
+window.onerror=function(msg,src,line){dbg('❌ JS ERROR: '+msg+' L'+line);return false;};
 
 async function fetchStats(){
   try {
@@ -621,10 +641,14 @@ async function fetchStats(){
   const asPromise = fetchJSON('/auto-stats',{},15000);
   tdPromise.then(td=>{ if(td) _applyTD(td); });
   const [_as,_td] = await Promise.all([asPromise, tdPromise]);
-  if(!_as && !_td){setConn(false,'⚡ Retry...');console.error('fetchStats: both null',{as:_as,td:_td});return false;}
+  // DEBUG: log what we got
+  dbg('📡 /auto-stats: '+(_as?'✅ bnb='+(_as.bnb_price||0)+' bal='+(_as.paper_balance||0)+'  enabled='+_as.enabled:'❌ NULL'));
+  dbg('📡 /trading-data: '+(_td?'✅ bnb='+(_td.bnb_price||0)+' paper='+(_td.paper||0):'❌ NULL'));
+  if(!_as && !_td){setConn(false,'⚡ Retry...');dbg('❌ BOTH NULL — server not responding');return false;}
   // FIX: agar server still starting hai toh bhi false return karo — retry karega
   if(_as && _as.status === 'starting' && !_td){setConn(false,'⏳ Server init...');return false;}
   setConn(true,'✅ MrBlack Connected');
+  dbg('✅ Connected successfully!');
   if(_as) _setAutoUI(!!_as.enabled);
   const _modeEl=document.getElementById('hdr-mode');
   if(_modeEl&&_as){
@@ -632,12 +656,14 @@ async function fetchStats(){
   }
   const bnb=parseFloat((_as&&_as.bnb_price)||(_td&&_td.bnb_price)||0);
   const fg=(_td&&_td.fear_greed!=null)?_td.fear_greed:((_as&&_as.fear_greed)||50);
-  if(bnb>0){_bnbReal=bnb;document.getElementById('h-bnb').textContent='$'+bnb.toFixed(0);}
+  if(bnb>0)_bnbReal=bnb;
+  document.getElementById('h-bnb').textContent=bnb>0?'$'+bnb.toFixed(0):'$—';
   const fgEl=document.getElementById('h-fg');
   fgEl.textContent=fg;fgEl.style.color=fg>60?'var(--em)':fg<40?'var(--red)':'var(--gold)';
   const bal=_as?parseFloat(_as.paper_balance||5.0):parseFloat(_td&&_td.paper||5.0);
   document.getElementById('b-bal').textContent=bal.toFixed(4)+' BNB';
-  if(bnb>0)document.getElementById('b-usd').textContent='approx $'+Math.round(bal*bnb).toLocaleString();
+  const _usdVal=bnb>0?'approx $'+Math.round(bal*bnb).toLocaleString():bal.toFixed(4)+' BNB';
+  document.getElementById('b-usd').textContent=_usdVal;
   const pnl=parseFloat((_as&&_as.total_pnl_pct)||0);
   const pEl=document.getElementById('b-pnl');
   pEl.textContent=(pnl>=0?'+':'')+pnl.toFixed(2)+'%';
@@ -673,6 +699,7 @@ async function fetchStats(){
 
 // ─── INIT — retry on cold start ──────────────────────────────
 async function init(){
+  dbg('🚀 Init started — SID='+SID.slice(0,12));
   setConn(false,'⏳ MrBlack server se connect ho rha hai...');
   try{await safeFetch('/init-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_id:SID})},5000);}catch(e){}
 
@@ -1300,7 +1327,7 @@ async function viewTokenData(){
     '</div>';
   document.getElementById('modal-actions').innerHTML=
     '<button class="mbtn dark" onclick="closeModal()" style="flex:1;">✕ Close</button>'+
-    '<button class="mbtn" onclick="scanToken_prefilled(''+addr+'')" style="flex:1;">🔍 Full Scan</button>';
+    '<button class="mbtn" onclick="scanToken()" style="flex:1;">🔍 Full Scan</button>';
   showModal();
 }
 
