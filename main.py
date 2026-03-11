@@ -722,10 +722,12 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
     if not _token_semaphore.acquire(blocking=False):
         return  # Max threads already running, skip
     if any(token_address.lower() == str(q).lower() for q in list(new_pairs_queue)):
+        _token_semaphore.release()  # BUG FIX: semaphore leak — release before return
         return
     try:
         token_address = Web3.to_checksum_address(token_address)
     except Exception:
+        _token_semaphore.release()  # BUG FIX: semaphore leak — release before return
         return
     with _discovered_lock:
         discovered_addresses[token_address] = _now
@@ -1792,10 +1794,11 @@ def _fallback_token_poller():
         try:
             _cycle += 1
             _nc = time.time()
-            # Cleanup old entries
-            discovered_addresses_clean = {k: v for k, v in discovered_addresses.items() if _nc - v < DISCOVERY_TTL}
-            discovered_addresses.clear()
-            discovered_addresses.update(discovered_addresses_clean)
+            # Cleanup old entries — BUG FIX: use lock to prevent race condition
+            with _discovered_lock:
+                discovered_addresses_clean = {k: v for k, v in discovered_addresses.items() if _nc - v < DISCOVERY_TTL}
+                discovered_addresses.clear()
+                discovered_addresses.update(discovered_addresses_clean)
 
             try:
                 rb = requests.get("https://api.dexscreener.com/token-boosts/latest/v1", timeout=10)
