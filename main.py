@@ -586,8 +586,16 @@ def _load_session_from_db(session_id: str):
                     if _sc > 0 and _sc > len(discovered_addresses):
                         brain["total_tokens_discovered_ever"] = _sc
                     # wins/losses restore
-                    auto_trade_stats["wins"]   = raw.get("wins", 0)
-                    auto_trade_stats["losses"] = raw.get("losses", 0)
+                    auto_trade_stats["wins"]         = raw.get("wins", 0)
+                    auto_trade_stats["losses"]       = raw.get("losses", 0)
+                    # Restore today stats — only if same day
+                    _saved_today = raw.get("today_date", "")
+                    _cur_today   = datetime.utcnow().strftime("%Y-%m-%d")
+                    if _saved_today == _cur_today:
+                        auto_trade_stats["today_wins"]   = raw.get("today_wins",   0)
+                        auto_trade_stats["today_losses"] = raw.get("today_losses", 0)
+                        auto_trade_stats["today_pnl"]    = raw.get("today_pnl",    0.0)
+                        auto_trade_stats["today_date"]   = _cur_today
                     print(f"✅ Auto stats restored: buys={auto_trade_stats['total_auto_buys']} sells={auto_trade_stats['total_auto_sells']} wins={auto_trade_stats['wins']} losses={auto_trade_stats['losses']} history={len(auto_trade_stats['trade_history'])} scanned={_sc}")
             print(f"✅ Session loaded: {session_id[:8]}... Balance:{sessions[session_id]['paper_balance']:.3f}BNB")
     except Exception as e:
@@ -608,6 +616,10 @@ def _save_session_to_db(session_id: str):
                 "total_scanned": max(len(discovered_addresses), brain.get("total_tokens_discovered_ever", 0)),
                 "wins":          auto_trade_stats.get("wins", 0),
                 "losses":        auto_trade_stats.get("losses", 0),
+                "today_wins":    auto_trade_stats.get("today_wins",   0),
+                "today_losses":  auto_trade_stats.get("today_losses", 0),
+                "today_pnl":     auto_trade_stats.get("today_pnl",    0.0),
+                "today_date":    auto_trade_stats.get("today_date",   ""),
             }
         else:
             extra["pattern_database"] = sess.get("pattern_database", [])
@@ -633,6 +645,7 @@ def _save_session_to_db(session_id: str):
 # ========== NEW PAIRS ==========
 new_pairs_queue: deque = deque(maxlen=30)
 discovered_addresses: dict = {}
+_discovered_lock  = threading.Lock()          # RACE FIX: protect discovered_addresses
 _token_semaphore  = threading.Semaphore(2)   # MEM FIX: was 4
 _check_semaphore  = threading.Semaphore(3)   # MEM FIX: was 10
 DISCOVERY_TTL = 7200
@@ -665,8 +678,8 @@ CHECKLIST_SETTINGS = {
     "sl_new":           15.0,    # Stage 10: SL % for new tokens
     "sl_hyped":         20.0,    # Stage 10: SL % for hyped tokens
     "sl_mature":        10.0,    # Stage 10: SL % for mature tokens
-    "score_safe":       40.0,    # Auto buy: SAFE min score %
-    "score_caution":    35.0,    # Auto buy: CAUTION min score %
+    "score_safe":       50.0,    # Auto buy: SAFE min score % (raised from 40)
+    "score_caution":    50.0,    # Auto buy: CAUTION min score % (CAUTION buys disabled)
     "daily_loss_pct":   15.0,    # Max daily loss % of balance
     "tp1_pct":          30.0,    # Stage 11: TP1 — sell 25%
     "tp2_pct":          50.0,    # Stage 11: TP2 — sell 25%
@@ -686,6 +699,10 @@ auto_trade_stats = {
     "trade_history":     [],
     "wins":              0,
     "losses":            0,
+    "today_wins":        0,
+    "today_losses":      0,
+    "today_pnl":         0.0,
+    "today_date":        "",
 }
 
 # Telegram removed
@@ -695,14 +712,14 @@ auto_trade_stats = {
 def _process_new_token(token_address: str, pair_address: str, source: str = "websocket"):
     global discovered_addresses
     _now = time.time()
-    if _now - discovered_addresses.get(token_address, 0) <= DISCOVERY_TTL:
-        return
-    # RAM CAP: Max 500 entries
-    # RAM CAP cleanup — sirf ek baar
-    if len(discovered_addresses) > 150:
-        cutoff = _now - DISCOVERY_TTL
-        for k in [k for k, v in list(discovered_addresses.items()) if v < cutoff][:100]:
-            del discovered_addresses[k]
+    with _discovered_lock:
+        if _now - discovered_addresses.get(token_address, 0) <= DISCOVERY_TTL:
+            return
+        # RAM CAP cleanup
+        if len(discovered_addresses) > 150:
+            cutoff = _now - DISCOVERY_TTL
+            for k in [k for k, v in list(discovered_addresses.items()) if v < cutoff][:100]:
+                del discovered_addresses[k]
     if not _token_semaphore.acquire(blocking=False):
         return  # Max threads already running, skip
     if any(token_address.lower() == str(q).lower() for q in list(new_pairs_queue)):
@@ -711,7 +728,8 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
         token_address = Web3.to_checksum_address(token_address)
     except Exception:
         return
-    discovered_addresses[token_address] = _now
+    with _discovered_lock:
+        discovered_addresses[token_address] = _now
     brain["total_tokens_discovered_ever"] += 1
 
     token_name = "Unknown"
@@ -826,12 +844,8 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     # Step 2: On-chain fallback
     if entry_price <= 0:
         entry_price = get_token_price_bnb(address)
-    # FIX: Block zero price BEFORE slippage
-    if entry_price <= 0:
-        print(f"❌ ZERO PRICE BLOCKED: {address[:10]} — skipping buy")
-        return
 
-    # Step 3: Fresh DexScreener call (last resort)
+    # Step 3: Fresh DexScreener call (last resort — FIXED: was unreachable before)
     if entry_price <= 0:
         time.sleep(5)
         try:
@@ -1602,7 +1616,8 @@ def _auto_check_new_pair(pair_address: str):
         rec     = result.get("recommendation", "")
         overall = result.get("overall", "UNKNOWN")
         print(f"🔍 Auto-check {pair_address[:10]}: {overall} ({score}/{total})")
-        print(f"📊 Score: {score}/{total} = {round(score/max(total,1)*100)}% | SAFE needs:{int(total*0.40)} CAUTION needs:{int(total*0.35)}")  # FIX3: debug
+        _ss = CHECKLIST_SETTINGS.get("score_safe", 50.0)
+        print(f"📊 Score: {score}/{total} = {round(score/max(total,1)*100)}% | SAFE needs:{int(total*_ss/100)} ({_ss:.0f}%) | overall={overall}")
 
         if overall in ["SAFE", "CAUTION"]:
             pass
@@ -1619,15 +1634,14 @@ def _auto_check_new_pair(pair_address: str):
                     break
         _final_name = _tok_sym or _tok_name or pair_address[:8]
 
-        _safe_score    = CHECKLIST_SETTINGS.get("score_safe",   40.0)
-        _caution_score = CHECKLIST_SETTINGS.get("score_caution",35.0)
+        _safe_score = CHECKLIST_SETTINGS.get("score_safe", 50.0)  # raised: was 40%
 
+        # SAFETY: Sirf SAFE pe buy — CAUTION/RISK/DANGER pe NEVER buy
         if overall == "SAFE" and score >= int(total * _safe_score / 100):
             try: _auto_paper_buy(pair_address, _final_name, score, total, result)
             except Exception as e: print(f"Auto buy error: {e}")
-        elif overall == "CAUTION" and score >= int(total * _caution_score / 100):
-            try: _auto_paper_buy(pair_address, _final_name, score, total, result)
-            except Exception as e: print(f"Auto buy caution error: {e}")
+        else:
+            print(f"⏭️ SKIP {pair_address[:10]}: overall={overall} score={score}/{total} ({round(score/max(total,1)*100)}%) — not buying")
 
         knowledge_base["bsc"]["new_tokens"].append({
             "address": pair_address, "overall": overall,
@@ -1917,84 +1931,83 @@ def run_full_sniper_checklist(address: str) -> Dict:
     add("Buy > Sell (1hr)",  "pass" if buys_1h > sells_1h else "warn", f"B:{buys_1h} S:{sells_1h}", 4)
     add(f"Volume 24h > ${cs['min_volume_24h']:,.0f}", "pass" if dex_data.get("volume_24h",0) > cs['min_volume_24h'] else "warn", f"${dex_data.get('volume_24h',0):,.0f}", 4)
 
-    add("1st Entry 0.002-0.005 BNB", "pass", "Follow Rule", 5)
-    add("Max Position ≤ 3%",         "pass", "2-3% Balance", 5)
-    add("Max 3-4 Entries/Token",     "pass", "No Chasing", 5)
-
     in_dex     = _gp_bool_flag(goplus_data, "is_in_dex")
     pool_count = len(dex_list) if isinstance(dex_list, list) else 0
     change_1h  = dex_data.get("change_1h", 0)
+    price_usd  = dex_data.get("price_usd", 0)
 
-    add("Listed on DEX",         "pass" if in_dex     else "fail",  "YES" if in_dex else "NO", 6)
-    add("DEX Pools",             "pass" if pool_count > 0 else "warn", f"{pool_count} pools", 6)
-    add("1h Price Change",       "pass" if change_1h > 0  else "warn", f"{change_1h:+.1f}%",  6)
-    add("Vol -50% → Exit 50%",   "pass", "Rule Active", 6)
-    add("Vol -90% → Exit Fully", "pass", "Rule Active", 6)
+    # Stage 6 — DEX real checks only (hardcoded rules removed from scoring)
+    add("Listed on DEX",    "pass" if in_dex     else "fail", "YES" if in_dex else "NO", 6)
+    add("DEX Pools",        "pass" if pool_count > 0 else "fail", f"{pool_count} pools", 6)
+    add("1h Price Change",  "pass" if change_1h > 0  else "warn", f"{change_1h:+.1f}%",  6)
+    add("Price Exists",     "pass" if price_usd > 0  else "fail", f"${price_usd:.8f}" if price_usd > 0 else "NO PRICE", 6)
 
     owner_pct = _gp_float(goplus_data, "owner_percent") * 100
 
+    # Stage 7 — wallet checks
     add(f"Dev/Creator < {cs['max_creator_pct']}%", "pass" if creator_pct < cs['max_creator_pct'] else ("warn" if creator_pct < cs['max_creator_pct']*3 else "fail"), f"{creator_pct:.1f}%", 7)
     add(f"Owner Wallet < {cs['max_owner_pct']}%",  "pass" if owner_pct   < cs['max_owner_pct']   else ("warn" if owner_pct   < cs['max_owner_pct']*3   else "fail"), f"{owner_pct:.1f}%",   7)
-    add(f"Whale Conc. < {cs['max_whale_top10']}%", "pass" if top10_pct   < cs['max_whale_top10'] else "fail",  f"{top10_pct:.1f}% top10",       7)
-    add("Dev Sell → Exit Rule", "pass", "Telegram Alert Active", 7)
+    add(f"Whale Conc. < {cs['max_whale_top10']}%", "pass" if top10_pct   < cs['max_whale_top10'] else "fail",  f"{top10_pct:.1f}% top10", 7)
 
     lp_holders = int(_gp_str(goplus_data, "lp_holder_count", "0"))
 
+    # Stage 8 — LP checks
     add(f"LP Lock > {cs['min_lp_lock']}%", "pass" if liq_locked > cs['min_lp_lock'] else ("warn" if liq_locked > 20 else "fail"), f"{liq_locked:.0f}%", 8)
-    add("LP Holders Present",  "pass" if lp_holders > 0  else "warn", f"{lp_holders} LP holders", 8)
-    add("LP Drop → Exit Rule", "pass", "Monitored", 8)
+    add("LP Holders Present", "pass" if lp_holders > 0 else "warn", f"{lp_holders} LP holders", 8)
 
-    low_tax       = buy_tax <= 5 and sell_tax <= 5
-    fast_trade_ok = low_tax and liq_locked > 20 and not honeypot
-
-    add("Low Tax Fast Trade",   "pass" if low_tax       else "warn", "FAST OK" if low_tax else f"{buy_tax:.0f}%+{sell_tax:.0f}%", 9)
-    add("15-30% Target Viable", "pass" if fast_trade_ok else "warn", "YES" if fast_trade_ok else "CHECK CONDITIONS", 9)
-    add("Capital Rotation",     "pass", "After target hit", 9)
-
-    sl_text = f"{cs['sl_new']:.0f}% SL (New)" if token_age_min < 60 else (f"{cs['sl_hyped']:.0f}% SL (Hyped)" if token_age_min < 360 else f"{cs['sl_mature']:.0f}% SL (Mature)")
-    add("Stop Loss Level",      "pass", sl_text,          10)
-    add("Price Monitor Active", "pass", "Auto alerts ON", 10)
-
-    add("+20% → SL to Cost",              "pass", "Rule Active", 11)
-    add(f"+{cs['tp1_pct']:.0f}% → Sell 25%",  "pass", "Rule Active", 11)
-    add(f"+{cs['tp2_pct']:.0f}% → Sell 25%",  "pass", "Rule Active", 11)
-    add(f"+{cs['tp3_pct']:.0f}% → Sell 25%",  "pass", "Rule Active", 11)
-    add(f"+{cs['tp4_pct']:.0f}% → Keep 10%",  "pass", "Rule Active", 11)
-
-    add("Token Logged",       "pass", "Auto-saved", 12)
-    add("Pattern DB Updated", "pass", "Active",     12)
-
-    add("Paper Mode First",    "pass", "Golden Rule", 13)
-    add("70% WR Before Real",  "pass", "Discipline",  13)
-    add("30+ Trades Required", "pass", "Before Real", 13)
+    low_tax = buy_tax <= 5 and sell_tax <= 5
+    # Stage 9 — tax real check
+    add("Low Tax Fast Trade", "pass" if low_tax else "warn", "FAST OK" if low_tax else f"{buy_tax:.0f}%+{sell_tax:.0f}%", 9)
 
     passed = sum(1 for c in result["checklist"] if c["status"] == "pass")
     failed = sum(1 for c in result["checklist"] if c["status"] == "fail")
+    warned = sum(1 for c in result["checklist"] if c["status"] == "warn")
     total  = len(result["checklist"])
     pct    = round((passed / total) * 100) if total > 0 else 0
 
     result["score"] = passed
     result["total"] = total
 
-    critical_fails = [c for c in result["checklist"] if c["status"] == "fail" and c["label"] in [
-        "Honeypot Safe", "Buy Tax ≤ 8%", "Sell Tax ≤ 8%",
-        "No Hidden Functions", "Transfer Allowed", "Mint Authority Disabled", "Liquidity ≥ 1 BNB"
-    ]]
-    if goplus_empty:
-        critical_fails = [c for c in result["checklist"] if c["status"] == "fail" and c["label"] == "Honeypot Safe"]
+    # ── Critical fail check (label-independent) ──
+    critical_labels_fixed = {"Honeypot Safe", "No Hidden Functions", "Transfer Allowed",
+                              "Mint Authority Disabled", "Listed on DEX", "DEX Pools", "Price Exists"}
+    critical_fails = [c for c in result["checklist"] if c["status"] == "fail" and (
+        c["label"] in critical_labels_fixed or
+        c["label"].startswith("Buy Tax") or
+        c["label"].startswith("Sell Tax") or
+        c["label"].startswith("Liquidity ≥")
+    )]
 
-    if critical_fails or honeypot:
-        result["overall"]        = "DANGER"
-        result["recommendation"] = "❌ SKIP — Critical fail. Do NOT buy."
-    elif failed >= 8 or pct < 35:
+    # ── GoPlus empty = unverified token = HIGH RISK ──
+    # GoPlus nahi mila = honeypot detection impossible = BLOCK
+    if goplus_empty:
         result["overall"]        = "RISK"
-        result["recommendation"] = "⚠️ HIGH RISK — Multiple issues. Skip or 0.001 BNB test max."
-    elif pct >= 55:
+        result["recommendation"] = "⛔ GoPlus data missing — token unverified. Cannot confirm safety."
+        return result
+
+    # ── Hard blocks ──
+    if honeypot:
+        result["overall"]        = "DANGER"
+        result["recommendation"] = "🚨 HONEYPOT DETECTED — Do NOT buy. Funds will be locked."
+        return result
+
+    if critical_fails:
+        result["overall"]        = "DANGER"
+        result["recommendation"] = f"❌ Critical fail: {critical_fails[0]['label']}. Skip."
+        return result
+
+    # ── Score-based (raised +10% from previous thresholds) ──
+    # Old: SAFE=55%, CAUTION=35-55%, RISK<35%
+    # New: SAFE=65%, CAUTION=50-65%, RISK<50%
+    if failed >= 6 or pct < 50:
+        result["overall"]        = "RISK"
+        result["recommendation"] = "⚠️ HIGH RISK — Too many fails. Skip."
+    elif pct >= 65:
         result["overall"]        = "SAFE"
-        result["recommendation"] = "✅ LOOKS SAFE — Start PAPER. Follow Stage 2 + 3 rules."
+        result["recommendation"] = "✅ SAFE — Paper mode buy. Follow TP/SL rules."
     else:
         result["overall"]        = "CAUTION"
-        result["recommendation"] = "⚠️ CAUTION — Some issues. 0.001 BNB test only."
+        result["recommendation"] = "⚠️ CAUTION — Marginal. Small test only."
 
     threading.Thread(target=log_recommendation, args=(address, result["overall"], passed, total), daemon=True).start()
     return result
@@ -2173,7 +2186,7 @@ def _persist_settings():
     try:
         supabase.table("memory").upsert({
             "session_id": "MRBLACK_SETTINGS",
-            "data": json.dumps({
+            "content": json.dumps({
                 "buy_amount":    AUTO_BUY_SIZE_BNB,
                 "max_positions": AUTO_MAX_POSITIONS,
                 "trade_mode":    TRADE_MODE,
@@ -2189,12 +2202,12 @@ def _load_all_settings_from_db():
     """Startup pe Supabase se sari settings load karo — restart ke baad bhi persist rahe"""
     global AUTO_BUY_SIZE_BNB, AUTO_MAX_POSITIONS, CHECKLIST_SETTINGS, TRADE_MODE, REAL_WALLET
     try:
-        res = supabase.table("memory").select("data").eq("session_id", "MRBLACK_SETTINGS").execute()
+        res = supabase.table("memory").select("*").eq("session_id", "MRBLACK_SETTINGS").execute()
         rows = res.data if res and res.data else []
         if not rows:
             print("⚙️ No saved settings found — using defaults")
             return
-        raw = rows[0].get("data", "{}")
+        raw = rows[0].get("content", "{}")
         saved = json.loads(raw) if isinstance(raw, str) else (raw or {})
 
         if "buy_amount" in saved:
@@ -2302,8 +2315,15 @@ def _startup_once():
                                 auto_trade_stats["last_action"]      = _pdb.get("last_action", "")
                                 _th = _pdb.get("trade_history", [])
                                 auto_trade_stats["trade_history"] = list(_th) if isinstance(_th, list) else []
-                                auto_trade_stats["wins"]             = _pdb.get("wins", 0)
-                                auto_trade_stats["losses"]           = _pdb.get("losses", 0)
+                                auto_trade_stats["wins"]         = _pdb.get("wins", 0)
+                                auto_trade_stats["losses"]       = _pdb.get("losses", 0)
+                                _saved_td = _pdb.get("today_date", "")
+                                _cur_td   = datetime.utcnow().strftime("%Y-%m-%d")
+                                if _saved_td == _cur_td:
+                                    auto_trade_stats["today_wins"]   = _pdb.get("today_wins",   0)
+                                    auto_trade_stats["today_losses"] = _pdb.get("today_losses", 0)
+                                    auto_trade_stats["today_pnl"]    = _pdb.get("today_pnl",    0.0)
+                                    auto_trade_stats["today_date"]   = _cur_td
                                 _sc = _pdb.get("total_scanned", 0)
                                 if _sc > 0:
                                     brain["total_tokens_discovered_ever"] = _sc
