@@ -518,7 +518,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 {% raw %}
 <script>
 // ─── SESSION ────────────────────────────────────────────────
-const SID=(()=>{let s=localStorage.getItem('mb_sid3');if(!s){s='mb-'+Date.now();localStorage.setItem('mb_sid3',s);}return s;})();
+const SID=(()=>{try{let s=localStorage.getItem('mb_sid3');if(!s){s='mb-'+Date.now();try{localStorage.setItem('mb_sid3',s);}catch(e){}}return s||('mb-'+Date.now());}catch(e){return 'mb-'+Date.now();}})();
 let chatOpen=false,unread=0,histFilter='all';
 let _bnbReal=0,_serverOk=false;
 
@@ -835,7 +835,6 @@ async function fetchStats(){
 async function init(){
   dbg('🚀 Init started — SID='+SID.slice(0,12));
   setConn(false,'⏳ MrBlack server se connect ho rha hai...');
-  try{await safeFetch('/init-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_id:SID})},5000);}catch(e){}
 
   // FIX: Retry loop — handles Render cold start + _startup_done delay
   let ok=false;
