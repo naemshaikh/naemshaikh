@@ -1177,7 +1177,13 @@ def get_dexscreener_token_data(token_address: str) -> Dict:
                     "dex_url":       p.get("url", ""),
                 })
                 bnb_price = market_cache.get("bnb_price", 300) or 300
-                result["price_bnb"] = result["price_usd"] / bnb_price if result["price_usd"] else 0
+                result["price_bnb"]    = result["price_usd"] / bnb_price if result["price_usd"] else 0
+                _bt = p.get("baseToken") or {}
+                result["symbol"]       = _bt.get("symbol", "")
+                result["name"]         = _bt.get("name",   "")
+                result["token_symbol"] = _bt.get("symbol", "")
+                result["token_name"]   = _bt.get("name",   "")
+                result["_raw_pairs"]   = True  # flag: symbol already fetched
     except Exception as e:
         print(f"⚠️ DexScreener error: {e}")
     return result
@@ -1603,11 +1609,15 @@ def _auto_check_new_pair(pair_address: str):
         try:
             _ar = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{pair_address}", timeout=8)
             if _ar.status_code == 200:
-                _bp = [p for p in (_ar.json() or {}).get("pairs",[]) or [] if p and p.get("chainId")=="bsc"]
+                _ar_json = _ar.json() or {}
+                _bp = [p for p in (_ar_json.get("pairs") or []) if p and p.get("chainId") == "bsc"]
+                del _ar_json
                 if _bp:
                     _ct = _bp[0].get("pairCreatedAt", 0) or 0
-                    if _ct and (time.time() - _ct/1000)/60 > 10080:
+                    del _bp
+                    if _ct and (time.time() - _ct / 1000) / 60 > 10080:
                         return
+            del _ar
         except Exception: pass
 
         result  = run_full_sniper_checklist(pair_address)
@@ -1791,7 +1801,7 @@ def _fallback_token_poller():
             try:
                 rb = requests.get("https://api.dexscreener.com/token-boosts/latest/v1", timeout=10)
                 if rb.status_code == 200:
-                    boosts = rb.json() if isinstance(rb.json(), list) else []
+                    _rb_json = rb.json(); boosts = _rb_json if isinstance(_rb_json, list) else []; del _rb_json
                     for item in boosts[:5]:
                         if item.get("chainId") == "bsc":
                             addr = item.get("tokenAddress", "")
@@ -1834,17 +1844,22 @@ def run_full_sniper_checklist(address: str) -> Dict:
     bscscan_source = "verified" if _gp_str(goplus_data, "is_open_source", "0") == "1" else ""
 
     dex_data = get_dexscreener_token_data(address)
-    # Token name/symbol bhi dex_data mein store karo
+    # Token name/symbol — get_dexscreener_token_data ke result se hi lo, duplicate call nahi
     try:
-        _nd = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{address}", timeout=8)
-        if _nd.status_code == 200:
-            _np = [p for p in (_nd.json() or {}).get("pairs",[]) or [] if p and p.get("chainId")=="bsc"]
-            if _np:
-                _bt = _np[0].get("baseToken") or {}
-                dex_data["symbol"]      = _bt.get("symbol", "")
-                dex_data["name"]        = _bt.get("name",   "")
-                dex_data["token_symbol"]= _bt.get("symbol", "")
-                dex_data["token_name"]  = _bt.get("name",   "")
+        _nd_raw = dex_data.get("_raw_pairs")
+        if not _nd_raw:
+            _nd = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{address}", timeout=8)
+            if _nd.status_code == 200:
+                _nd_json = _nd.json() or {}
+                _np = [p for p in (_nd_json.get("pairs") or []) if p and p.get("chainId") == "bsc"]
+                del _nd_json
+                if _np:
+                    _bt = _np[0].get("baseToken") or {}
+                    dex_data["symbol"]       = _bt.get("symbol", "")
+                    dex_data["name"]         = _bt.get("name",   "")
+                    dex_data["token_symbol"] = _bt.get("symbol", "")
+                    dex_data["token_name"]   = _bt.get("name",   "")
+                del _np
     except Exception: pass
     result["dex_data"] = dex_data
 
