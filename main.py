@@ -644,6 +644,35 @@ monitor_lock = threading.Lock()
 
 # ========== AUTO TRADE STATS ==========  FIX 2: trade_history added
 AUTO_TRADE_ENABLED = True
+TRADE_MODE         = "paper"   # "paper" or "real"
+REAL_WALLET        = ""        # user wallet address
+
+# Checklist thresholds — user can edit from UI
+CHECKLIST_SETTINGS = {
+    "min_liq_bnb":       2.0,    # Stage 1: Min liquidity BNB
+    "min_liq_locked":   80.0,    # Stage 1: Min liquidity locked %
+    "max_buy_tax":       8.0,    # Stage 1: Max buy tax %
+    "max_sell_tax":      8.0,    # Stage 1: Max sell tax %
+    "max_top_holder":    7.0,    # Stage 1: Max top holder %
+    "max_top10":        40.0,    # Stage 1: Max top10 holders %
+    "max_creator_pct":   5.0,    # Stage 7: Max dev/creator wallet %
+    "max_owner_pct":     5.0,    # Stage 7: Max owner wallet %
+    "max_whale_top10":  45.0,    # Stage 7: Max whale concentration %
+    "min_lp_lock":      80.0,    # Stage 8: Min LP lock %
+    "min_token_age":     3.0,    # Stage 3: Min token age (min)
+    "sniper_wait":       5.0,    # Stage 3: Sniper pump over (min)
+    "min_volume_24h":  1000.0,   # Stage 4: Min 24h volume USD
+    "sl_new":           15.0,    # Stage 10: SL % for new tokens
+    "sl_hyped":         20.0,    # Stage 10: SL % for hyped tokens
+    "sl_mature":        10.0,    # Stage 10: SL % for mature tokens
+    "score_safe":       40.0,    # Auto buy: SAFE min score %
+    "score_caution":    35.0,    # Auto buy: CAUTION min score %
+    "daily_loss_pct":   15.0,    # Max daily loss % of balance
+    "tp1_pct":          30.0,    # Stage 11: TP1 — sell 25%
+    "tp2_pct":          50.0,    # Stage 11: TP2 — sell 25%
+    "tp3_pct":         100.0,    # Stage 11: TP3 — sell 25%
+    "tp4_pct":         200.0,    # Stage 11: TP4 — keep 10%
+}
 AUTO_BUY_SIZE_BNB  = 0.01
 AUTO_MAX_POSITIONS = 15  # MEM FIX: was 50
 AUTO_SESSION_ID    = "AUTO_TRADER"
@@ -773,7 +802,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         sess["daily_loss"] = 0.0
         sess["daily_loss_date"] = today
     _balance = sess.get("paper_balance", 5.0) or 5.0
-    _daily_limit = _balance * 0.15  # 15% of current balance
+    _daily_limit = _balance * (CHECKLIST_SETTINGS.get("daily_loss_pct", 15.0) / 100)
     if sess.get("daily_loss", 0) >= _daily_limit:
         print(f"🛑 Auto-buy BLOCKED: daily_loss={sess.get('daily_loss',0):.4f} BNB >= {_daily_limit:.4f} BNB (15% of {_balance:.3f})")
         return
@@ -855,12 +884,13 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         return
     size_bnb = max(min(AUTO_BUY_SIZE_BNB, paper_balance * 0.025), 0.001)
     sess["paper_balance"] = round(paper_balance - size_bnb, 6)
-    add_position_to_monitor(AUTO_SESSION_ID, address, token_name or address[:10], entry_price, size_bnb, stop_loss_pct=15.0)
+    _sl = CHECKLIST_SETTINGS.get("sl_new", 15.0)
+    add_position_to_monitor(AUTO_SESSION_ID, address, token_name or address[:10], entry_price, size_bnb, stop_loss_pct=_sl)
     auto_trade_stats["running_positions"][address] = {
         "token":     token_name or address[:10],
         "entry":     entry_price,
         "size_bnb":  size_bnb,
-        "sl_pct":    15.0,
+        "sl_pct":    CHECKLIST_SETTINGS.get("sl_new", 15.0),
         "tp_sold":   0.0,
         "bought_at": datetime.utcnow().isoformat(),
     }
@@ -872,7 +902,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
                 "entry":     v.get("entry", 0),
                 "size_bnb":  v.get("size_bnb", AUTO_BUY_SIZE_BNB),
                 "bought_at": v.get("bought_at", ""),
-                "sl_pct":    v.get("sl_pct", 15.0),
+                "sl_pct":    v.get("sl_pct", CHECKLIST_SETTINGS.get("sl_new", 15.0)),
                 "tp_sold":   v.get("tp_sold", 0.0),
             }
             for k, v in auto_trade_stats["running_positions"].items()
@@ -920,7 +950,10 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
 
     sess = get_or_create_session(AUTO_SESSION_ID)
     sess["paper_balance"] = round(sess.get("paper_balance", 5.0) + return_bnb, 6)
-    auto_trade_stats["auto_pnl_total"] += pnl_pct * (sell_pct / 100.0)
+    # FIX PNL: Sirf full sell (100%) pe total_pnl mein add karo
+    # Partial sells pe accumulation hoti thi — ek trade 4x count ho raha tha
+    if sell_pct >= 100.0:
+        auto_trade_stats["auto_pnl_total"] += pnl_pct
     auto_trade_stats["total_auto_sells"] += 1
 
     # FIX 4: Save to trade_history with correct variable names
@@ -947,11 +980,20 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     if sell_pct >= 100.0:
         auto_trade_stats["running_positions"].pop(address, None)
         remove_position_from_monitor(address)
-        # Track wins/losses
+        # Track wins/losses + today stats
+        _today_key = datetime.utcnow().strftime("%Y-%m-%d")
+        if auto_trade_stats.get("today_date") != _today_key:
+            auto_trade_stats["today_date"]   = _today_key
+            auto_trade_stats["today_wins"]   = 0
+            auto_trade_stats["today_losses"] = 0
+            auto_trade_stats["today_pnl"]    = 0.0
         if pnl_pct >= 0:
-            auto_trade_stats["wins"] = auto_trade_stats.get("wins", 0) + 1
+            auto_trade_stats["wins"]       = auto_trade_stats.get("wins", 0) + 1
+            auto_trade_stats["today_wins"] = auto_trade_stats.get("today_wins", 0) + 1
         else:
-            auto_trade_stats["losses"] = auto_trade_stats.get("losses", 0) + 1
+            auto_trade_stats["losses"]       = auto_trade_stats.get("losses", 0) + 1
+            auto_trade_stats["today_losses"] = auto_trade_stats.get("today_losses", 0) + 1
+        auto_trade_stats["today_pnl"] = round(auto_trade_stats.get("today_pnl", 0.0) + pnl_bnb, 4)
         # PERSIST: Sell ke baad Supabase update karo
         try:
             _ss = get_or_create_session(AUTO_SESSION_ID)
@@ -1019,16 +1061,21 @@ def auto_position_manager():
                     continue
                 pnl     = ((current - entry) / entry) * 100
                 drop_hi = ((current - high) / high) * 100 if high > 0 else 0
-                if   pnl <= -sl_pct:                      _auto_paper_sell(addr, f"SL -{sl_pct:.0f}%", 100.0)
-                elif drop_hi <= -80 and tp_sold < 75:     _auto_paper_sell(addr, "Dump -80%", 100.0)
-                elif drop_hi <= -60 and tp_sold < 50:     _auto_paper_sell(addr, "Dump -60%", 75.0)
-                elif pnl >= 200 and tp_sold < 90:         _auto_paper_sell(addr, "TP+200%", 90-tp_sold)
-                elif pnl >= 100 and tp_sold < 75:         _auto_paper_sell(addr, "TP+100%", 25.0)
-                elif pnl >= 50  and tp_sold < 50:         _auto_paper_sell(addr, "TP+50%",  25.0)
-                elif pnl >= 30  and tp_sold < 25:         _auto_paper_sell(addr, "TP+30%",  25.0)
+                _cs   = CHECKLIST_SETTINGS
+                _tp1  = _cs.get("tp1_pct", 30.0)
+                _tp2  = _cs.get("tp2_pct", 50.0)
+                _tp3  = _cs.get("tp3_pct", 100.0)
+                _tp4  = _cs.get("tp4_pct", 200.0)
+                if   pnl <= -sl_pct:                        _auto_paper_sell(addr, f"SL -{sl_pct:.0f}%", 100.0)
+                elif drop_hi <= -80 and tp_sold < 75:       _auto_paper_sell(addr, "Dump -80%", 100.0)
+                elif drop_hi <= -60 and tp_sold < 50:       _auto_paper_sell(addr, "Dump -60%", 75.0)
+                elif pnl >= _tp4 and tp_sold < 90:          _auto_paper_sell(addr, f"TP+{_tp4:.0f}%", 90-tp_sold)
+                elif pnl >= _tp3 and tp_sold < 75:          _auto_paper_sell(addr, f"TP+{_tp3:.0f}%", 25.0)
+                elif pnl >= _tp2 and tp_sold < 50:          _auto_paper_sell(addr, f"TP+{_tp2:.0f}%", 25.0)
+                elif pnl >= _tp1 and tp_sold < 25:          _auto_paper_sell(addr, f"TP+{_tp1:.0f}%", 25.0)
                 elif pnl >= 20  and tp_sold < 1:
-                    _pos_data["sl_pct"] = 2.0  # FIX4   # FIX v4: was 0.0  # break-even
-                    _pos_data["tp_sold"] = 1  # FIX4
+                    _pos_data["sl_pct"] = 2.0  # break-even SL
+                    _pos_data["tp_sold"] = 1
             except Exception as e:
                 print(f"Auto manager err {addr[:10]}: {e}")
         time.sleep(10)
@@ -1559,11 +1606,27 @@ def _auto_check_new_pair(pair_address: str):
 
         if overall in ["SAFE", "CAUTION"]:
             pass
-        if overall == "SAFE" and score >= int(total * 0.40):  # FIX2: 50%→40%
-            try: _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
+        # Token name — dex_data se lo, nahi mila toh address
+        _dex_d    = result.get("dex_data", {})
+        _tok_sym  = _dex_d.get("symbol") or _dex_d.get("token_symbol") or ""
+        _tok_name = _dex_d.get("name")   or _dex_d.get("token_name")   or ""
+        # new_pairs_queue mein bhi check karo
+        if not _tok_sym:
+            for _qp in list(new_pairs_queue):
+                if str(_qp.get("address","")).lower() == pair_address.lower():
+                    _tok_sym  = _qp.get("symbol", "")
+                    _tok_name = _qp.get("name",   "")
+                    break
+        _final_name = _tok_sym or _tok_name or pair_address[:8]
+
+        _safe_score    = CHECKLIST_SETTINGS.get("score_safe",   40.0)
+        _caution_score = CHECKLIST_SETTINGS.get("score_caution",35.0)
+
+        if overall == "SAFE" and score >= int(total * _safe_score / 100):
+            try: _auto_paper_buy(pair_address, _final_name, score, total, result)
             except Exception as e: print(f"Auto buy error: {e}")
-        elif overall == "CAUTION" and score >= int(total * 0.35):  # FIX2: 45%→35%  # FIX2: 40%
-            try: _auto_paper_buy(pair_address, pair_address[:8], score, total, result)
+        elif overall == "CAUTION" and score >= int(total * _caution_score / 100):
+            try: _auto_paper_buy(pair_address, _final_name, score, total, result)
             except Exception as e: print(f"Auto buy caution error: {e}")
 
         knowledge_base["bsc"]["new_tokens"].append({
@@ -1757,6 +1820,18 @@ def run_full_sniper_checklist(address: str) -> Dict:
     bscscan_source = "verified" if _gp_str(goplus_data, "is_open_source", "0") == "1" else ""
 
     dex_data = get_dexscreener_token_data(address)
+    # Token name/symbol bhi dex_data mein store karo
+    try:
+        _nd = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{address}", timeout=8)
+        if _nd.status_code == 200:
+            _np = [p for p in (_nd.json() or {}).get("pairs",[]) or [] if p and p.get("chainId")=="bsc"]
+            if _np:
+                _bt = _np[0].get("baseToken") or {}
+                dex_data["symbol"]      = _bt.get("symbol", "")
+                dex_data["name"]        = _bt.get("name",   "")
+                dex_data["token_symbol"]= _bt.get("symbol", "")
+                dex_data["token_name"]  = _bt.get("name",   "")
+    except Exception: pass
     result["dex_data"] = dex_data
 
     def add(label, status, value, stage):
@@ -1788,10 +1863,11 @@ def run_full_sniper_checklist(address: str) -> Dict:
     hidden   = _gp_bool_flag(goplus_data, "can_take_back_ownership") or _gp_bool_flag(goplus_data, "hidden_owner")
     transfer = not _gp_bool_flag(goplus_data, "transfer_pausable")
 
-    add("Liquidity ≥ 1 BNB",       "pass" if liq_bnb > 2    else ("warn" if liq_bnb > 0.5 else "fail"), f"{liq_bnb:.2f} BNB", 1)
-    add("Liquidity Locked",         "pass" if liq_locked > 80 else ("warn" if liq_locked > 20 else "fail"), f"{liq_locked:.0f}%", 1)
-    add("Buy Tax ≤ 8%",             "pass" if buy_tax <= 8   else "fail", f"{buy_tax:.1f}%",  1)
-    add("Sell Tax ≤ 8%",            "pass" if sell_tax <= 8  else "fail", f"{sell_tax:.1f}%", 1)
+    cs = CHECKLIST_SETTINGS
+    add(f"Liquidity ≥ {cs['min_liq_bnb']} BNB", "pass" if liq_bnb > cs['min_liq_bnb'] else ("warn" if liq_bnb > cs['min_liq_bnb']*0.25 else "fail"), f"{liq_bnb:.2f} BNB", 1)
+    add("Liquidity Locked",         "pass" if liq_locked > cs['min_liq_locked'] else ("warn" if liq_locked > 20 else "fail"), f"{liq_locked:.0f}%", 1)
+    add(f"Buy Tax ≤ {cs['max_buy_tax']}%",  "pass" if buy_tax  <= cs['max_buy_tax']  else "fail", f"{buy_tax:.1f}%",  1)
+    add(f"Sell Tax ≤ {cs['max_sell_tax']}%","pass" if sell_tax <= cs['max_sell_tax'] else "fail", f"{sell_tax:.1f}%", 1)
     add("No Hidden Functions",      "pass" if not hidden      else "fail", "CLEAN" if not hidden else "RISK", 1)
     add("Transfer Allowed",         "pass" if transfer        else "fail", "YES" if transfer else "PAUSED", 1)
 
@@ -1806,10 +1882,10 @@ def run_full_sniper_checklist(address: str) -> Dict:
     suspicious  = _gp_bool_flag(goplus_data, "is_airdrop_scam")
     creator_pct = _gp_float(goplus_data, "creator_percent") * 100
 
-    add("Top Holder < 7%",          "pass" if top_holder < 7  else ("warn" if top_holder < 15  else "fail"), f"{top_holder:.1f}%", 1)
-    add("Top 10 Holders < 40%",     "pass" if top10_pct < 40  else ("warn" if top10_pct < 50   else "fail"), f"{top10_pct:.1f}%",  1)
+    add(f"Top Holder < {cs['max_top_holder']}%",   "pass" if top_holder < cs['max_top_holder'] else ("warn" if top_holder < cs['max_top_holder']*2 else "fail"), f"{top_holder:.1f}%", 1)
+    add(f"Top 10 Holders < {cs['max_top10']}%",    "pass" if top10_pct  < cs['max_top10']      else ("warn" if top10_pct  < cs['max_top10']*1.25 else "fail"), f"{top10_pct:.1f}%", 1)
     add("No Suspicious Clustering", "pass" if not suspicious   else "fail", "CLEAN" if not suspicious else "RISK", 1)
-    add("Dev Wallet Not Dumping",   "pass" if creator_pct < 5  else ("warn" if creator_pct < 15 else "fail"), f"{creator_pct:.1f}%", 1)
+    add(f"Dev Wallet < {cs['max_creator_pct']}%",  "pass" if creator_pct < cs['max_creator_pct'] else ("warn" if creator_pct < cs['max_creator_pct']*3 else "fail"), f"{creator_pct:.1f}%", 1)
 
     honeypot  = _gp_bool_flag(goplus_data, "is_honeypot")
     can_sell  = not _gp_bool_flag(goplus_data, "cannot_sell_all")
@@ -1831,15 +1907,15 @@ def run_full_sniper_checklist(address: str) -> Dict:
     except Exception as e:
         print(f"⚠️ Token age error: {e}")
 
-    add("Token Age ≥ 3 Min", "pass" if token_age_min >= 3 else "warn", f"{token_age_min:.0f} min" if token_age_min > 0 else "Unknown", 3)
-    add("Sniper Pump Over",  "pass" if token_age_min >= 5 else "warn", "OK" if token_age_min >= 5 else "WAIT", 3)
+    add(f"Token Age ≥ {cs['min_token_age']} Min", "pass" if token_age_min >= cs['min_token_age'] else "warn", f"{token_age_min:.0f} min" if token_age_min > 0 else "Unknown", 3)
+    add(f"Sniper Wait {cs['sniper_wait']} Min",   "pass" if token_age_min >= cs['sniper_wait']   else "warn", "OK" if token_age_min >= cs['sniper_wait'] else "WAIT", 3)
 
     buys_5m = dex_data.get("buys_5m", 0); sells_5m = dex_data.get("sells_5m", 0)
     buys_1h = dex_data.get("buys_1h", 0); sells_1h = dex_data.get("sells_1h", 0)
 
     add("Buy > Sell (5min)", "pass" if buys_5m > sells_5m else "warn", f"B:{buys_5m} S:{sells_5m}", 4)
     add("Buy > Sell (1hr)",  "pass" if buys_1h > sells_1h else "warn", f"B:{buys_1h} S:{sells_1h}", 4)
-    add("Volume 24h",        "pass" if dex_data.get("volume_24h",0) > 1000 else "warn", f"${dex_data.get('volume_24h',0):,.0f}", 4)
+    add(f"Volume 24h > ${cs['min_volume_24h']:,.0f}", "pass" if dex_data.get("volume_24h",0) > cs['min_volume_24h'] else "warn", f"${dex_data.get('volume_24h',0):,.0f}", 4)
 
     add("1st Entry 0.002-0.005 BNB", "pass", "Follow Rule", 5)
     add("Max Position ≤ 3%",         "pass", "2-3% Balance", 5)
@@ -1857,14 +1933,14 @@ def run_full_sniper_checklist(address: str) -> Dict:
 
     owner_pct = _gp_float(goplus_data, "owner_percent") * 100
 
-    add("Dev/Creator < 5%",     "pass" if creator_pct < 5  else ("warn" if creator_pct < 15 else "fail"), f"{creator_pct:.1f}%", 7)
-    add("Owner Wallet < 5%",    "pass" if owner_pct < 5    else ("warn" if owner_pct < 15   else "fail"), f"{owner_pct:.1f}%",   7)
-    add("Whale Conc. OK",       "pass" if top10_pct < 45   else "fail",  f"{top10_pct:.1f}% top10",       7)
+    add(f"Dev/Creator < {cs['max_creator_pct']}%", "pass" if creator_pct < cs['max_creator_pct'] else ("warn" if creator_pct < cs['max_creator_pct']*3 else "fail"), f"{creator_pct:.1f}%", 7)
+    add(f"Owner Wallet < {cs['max_owner_pct']}%",  "pass" if owner_pct   < cs['max_owner_pct']   else ("warn" if owner_pct   < cs['max_owner_pct']*3   else "fail"), f"{owner_pct:.1f}%",   7)
+    add(f"Whale Conc. < {cs['max_whale_top10']}%", "pass" if top10_pct   < cs['max_whale_top10'] else "fail",  f"{top10_pct:.1f}% top10",       7)
     add("Dev Sell → Exit Rule", "pass", "Telegram Alert Active", 7)
 
     lp_holders = int(_gp_str(goplus_data, "lp_holder_count", "0"))
 
-    add("LP Lock > 80%",       "pass" if liq_locked > 80 else ("warn" if liq_locked > 20 else "fail"), f"{liq_locked:.0f}%", 8)
+    add(f"LP Lock > {cs['min_lp_lock']}%", "pass" if liq_locked > cs['min_lp_lock'] else ("warn" if liq_locked > 20 else "fail"), f"{liq_locked:.0f}%", 8)
     add("LP Holders Present",  "pass" if lp_holders > 0  else "warn", f"{lp_holders} LP holders", 8)
     add("LP Drop → Exit Rule", "pass", "Monitored", 8)
 
@@ -1875,15 +1951,15 @@ def run_full_sniper_checklist(address: str) -> Dict:
     add("15-30% Target Viable", "pass" if fast_trade_ok else "warn", "YES" if fast_trade_ok else "CHECK CONDITIONS", 9)
     add("Capital Rotation",     "pass", "After target hit", 9)
 
-    sl_text = "15-20% SL (New)" if token_age_min < 60 else ("20-25% SL (Hyped)" if token_age_min < 360 else "10-15% SL (Mature)")
+    sl_text = f"{cs['sl_new']:.0f}% SL (New)" if token_age_min < 60 else (f"{cs['sl_hyped']:.0f}% SL (Hyped)" if token_age_min < 360 else f"{cs['sl_mature']:.0f}% SL (Mature)")
     add("Stop Loss Level",      "pass", sl_text,          10)
     add("Price Monitor Active", "pass", "Auto alerts ON", 10)
 
-    add("+20% → SL to Cost", "pass", "Rule Active", 11)
-    add("+30% → Sell 25%",   "pass", "Rule Active", 11)
-    add("+50% → Sell 25%",   "pass", "Rule Active", 11)
-    add("+100% → Sell 25%",  "pass", "Rule Active", 11)
-    add("+200% → Keep 10%",  "pass", "Rule Active", 11)
+    add("+20% → SL to Cost",              "pass", "Rule Active", 11)
+    add(f"+{cs['tp1_pct']:.0f}% → Sell 25%",  "pass", "Rule Active", 11)
+    add(f"+{cs['tp2_pct']:.0f}% → Sell 25%",  "pass", "Rule Active", 11)
+    add(f"+{cs['tp3_pct']:.0f}% → Sell 25%",  "pass", "Rule Active", 11)
+    add(f"+{cs['tp4_pct']:.0f}% → Keep 10%",  "pass", "Rule Active", 11)
 
     add("Token Logged",       "pass", "Auto-saved", 12)
     add("Pattern DB Updated", "pass", "Active",     12)
@@ -1947,7 +2023,11 @@ def log_trade_internal(session_id: str, trade: Dict):
     if win:
         sess["win_count"] += 1
         sess["pnl_24h"]   += pnl
+        # SYNC: auto_trade_stats se bhi sync rakho
+        auto_trade_stats["wins"] = auto_trade_stats.get("wins", 0)
     else:
+        # SYNC: losses bhi sync
+        auto_trade_stats["losses"] = auto_trade_stats.get("losses", 0)
         # FIX v6: BNB mein track karo (pnl % tha, convert karo)
         _size = float(trade.get("size_bnb", AUTO_BUY_SIZE_BNB) or AUTO_BUY_SIZE_BNB)  # FIX1: pos→trade
         _bnb_lost = _size * abs(pnl) / 100.0
@@ -2088,6 +2168,55 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
         return f"🤖 Error: {str(e)[:80]}"
 
 # ========== FLASK ROUTES ==========
+def _persist_settings():
+    """Sari current settings ek saath DB mein save karo"""
+    try:
+        supabase.table("memory").upsert({
+            "session_id": "MRBLACK_SETTINGS",
+            "data": json.dumps({
+                "buy_amount":    AUTO_BUY_SIZE_BNB,
+                "max_positions": AUTO_MAX_POSITIONS,
+                "trade_mode":    TRADE_MODE,
+                "real_wallet":   REAL_WALLET,
+                "checklist":     CHECKLIST_SETTINGS,
+            }),
+            "updated_at": datetime.utcnow().isoformat()
+        }, on_conflict="session_id").execute()
+    except Exception as e:
+        print(f"⚠️ Settings persist error: {e}")
+
+def _load_all_settings_from_db():
+    """Startup pe Supabase se sari settings load karo — restart ke baad bhi persist rahe"""
+    global AUTO_BUY_SIZE_BNB, AUTO_MAX_POSITIONS, CHECKLIST_SETTINGS, TRADE_MODE, REAL_WALLET
+    try:
+        res = supabase.table("memory").select("data").eq("session_id", "MRBLACK_SETTINGS").execute()
+        rows = res.data if res and res.data else []
+        if not rows:
+            print("⚙️ No saved settings found — using defaults")
+            return
+        raw = rows[0].get("data", "{}")
+        saved = json.loads(raw) if isinstance(raw, str) else (raw or {})
+
+        if "buy_amount" in saved:
+            AUTO_BUY_SIZE_BNB = float(saved["buy_amount"])
+        if "max_positions" in saved:
+            AUTO_MAX_POSITIONS = int(saved["max_positions"])
+        if "trade_mode" in saved:
+            TRADE_MODE = saved["trade_mode"]
+        if "real_wallet" in saved:
+            REAL_WALLET = saved["real_wallet"]
+        if "checklist" in saved and isinstance(saved["checklist"], dict):
+            for k, v in saved["checklist"].items():
+                if k in CHECKLIST_SETTINGS:
+                    try:
+                        CHECKLIST_SETTINGS[k] = float(v)
+                    except (ValueError, TypeError):
+                        pass
+
+        print(f"✅ Settings loaded from DB — buy={AUTO_BUY_SIZE_BNB} BNB, maxpos={AUTO_MAX_POSITIONS}, mode={TRADE_MODE}")
+    except Exception as e:
+        print(f"⚠️ Settings load error: {e}")
+
 _startup_done = False
 _startup_lock = threading.Lock()
 
@@ -2109,6 +2238,10 @@ def _startup_once():
             return _wrap
 
         def _bg_init():
+            try:
+                _load_all_settings_from_db()
+            except Exception as e:
+                print(f"Settings load error: {e}")
             try:
                 _load_user_profile()
                 print("Profile loaded")
@@ -2554,9 +2687,12 @@ def introspect():
 def auto_stats_route():
   try:
     sess        = get_or_create_session(AUTO_SESSION_ID)
-    trade_count = sess.get("trade_count", 0)
-    win_count   = sess.get("win_count",   0)
-    win_rate    = round(win_count / trade_count * 100, 1) if trade_count > 0 else 0.0
+    # FIX PNL: wins/losses ek hi jagah se lo — auto_trade_stats
+    # Pehle sess["win_count"] aur auto_trade_stats["wins"] alag the — mismatch hota tha
+    wins        = auto_trade_stats.get("wins", 0)
+    losses      = auto_trade_stats.get("losses", 0)
+    trade_count = wins + losses
+    win_rate    = round(wins / trade_count * 100, 1) if trade_count > 0 else 0.0
     # FIX: bnb_price 0 hai toh 300 fallback use karo — UI blank nahi rahegi
     bnb_price   = market_cache.get("bnb_price", 0) or 300
     paper_bal   = float(sess.get("paper_balance") or 5.0)
@@ -2581,13 +2717,13 @@ def auto_stats_route():
             "sl_pct":    pos.get("sl_pct", 15.0),
         })
 
-    total_pnl = round(auto_trade_stats.get("auto_pnl_total", 0.0), 2)
+    total_pnl = round(auto_trade_stats.get("auto_pnl_total", 0.0) / max(trade_count, 1), 2) if trade_count > 0 else 0.0
 
     return jsonify({
         "paper_balance":   paper_bal,
         "trade_count":     trade_count,
-        "wins":            win_count,
-        "losses":          auto_trade_stats.get("losses", 0),
+        "wins":            wins,
+        "losses":          losses,
         "win_rate":        win_rate,
         "total_pnl_pct":   total_pnl,
         "total_scanned":   max(len(discovered_addresses), brain.get("total_tokens_discovered_ever", 0)),
@@ -2604,8 +2740,15 @@ def auto_stats_route():
         "learning_cycles": brain.get("total_learning_cycles", 0),
         "new_pairs_found": len(new_pairs_queue),
         "daily_loss":      round(sess.get("daily_loss", 0), 4),
+        "daily_loss_limit":round(float(sess.get("paper_balance",5.0) or 5.0) * (CHECKLIST_SETTINGS.get("daily_loss_pct",15.0)/100), 4),
         "auto_buys":       auto_trade_stats.get("total_auto_buys",  0),
         "auto_sells":      auto_trade_stats.get("total_auto_sells", 0),
+        "score_safe":      CHECKLIST_SETTINGS.get("score_safe",   40.0),
+        "score_caution":   CHECKLIST_SETTINGS.get("score_caution",35.0),
+        "daily_loss_pct":  CHECKLIST_SETTINGS.get("daily_loss_pct",15.0),
+        "today_wins":      auto_trade_stats.get("today_wins",   0),
+        "today_losses":    auto_trade_stats.get("today_losses", 0),
+        "today_pnl":       round(auto_trade_stats.get("today_pnl", 0.0), 4),
     })
   except Exception as e:
     print(f"❌ auto_stats_route error: {e}")
@@ -2626,6 +2769,20 @@ def toggle_auto():
     print(f"🤖 Auto Trade toggled: {status}")
     return jsonify({"enabled": AUTO_TRADE_ENABLED, "status": status})
 
+@app.route("/set-trade-mode", methods=["POST"])
+def set_trade_mode():
+    global TRADE_MODE, REAL_WALLET
+    data = request.get_json() or {}
+    mode   = data.get("mode", "paper")
+    wallet = data.get("wallet", "")
+    if mode not in ("paper", "real"):
+        return jsonify({"status": "error", "message": "Invalid mode"}), 400
+    TRADE_MODE   = mode
+    REAL_WALLET  = wallet
+    print(f"🔄 Trade mode switched to: {mode.upper()} | wallet={wallet[:12] if wallet else 'none'}")
+    threading.Thread(target=_persist_settings, daemon=True).start()
+    return jsonify({"status": "ok", "mode": TRADE_MODE, "wallet": REAL_WALLET[:12] if REAL_WALLET else ""})
+
 @app.route("/set-buy-amount", methods=["POST"])
 def set_buy_amount():
     global AUTO_BUY_SIZE_BNB
@@ -2638,6 +2795,7 @@ def set_buy_amount():
             return jsonify({"status": "error", "message": "Maximum 1.0 BNB allowed!"}), 400
         AUTO_BUY_SIZE_BNB = round(amount, 4)
         print(f"💰 Auto buy amount changed: {AUTO_BUY_SIZE_BNB} BNB")
+        threading.Thread(target=_persist_settings, daemon=True).start()
         return jsonify({"status": "ok", "amount": AUTO_BUY_SIZE_BNB, "message": f"Buy amount set: {AUTO_BUY_SIZE_BNB} BNB"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
@@ -2654,9 +2812,36 @@ def set_max_positions():
             return jsonify({"status": "error", "message": "Maximum 50 positions allowed!"}), 400
         AUTO_MAX_POSITIONS = count
         print(f"📊 Max positions changed: {AUTO_MAX_POSITIONS}")
+        threading.Thread(target=_persist_settings, daemon=True).start()
         return jsonify({"status": "ok", "count": AUTO_MAX_POSITIONS, "message": f"Max positions set: {AUTO_MAX_POSITIONS}"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
+
+@app.route("/get-checklist-settings", methods=["GET"])
+def get_checklist_settings():
+    return jsonify({"status": "ok", "settings": CHECKLIST_SETTINGS})
+
+@app.route("/save-checklist-settings", methods=["POST"])
+def save_checklist_settings():
+    global CHECKLIST_SETTINGS
+    data = request.get_json() or {}
+    s = data.get("settings", {})
+    if not s:
+        return jsonify({"status": "error", "message": "No settings provided"}), 400
+    # Validate and update only allowed keys
+    allowed = set(CHECKLIST_SETTINGS.keys())
+    updated = {}
+    for k, v in s.items():
+        if k in allowed:
+            try:
+                CHECKLIST_SETTINGS[k] = float(v)
+                updated[k] = CHECKLIST_SETTINGS[k]
+            except (ValueError, TypeError):
+                pass
+    # Persist ALL settings (not just checklist)
+    threading.Thread(target=_persist_settings, daemon=True).start()
+    print(f"✅ Checklist settings saved: {len(updated)} keys")
+    return jsonify({"status": "ok", "updated": updated, "settings": CHECKLIST_SETTINGS})
 
 @app.route("/get-settings", methods=["GET"])
 def get_settings():
