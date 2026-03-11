@@ -1392,7 +1392,6 @@ window._renderTPage = function(){
   const raw = history.length ? history : (window._lastStats&&window._lastStats.open_trades||[]);
   if(!raw.length){ wrap.innerHTML='<div class="empty-state">No trades yet</div>'; return; }
 
-  // Group by address
   const groups = {};
   raw.forEach(function(t){
     const key = t.address||t.token||'unknown';
@@ -1400,7 +1399,6 @@ window._renderTPage = function(){
     groups[key].trades.push(t);
   });
 
-  // Sort by latest trade
   const sorted = Object.values(groups).sort(function(a,b){
     return new Date(b.trades[0].sold_at||b.trades[0].bought_at||0) - new Date(a.trades[0].sold_at||a.trades[0].bought_at||0);
   });
@@ -1443,6 +1441,74 @@ window._renderTPage = function(){
   });
   wrap.innerHTML = html;
 };
+
+function openGroupTradeDetail(encoded){
+  let g; try{g=JSON.parse(decodeURIComponent(encoded));}catch(e){return;}
+  const sym=g.sym,addr=g.addr,trades=g.trades;
+  const ic=iconClr(sym);
+  const clr=g.totalPnlB>=0?'var(--em)':'var(--red)';
+  const bnbP=window._bnbReal||618;
+
+  document.getElementById('modal-title').innerHTML=
+    '<div style="display:flex;align-items:center;gap:10px;">'+
+      '<div style="width:40px;height:40px;border-radius:50%;background:'+ic+'33;border:2px solid '+ic+'55;color:'+ic+';display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;">'+sym.slice(0,2)+'</div>'+
+      '<div>'+
+        '<div style="font-size:16px;font-weight:900;color:var(--txt1);">'+sym+'</div>'+
+        '<div style="font-size:10px;color:var(--txt3);font-family:JetBrains Mono,monospace;">'+(addr?addr.slice(0,8)+'...'+addr.slice(-6):'—')+'</div>'+
+      '</div>'+
+      '<div style="margin-left:auto;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:800;background:rgba(255,255,255,0.06);color:var(--txt2);">'+trades.length+' TRADES</div>'+
+    '</div>';
+
+  document.getElementById('modal-sub').textContent=g.wins+'W · '+g.losses+'L · '+g.totalSz.toFixed(4)+' BNB invested';
+  document.getElementById('modal-pnl').className='pnl-big '+(g.totalPnlB>=0?'p':'n');
+  document.getElementById('modal-pnl').textContent=(g.totalPnlB>=0?'+':'')+g.totalPnlB.toFixed(4)+' BNB';
+
+  const rows=trades.map(function(t){
+    const pnl=parseFloat(t.pnl_pct||0);
+    const pnlB=parseFloat(t.pnl_bnb||0)||(parseFloat(t.size_bnb||0)*pnl/100);
+    const tclr=pnlB>=0?'var(--em)':'var(--red)';
+    const entry=parseFloat(t.entry||0);
+    const exit=parseFloat(t.exit||0);
+    const isWin=pnlB>=0;
+    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.04);">'+
+      '<div>'+
+        '<div style="display:flex;align-items:center;gap:6px;">'+
+          '<span style="width:16px;height:16px;border-radius:50%;background:'+(isWin?'var(--em)':'var(--red)')+';display:flex;align-items:center;justify-content:center;font-size:8px;">'+(isWin?'↑':'↓')+'</span>'+
+          '<span style="font-size:11px;font-weight:700;color:var(--txt1);">'+(t.reason||'Auto')+'</span>'+
+        '</div>'+
+        '<div style="font-size:10px;color:var(--txt3);margin-top:3px;">'+(entry>0?fmtBNBPrice(entry):'—')+' → '+(exit>0?fmtBNBPrice(exit):'open')+'</div>'+
+        '<div style="font-size:9px;color:var(--txt3);margin-top:1px;">'+holdTime(t.bought_at)+' held · '+parseFloat(t.size_bnb||0).toFixed(4)+' BNB</div>'+
+      '</div>'+
+      '<div style="text-align:right;">'+
+        '<div style="font-size:12px;font-weight:800;color:'+tclr+';font-family:JetBrains Mono,monospace;">'+(pnlB>=0?'+':'')+pnlB.toFixed(4)+' BNB</div>'+
+        '<div style="font-size:10px;color:'+tclr+';">'+(pnl>=0?'+':'')+pnl.toFixed(2)+'%</div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+
+  document.getElementById('modal-body').innerHTML=
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">'+
+      '<div style="background:var(--ink3);border-radius:10px;padding:12px;border:1px solid '+(g.totalPnlB>=0?'rgba(0,230,118,0.2)':'rgba(255,71,87,0.2)')+';">'+
+        '<div style="font-size:9px;color:var(--txt3);text-transform:uppercase;margin-bottom:4px;">Total PnL</div>'+
+        '<div style="font-size:15px;font-weight:900;color:'+clr+';font-family:JetBrains Mono,monospace;">'+(g.totalPnlB>=0?'+':'')+g.totalPnlB.toFixed(4)+'</div>'+
+        '<div style="font-size:10px;color:'+clr+';margin-top:2px;">≈ '+(g.totalPnlB>=0?'+$':'-$')+(Math.abs(g.totalPnlB)*bnbP).toFixed(2)+'</div>'+
+      '</div>'+
+      '<div style="background:var(--ink3);border-radius:10px;padding:12px;">'+
+        '<div style="font-size:9px;color:var(--txt3);text-transform:uppercase;margin-bottom:4px;">Win Rate</div>'+
+        '<div style="font-size:15px;font-weight:900;color:'+(g.wins>=g.losses?'var(--em)':'var(--red)')+';font-family:JetBrains Mono,monospace;">'+(trades.length?Math.round(g.wins/trades.length*100):0)+'%</div>'+
+        '<div style="font-size:10px;color:var(--txt3);margin-top:2px;">'+g.wins+'W / '+g.losses+'L</div>'+
+      '</div>'+
+    '</div>'+
+    '<div style="font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:0.5px;padding:0 0 6px;">All Trades</div>'+
+    '<div style="background:var(--ink3);border-radius:10px;overflow:hidden;">'+rows+'</div>';
+
+  document.getElementById('modal-actions').innerHTML=addr?
+    '<button class="mbtn dark" onclick="copyAddr(\''+addr+'\');closeModal()" style="flex:1;">📋 Copy</button>'+
+    '<a class="mbtn gold" href="https://dexscreener.com/bsc/'+addr+'" target="_blank" style="flex:1;">📊 DexScreener</a>'
+    :'<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
+
+  showModal();
+}
 
 function openGroupTradeDetail(encoded){
   let g; try{g=JSON.parse(decodeURIComponent(encoded));}catch(e){return;}
