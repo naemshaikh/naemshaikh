@@ -534,7 +534,7 @@ function safeFetch(url,opts,ms){
       .catch(e=>{clearTimeout(t);rej(e);});
   });
 }
-async function fetchJSON(url,opts,ms){
+async async function fetchJSON(url,opts,ms){
   try{const r=await safeFetch(url,opts,ms);return r.ok?await r.json():null;}
   catch(e){return null;}
 }
