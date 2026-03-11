@@ -651,7 +651,7 @@ async function fetchHistory(){
 
       // Col 2 — Entry → Exit
       '<div style="text-align:center;">'+
-        '<div style="font-size:10px;color:var(--txt2);font-family:JetBrains Mono,monospace;">'+(entry>0?entry.toExponential(2):'—')+'</div>'+
+        '<div style="font-size:10px;color:var(--txt2);font-family:JetBrains Mono,monospace;">'+(entry>0?fmtBNBPrice(entry):'—')+'</div>'+
         '<div style="font-size:10px;color:'+clr+';font-family:JetBrains Mono,monospace;">→ '+(exit>0?exit.toExponential(2):'—')+'</div>'+
       '</div>'+
 
@@ -1155,9 +1155,11 @@ function pSign(v){return parseFloat(v)>=0?'+':'';}
 function pClr(v){return parseFloat(v)>=0?'var(--em)':'var(--red)';}
 function gHoldTime(iso){
   if(!iso)return '—';
-  const s=Math.floor((Date.now()-new Date(iso))/1000);
+  const s=Math.floor((Date.now()-new Date(iso).getTime())/1000);
+  if(s<0)return '—';
   if(s<60)return s+'s';if(s<3600)return Math.floor(s/60)+'m';
-  if(s<86400)return Math.floor(s/3600)+'h';return Math.floor(s/86400)+'d';
+  if(s<86400)return Math.floor(s/3600)+'h '+(Math.floor((s%3600)/60)?Math.floor((s%3600)/60)+'m':'');
+  return Math.floor(s/86400)+'d '+Math.floor((s%86400)/3600)+'h';
 }
 function gShortA(a){return a?(a.slice(0,6)+'...'+a.slice(-4)):'—';}
 function gFmtP(p){
@@ -1165,6 +1167,13 @@ function gFmtP(p){
   if(n<0.000001)return '$'+n.toExponential(2);
   if(n<0.01)return '$'+n.toFixed(6);
   return '$'+n.toFixed(4);
+}
+function fmtBNBPrice(n){
+  n=parseFloat(n||0);if(!n)return '—';
+  if(n>=0.01)return n.toFixed(6)+' BNB';
+  if(n>=0.000001)return n.toFixed(8)+' BNB';
+  if(n>=0.000000001)return n.toFixed(11)+' BNB';
+  return n.toFixed(13)+' BNB';
 }
 
 // ── Tab switch ──
@@ -1228,8 +1237,8 @@ window._renderHPage = function(){
 
       // Col 2 — Current / Bought
       '<div style="text-align:center;">'+
-        '<div style="font-size:11px;color:var(--txt2);font-family:JetBrains Mono,monospace;">'+current.toExponential(2)+'</div>'+
-        '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+sz.toFixed(4)+' BNB</div>'+
+        '<div style="font-size:11px;color:var(--txt2);font-family:JetBrains Mono,monospace;">'+fmtBNBPrice(current)+'</div>'+
+        '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+fmtBNBPrice(entry)+'</div>'+
       '</div>'+
 
       // Col 3 — PnL BNB + %
@@ -1433,10 +1442,10 @@ window._renderTPage = function(){
       // Col 2 — Entry → Exit price
       '<div style="text-align:center;">'+
         '<div style="font-size:10px;color:var(--txt2);font-family:JetBrains Mono,monospace;white-space:nowrap;">'+
-          (entry>0?entry.toExponential(2):'—')+
+          (entry>0?fmtBNBPrice(entry):'—')+
         '</div>'+
         '<div style="font-size:10px;color:'+(isWin?'var(--em)':'var(--red)')+';font-family:JetBrains Mono,monospace;white-space:nowrap;">'+
-          '→ '+(exit>0?exit.toExponential(2):'open')+
+          '→ '+(exit>0?fmtBNBPrice(exit):'open')+
         '</div>'+
       '</div>'+
 
