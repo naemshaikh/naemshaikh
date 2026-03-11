@@ -652,7 +652,7 @@ async function fetchHistory(){
       // Col 2 — Entry → Exit
       '<div style="text-align:center;">'+
         '<div style="font-size:10px;color:var(--txt2);font-family:JetBrains Mono,monospace;">'+(entry>0?fmtBNBPrice(entry):'—')+'</div>'+
-        '<div style="font-size:10px;color:'+clr+';font-family:JetBrains Mono,monospace;">→ '+(exit>0?exit.toExponential(2):'—')+'</div>'+
+        '<div style="font-size:10px;color:'+clr+';font-family:JetBrains Mono,monospace;">→ '+(exit>0?fmtBNBPrice(exit):'—')+'</div>'+
       '</div>'+
 
       // Col 3 — PnL
