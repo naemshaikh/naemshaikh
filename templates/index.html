@@ -1250,58 +1250,66 @@ window._renderHPage = function(){
   if(!window._hData){ wrap.innerHTML='<div class="empty-state">Loading positions...</div>'; return; }
   const PAGE  = 15;
   const items = window._hData.slice(0, PAGE * window._hPage);
-  if(!items.length){wrap.innerHTML='<div class="empty-state">No open positions</div>';return;}
+  if(!items.length){ wrap.innerHTML='<div class="empty-state">No open positions</div>'; return; }
+  const bnbP  = window._bnbReal||618;
 
-  // Column header — exact GMGN style
-  const _lastUp = window._lastStats ? new Date(window._lastStats.ts||Date.now()) : null;
-  let html = '<div style="display:grid;grid-template-columns:1fr 90px 100px;padding:6px 4px;border-bottom:1px solid var(--line);gap:4px;">'+
-    '<span style="font-size:10px;color:var(--txt3);">Token/Last TX</span>'+
-    '<span style="font-size:10px;color:var(--txt3);text-align:center;">Curr/Bought</span>'+
-    '<span style="font-size:10px;color:var(--txt3);text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:3px;"><span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--em);animation:blink 2.4s infinite;"></span>LIVE</span>'+
+  let html = '<div style="display:grid;grid-template-columns:1fr 100px 100px;padding:6px 4px;border-bottom:1px solid var(--line);gap:4px;">'+
+    '<span style="font-size:10px;color:var(--txt3);">Token / Hold</span>'+
+    '<span style="font-size:10px;color:var(--txt3);text-align:center;">Invested</span>'+
+    '<span style="font-size:10px;color:var(--txt3);text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:3px;"><span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--em);animation:blink 2.4s infinite;"></span>PnL LIVE</span>'+
   '</div>';
 
   html += items.map(function(d){
-    const sym  = d.sym;
-    const p    = d.p;
-    const addr = d.addr;
-    const ic   = iconClr(sym);
-    const sz   = parseFloat(p.size_bnb||0);
-    const pnl  = parseFloat(p.pnl||p.pnl_pct||0);
-    // FIX: prefer pnl_bnb from server; fallback to sz*pnl/100
-    const pnlB = parseFloat(p.pnl_bnb||0) || (sz * pnl / 100);
-    const clr  = pClr(pnl);
-    const tokenName = (p.token && !p.token.startsWith('0x') && p.token.length < 20) ? p.token.toUpperCase() : sym;
-    const current = parseFloat(p.current||p.entry||0);
+    var sym         = d.sym;
+    var p           = d.p;
+    var addr        = d.addr;
+    var ic          = iconClr(sym);
+    var sz          = parseFloat(p.size_bnb||0);
+    var pnl         = parseFloat(p.pnl||p.pnl_pct||0);
+    var pnlB        = parseFloat(p.pnl_bnb||0) || (sz * pnl / 100);
+    var clr         = pClr(pnl);
+    var tokenName   = (p.token && !p.token.startsWith('0x') && p.token.length < 20) ? p.token.toUpperCase() : sym;
+    var entry       = parseFloat(p.entry||0);
+    var current     = parseFloat(p.current||p.entry||0);
+    var _isLive     = current > 0 && current !== entry;
+    var _rowBg      = _isLive ? (pnl>=0?'rgba(0,230,118,0.03)':'rgba(255,71,87,0.03)') : 'transparent';
+    var investedUSD = p.bought_usd!=null ? parseFloat(p.bought_usd) : (sz * bnbP);
+    var currValUSD  = (sz + pnlB) > 0 ? ((sz + pnlB) * bnbP) : investedUSD;
+    var remPct      = p.tp_sold!=null ? Math.max(0, 100 - parseFloat(p.tp_sold||0)) : 100;
+    var holdTm      = gHoldTime(p.bought_at);
+    var tokenQty    = entry > 0 ? (sz / entry) : 0;
+    var remClr      = remPct >= 50 ? 'var(--em)' : 'var(--gold)';
+    var nowClr      = pnl >= 0 ? 'var(--em)' : 'var(--red)';
 
-    const entry  = parseFloat(p.entry||0);
-    const _isLive = current > 0 && current !== entry;
-    const _rowBg  = _isLive ? (pnl>=0?'rgba(0,230,118,0.03)':'rgba(255,71,87,0.03)') : 'transparent';
-    return '<div style="display:grid;grid-template-columns:1fr 90px 100px;align-items:center;padding:8px 4px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;gap:4px;background:'+_rowBg+';" onclick="openHoldDetail(\''+encodeURIComponent(JSON.stringify(Object.assign({},p,{address:addr})))+'\')">'+
+    return '<div style="display:grid;grid-template-columns:1fr 100px 100px;align-items:center;padding:9px 4px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;gap:4px;background:'+_rowBg+';" onclick="openHoldDetail(''+encodeURIComponent(JSON.stringify(Object.assign({},p,{address:addr})))+'')">'+
 
-      // Col 1 — Icon + Name + Time
+      // Col 1 — Icon + Token name + hold time
       '<div style="display:flex;align-items:center;gap:8px;min-width:0;">'+
-        '<div style="position:relative;flex-shrink:0;">'+
-          '<div style="width:34px;height:34px;border-radius:50%;background:'+ic+'22;border:1.5px solid '+ic+'44;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:'+ic+';font-family:JetBrains Mono,monospace;">'+sym.slice(0,2)+'</div>'+
+        '<div style="flex-shrink:0;">'+
+          '<div style="width:36px;height:36px;border-radius:50%;background:'+ic+'22;border:1.5px solid '+ic+'44;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:'+ic+';font-family:JetBrains Mono,monospace;">'+sym.slice(0,2)+'</div>'+
         '</div>'+
         '<div style="min-width:0;">'+
           '<div style="display:flex;align-items:center;gap:4px;">'+
             '<span style="font-size:13px;font-weight:800;color:var(--txt1);font-family:JetBrains Mono,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px;">'+tokenName.slice(0,8)+'</span>'+
-            '<span onclick="event.stopPropagation();copyAddr(\''+addr+'\')" style="font-size:8px;color:var(--txt3);cursor:pointer;opacity:0.7;">⧉</span>'+
+            '<span onclick="event.stopPropagation();copyAddr(''+addr+'')" style="font-size:8px;color:var(--txt3);cursor:pointer;">⧉</span>'+
           '</div>'+
-          '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+gHoldTime(p.bought_at)+'</div>'+
+          '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">⏱ '+holdTm+'</div>'+
         '</div>'+
       '</div>'+
 
-      // Col 2 — Invested USD / size BNB
-      '<div style="text-align:center;">'+
-        '<div style="font-size:11px;color:var(--txt2);font-family:JetBrains Mono,monospace;">$'+(p.bought_usd!=null?parseFloat(p.bought_usd).toFixed(2):(sz*(window._bnbReal||618)).toFixed(2))+'</div>'+
-        '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+sz.toFixed(4)+' BNB</div>'+
+      // Col 2 — Invested USD/BNB + token qty + current value + remaining %
+      '<div style="text-align:center;min-width:0;">'+
+        '<div style="font-size:10px;font-weight:700;color:var(--txt2);font-family:JetBrains Mono,monospace;white-space:nowrap;">$'+investedUSD.toFixed(2)+' / '+sz.toFixed(4)+'</div>'+
+        '<div style="font-size:9px;color:var(--txt3);margin-top:2px;">🪙 '+(tokenQty>0?tokenQty.toLocaleString(undefined,{maximumFractionDigits:0})+' '+sym.slice(0,6):'—')+'</div>'+
+        '<div style="font-size:9px;font-weight:700;color:'+nowClr+';margin-top:2px;">Now: $'+currValUSD.toFixed(2)+'</div>'+
+        '<div style="font-size:9px;color:'+remClr+';margin-top:1px;">'+remPct+'% remaining</div>'+
       '</div>'+
 
-      // Col 3 — PnL BNB + %
-      '<div style="text-align:right;">'+
-        '<div style="font-size:12px;font-weight:800;color:'+clr+';font-family:JetBrains Mono,monospace;white-space:nowrap;">'+(pnlB>=0?'+':'')+pnlB.toFixed(4)+' BNB</div>'+
-        '<div style="font-size:10px;font-weight:700;color:'+clr+';font-family:JetBrains Mono,monospace;">('+pSign(pnl)+pnl.toFixed(2)+'%)</div>'+
+      // Col 3 — PnL USD + BNB + %
+      '<div style="text-align:right;min-width:0;">'+
+        '<div style="font-size:11px;font-weight:900;color:'+clr+';font-family:JetBrains Mono,monospace;white-space:nowrap;">'+(pnlB>=0?'+':'-')+'$'+(Math.abs(pnlB)*bnbP).toFixed(2)+'</div>'+
+        '<div style="font-size:9px;color:'+clr+';font-family:JetBrains Mono,monospace;margin-top:1px;">'+(pnlB>=0?'+':'')+pnlB.toFixed(4)+' BNB</div>'+
+        '<div style="font-size:10px;font-weight:700;color:'+clr+';font-family:JetBrains Mono,monospace;margin-top:1px;">'+(pnl>=0?'+':'')+pnl.toFixed(2)+'%</div>'+
       '</div>'+
 
     '</div>';
@@ -1461,6 +1469,7 @@ function renderGHolding(posObj){
   var arr = Array.isArray(posObj) ? posObj : Object.keys(posObj||{}).map(function(addr){
     var p = posObj[addr]; p.address = p.address||addr; return p;
   });
+  arr.sort(function(a,b){return new Date(_toUTC(b.bought_at)||0)-new Date(_toUTC(a.bought_at)||0);});
   window._hData = arr.map(function(p){
     var addr = p.address||'';
     var sym  = (p.token||addr.slice(2,8)).toUpperCase();
