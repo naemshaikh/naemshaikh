@@ -1363,39 +1363,44 @@ function openHoldDetail(json){
     t = JSON.parse(raw);
   }catch(e){return;}
 
-  const sym      = (t.token && !t.token.startsWith('0x') && t.token.length < 20) ? t.token.toUpperCase() : (t.token||(t.address||'').slice(2,10)).toUpperCase();
-  const addr     = t.address||'';
-  const ic       = iconClr(sym);
-  const sz       = parseFloat(t.size_bnb||0);
-  const origSz   = parseFloat(t.orig_size_bnb||sz);
-  const pnl      = parseFloat(t.pnl||t.pnl_pct||0);
-  const pnlB     = parseFloat(t.pnl_bnb||0) || (sz*pnl/100);
-  const banked   = parseFloat(t.banked_pnl_bnb||0);
-  const totalPnlB= pnlB + banked;
-  const clr      = pClr(pnl);
-  const entry    = parseFloat(t.entry||0);
-  const current  = parseFloat(t.current||entry);
-  const bnbP     = window._bnbReal || 618;
-  const shortAddr= addr ? (addr.slice(0,6)+'...'+addr.slice(-4)) : '—';
-  const tpSold   = parseFloat(t.tp_sold||0);
-  const slPct    = parseFloat(t.sl_pct||15);
-  const holdPct  = Math.max(0, Math.round(100 - tpSold));
+  const sym     = (t.token && !t.token.startsWith('0x') && t.token.length<20) ? t.token.toUpperCase() : (t.token||(t.address||'').slice(2,10)).toUpperCase();
+  const addr    = t.address||'';
+  const ic      = iconClr(sym);
+  const sz      = parseFloat(t.size_bnb||0);
+  const origSz  = parseFloat(t.orig_size_bnb||sz);
+  const pnl     = parseFloat(t.pnl||t.pnl_pct||0);
+  const pnlB    = parseFloat(t.pnl_bnb||0)||(sz*pnl/100);
+  const banked  = parseFloat(t.banked_pnl_bnb||0);
+  const clr     = pClr(pnl);
+  const entry   = parseFloat(t.entry||0);
+  const current = parseFloat(t.current||entry);
+  const bnbP    = window._bnbReal||618;
+  const shortAddr = addr?(addr.slice(0,6)+'...'+addr.slice(-4)):'—';
+  const tpSold  = parseFloat(t.tp_sold||0);
+  const slPct   = parseFloat(t.sl_pct||15);
+  const holdPct = Math.max(0,Math.round(100-tpSold));
 
-  // Estimates
-  const tokensBought = entry>0 ? Math.round(origSz/entry) : 0;
-  const tokensLeft   = holdPct>0 && entry>0 ? Math.round(tokensBought*(holdPct/100)) : 0;
+  // Computed values
+  const tokensBought = entry>0?Math.round(origSz/entry):0;
+  const tokensLeft   = holdPct>0&&entry>0?Math.round(tokensBought*(holdPct/100)):0;
   const currentVal   = sz*(1+pnl/100);
   const boughtUSD    = (origSz*bnbP).toFixed(0);
   const currentUSD   = (currentVal*bnbP).toFixed(2);
   const gasBNB       = 0.0005;
   const gasUSD       = (gasBNB*bnbP).toFixed(3);
-  const buyTimeIST   = t.bought_at ? new Date(_toUTC(t.bought_at)).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}) : '—';
   const holdDur      = gHoldTime(t.bought_at);
-  const totalPnlUSD  = (Math.abs(totalPnlB)*bnbP).toFixed(2);
-  const totalPnlPct  = origSz>0?(totalPnlB/origSz*100):pnl;
+  const buyTimeIST   = t.bought_at?new Date(_toUTC(t.bought_at)).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}):'—';
 
-  // Modal header
-  document.getElementById('modal-title').innerHTML =
+  // PnL values
+  const unrealizedUSD = (Math.abs(pnlB)*bnbP).toFixed(2);
+  const realizedUSD   = (Math.abs(banked)*bnbP).toFixed(2);
+  const totalPnlB     = pnlB+banked;
+  const totalPnlUSD   = (Math.abs(totalPnlB)*bnbP).toFixed(2);
+  const totalPnlPct   = origSz>0?(totalPnlB/origSz*100):pnl;
+  const totalClr      = totalPnlB>=0?'var(--em)':'var(--red)';
+
+  // Header
+  document.getElementById('modal-title').innerHTML=
     '<div style="display:flex;align-items:center;gap:10px;">'+
       '<div style="width:42px;height:42px;border-radius:50%;background:'+ic+'22;border:2px solid '+ic+'55;color:'+ic+';display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:900;">'+sym.slice(0,2)+'</div>'+
       '<div style="flex:1;min-width:0;">'+
@@ -1405,137 +1410,151 @@ function openHoldDetail(json){
       '<div style="padding:4px 10px;border-radius:20px;font-size:10px;font-weight:800;background:rgba(0,230,118,0.15);color:var(--em);">LIVE</div>'+
     '</div>';
 
-  document.getElementById('modal-sub').textContent = 'Holding '+holdDur+' · SL: -'+slPct+'%'+(tpSold>0?' · TP Sold: '+tpSold.toFixed(0)+'%':'');
-  document.getElementById('modal-pnl').className = 'pnl-big '+(totalPnlPct>=0?'p':'n');
-  document.getElementById('modal-pnl').textContent = (totalPnlB>=0?'+':'-')+'$'+totalPnlUSD+' ('+(totalPnlPct>=0?'+':'')+totalPnlPct.toFixed(1)+'%)';
+  document.getElementById('modal-sub').textContent='Holding '+holdDur+' · SL: -'+slPct+'%'+(tpSold>0?' · TP Sold: '+tpSold.toFixed(0)+'%':'');
+  document.getElementById('modal-pnl').className='pnl-big '+(totalPnlPct>=0?'p':'n');
+  document.getElementById('modal-pnl').textContent=(totalPnlB>=0?'+':'-')+'$'+totalPnlUSD+' ('+(totalPnlPct>=0?'+':'')+totalPnlPct.toFixed(1)+'%)';
 
-  // Stats grid — GMGN profile style (4 cards)
-  const statsGrid =
+  // ── PnL Summary row (Realized + Unrealized)
+  const pnlSummary=
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">'+
-      '<div style="background:var(--ink3);border-radius:10px;padding:11px;border:1px solid '+(totalPnlPct>=0?'rgba(0,230,118,0.2)':'rgba(255,71,87,0.2)')+';">'+
-        '<div style="font-size:9px;color:var(--txt3);margin-bottom:3px;">Unrealized PnL</div>'+
-        '<div style="font-size:14px;font-weight:900;color:'+clr+';font-family:JetBrains Mono,monospace;">'+(pnlB>=0?'+':'-')+'$'+(Math.abs(pnlB)*bnbP).toFixed(2)+'</div>'+
-        '<div style="font-size:10px;color:'+clr+';margin-top:1px;">'+(pnl>=0?'+':'')+pnl.toFixed(1)+'%</div>'+
+      '<div style="background:var(--ink3);border-radius:10px;padding:12px;border:1px solid '+(pnlB>=0?'rgba(0,230,118,0.2)':'rgba(255,71,87,0.2)')+';">'+
+        '<div style="font-size:9px;color:var(--txt3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">Unrealized PnL</div>'+
+        '<div style="font-size:15px;font-weight:900;color:'+clr+';font-family:JetBrains Mono,monospace;">'+(pnlB>=0?'+':'-')+'$'+unrealizedUSD+'</div>'+
+        '<div style="font-size:10px;color:'+clr+';margin-top:2px;">'+(pnl>=0?'+':'')+pnl.toFixed(1)+'%</div>'+
       '</div>'+
-      '<div style="background:var(--ink3);border-radius:10px;padding:11px;">'+
-        '<div style="font-size:9px;color:var(--txt3);margin-bottom:3px;">Holding</div>'+
-        '<div style="font-size:14px;font-weight:900;color:var(--ice);font-family:JetBrains Mono,monospace;">'+holdPct+'%</div>'+
-        '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+holdDur+' · '+sz.toFixed(4)+' BNB</div>'+
+      '<div style="background:var(--ink3);border-radius:10px;padding:12px;border:1px solid '+(banked>=0?'rgba(0,230,118,0.2)':'rgba(255,71,87,0.2)')+';">'+
+        '<div style="font-size:9px;color:var(--txt3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">Realized PnL</div>'+
+        '<div style="font-size:15px;font-weight:900;color:'+(banked>=0?'var(--em)':'var(--red)')+';font-family:JetBrains Mono,monospace;">'+(banked>=0?'+':'-')+'$'+realizedUSD+'</div>'+
+        '<div style="font-size:10px;color:var(--txt3);margin-top:2px;">'+(tpSold>0?tpSold.toFixed(0)+'% sold':'No sells yet')+'</div>'+
       '</div>'+
-      '<div style="background:var(--ink3);border-radius:10px;padding:11px;">'+
-        '<div style="font-size:9px;color:var(--txt3);margin-bottom:3px;">Bought</div>'+
-        '<div style="font-size:14px;font-weight:900;color:#64C8FF;font-family:JetBrains Mono,monospace;">$'+boughtUSD+'</div>'+
-        '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">1 TX · '+origSz.toFixed(4)+' BNB</div>'+
+      '<div style="background:var(--ink3);border-radius:10px;padding:12px;">'+
+        '<div style="font-size:9px;color:var(--txt3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">Bought</div>'+
+        '<div style="font-size:15px;font-weight:900;color:#64C8FF;font-family:JetBrains Mono,monospace;">$'+boughtUSD+'</div>'+
+        '<div style="font-size:10px;color:var(--txt3);margin-top:2px;">1 TX · '+origSz.toFixed(4)+' BNB</div>'+
       '</div>'+
-      '<div style="background:var(--ink3);border-radius:10px;padding:11px;">'+
-        '<div style="font-size:9px;color:var(--txt3);margin-bottom:3px;">Current Value</div>'+
-        '<div style="font-size:14px;font-weight:900;color:'+clr+';font-family:JetBrains Mono,monospace;">$'+currentUSD+'</div>'+
-        '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+currentVal.toFixed(4)+' BNB</div>'+
+      '<div style="background:var(--ink3);border-radius:10px;padding:12px;">'+
+        '<div style="font-size:9px;color:var(--txt3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">Holding</div>'+
+        '<div style="font-size:15px;font-weight:900;color:var(--ice);font-family:JetBrains Mono,monospace;">'+holdPct+'%</div>'+
+        '<div style="font-size:10px;color:var(--txt3);margin-top:2px;">'+holdDur+' · '+sz.toFixed(4)+' BNB</div>'+
       '</div>'+
     '</div>'+
-    // Avg cost / current price bar
+    // Avg cost → current price
     (entry>0?
-    '<div style="background:var(--ink3);border-radius:10px;padding:11px;margin-bottom:12px;">'+
-      '<div style="font-size:9px;color:var(--txt3);margin-bottom:6px;">Avg Cost / Current Price</div>'+
-      '<div style="display:flex;justify-content:space-between;align-items:center;">'+
+    '<div style="background:var(--ink3);border-radius:10px;padding:11px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">'+
+      '<div>'+
+        '<div style="font-size:9px;color:var(--txt3);margin-bottom:3px;">Avg Cost</div>'+
         '<div style="font-size:12px;font-weight:800;color:#64C8FF;font-family:JetBrains Mono,monospace;">'+fmtBNBPrice(entry)+'</div>'+
-        '<div style="font-size:10px;color:var(--txt3);">→</div>'+
+      '</div>'+
+      '<div style="color:var(--txt3);font-size:14px;">→</div>'+
+      '<div style="text-align:right;">'+
+        '<div style="font-size:9px;color:var(--txt3);margin-bottom:3px;">Current Price</div>'+
         '<div style="font-size:12px;font-weight:800;color:'+clr+';font-family:JetBrains Mono,monospace;">'+fmtBNBPrice(current)+'</div>'+
       '</div>'+
     '</div>':'');
 
-  // Chart
-  const chartBlock = addr ?
-    '<div style="margin:0 -2px 12px;border-radius:10px;overflow:hidden;height:190px;background:#000;">'+
-      '<iframe src="https://dexscreener.com/bsc/'+addr+'?embed=1&theme=dark&trades=0&info=0"'+
-      ' style="width:100%;height:100%;border:none;" loading="lazy"></iframe>'+
-    '</div>' : '';
-
-  // Activities header
-  const actHeader =
-    '<div style="font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;display:flex;justify-content:space-between;">'+
-      '<span>Activities</span><span>Type · Age · Amount · Price / Gas</span>'+
+  // ── Activities header
+  const actHeader=
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'+
+      '<div style="font-size:10px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:0.8px;">Activities</div>'+
+      '<div style="font-size:9px;color:var(--txt3);">Type · Age · Amount · Price/Gas</div>'+
     '</div>';
 
-  // BUY activity row — GMGN style
-  const buyRow =
-    '<div style="display:grid;grid-template-columns:80px 1fr auto;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:8px;">'+
+  // ── Activity row helper
+  function actRow(typeLabel, typeClr, timeStr, ageStr, amtUSD, tokensStr, gasStr, priceStr, rightTop, rightBot, borderBottom){
+    return '<div style="display:grid;grid-template-columns:72px 1fr auto;align-items:start;padding:10px 0;'+(borderBottom?'border-bottom:1px solid rgba(255,255,255,0.05);':'')+'gap:6px;">'+
       '<div>'+
-        '<div style="font-size:11px;font-weight:800;color:#64C8FF;">Buy</div>'+
-        '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+buyTimeIST+' IST</div>'+
-        '<div style="font-size:9px;color:var(--txt3);">'+holdDur+' ago</div>'+
+        '<div style="font-size:11px;font-weight:800;color:'+typeClr+';">'+typeLabel+'</div>'+
+        '<div style="font-size:9px;color:var(--txt3);margin-top:2px;">'+timeStr+'</div>'+
+        '<div style="font-size:9px;color:var(--txt3);">'+ageStr+'</div>'+
       '</div>'+
       '<div>'+
-        '<div style="font-size:11px;font-weight:700;color:var(--txt1);font-family:JetBrains Mono,monospace;">$'+boughtUSD+'</div>'+
-        (tokensBought>0?'<div style="font-size:9px;color:var(--txt3);margin-top:2px;">~'+Number(tokensBought).toLocaleString()+' '+sym+'</div>':'')+
-        '<div style="font-size:9px;color:var(--txt3);margin-top:2px;">⛽ $'+gasUSD+' ~</div>'+
+        '<div style="font-size:12px;font-weight:700;color:var(--txt1);font-family:JetBrains Mono,monospace;">'+amtUSD+'</div>'+
+        (tokensStr?'<div style="font-size:9px;color:var(--txt3);margin-top:2px;">'+tokensStr+'</div>':'')+
+        (gasStr?'<div style="font-size:9px;color:var(--txt3);margin-top:1px;">⛽ '+gasStr+'</div>':'')+
       '</div>'+
       '<div style="text-align:right;">'+
-        '<div style="font-size:10px;color:var(--txt3);font-family:JetBrains Mono,monospace;">'+(entry>0?fmtBNBPrice(entry):'—')+'</div>'+
-        '<div style="font-size:9px;color:var(--txt3);">entry</div>'+
+        (priceStr?'<div style="font-size:9px;color:var(--txt3);font-family:JetBrains Mono,monospace;">'+priceStr+'</div>':'')+
+        (rightTop?'<div style="font-size:11px;font-weight:800;color:'+typeClr+';margin-top:1px;">'+rightTop+'</div>':'')+
+        (rightBot?'<div style="font-size:9px;color:var(--txt3);">'+rightBot+'</div>':'')+
       '</div>'+
     '</div>';
-
-  // HOLDING row — current live status
-  const holdRow =
-    '<div style="display:grid;grid-template-columns:80px 1fr auto;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:8px;">'+
-      '<div>'+
-        '<div style="font-size:11px;font-weight:800;color:'+clr+';">HOLDING</div>'+
-        '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">Open pos</div>'+
-        '<div style="font-size:9px;color:var(--txt3);">SL: -'+slPct+'%</div>'+
-      '</div>'+
-      '<div>'+
-        '<div style="font-size:11px;font-weight:700;color:'+clr+';font-family:JetBrains Mono,monospace;">$'+currentUSD+'</div>'+
-        (tokensLeft>0?'<div style="font-size:9px;color:var(--txt3);margin-top:2px;">~'+Number(tokensLeft).toLocaleString()+' '+sym+'</div>':'')+
-        '<div style="font-size:9px;color:var(--txt3);margin-top:2px;">'+holdPct+'% remaining</div>'+
-      '</div>'+
-      '<div style="text-align:right;">'+
-        '<div style="font-size:10px;color:'+clr+';font-family:JetBrains Mono,monospace;">'+(current>0?fmtBNBPrice(current):'—')+'</div>'+
-        '<div style="font-size:11px;font-weight:800;color:'+clr+';">'+(pnlB>=0?'+':'-')+'$'+(Math.abs(pnlB)*bnbP).toFixed(2)+'</div>'+
-        '<div style="font-size:9px;color:'+clr+';">'+(pnl>=0?'+':'')+pnl.toFixed(1)+'%</div>'+
-      '</div>'+
-    '</div>';
-
-  // Partial sells rows if any TP was sold
-  let partialRows = '';
-  if(tpSold > 0 && banked !== 0){
-    const soldBNB    = origSz - sz;
-    const soldUSD    = (soldBNB*bnbP).toFixed(0);
-    const bankClr    = banked>=0?'var(--em)':'var(--red)';
-    partialRows =
-      '<div style="display:grid;grid-template-columns:80px 1fr auto;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:8px;">'+
-        '<div>'+
-          '<div style="font-size:11px;font-weight:800;color:var(--gold);">TP Sell</div>'+
-          '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+tpSold.toFixed(0)+'% sold</div>'+
-          '<div style="font-size:9px;color:var(--txt3);">partial exit</div>'+
-        '</div>'+
-        '<div>'+
-          '<div style="font-size:11px;font-weight:700;color:var(--txt1);font-family:JetBrains Mono,monospace;">$'+soldUSD+'</div>'+
-          '<div style="font-size:9px;color:var(--txt3);margin-top:2px;">'+soldBNB.toFixed(4)+' BNB received</div>'+
-          '<div style="font-size:9px;color:var(--txt3);margin-top:2px;">⛽ $'+gasUSD+' ~</div>'+
-        '</div>'+
-        '<div style="text-align:right;">'+
-          '<div style="font-size:11px;font-weight:800;color:'+bankClr+';">'+(banked>=0?'+':'-')+'$'+(Math.abs(banked)*bnbP).toFixed(2)+'</div>'+
-          '<div style="font-size:9px;color:'+bankClr+';margin-top:2px;">banked PnL</div>'+
-        '</div>'+
-      '</div>';
   }
 
-  document.getElementById('modal-body').innerHTML =
-    // Contract address row
+  // BUY row
+  const buyRow = actRow(
+    'Buy','#64C8FF',
+    buyTimeIST+' IST', holdDur+' ago',
+    '$'+boughtUSD,
+    tokensBought>0?'~'+Number(tokensBought).toLocaleString()+' '+sym:'',
+    '$'+gasUSD+' ~',
+    entry>0?fmtBNBPrice(entry):'—',
+    '','entry', true
+  );
+
+  // TP Sell rows (one per TP level triggered)
+  let tpRows='';
+  if(tpSold>0){
+    const soldBNB = origSz-sz;
+    const soldUSD = (soldBNB*bnbP).toFixed(0);
+    const bankClr = banked>=0?'var(--em)':'var(--red)';
+    // Show individual TP levels if banked info available
+    const tpLevels=[{pct:25,label:'TP1'},{pct:50,label:'TP2'},{pct:75,label:'TP3'},{pct:90,label:'TP4'}];
+    let shown=false;
+    tpLevels.forEach(function(lv){
+      if(tpSold>=lv.pct){
+        const lvBNB=origSz*(lv.pct<=25?0.25:0.25);
+        const lvUSD=(lvBNB*bnbP).toFixed(0);
+        tpRows+=actRow(
+          lv.label+' Sell','var(--gold)',
+          '—','partial exit',
+          '$'+lvUSD,
+          '',
+          '$'+gasUSD+' ~',
+          '',
+          '','sold '+lv.pct+'%', lv.pct<tpSold||tpSold<90
+        );
+        shown=true;
+      }
+    });
+    if(!shown){
+      tpRows+=actRow(
+        'TP Sell','var(--gold)',
+        '—',tpSold.toFixed(0)+'% sold',
+        '$'+soldUSD,
+        soldBNB.toFixed(4)+' BNB received',
+        '$'+gasUSD+' ~',
+        '',
+        (banked>=0?'+':'-')+'$'+realizedUSD,'banked PnL', true
+      );
+    }
+  }
+
+  // HOLDING row
+  const holdRow = actRow(
+    'HOLDING', clr,
+    'Open pos','SL: -'+slPct+'%',
+    '$'+currentUSD,
+    tokensLeft>0?'~'+Number(tokensLeft).toLocaleString()+' '+sym:'',
+    holdPct+'% remaining',
+    current>0?fmtBNBPrice(current):'—',
+    (pnlB>=0?'+':'-')+'$'+unrealizedUSD,
+    (pnl>=0?'+':'')+pnl.toFixed(1)+'%', false
+  );
+
+  document.getElementById('modal-body').innerHTML=
+    // Address row
     (addr?'<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);margin-bottom:12px;">'+
       '<div style="flex:1;font-family:JetBrains Mono,monospace;font-size:10px;color:var(--txt2);word-break:break-all;">'+addr+'</div>'+
       '<button onclick="copyAddr(\''+addr+'\')" style="flex-shrink:0;padding:5px 12px;border-radius:20px;background:var(--em-dim);border:1px solid rgba(0,230,118,0.3);color:var(--em);font-size:11px;font-weight:700;cursor:pointer;">📋 Copy</button>'+
     '</div>':'')+
-    statsGrid +
-    chartBlock +
-    actHeader +
-    '<div>'+buyRow+partialRows+holdRow+'</div>';
+    pnlSummary+
+    actHeader+
+    '<div>'+buyRow+tpRows+holdRow+'</div>';
 
-  document.getElementById('modal-actions').innerHTML = addr ?
+  document.getElementById('modal-actions').innerHTML=addr?
     '<button class="mbtn dark" onclick="copyAddr(\''+addr+'\');closeModal()" style="flex:1;">📋 Copy</button>'+
     '<a class="mbtn gold" href="https://dexscreener.com/bsc/'+addr+'" target="_blank" style="flex:1;">📊 DexScreener</a>'
-    : '<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
+    :'<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
 
   showModal();
 }
