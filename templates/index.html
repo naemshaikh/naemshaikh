@@ -441,7 +441,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
       </div>
 
       <!-- Stats bar — single row, very compact -->
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:8px;">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px;padding:0 2px;">
         <div style="background:var(--ink3);border-radius:6px;padding:5px 4px;text-align:center;">
           <div id="hs-total" style="font-family:JetBrains Mono,monospace;font-size:13px;font-weight:800;color:var(--txt1);">0</div>
           <div style="font-size:8px;color:var(--txt3);text-transform:uppercase;">Trades</div>
@@ -623,7 +623,7 @@ async function fetchHistory(){
   const best=d.best_trade||{};document.getElementById('hs-best').textContent=best.pnl_pct!=null?(best.pnl_pct>=0?'+':'')+best.pnl_pct.toFixed(1)+'%':'—';
   const hist=d.history||[],list=document.getElementById('hist-list');
   // Sirf completed trades — win ya loss (holding wale nahi)
-  const closedTrades = hist.filter(function(t){ return (t.result==='win'||t.result==='loss') && t.sold_at; });
+  const closedTrades = hist.filter(function(t){ return (t.result==='win'||t.result==='loss') && t.sold_at && t.sold_at !== null && t.sold_at !== ''; });
   if(!closedTrades.length){list.innerHTML='<div class="empty-state">No completed trades yet</div>';return;}
   // Group by address
   const groups = {};
