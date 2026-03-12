@@ -461,8 +461,8 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
       </div>
 
       <!-- History list -->
-      <div style="background:var(--ink2);border:1px solid var(--line);border-radius:var(--r);overflow-y:auto;max-height:520px;">
-        <div id="hist-list"><div class="empty-state">No trade history yet</div></div>
+      <div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;">
+        <div id="hist-list" style="max-height:480px;overflow-y:auto;"><div class="empty-state">No trade history yet</div></div>
       </div>
     </div>
   </div>
@@ -667,10 +667,35 @@ async function fetchHistory(){
     const timeAgo=gHoldTime(lastT.sold_at||lastT.bought_at);
     const encoded=encodeURIComponent(JSON.stringify({sym:sym,addr:addr,trades:trades,totalPnlB:totalPnlB,totalSz:totalSzBNB,wins:wins,losses:losses}));
 
-    return '<div style="position:relative;display:grid;grid-template-columns:1fr 90px 100px;align-items:center;padding:10px 10px 10px 14px;border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;gap:4px;background:var(--ink2);" onclick="openGroupTradeDetail(\''+encoded+'\')" onmouseover="this.style.background=\'var(--ink3)\'" onmouseout="this.style.background=\'var(--ink2)\'">'+
+    return '<div style="display:grid;grid-template-columns:1fr 90px 100px;align-items:center;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;background:var(--ink2);" onclick="openGroupTradeDetail(\''+encoded+'\')" onmouseover="this.style.background=\'var(--ink3)\'" onmouseout="this.style.background=\'var(--ink2)\'">'+
 
-      // Left accent bar
-      '<div style="position:absolute;left:0;top:8px;bottom:8px;width:3px;background:'+clr+';border-radius:2px;"></div>'+
+      // Col1 — Icon + Name + Age
+      '<div style="display:flex;align-items:center;gap:8px;min-width:0;">'+
+        '<div style="position:relative;flex-shrink:0;">'+
+          '<div style="width:34px;height:34px;border-radius:50%;background:'+ic+'22;border:1.5px solid '+ic+'44;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:'+ic+';font-family:JetBrains Mono,monospace;">'+sym.slice(0,2)+'</div>'+
+          '<div style="position:absolute;bottom:-2px;right:-2px;min-width:15px;height:15px;border-radius:8px;background:#0d1520;border:1.5px solid #0d1520;display:flex;align-items:center;justify-content:center;padding:0 2px;">'+
+            '<span style="font-size:7px;font-weight:900;color:'+wrClr+';">'+wr+'%</span>'+
+          '</div>'+
+        '</div>'+
+        '<div style="min-width:0;">'+
+          '<div style="font-size:13px;font-weight:800;color:var(--txt1);font-family:JetBrains Mono,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px;">'+sym.slice(0,8)+'</div>'+
+          '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+timeAgo+'</div>'+
+        '</div>'+
+      '</div>'+
+
+      // Col2 — Bought / Sold
+      '<div style="text-align:center;">'+
+        '<div style="font-size:11px;color:var(--txt2);font-family:JetBrains Mono,monospace;">$'+boughtUSD+'</div>'+
+        '<div style="font-size:10px;color:var(--txt3);margin-top:2px;">$'+soldUSD+'</div>'+
+      '</div>'+
+
+      // Col3 — PnL
+      '<div style="text-align:right;">'+
+        '<div style="font-size:12px;font-weight:800;color:'+clr+';font-family:JetBrains Mono,monospace;white-space:nowrap;">'+(totalPnlB>=0?'+':'-')+'$'+totalPnlUSD+'</div>'+
+        '<div style="font-size:10px;font-weight:700;color:'+clr+';font-family:JetBrains Mono,monospace;">'+(pnlPctAvg>=0?'+':'')+pnlPctAvg.toFixed(1)+'%</div>'+
+      '</div>'+
+
+    '</div>';
 
       // Col1 — Icon + Name + Age
       '<div style="display:flex;align-items:center;gap:8px;min-width:0;">'+
