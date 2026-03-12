@@ -461,7 +461,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
       </div>
 
       <!-- History list -->
-      <div id="hist-list" style="background:var(--ink2);border:1px solid var(--line);border-radius:12px;overflow-y:auto;max-height:490px;"><div class="empty-state">No completed trades yet</div></div>
+      <div style="background:var(--ink3);border:1px solid rgba(255,255,255,0.08);border-radius:14px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.4);"><div id="hist-list" style="overflow-y:auto;max-height:350px;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;"><div class="empty-state">No completed trades yet</div></div></div>
     </div>
   </div>
 </div>
@@ -622,7 +622,7 @@ async function fetchHistory(){
   const best=d.best_trade||{};document.getElementById('hs-best').textContent=best.pnl_pct!=null?(best.pnl_pct>=0?'+':'')+best.pnl_pct.toFixed(1)+'%':'—';
   const hist=d.history||[],list=document.getElementById('hist-list');
   // Sirf completed trades — win ya loss (holding wale nahi)
-  const closedTrades = hist.filter(function(t){ return t.result==='win'||t.result==='loss'; });
+  const closedTrades = hist.filter(function(t){ return (t.result==='win'||t.result==='loss') && t.sold_at; });
   if(!closedTrades.length){list.innerHTML='<div class="empty-state">No completed trades yet</div>';return;}
   // Group by address
   const groups = {};
