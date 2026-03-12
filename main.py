@@ -971,10 +971,11 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         auto_trade_stats["auto_pnl_total"] += pnl_pct
     auto_trade_stats["total_auto_sells"] += 1
 
-    # FIX 4: Save to trade_history with correct variable names
-    if not isinstance(auto_trade_stats.get("trade_history"), list):
+    # FIX 4: Save to trade_history — sirf 100% sell pe (partial sells skip)
+    if sell_pct >= 100.0:
+     if not isinstance(auto_trade_stats.get("trade_history"), list):
         auto_trade_stats["trade_history"] = []
-    auto_trade_stats["trade_history"].append({
+     auto_trade_stats["trade_history"].append({
         "token":     token,
         "address":   address,
         "entry":     entry,      # FIX: was entry_price
