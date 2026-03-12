@@ -1767,7 +1767,7 @@ function openTradeDetail(json){
     '</div>';
 
   document.getElementById('modal-actions').innerHTML = addr?
-    '<button class="mbtn dark" onclick="copyAddr(''+addr+'');closeModal()" style="flex:1;">📋 Copy</button>'+
+    '<button class="mbtn dark" onclick="copyAddr(\''+addr+'\');closeModal()" style="flex:1;">📋 Copy</button>'+
     '<a class="mbtn gold" href="https://dexscreener.com/bsc/'+addr+'" target="_blank" style="flex:1;">📊 DexScreener</a>'
     :'<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
 
