@@ -20,7 +20,7 @@
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 html,body{height:100%;-webkit-tap-highlight-color:transparent;}
-body{background:var(--ink);color:var(--txt);font-family:'Outfit',sans-serif;font-size:14px;line-height:1.4;overflow-x:hidden;padding-bottom:90px;}
+body{background:var(--ink);color:var(--txt);font-family:'Outfit',sans-serif;font-size:14px;line-height:1.4;overflow-x:hidden;padding-bottom:120px;}
 body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;background:radial-gradient(ellipse 600px 400px at 10% 0%,rgba(0,230,118,0.05) 0%,transparent 60%),radial-gradient(ellipse 400px 300px at 90% 100%,rgba(64,196,255,0.04) 0%,transparent 60%);}
 .hdr{position:sticky;top:0;z-index:200;background:rgba(5,8,13,0.95);backdrop-filter:blur(24px);border-bottom:1px solid var(--line);padding:0 14px;height:58px;display:flex;align-items:center;justify-content:space-between;}
 .hdr-brand{display:flex;align-items:center;gap:10px;}
@@ -461,7 +461,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
       </div>
 
       <!-- History list -->
-      <div style="margin-top:6px;margin-bottom:16px;background:var(--ink2);border:1px solid rgba(255,255,255,0.10);border-radius:14px;overflow:hidden;"><div style="display:grid;grid-template-columns:1fr 90px 100px;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.08);background:var(--ink3);"><span style="font-size:10px;color:var(--txt3);font-family:JetBrains Mono,monospace;">Token/Age</span><span style="font-size:10px;color:var(--txt3);text-align:center;font-family:JetBrains Mono,monospace;">Bought/Sold</span><span style="font-size:10px;color:var(--txt3);text-align:right;font-family:JetBrains Mono,monospace;">PnL</span></div><div id="hist-list" style="overflow-y:auto;max-height:265px;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;"><div class="empty-state">No completed trades yet</div></div></div>
+      <div style="margin-top:6px;margin-bottom:16px;background:var(--ink2);border:1px solid rgba(255,255,255,0.10);border-radius:14px;overflow:hidden;"><div style="display:grid;grid-template-columns:1fr 90px 100px;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.08);background:var(--ink3);"><span style="font-size:10px;color:var(--txt3);font-family:JetBrains Mono,monospace;">Token/Age</span><span style="font-size:10px;color:var(--txt3);text-align:center;font-family:JetBrains Mono,monospace;">Bought/Sold</span><span style="font-size:10px;color:var(--txt3);text-align:right;font-family:JetBrains Mono,monospace;">PnL</span></div><div id="hist-list" style="overflow-y:scroll;height:260px;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;"><div class="empty-state">No completed trades yet</div></div></div>
     </div>
   </div>
 </div>
