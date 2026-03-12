@@ -461,7 +461,9 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
       </div>
 
       <!-- History list -->
-      <div id="hist-list"><div class="empty-state">No trade history yet</div></div>
+      <div style="background:var(--ink2);border:1px solid var(--line);border-radius:var(--r);overflow-y:auto;max-height:520px;">
+        <div id="hist-list"><div class="empty-state">No trade history yet</div></div>
+      </div>
     </div>
   </div>
 </div>
@@ -665,7 +667,10 @@ async function fetchHistory(){
     const timeAgo=gHoldTime(lastT.sold_at||lastT.bought_at);
     const encoded=encodeURIComponent(JSON.stringify({sym:sym,addr:addr,trades:trades,totalPnlB:totalPnlB,totalSz:totalSzBNB,wins:wins,losses:losses}));
 
-    return '<div style="display:grid;grid-template-columns:1fr 90px 100px;align-items:center;padding:8px 4px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;gap:4px;" onclick="openGroupTradeDetail(\''+encoded+'\')">'+
+    return '<div style="position:relative;display:grid;grid-template-columns:1fr 90px 100px;align-items:center;padding:10px 10px 10px 14px;border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;gap:4px;background:var(--ink2);" onclick="openGroupTradeDetail(\''+encoded+'\')" onmouseover="this.style.background=\'var(--ink3)\'" onmouseout="this.style.background=\'var(--ink2)\'">'+
+
+      // Left accent bar
+      '<div style="position:absolute;left:0;top:8px;bottom:8px;width:3px;background:'+clr+';border-radius:2px;"></div>'+
 
       // Col1 — Icon + Name + Age
       '<div style="display:flex;align-items:center;gap:8px;min-width:0;">'+
