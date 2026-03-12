@@ -2380,6 +2380,11 @@ def _startup_once():
                             if _skipped:
                                 print(f"🧹 Skipped {_skipped} positions on startup (cap=10 or invalid)")
                             print(f"✅ Restored {_restored} positions from Supabase (capped at {_MAX_RESTORE})")
+                            # ✅ FIX: Turant complete data DB mein overwrite karo
+                            # (purane records mein tp_sold missing tha — ye ek baar fix kar deta hai)
+                            time.sleep(2)  # monitor thread start hone do pehle
+                            _persist_positions()
+                            print("💾 Startup: positions re-saved with complete fields (tp_sold, sl_pct)")
                         else:
                             print("ℹ️ No saved positions found")
                     else:
