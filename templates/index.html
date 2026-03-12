@@ -1277,13 +1277,10 @@ window._renderHPage = function(){
     var pnl_rem     = entry > 0 ? ((current - entry) / entry * 100) : 0;
     var remPct      = p.tp_sold!=null ? Math.max(0, 100 - parseFloat(p.tp_sold||0)) : 100;
     var holdTm      = gHoldTime(p.bought_at);
-    var soldPct     = parseFloat(p.tp_sold||0);
     var origSz      = parseFloat(p.orig_size_bnb||sz);
-    var tokenQty    = entry > 0 ? (origSz / entry) : 0;  // ✅ original tokens bought
     var soldPct     = parseFloat(p.tp_sold||0);
-    var remainPct   = Math.max(0, 100 - soldPct) / 100;
-    var currTokQty  = entry > 0 ? (sz / entry) : 0;  // ✅ sz already = remaining after sells
-    var currTokQty  = entry > 0 ? (sz / entry) : 0;           // HOLDINGS: remaining tokens
+    var tokenQty    = entry > 0 ? (origSz / entry) : 0;  // original tokens at buy
+    var currTokQty  = entry > 0 ? (sz / entry) : 0;      // remaining tokens (sz shrinks on sells)
     var _fmtUSD = function(v){
       if(!v||v<=0) return '—';
       if(v >= 1) return '$'+v.toFixed(4);
