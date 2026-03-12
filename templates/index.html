@@ -1540,7 +1540,10 @@ function openGroupTradeDetail(encoded){
   const buyTrades=trades.filter(function(t){return !t.sold_at||t.result==='holding';});
   const sellTrades=trades.filter(function(t){return t.sold_at&&t.result!=='holding';}).sort(function(a,b){return new Date(_toUTC(a.sold_at))-new Date(_toUTC(b.sold_at));});
   const totalBoughtUSD=(g.totalSz*bnbP);
-  const totalSoldBNB=sellTrades.reduce(function(s,t){return s+parseFloat(t.size_bnb||0);},0);
+  const totalSoldBNB=sellTrades.reduce(function(s,t){
+  var proceeds=parseFloat(t.size_bnb||0)+parseFloat(t.pnl_bnb||0);
+  return s+Math.max(0,proceeds);
+},0);
   const totalSoldUSD=(totalSoldBNB*bnbP);
   const totalPnlUSD=(Math.abs(g.totalPnlB)*bnbP);
   const pnlPct=g.totalSz>0?(g.totalPnlB/g.totalSz*100):0;
@@ -1569,49 +1572,58 @@ function openGroupTradeDetail(encoded){
   document.getElementById('modal-pnl').className='pnl-big '+(g.totalPnlB>=0?'p':'n');
   document.getElementById('modal-pnl').textContent=(g.totalPnlB>=0?'+':'-')+'$'+totalPnlUSD.toFixed(2)+' ('+(pnlPct>=0?'+':'')+pnlPct.toFixed(1)+'%)';
 
-  // Activity rows
-  const allRows=buyTrades.concat(sellTrades);
-  const actRows=allRows.map(function(t){
-    const isBuy=!t.sold_at||t.result==='holding';
+  // Activity rows — GMGN style: har trade ke Buy + Sell dono row
+  const actRows=trades.map(function(t){
     const sz=parseFloat(t.size_bnb||0);
-    const szUSD=(sz*bnbP).toFixed(2);
     const pnlB=parseFloat(t.pnl_bnb||0);
-    const pnlPctT=parseFloat(t.pnl_pct||0);
-    const pnlUSD=(Math.abs(pnlB)*bnbP).toFixed(2);
+    const pnlPctT=parseFloat(t.pnl_pct||t.pnl||0);
     const entry=parseFloat(t.entry||0);
     const exit=parseFloat(t.exit||0);
-    const price=isBuy?entry:exit;
-    const txTime=isBuy?t.bought_at:t.sold_at;
-    const txIST=txTime?new Date(_toUTC(txTime)).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}):'—';
-    const ago=isBuy?gHoldTime(t.bought_at):holdBetween(t.bought_at,t.sold_at);
-    const label=isBuy?'Buy':(t.reason||'Sell');
-    const lclr=isBuy?'#64C8FF':(pnlB>=0?'var(--em)':'var(--red)');
-    const tokensAmt=price>0?(sz/price).toFixed(0):'—';
-    // Gas: real from backend if available, else BSC estimate (~0.0005 BNB)
+    const boughtUSDt=(sz*bnbP).toFixed(2);
+    const proceedsBNB=Math.max(0,sz+pnlB);
+    const soldUSDt=(proceedsBNB*bnbP).toFixed(2);
+    const pnlUSDt=(Math.abs(pnlB)*bnbP).toFixed(2);
+    const tokensB=entry>0?(sz/entry).toFixed(0):'—';
+    const tokensS=exit>0?(proceedsBNB/exit).toFixed(0):'—';
+    const buyIST=t.bought_at?new Date(_toUTC(t.bought_at)).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}):'—';
+    const sellIST=t.sold_at?new Date(_toUTC(t.sold_at)).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}):'—';
     const gasBNB=parseFloat(t.gas_bnb||t.gas_fee||0)||0.0005;
     const gasUSD=(gasBNB*bnbP).toFixed(3);
-    const gasIsReal=!!(t.gas_bnb||t.gas_fee);
-    return '<div style="display:grid;grid-template-columns:90px 1fr auto;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:8px;">'+
-      // Type + Age
-      '<div>'+
-        '<div style="font-size:11px;font-weight:800;color:'+lclr+';">'+label+'</div>'+
-        '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+txIST+' IST</div>'+
-        '<div style="font-size:9px;color:var(--txt3);">'+ago+(isBuy?' hold':'')+'</div>'+
+    return (
+      '<div style="display:grid;grid-template-columns:90px 1fr auto;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:8px;">'+
+        '<div>'+
+          '<div style="font-size:11px;font-weight:800;color:#64C8FF;">Buy</div>'+
+          '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+buyIST+' IST</div>'+
+          '<div style="font-size:9px;color:var(--txt3);">'+gHoldTime(t.bought_at)+' ago</div>'+
+        '</div>'+
+        '<div>'+
+          '<div style="font-size:11px;font-weight:700;color:var(--txt1);font-family:JetBrains Mono,monospace;">$'+boughtUSDt+'</div>'+
+          '<div style="font-size:9px;color:var(--txt3);margin-top:1px;">~'+Number(tokensB).toLocaleString()+' '+sym+'</div>'+
+          '<div style="font-size:9px;color:var(--txt3);">⛽ $'+gasUSD+' ~</div>'+
+        '</div>'+
+        '<div style="text-align:right;">'+
+          '<div style="font-size:10px;color:var(--txt3);font-family:JetBrains Mono,monospace;">'+(entry>0?fmtBNBPrice(entry):'—')+'</div>'+
+          '<div style="font-size:9px;color:var(--txt3);">entry</div>'+
+        '</div>'+
       '</div>'+
-      // Amount USD / tokens
-      '<div>'+
-        '<div style="font-size:11px;font-weight:700;color:var(--txt1);font-family:JetBrains Mono,monospace;">$'+szUSD+'</div>'+
-        '<div style="font-size:9px;color:var(--txt3);margin-top:1px;">~'+Number(tokensAmt).toLocaleString()+' '+sym+'</div>'+
-        '<div style="font-size:9px;color:var(--txt3);margin-top:1px;">⛽ $'+gasUSD+(gasIsReal?'':' ~')+'</div>'+
-      '</div>'+
-      // Price + PnL
-      '<div style="text-align:right;">'+
-        '<div style="font-size:10px;color:var(--txt3);font-family:JetBrains Mono,monospace;">'+(price>0?fmtBNBPrice(price):'—')+'</div>'+
-        (!isBuy?'<div style="font-size:11px;font-weight:800;color:'+(pnlB>=0?'var(--em)':'var(--red)')+';">'+(pnlB>=0?'+':'-')+'$'+pnlUSD+'</div>'+
-        '<div style="font-size:9px;color:'+(pnlB>=0?'var(--em)':'var(--red)')+';">'+(pnlPctT>=0?'+':'')+pnlPctT.toFixed(1)+'%</div>':
-        '<div style="font-size:9px;color:var(--txt3);">open</div>')+
-      '</div>'+
-    '</div>';
+      '<div style="display:grid;grid-template-columns:90px 1fr auto;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.08);gap:8px;">'+
+        '<div>'+
+          '<div style="font-size:11px;font-weight:800;color:'+(pnlB>=0?'var(--em)':'var(--red)')+';">'+(t.reason||'Sell')+'</div>'+
+          '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+sellIST+' IST</div>'+
+          '<div style="font-size:9px;color:var(--txt3);">'+holdBetween(t.bought_at,t.sold_at)+' hold</div>'+
+        '</div>'+
+        '<div>'+
+          '<div style="font-size:11px;font-weight:700;color:var(--txt1);font-family:JetBrains Mono,monospace;">$'+soldUSDt+'</div>'+
+          '<div style="font-size:9px;color:var(--txt3);margin-top:1px;">~'+Number(tokensS).toLocaleString()+' '+sym+'</div>'+
+          '<div style="font-size:9px;color:var(--txt3);">⛽ $'+gasUSD+' ~</div>'+
+        '</div>'+
+        '<div style="text-align:right;">'+
+          '<div style="font-size:10px;color:var(--txt3);font-family:JetBrains Mono,monospace;">'+(exit>0?fmtBNBPrice(exit):'—')+'</div>'+
+          '<div style="font-size:11px;font-weight:800;color:'+(pnlB>=0?'var(--em)':'var(--red)')+';">'+(pnlB>=0?'+':'-')+'$'+pnlUSDt+'</div>'+
+          '<div style="font-size:9px;color:'+(pnlB>=0?'var(--em)':'var(--red)')+';">'+(pnlPctT>=0?'+':'')+pnlPctT.toFixed(1)+'%</div>'+
+        '</div>'+
+      '</div>'
+    );
   }).join('');
 
   document.getElementById('modal-body').innerHTML=
@@ -1622,11 +1634,7 @@ function openGroupTradeDetail(encoded){
         '<div style="font-size:14px;font-weight:900;color:'+clr+';font-family:JetBrains Mono,monospace;">'+(g.totalPnlB>=0?'+':'-')+'$'+totalPnlUSD.toFixed(2)+'</div>'+
         '<div style="font-size:10px;color:'+clr+';margin-top:1px;">'+(pnlPct>=0?'+':'')+pnlPct.toFixed(1)+'%</div>'+
       '</div>'+
-      '<div style="background:var(--ink3);border-radius:10px;padding:11px;">'+
-        '<div style="font-size:9px;color:var(--txt3);margin-bottom:3px;">Holding</div>'+
-        '<div style="font-size:14px;font-weight:900;color:var(--ice);font-family:JetBrains Mono,monospace;">'+holdDur+'</div>'+
-        '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+remPct+'% remaining</div>'+
-      '</div>'+
+      // Holding card removed — completed trades mein nahi chahiye
       '<div style="background:var(--ink3);border-radius:10px;padding:11px;">'+
         '<div style="font-size:9px;color:var(--txt3);margin-bottom:3px;">Bought</div>'+
         '<div style="font-size:14px;font-weight:900;color:#64C8FF;font-family:JetBrains Mono,monospace;">$'+totalBoughtUSD.toFixed(0)+'</div>'+
