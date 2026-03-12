@@ -1277,9 +1277,17 @@ window._renderHPage = function(){
     var remPct      = p.tp_sold!=null ? Math.max(0, 100 - parseFloat(p.tp_sold||0)) : 100;
     var holdTm      = gHoldTime(p.bought_at);
     var tokenQty    = entry > 0 ? (sz / entry) : 0;
-    var currTokQty  = tokenQty;  // ✅ FIX: token qty same rehti hai, sirf USD value badlti hai
-    var entryBNBfmt = entry > 0 ? (entry < 0.000001 ? entry.toExponential(2) : entry.toFixed(8)) : '—';
-    var currBNBfmt  = current > 0 ? (current < 0.000001 ? current.toExponential(2) : current.toFixed(8)) : '—';
+    var soldPct     = parseFloat(p.tp_sold||0);
+    var remainPct   = Math.max(0, 100 - soldPct) / 100;
+    var currTokQty  = tokenQty * remainPct;  // ✅ reduces after partial sell
+    var _fmtBNB = function(v){
+      if(!v||v<=0) return '—';
+      var mag = Math.floor(Math.log10(Math.abs(v)));
+      var dec = Math.min(Math.max(2, -mag+3), 12);
+      return v.toFixed(dec).replace(/(\.[0-9]*?)0+$/, '$1').replace(/\.$/, '');
+    };
+    var entryBNBfmt = entry > 0 ? _fmtBNB(entry)+' BNB' : '— BNB';
+    var currBNBfmt  = current > 0 ? _fmtBNB(current)+' BNB' : '— BNB';
     var remClr      = remPct >= 50 ? 'var(--em)' : 'var(--gold)';
     var nowClr      = pnl >= 0 ? 'var(--em)' : 'var(--red)';
     return '<div style="display:grid;grid-template-columns:1fr 80px 90px 90px;align-items:center;padding:9px 4px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;gap:4px;background:'+_rowBg+';" onclick="openHoldDetail(\''+encodeURIComponent(JSON.stringify(Object.assign({},p,{address:addr})))+'\')">'+
@@ -1297,12 +1305,12 @@ window._renderHPage = function(){
       '</div>'+
       '<div style="text-align:center;min-width:0;">'+
         '<div style="font-size:11px;font-weight:700;color:var(--txt2);font-family:JetBrains Mono,monospace;white-space:nowrap;">$'+investedUSD.toFixed(2)+'</div>'+
-        '<div style="font-size:9px;color:var(--txt3);margin-top:2px;white-space:nowrap;font-family:JetBrains Mono,monospace;">'+entryBNBfmt+' BNB</div>'+
+        '<div style="font-size:9px;color:var(--txt3);margin-top:2px;white-space:nowrap;font-family:JetBrains Mono,monospace;">'+entryBNBfmt+'</div>'+
         '<div style="font-size:9px;color:var(--txt3);margin-top:1px;white-space:nowrap;">'+(tokenQty>0?tokenQty.toLocaleString(undefined,{maximumFractionDigits:0})+' '+sym.slice(0,4):'—')+'</div>'+
       '</div>'+
       '<div style="text-align:center;min-width:0;">'+
         '<div style="font-size:11px;font-weight:700;color:'+nowClr+';font-family:JetBrains Mono,monospace;white-space:nowrap;">$'+currValUSD.toFixed(2)+'</div>'+
-        '<div style="font-size:9px;color:'+nowClr+';margin-top:2px;white-space:nowrap;font-family:JetBrains Mono,monospace;">'+currBNBfmt+' BNB</div>'+
+        '<div style="font-size:9px;color:'+nowClr+';margin-top:2px;white-space:nowrap;font-family:JetBrains Mono,monospace;">'+currBNBfmt+'</div>'+
         '<div style="font-size:9px;color:var(--txt3);margin-top:1px;white-space:nowrap;">'+(currTokQty>0?currTokQty.toLocaleString(undefined,{maximumFractionDigits:0})+' '+sym.slice(0,4):'—')+'</div>'+
       '</div>'+
       '<div style="text-align:right;min-width:0;">'+
