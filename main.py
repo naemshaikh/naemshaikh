@@ -641,6 +641,33 @@ def _save_session_to_db(session_id: str):
     except Exception as e:
         print(f"⚠️ Session save error: {e}")
 
+def _persist_positions():
+    """
+    running_positions ka FULL snapshot Supabase mein save karo.
+    Restart ke baad tp_sold, sl_pct, size_bnb, bought_usd sab restore ho.
+    Har buy/sell ke baad yahi call karo.
+    """
+    try:
+        _ss = get_or_create_session(AUTO_SESSION_ID)
+        _ss["open_positions"] = {
+            k: {
+                "token":      v.get("token", ""),
+                "entry":      v.get("entry", 0),
+                "size_bnb":   v.get("size_bnb", AUTO_BUY_SIZE_BNB),
+                "bought_usd": v.get("bought_usd", 0.0),
+                "bought_at":  v.get("bought_at", ""),
+                "sl_pct":     v.get("sl_pct", 15.0),
+                "tp_sold":    v.get("tp_sold", 0.0),   # ✅ partial sell progress
+            }
+            for k, v in auto_trade_stats["running_positions"].items()
+        }
+        sessions[AUTO_SESSION_ID] = _ss
+        threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
+        print(f"💾 Positions persisted: {len(_ss['open_positions'])} positions saved to DB")
+    except Exception as _pe:
+        print(f"⚠️ _persist_positions error: {_pe}")
+
+
 # ========== NEW PAIRS ==========
 new_pairs_queue: deque = deque(maxlen=30)
 discovered_addresses: dict = {}
@@ -911,24 +938,6 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         "tp_sold":    0.0,
         "bought_at":  datetime.utcnow().isoformat(),
     }
-    # PERSIST: Supabase mein save karo restart ke liye
-    try:
-        sess["open_positions"] = {
-            k: {
-                "token":      v.get("token", ""),
-                "entry":      v.get("entry", 0),
-                "size_bnb":   v.get("size_bnb", AUTO_BUY_SIZE_BNB),
-                "bought_usd": v.get("bought_usd", 0),
-                "bought_at":  v.get("bought_at", ""),
-                "sl_pct":     v.get("sl_pct", CHECKLIST_SETTINGS.get("sl_new", 15.0)),
-                "tp_sold":    v.get("tp_sold", 0.0),
-            }
-            for k, v in auto_trade_stats["running_positions"].items()
-        }
-        sessions[AUTO_SESSION_ID] = sess
-    except Exception as _spe:
-        print(f"⚠️ Position save error: {_spe}")
-
     auto_trade_stats["total_auto_buys"] += 1
     auto_trade_stats["last_action"] = f"BUY {token_name or address[:10]}"
     if not isinstance(sess.get("positions"), list):
@@ -936,7 +945,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     sess["positions"].append({
         "address": address, "token": token_name or address[:10], "entry": entry_price, "size_bnb": size_bnb, "type": "auto"
     })
-    threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
+    _persist_positions()  # ✅ FIX: full data save with tp_sold, sl_pct, bought_usd
     print(f"AUTO BUY: {address[:10]} @ {entry_price:.10f} size={size_bnb:.4f}")
 
 # ========== AUTO PAPER SELL ==========  FIX 3: All variable names fixed
@@ -1017,21 +1026,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
             auto_trade_stats["losses"]       = auto_trade_stats.get("losses", 0) + 1
             auto_trade_stats["today_losses"] = auto_trade_stats.get("today_losses", 0) + 1
         auto_trade_stats["today_pnl"] = round(auto_trade_stats.get("today_pnl", 0.0) + pnl_bnb, 4)
-        # PERSIST: Sell ke baad Supabase update karo
-        try:
-            _ss = get_or_create_session(AUTO_SESSION_ID)
-            _ss["open_positions"] = {
-                k: {
-                    "token":     v.get("token", ""),
-                    "entry":     v.get("entry", 0),
-                    "size_bnb":  v.get("size_bnb", AUTO_BUY_SIZE_BNB),
-                    "bought_at": v.get("bought_at", ""),
-                }
-                for k, v in auto_trade_stats["running_positions"].items()
-            }
-            sessions[AUTO_SESSION_ID] = _ss
-        except Exception as _upe:
-            print(f"⚠️ Position update error: {_upe}")
+        _persist_positions()  # ✅ FIX: full sell ke baad baki positions save (with tp_sold)
 
         log_trade_internal(AUTO_SESSION_ID, {
             "token_address": address,
@@ -1047,7 +1042,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
             sess["positions"] = []
         pos["size_bnb"] = size * (1 - sell_pct / 100.0)
         pos["tp_sold"]  = pos.get("tp_sold", 0) + sell_pct
-        threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
+        _persist_positions()  # ✅ FIX: tp_sold + new size_bnb Supabase mein save
 
     print(f"AUTO SELL {sell_pct:.0f}%: {address[:10]} PnL:{pnl_pct:+.1f}% [{reason}]")
 
@@ -2365,9 +2360,23 @@ def _startup_once():
                                     if _entry <= 0:
                                         _skipped += 1
                                         continue
-                                    auto_trade_stats["running_positions"][_addr] = _pd
-                                    add_position_to_monitor(AUTO_SESSION_ID, _addr, _pd.get("token", _addr[:10]), _entry, float(_pd.get("size_bnb", AUTO_BUY_SIZE_BNB)), float(_pd.get("sl_pct", 15.0)))
+                                    # ✅ FIX: Full position data restore — tp_sold, sl_pct, bought_usd sab wapas
+                                    _tp_sold   = float(_pd.get("tp_sold",    0.0))
+                                    _sl_pct    = float(_pd.get("sl_pct",    15.0))
+                                    _size_bnb  = float(_pd.get("size_bnb",  AUTO_BUY_SIZE_BNB))
+                                    _bought_usd= float(_pd.get("bought_usd", 0.0))
+                                    auto_trade_stats["running_positions"][_addr] = {
+                                        "token":      _pd.get("token", _addr[:10]),
+                                        "entry":      _entry,
+                                        "size_bnb":   _size_bnb,
+                                        "bought_usd": _bought_usd,
+                                        "bought_at":  _pd.get("bought_at", ""),
+                                        "sl_pct":     _sl_pct,
+                                        "tp_sold":    _tp_sold,
+                                    }
+                                    add_position_to_monitor(AUTO_SESSION_ID, _addr, _pd.get("token", _addr[:10]), _entry, _size_bnb, _sl_pct)
                                     _restored += 1
+                                    print(f"  ↳ Restored {_pd.get('token',_addr[:10])}: tp_sold={_tp_sold:.0f}% size={_size_bnb:.4f} sl={_sl_pct:.0f}%")
                             if _skipped:
                                 print(f"🧹 Skipped {_skipped} positions on startup (cap=10 or invalid)")
                             print(f"✅ Restored {_restored} positions from Supabase (capped at {_MAX_RESTORE})")
