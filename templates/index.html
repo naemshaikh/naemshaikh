@@ -623,10 +623,12 @@ async function fetchHistory(){
   pEl.textContent=(pnl>=0?'+':'')+pnl.toFixed(4);pEl.style.color=pnl>=0?'var(--em)':'var(--red)';
   const best=d.best_trade||{};document.getElementById('hs-best').textContent=best.pnl_pct!=null?(best.pnl_pct>=0?'+':'')+best.pnl_pct.toFixed(1)+'%':'—';
   const hist=d.history||[],list=document.getElementById('hist-list');
-  if(!hist.length){list.innerHTML='<div class="empty-state">No trades yet</div>';return;}
+  // Sirf completed trades — win ya loss (holding wale nahi)
+  const closedTrades = hist.filter(function(t){ return t.result==='win'||t.result==='loss'; });
+  if(!closedTrades.length){list.innerHTML='<div class="empty-state">No completed trades yet</div>';return;}
   // Group by address
   const groups = {};
-  hist.forEach(function(t){
+  closedTrades.forEach(function(t){
     const key = t.address||t.token||'unknown';
     if(!groups[key]) groups[key]={trades:[],addr:t.address||'',token:t.token||''};
     groups[key].trades.push(t);
