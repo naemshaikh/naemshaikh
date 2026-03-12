@@ -901,24 +901,27 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     sess["paper_balance"] = round(paper_balance - size_bnb, 6)
     _sl = CHECKLIST_SETTINGS.get("sl_new", 15.0)
     add_position_to_monitor(AUTO_SESSION_ID, address, token_name or address[:10], entry_price, size_bnb, stop_loss_pct=_sl)
+    _bnb_at_buy = market_cache.get("bnb_price", 300) or 300
     auto_trade_stats["running_positions"][address] = {
-        "token":     token_name or address[:10],
-        "entry":     entry_price,
-        "size_bnb":  size_bnb,
-        "sl_pct":    CHECKLIST_SETTINGS.get("sl_new", 15.0),
-        "tp_sold":   0.0,
-        "bought_at": datetime.utcnow().isoformat(),
+        "token":      token_name or address[:10],
+        "entry":      entry_price,
+        "size_bnb":   size_bnb,
+        "bought_usd": round(size_bnb * _bnb_at_buy, 2),
+        "sl_pct":     CHECKLIST_SETTINGS.get("sl_new", 15.0),
+        "tp_sold":    0.0,
+        "bought_at":  datetime.utcnow().isoformat(),
     }
     # PERSIST: Supabase mein save karo restart ke liye
     try:
         sess["open_positions"] = {
             k: {
-                "token":     v.get("token", ""),
-                "entry":     v.get("entry", 0),
-                "size_bnb":  v.get("size_bnb", AUTO_BUY_SIZE_BNB),
-                "bought_at": v.get("bought_at", ""),
-                "sl_pct":    v.get("sl_pct", CHECKLIST_SETTINGS.get("sl_new", 15.0)),
-                "tp_sold":   v.get("tp_sold", 0.0),
+                "token":      v.get("token", ""),
+                "entry":      v.get("entry", 0),
+                "size_bnb":   v.get("size_bnb", AUTO_BUY_SIZE_BNB),
+                "bought_usd": v.get("bought_usd", 0),
+                "bought_at":  v.get("bought_at", ""),
+                "sl_pct":     v.get("sl_pct", CHECKLIST_SETTINGS.get("sl_new", 15.0)),
+                "tp_sold":    v.get("tp_sold", 0.0),
             }
             for k, v in auto_trade_stats["running_positions"].items()
         }
@@ -975,18 +978,22 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     if sell_pct >= 100.0:
      if not isinstance(auto_trade_stats.get("trade_history"), list):
         auto_trade_stats["trade_history"] = []
+     _bnb_at_sell = market_cache.get("bnb_price", 300) or 300
+     _saved_bought_usd = auto_trade_stats["running_positions"].get(address, {}).get("bought_usd", 0)
      auto_trade_stats["trade_history"].append({
-        "token":     token,
-        "address":   address,
-        "entry":     entry,      # FIX: was entry_price
-        "exit":      current,    # FIX: was sell_price
-        "pnl_pct":   round(pnl_pct, 2),
-        "pnl_bnb":   round(pnl_bnb, 6),
-        "size_bnb":  sell_size,
-        "bought_at": bought_at_str,
-        "sold_at":   datetime.utcnow().isoformat(),
-        "result":    "win" if pnl_pct > 0 else "loss",
-        "reason":    reason,     # FIX: was sell_reason
+        "token":      token,
+        "address":    address,
+        "entry":      entry,
+        "exit":       current,
+        "pnl_pct":    round(pnl_pct, 2),
+        "pnl_bnb":    round(pnl_bnb, 6),
+        "size_bnb":   sell_size,
+        "bought_usd": _saved_bought_usd if _saved_bought_usd else round(sell_size * _bnb_at_sell, 2),
+        "sold_usd":   round(max(0, return_bnb) * _bnb_at_sell, 2),
+        "bought_at":  bought_at_str,
+        "sold_at":    datetime.utcnow().isoformat(),
+        "result":     "win" if pnl_pct > 0 else "loss",
+        "reason":     reason,
     })
     if len(auto_trade_stats["trade_history"]) > 50:
         auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-50:]
@@ -2762,9 +2769,10 @@ def auto_stats_route():
             "current":   current,
             "pnl":       pnl,
             "pnl_pct":   pnl,
-            "size_bnb":  pos.get("size_bnb", AUTO_BUY_SIZE_BNB),
-            "size":      f"{pos.get('size_bnb', AUTO_BUY_SIZE_BNB):.4f} BNB",
-            "bought_at": pos.get("bought_at", ""),
+            "size_bnb":   pos.get("size_bnb", AUTO_BUY_SIZE_BNB),
+            "size":       f"{pos.get('size_bnb', AUTO_BUY_SIZE_BNB):.4f} BNB",
+            "bought_usd": pos.get("bought_usd", 0),
+            "bought_at":  pos.get("bought_at", ""),
             "sl_pct":    pos.get("sl_pct", 15.0),
         })
 
