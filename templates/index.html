@@ -1252,9 +1252,10 @@ window._renderHPage = function(){
   const items = window._hData.slice(0, PAGE * window._hPage);
   if(!items.length){ wrap.innerHTML='<div class="empty-state">No open positions</div>'; return; }
   const bnbP  = window._bnbReal||618;
-  let html = '<div style="display:grid;grid-template-columns:1fr 100px 100px;padding:6px 4px;border-bottom:1px solid var(--line);gap:4px;">'+
+  let html = '<div style="display:grid;grid-template-columns:1fr 80px 90px 90px;padding:6px 4px;border-bottom:1px solid var(--line);gap:4px;">'+
     '<span style="font-size:10px;color:var(--txt3);">Token / Hold</span>'+
     '<span style="font-size:10px;color:var(--txt3);text-align:center;">Invested</span>'+
+    '<span style="font-size:10px;color:var(--txt3);text-align:center;">Holdings</span>'+
     '<span style="font-size:10px;color:var(--txt3);text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:3px;"><span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--em);animation:blink 2.4s infinite;"></span>PnL LIVE</span>'+
   '</div>';
   html += items.map(function(d){
@@ -1276,9 +1277,10 @@ window._renderHPage = function(){
     var remPct      = p.tp_sold!=null ? Math.max(0, 100 - parseFloat(p.tp_sold||0)) : 100;
     var holdTm      = gHoldTime(p.bought_at);
     var tokenQty    = entry > 0 ? (sz / entry) : 0;
+    var currTokQty  = p.token_amount!=null ? parseFloat(p.token_amount) : (current>0 ? (sz+pnlB)/current : tokenQty);
     var remClr      = remPct >= 50 ? 'var(--em)' : 'var(--gold)';
     var nowClr      = pnl >= 0 ? 'var(--em)' : 'var(--red)';
-    return '<div style="display:grid;grid-template-columns:1fr 100px 100px;align-items:center;padding:9px 4px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;gap:4px;background:'+_rowBg+';" onclick="openHoldDetail(\''+encodeURIComponent(JSON.stringify(Object.assign({},p,{address:addr})))+'\')">'+
+    return '<div style="display:grid;grid-template-columns:1fr 80px 90px 90px;align-items:center;padding:9px 4px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;gap:4px;background:'+_rowBg+';" onclick="openHoldDetail(\''+encodeURIComponent(JSON.stringify(Object.assign({},p,{address:addr})))+'\')">'+
       '<div style="display:flex;align-items:center;gap:8px;min-width:0;">'+
         '<div style="flex-shrink:0;">'+
           '<div style="width:36px;height:36px;border-radius:50%;background:'+ic+'22;border:1.5px solid '+ic+'44;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:'+ic+';font-family:JetBrains Mono,monospace;">'+sym.slice(0,2)+'</div>'+
@@ -1292,10 +1294,12 @@ window._renderHPage = function(){
         '</div>'+
       '</div>'+
       '<div style="text-align:center;min-width:0;">'+
-        '<div style="font-size:10px;font-weight:700;color:var(--txt2);font-family:JetBrains Mono,monospace;white-space:nowrap;">$'+investedUSD.toFixed(2)+' / '+sz.toFixed(4)+'</div>'+
-        '<div style="font-size:9px;color:var(--txt3);margin-top:2px;">🪙 '+(tokenQty>0?tokenQty.toLocaleString(undefined,{maximumFractionDigits:0})+' '+sym.slice(0,6):'—')+'</div>'+
-        '<div style="font-size:9px;font-weight:700;color:'+nowClr+';margin-top:2px;">Now: $'+currValUSD.toFixed(2)+'</div>'+
-        '<div style="font-size:9px;color:'+remClr+';margin-top:1px;">'+remPct+'% remaining</div>'+
+        '<div style="font-size:11px;font-weight:700;color:var(--txt2);font-family:JetBrains Mono,monospace;white-space:nowrap;">$'+investedUSD.toFixed(2)+'</div>'+
+        '<div style="font-size:9px;color:var(--txt3);margin-top:3px;white-space:nowrap;">'+(tokenQty>0?tokenQty.toLocaleString(undefined,{maximumFractionDigits:0})+' '+sym.slice(0,6):'—')+'</div>'+
+      '</div>'+
+      '<div style="text-align:center;min-width:0;">'+
+        '<div style="font-size:11px;font-weight:700;color:'+nowClr+';font-family:JetBrains Mono,monospace;white-space:nowrap;">$'+currValUSD.toFixed(2)+'</div>'+
+        '<div style="font-size:9px;color:var(--txt3);margin-top:3px;white-space:nowrap;">'+(currTokQty>0?currTokQty.toLocaleString(undefined,{maximumFractionDigits:0})+' '+sym.slice(0,6):'—')+'</div>'+
       '</div>'+
       '<div style="text-align:right;min-width:0;">'+
         '<div style="font-size:11px;font-weight:900;color:'+clr+';font-family:JetBrains Mono,monospace;white-space:nowrap;">'+(pnlB>=0?'+':'-')+'$'+(Math.abs(pnlB)*bnbP).toFixed(2)+'</div>'+
