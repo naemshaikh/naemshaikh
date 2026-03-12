@@ -650,9 +650,8 @@ async function fetchHistory(){
     const totalPnlUSD=(Math.abs(totalPnlB)*bnbP).toFixed(2);
     const pnlPctAvg=trades.reduce(function(s,t){return s+parseFloat(t.pnl_pct||t.pnl||0);},0)/trades.length;
     const totalSzBNB=trades.reduce(function(s,t){return s+parseFloat(t.size_bnb||0);},0);
-    const boughtUSD=(totalSzBNB*bnbP).toFixed(0);
-    const soldBNB=totalSzBNB+totalPnlB;
-    const soldUSD=(Math.max(0,soldBNB)*bnbP).toFixed(0);
+    const boughtUSD=(trades[0].bought_usd!=null?trades[0].bought_usd:(totalSzBNB*bnbP)).toFixed(0);
+    const soldUSD=(trades[0].sold_usd!=null?trades[0].sold_usd:Math.max(0,totalSzBNB+totalPnlB)*bnbP).toFixed(0);
     const wins=trades.filter(function(t){return parseFloat(t.pnl_pct||t.pnl||0)>0;}).length;
     const losses=trades.length-wins;
     const clr=totalPnlB>=0?'var(--em)':'var(--red)';
@@ -1293,10 +1292,10 @@ window._renderHPage = function(){
         '</div>'+
       '</div>'+
 
-      // Col 2 — Current / Bought
+      // Col 2 — Invested USD / size BNB
       '<div style="text-align:center;">'+
-        '<div style="font-size:11px;color:var(--txt2);font-family:JetBrains Mono,monospace;">'+fmtBNBPrice(current)+'</div>'+
-        '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+fmtBNBPrice(entry)+'</div>'+
+        '<div style="font-size:11px;color:var(--txt2);font-family:JetBrains Mono,monospace;">$'+(p.bought_usd!=null?parseFloat(p.bought_usd).toFixed(2):(sz*(window._bnbReal||618)).toFixed(2))+'</div>'+
+        '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+sz.toFixed(4)+' BNB</div>'+
       '</div>'+
 
       // Col 3 — PnL BNB + %
