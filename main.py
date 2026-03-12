@@ -2776,18 +2776,21 @@ def auto_stats_route():
         entry   = pos.get("entry", 0)
         current = mon.get("current", entry)
         pnl     = round(((current - entry) / entry * 100), 2) if entry > 0 else 0
+        pnl_bnb  = pos.get("size_bnb", AUTO_BUY_SIZE_BNB) * (pnl / 100.0)
         open_trades.append({
-            "address":   addr,
-            "token":     pos.get("token", addr[:8]),
-            "entry":     entry,
-            "current":   current,
-            "pnl":       pnl,
-            "pnl_pct":   pnl,
+            "address":    addr,
+            "token":      pos.get("token", addr[:8]),
+            "entry":      entry,
+            "current":    current,
+            "pnl":        pnl,
+            "pnl_pct":    pnl,
+            "pnl_bnb":    round(pnl_bnb, 6),   # ✅ FIX: pnl_bnb bhi bhejo
             "size_bnb":   pos.get("size_bnb", AUTO_BUY_SIZE_BNB),
             "size":       f"{pos.get('size_bnb', AUTO_BUY_SIZE_BNB):.4f} BNB",
             "bought_usd": pos.get("bought_usd", 0),
             "bought_at":  pos.get("bought_at", ""),
-            "sl_pct":    pos.get("sl_pct", 15.0),
+            "sl_pct":     pos.get("sl_pct", 15.0),
+            "tp_sold":    pos.get("tp_sold", 0.0),   # ✅ FIX: tp_sold bhi bhejo
         })
 
     total_pnl = round(auto_trade_stats.get("auto_pnl_total", 0.0) / max(trade_count, 1), 2) if trade_count > 0 else 0.0

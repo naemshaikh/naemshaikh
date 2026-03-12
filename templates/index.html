@@ -1277,7 +1277,7 @@ window._renderHPage = function(){
     var remPct      = p.tp_sold!=null ? Math.max(0, 100 - parseFloat(p.tp_sold||0)) : 100;
     var holdTm      = gHoldTime(p.bought_at);
     var tokenQty    = entry > 0 ? (sz / entry) : 0;
-    var currTokQty  = p.token_amount!=null ? parseFloat(p.token_amount) : (current>0 ? (sz+pnlB)/current : tokenQty);
+    var currTokQty  = tokenQty;  // ✅ FIX: token qty same rehti hai, sirf USD value badlti hai
     var remClr      = remPct >= 50 ? 'var(--em)' : 'var(--gold)';
     var nowClr      = pnl >= 0 ? 'var(--em)' : 'var(--red)';
     return '<div style="display:grid;grid-template-columns:1fr 80px 90px 90px;align-items:center;padding:9px 4px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;gap:4px;background:'+_rowBg+';" onclick="openHoldDetail(\''+encodeURIComponent(JSON.stringify(Object.assign({},p,{address:addr})))+'\')">'+
