@@ -1699,7 +1699,7 @@ function openTradeDetail(json){
   document.getElementById('modal-body').innerHTML =
     (addr?'<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);margin-bottom:10px;">'+
       '<div style="flex:1;font-family:JetBrains Mono,monospace;font-size:10px;color:var(--txt2);word-break:break-all;">'+addr+'</div>'+
-      '<button onclick="copyAddr(\''+addr+'\'')" style="flex-shrink:0;padding:5px 10px;border-radius:20px;background:var(--em-dim);border:1px solid rgba(0,230,118,0.3);color:var(--em);font-size:11px;font-weight:700;cursor:pointer;">📋 Copy</button>'+
+      '<button onclick="copyAddr(\''+addr+'\')" style="flex-shrink:0;padding:5px 10px;border-radius:20px;background:var(--em-dim);border:1px solid rgba(0,230,118,0.3);color:var(--em);font-size:11px;font-weight:700;cursor:pointer;">📋 Copy</button>'+
     '</div>':'')+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">'+
       '<div style="background:var(--ink3);border-radius:10px;padding:11px;border:1px solid '+(isWin?'rgba(0,230,118,0.2)':'rgba(255,71,87,0.2)')+';">'+
