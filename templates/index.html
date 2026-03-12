@@ -632,14 +632,19 @@ async function fetchHistory(){
   const sorted = Object.values(groups).sort(function(a,b){
     return new Date(b.trades[0].sold_at||b.trades[0].bought_at||0) - new Date(a.trades[0].sold_at||a.trades[0].bought_at||0);
   });
-  // GMGN premium card list
-  list.innerHTML = sorted.map(function(g){
+  // History list — exact same style as Holding tab
+  list.innerHTML =
+    '<div style="display:grid;grid-template-columns:1fr 90px 100px;padding:6px 4px;border-bottom:1px solid var(--line);gap:4px;">'+
+      '<span style="font-size:10px;color:var(--txt3);">Token/Age</span>'+
+      '<span style="font-size:10px;color:var(--txt3);text-align:center;">Bought/Sold</span>'+
+      '<span style="font-size:10px;color:var(--txt3);text-align:right;">PnL</span>'+
+    '</div>'+
+    sorted.map(function(g){
     const trades=g.trades, addr=g.addr;
     const sym=(g.token&&!g.token.startsWith('0x')&&g.token.length<20)?g.token.toUpperCase():symOf(g.token,addr);
     const ic=iconClr(sym);
     const bnbP=window._bnbReal||618;
 
-    // PnL — from pnl_bnb field; fallback: size * pnl_pct / 100
     const totalPnlB=trades.reduce(function(s,t){
       var pb=parseFloat(t.pnl_bnb||0);
       if(!pb){var sz=parseFloat(t.size_bnb||0),pp=parseFloat(t.pnl_pct||t.pnl||0);pb=sz*pp/100;}
@@ -647,15 +652,10 @@ async function fetchHistory(){
     },0);
     const totalPnlUSD=(Math.abs(totalPnlB)*bnbP).toFixed(2);
     const pnlPctAvg=trades.reduce(function(s,t){return s+parseFloat(t.pnl_pct||t.pnl||0);},0)/trades.length;
-
-    // Bought = total BNB invested
     const totalSzBNB=trades.reduce(function(s,t){return s+parseFloat(t.size_bnb||0);},0);
     const boughtUSD=(totalSzBNB*bnbP).toFixed(0);
-
-    // Sold = what was actually received = bought + pnl
     const soldBNB=totalSzBNB+totalPnlB;
     const soldUSD=(Math.max(0,soldBNB)*bnbP).toFixed(0);
-
     const wins=trades.filter(function(t){return parseFloat(t.pnl_pct||t.pnl||0)>0;}).length;
     const losses=trades.length-wins;
     const clr=totalPnlB>=0?'var(--em)':'var(--red)';
@@ -663,44 +663,38 @@ async function fetchHistory(){
     const wrClr=wr>=50?'var(--em)':'var(--red)';
     const lastT=trades.slice().sort(function(a,b){return new Date(_toUTC(b.sold_at||b.bought_at||0))-new Date(_toUTC(a.sold_at||a.bought_at||0));})[0];
     const timeAgo=gHoldTime(lastT.sold_at||lastT.bought_at);
-    const sellTxs=trades.filter(function(t){return t.sold_at&&t.result!=='holding';}).length;
     const encoded=encodeURIComponent(JSON.stringify({sym:sym,addr:addr,trades:trades,totalPnlB:totalPnlB,totalSz:totalSzBNB,wins:wins,losses:losses}));
 
-    return '<div onclick="openGroupTradeDetail(\''+encoded+'\')" '+
-      'style="position:relative;display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:6px;'+
-      'padding:8px 10px 8px 14px;border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;overflow:hidden;" '+
-      'onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" '+
-      'onmouseout="this.style.background=\'\'">'+
+    return '<div style="display:grid;grid-template-columns:1fr 90px 100px;align-items:center;padding:8px 4px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;gap:4px;" onclick="openGroupTradeDetail(\''+encoded+'\')">'+
 
-      // Left accent bar
-      '<div style="position:absolute;left:0;top:6px;bottom:6px;width:2.5px;background:'+clr+';border-radius:2px;"></div>'+
-
-      // Col1: icon + name + meta
+      // Col1 — Icon + Name + Age
       '<div style="display:flex;align-items:center;gap:8px;min-width:0;">'+
         '<div style="position:relative;flex-shrink:0;">'+
-          '<div style="width:36px;height:36px;border-radius:50%;background:'+ic+'18;border:2px solid '+ic+'50;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:'+ic+';">'+sym.slice(0,2)+'</div>'+
+          '<div style="width:34px;height:34px;border-radius:50%;background:'+ic+'22;border:1.5px solid '+ic+'44;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:'+ic+';font-family:JetBrains Mono,monospace;">'+sym.slice(0,2)+'</div>'+
           '<div style="position:absolute;bottom:-2px;right:-2px;min-width:15px;height:15px;border-radius:8px;background:#0d1520;border:1.5px solid #0d1520;display:flex;align-items:center;justify-content:center;padding:0 2px;">'+
             '<span style="font-size:7px;font-weight:900;color:'+wrClr+';">'+wr+'%</span>'+
           '</div>'+
         '</div>'+
         '<div style="min-width:0;">'+
-          '<div style="font-size:13px;font-weight:800;color:var(--txt1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px;">'+sym+'</div>'+
-          '<div style="font-size:9px;color:var(--txt3);margin-top:1px;">'+timeAgo+'</div>'+
+          '<div style="font-size:13px;font-weight:800;color:var(--txt1);font-family:JetBrains Mono,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px;">'+sym.slice(0,8)+'</div>'+
+          '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+timeAgo+'</div>'+
         '</div>'+
       '</div>'+
 
-      // Col2: bought↑ / sold↓
-      '<div style="text-align:right;min-width:64px;">'+
-        '<div style="font-size:11px;color:var(--txt3);font-family:JetBrains Mono,monospace;"><span style="font-size:9px;opacity:0.6;">↑</span>$'+boughtUSD+'</div>'+
-        '<div style="font-size:11px;color:var(--txt3);font-family:JetBrains Mono,monospace;margin-top:2px;"><span style="font-size:9px;opacity:0.6;">↓</span>$'+soldUSD+'</div>'+
+      // Col2 — ↑Bought / ↓Sold
+      '<div style="text-align:center;">'+
+        '<div style="font-size:11px;color:var(--txt2);font-family:JetBrains Mono,monospace;">$'+boughtUSD+'</div>'+
+        '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">$'+soldUSD+'</div>'+
       '</div>'+
 
-      // Col3: PnL
-      '<div style="text-align:right;min-width:62px;">'+
-        '<div style="font-size:13px;font-weight:900;color:'+clr+';font-family:JetBrains Mono,monospace;">'+(totalPnlB>=0?'+':'-')+'$'+totalPnlUSD+'</div>'+
-        '<div style="font-size:9px;color:'+clr+';margin-top:2px;">'+(pnlPctAvg>=0?'+':'')+pnlPctAvg.toFixed(1)+'%</div>'+
+      // Col3 — PnL USD + %
+      '<div style="text-align:right;">'+
+        '<div style="font-size:12px;font-weight:800;color:'+clr+';font-family:JetBrains Mono,monospace;white-space:nowrap;">'+(totalPnlB>=0?'+':'-')+'$'+totalPnlUSD+'</div>'+
+        '<div style="font-size:10px;font-weight:700;color:'+clr+';font-family:JetBrains Mono,monospace;">'+(pnlPctAvg>=0?'+':'')+pnlPctAvg.toFixed(1)+'%</div>'+
       '</div>'+
+
     '</div>';
+  }).join('');
   }).join('');
 }
 function openHist(t){
