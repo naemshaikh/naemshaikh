@@ -1273,7 +1273,8 @@ window._renderHPage = function(){
     var _isLive     = current > 0 && current !== entry;
     var _rowBg      = _isLive ? (pnl>=0?'rgba(0,230,118,0.03)':'rgba(255,71,87,0.03)') : 'transparent';
     var investedUSD = p.bought_usd!=null ? parseFloat(p.bought_usd) : (sz * bnbP);
-    var currValUSD  = (sz + pnlB) > 0 ? ((sz + pnlB) * bnbP) : investedUSD;
+    var origSz      = parseFloat(p.orig_size_bnb||sz);
+    var currValUSD  = investedUSD + (pnlB * bnbP);  // ✅ invested + total profit
     var remPct      = p.tp_sold!=null ? Math.max(0, 100 - parseFloat(p.tp_sold||0)) : 100;
     var holdTm      = gHoldTime(p.bought_at);
     var tokenQty    = entry > 0 ? (sz / entry) : 0;

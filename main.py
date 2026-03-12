@@ -651,13 +651,15 @@ def _persist_positions():
         _ss = get_or_create_session(AUTO_SESSION_ID)
         _ss["open_positions"] = {
             k: {
-                "token":      v.get("token", ""),
-                "entry":      v.get("entry", 0),
-                "size_bnb":   v.get("size_bnb", AUTO_BUY_SIZE_BNB),
-                "bought_usd": v.get("bought_usd", 0.0),
-                "bought_at":  v.get("bought_at", ""),
-                "sl_pct":     v.get("sl_pct", 15.0),
-                "tp_sold":    v.get("tp_sold", 0.0),   # ✅ partial sell progress
+                "token":          v.get("token", ""),
+                "entry":          v.get("entry", 0),
+                "size_bnb":       v.get("size_bnb", AUTO_BUY_SIZE_BNB),
+                "orig_size_bnb":  v.get("orig_size_bnb", v.get("size_bnb", AUTO_BUY_SIZE_BNB)),
+                "bought_usd":     v.get("bought_usd", 0.0),
+                "bought_at":      v.get("bought_at", ""),
+                "sl_pct":         v.get("sl_pct", 15.0),
+                "tp_sold":        v.get("tp_sold", 0.0),
+                "banked_pnl_bnb": v.get("banked_pnl_bnb", 0.0),  # ✅ partial sell profits
             }
             for k, v in auto_trade_stats["running_positions"].items()
         }
@@ -930,13 +932,15 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     add_position_to_monitor(AUTO_SESSION_ID, address, token_name or address[:10], entry_price, size_bnb, stop_loss_pct=_sl)
     _bnb_at_buy = market_cache.get("bnb_price", 300) or 300
     auto_trade_stats["running_positions"][address] = {
-        "token":      token_name or address[:10],
-        "entry":      entry_price,
-        "size_bnb":   size_bnb,
-        "bought_usd": round(size_bnb * _bnb_at_buy, 2),
-        "sl_pct":     CHECKLIST_SETTINGS.get("sl_new", 15.0),
-        "tp_sold":    0.0,
-        "bought_at":  datetime.utcnow().isoformat(),
+        "token":          token_name or address[:10],
+        "entry":          entry_price,
+        "size_bnb":       size_bnb,
+        "orig_size_bnb":  size_bnb,          # ✅ original size for total PnL calc
+        "bought_usd":     round(size_bnb * _bnb_at_buy, 2),
+        "sl_pct":         CHECKLIST_SETTINGS.get("sl_new", 15.0),
+        "tp_sold":        0.0,
+        "banked_pnl_bnb": 0.0,               # ✅ accumulates partial sell profits
+        "bought_at":      datetime.utcnow().isoformat(),
     }
     auto_trade_stats["total_auto_buys"] += 1
     auto_trade_stats["last_action"] = f"BUY {token_name or address[:10]}"
@@ -1040,8 +1044,9 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     else:
         if not isinstance(sess.get("positions"), list):
             sess["positions"] = []
-        pos["size_bnb"] = size * (1 - sell_pct / 100.0)
-        pos["tp_sold"]  = pos.get("tp_sold", 0) + sell_pct
+        pos["size_bnb"]       = size * (1 - sell_pct / 100.0)
+        pos["tp_sold"]        = pos.get("tp_sold", 0) + sell_pct
+        pos["banked_pnl_bnb"] = round(pos.get("banked_pnl_bnb", 0.0) + pnl_bnb, 6)  # ✅ accumulate
         _persist_positions()  # ✅ FIX: tp_sold + new size_bnb Supabase mein save
 
     print(f"AUTO SELL {sell_pct:.0f}%: {address[:10]} PnL:{pnl_pct:+.1f}% [{reason}]")
@@ -2776,21 +2781,28 @@ def auto_stats_route():
         entry   = pos.get("entry", 0)
         current = mon.get("current", entry)
         pnl     = round(((current - entry) / entry * 100), 2) if entry > 0 else 0
-        pnl_bnb  = pos.get("size_bnb", AUTO_BUY_SIZE_BNB) * (pnl / 100.0)
+        sz_rem   = pos.get("size_bnb", AUTO_BUY_SIZE_BNB)
+        pnl_bnb  = sz_rem * (pnl / 100.0)
+        banked   = pos.get("banked_pnl_bnb", 0.0)
+        total_pnl_bnb = round(pnl_bnb + banked, 6)   # ✅ remaining + already banked
+        orig_sz  = pos.get("orig_size_bnb", sz_rem)
+        total_pnl_pct = round((total_pnl_bnb / orig_sz * 100), 2) if orig_sz > 0 else pnl
         open_trades.append({
-            "address":    addr,
-            "token":      pos.get("token", addr[:8]),
-            "entry":      entry,
-            "current":    current,
-            "pnl":        pnl,
-            "pnl_pct":    pnl,
-            "pnl_bnb":    round(pnl_bnb, 6),   # ✅ FIX: pnl_bnb bhi bhejo
-            "size_bnb":   pos.get("size_bnb", AUTO_BUY_SIZE_BNB),
-            "size":       f"{pos.get('size_bnb', AUTO_BUY_SIZE_BNB):.4f} BNB",
-            "bought_usd": pos.get("bought_usd", 0),
-            "bought_at":  pos.get("bought_at", ""),
-            "sl_pct":     pos.get("sl_pct", 15.0),
-            "tp_sold":    pos.get("tp_sold", 0.0),   # ✅ FIX: tp_sold bhi bhejo
+            "address":        addr,
+            "token":          pos.get("token", addr[:8]),
+            "entry":          entry,
+            "current":        current,
+            "pnl":            total_pnl_pct,   # ✅ total PnL %
+            "pnl_pct":        total_pnl_pct,
+            "pnl_bnb":        total_pnl_bnb,   # ✅ total PnL BNB
+            "size_bnb":       sz_rem,
+            "orig_size_bnb":  orig_sz,
+            "size":           f"{sz_rem:.4f} BNB",
+            "bought_usd":     pos.get("bought_usd", 0),
+            "bought_at":      pos.get("bought_at", ""),
+            "sl_pct":         pos.get("sl_pct", 15.0),
+            "tp_sold":        pos.get("tp_sold", 0.0),
+            "banked_pnl_bnb": banked,
         })
 
     total_pnl = round(auto_trade_stats.get("auto_pnl_total", 0.0) / max(trade_count, 1), 2) if trade_count > 0 else 0.0
