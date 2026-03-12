@@ -1275,13 +1275,15 @@ window._renderHPage = function(){
     var investedUSD = p.bought_usd!=null ? parseFloat(p.bought_usd) : (sz * bnbP);
     var origSz      = parseFloat(p.orig_size_bnb||sz);
     var pnl_rem     = entry > 0 ? ((current - entry) / entry * 100) : 0;
-    var currValUSD  = sz > 0 && current > 0 ? (sz * (1 + pnl_rem/100) * bnbP) : investedUSD;
     var remPct      = p.tp_sold!=null ? Math.max(0, 100 - parseFloat(p.tp_sold||0)) : 100;
     var holdTm      = gHoldTime(p.bought_at);
-    var tokenQty    = entry > 0 ? (sz / entry) : 0;
+    var soldPct     = parseFloat(p.tp_sold||0);
+    var origSz      = parseFloat(p.orig_size_bnb||sz);
+    var tokenQty    = entry > 0 ? (origSz / entry) : 0;  // ✅ original tokens bought
     var soldPct     = parseFloat(p.tp_sold||0);
     var remainPct   = Math.max(0, 100 - soldPct) / 100;
-    var currTokQty  = tokenQty * remainPct;  // ✅ reduces after partial sell
+    var currTokQty  = entry > 0 ? (sz / entry) : 0;  // ✅ sz already = remaining after sells
+    var currTokQty  = entry > 0 ? (sz / entry) : 0;           // HOLDINGS: remaining tokens
     var _fmtUSD = function(v){
       if(!v||v<=0) return '—';
       if(v >= 1) return '$'+v.toFixed(4);
@@ -1291,8 +1293,6 @@ window._renderHPage = function(){
     };
     var entryUSDfmt = entry > 0 ? _fmtUSD(entry * bnbP) : '—';
     var currUSDfmt  = current > 0 ? _fmtUSD(current * bnbP) : '—';
-    var remSz       = parseFloat(p.size_bnb||0);
-    var pnl_rem     = entry > 0 ? ((current - entry) / entry * 100) : 0;
     var currValUSD  = sz > 0 && current > 0 ? (sz / entry * current * bnbP) : (investedUSD * (1 + pnl_rem/100));
     var remClr      = remPct >= 50 ? 'var(--em)' : 'var(--gold)';
     var nowClr      = pnl >= 0 ? 'var(--em)' : 'var(--red)';

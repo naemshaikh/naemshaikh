@@ -2370,14 +2370,22 @@ def _startup_once():
                                     _sl_pct    = float(_pd.get("sl_pct",    15.0))
                                     _size_bnb  = float(_pd.get("size_bnb",  AUTO_BUY_SIZE_BNB))
                                     _bought_usd= float(_pd.get("bought_usd", 0.0))
+                                    # orig_size_bnb: DB se lo, warna tp_sold se back-calculate karo
+                                    _orig_sz = float(_pd.get("orig_size_bnb", 0.0))
+                                    if _orig_sz <= 0:
+                                        _rem_frac = max(0.01, (100.0 - _tp_sold) / 100.0)
+                                        _orig_sz  = round(_size_bnb / _rem_frac, 6)
+                                    _banked = float(_pd.get("banked_pnl_bnb", 0.0))
                                     auto_trade_stats["running_positions"][_addr] = {
-                                        "token":      _pd.get("token", _addr[:10]),
-                                        "entry":      _entry,
-                                        "size_bnb":   _size_bnb,
-                                        "bought_usd": _bought_usd,
-                                        "bought_at":  _pd.get("bought_at", ""),
-                                        "sl_pct":     _sl_pct,
-                                        "tp_sold":    _tp_sold,
+                                        "token":          _pd.get("token", _addr[:10]),
+                                        "entry":          _entry,
+                                        "size_bnb":       _size_bnb,
+                                        "orig_size_bnb":  _orig_sz,
+                                        "bought_usd":     _bought_usd,
+                                        "bought_at":      _pd.get("bought_at", ""),
+                                        "sl_pct":         _sl_pct,
+                                        "tp_sold":        _tp_sold,
+                                        "banked_pnl_bnb": _banked,
                                     }
                                     add_position_to_monitor(AUTO_SESSION_ID, _addr, _pd.get("token", _addr[:10]), _entry, _size_bnb, _sl_pct)
                                     _restored += 1
