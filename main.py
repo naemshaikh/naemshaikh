@@ -2630,6 +2630,7 @@ def trade_history_route():
     now = _dt.utcnow()
     filtered = []
     for t in reversed(hist):
+        if not t.get("sold_at"): continue
         if filt == "win"  and t.get("result") != "win":  continue
         if filt == "loss" and t.get("result") != "loss": continue
         sold_str = t.get("sold_at", "")
