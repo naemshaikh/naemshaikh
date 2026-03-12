@@ -377,13 +377,11 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 
       <div class="gmgn-tabs">
         <button class="gtab active" onclick="gTab('holding',this)">Holding</button>
-        <button class="gtab"        onclick="gTab('trades',this)">Trades</button>
       </div>
       <div id="gtab-holding">
-        <div id="holding-list-wrap"><div class="empty-state">⏳ Loading...</div></div>
-      </div>
-      <div id="gtab-trades" style="display:none;">
-        <div id="trades-list-wrap"><div class="empty-state">⏳ Loading...</div></div>
+        <div style="background:var(--ink2);border:1px solid rgba(255,255,255,0.10);border-radius:14px;overflow:hidden;margin-top:6px;margin-bottom:16px;">
+          <div id="holding-list-wrap" style="overflow-y:auto;max-height:calc(7 * 57px);overscroll-behavior:contain;-webkit-overflow-scrolling:touch;"><div class="empty-state">⏳ Loading...</div></div>
+        </div>
       </div>
     </div>
     <div class="foot-note" id="ts" onclick="document.getElementById('debug-panel').style.display='block';dbg('--- Manual debug open ---');" style="cursor:pointer;">
