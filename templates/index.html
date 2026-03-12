@@ -636,11 +636,7 @@ async function fetchHistory(){
   });
   // History list — exact same style as Holding tab
   list.innerHTML =
-    '<div style="display:grid;grid-template-columns:1fr 90px 100px;padding:6px 4px;border-bottom:1px solid var(--line);gap:4px;">'+
-      '<span style="font-size:10px;color:var(--txt3);">Token/Age</span>'+
-      '<span style="font-size:10px;color:var(--txt3);text-align:center;">Bought/Sold</span>'+
-      '<span style="font-size:10px;color:var(--txt3);text-align:right;">PnL</span>'+
-    '</div>'+
+    
     sorted.map(function(g){
     const trades=g.trades, addr=g.addr;
     const sym=(g.token&&!g.token.startsWith('0x')&&g.token.length<20)?g.token.toUpperCase():symOf(g.token,addr);
