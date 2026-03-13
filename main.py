@@ -2782,52 +2782,60 @@ def continuous_learning():
     _load_brain_from_db()
     time.sleep(3)
     cycle = brain.get("total_learning_cycles", 0)
-    last_fast = last_deep = last_hour = 0
+    last_fast = last_deep = last_hour = last_bnb_check = 0
     print(f"📚 Learning from cycle #{cycle}")
     while True:
         try:
             cycle += 1
             brain["total_learning_cycles"] = cycle
             now = time.time()
-            if now - last_fast >= 120:  # MEM FIX: was 60
+
+            # BNB price backup — har 30s check karo (dedicated loop se alag)
+            if now - last_bnb_check >= 30:
+                last_bnb_check = now
+                try:
+                    _bnb_age = 9999
+                    _ts = market_cache.get("last_updated")
+                    if _ts:
+                        try: _bnb_age = (datetime.utcnow() - datetime.fromisoformat(_ts.replace("Z",""))).total_seconds()
+                        except: pass
+                    if _bnb_age > 30:  # dedicated loop fail hua — backup se lo
+                        fetch_market_data()
+                        fetch_pancakeswap_data()
+                except Exception as e:
+                    print(f"BNB backup fetch error: {e}")
+
+            # Trading patterns — har 120s
+            if now - last_fast >= 120:
                 last_fast = now
-            try:
-                # BNB price: WSS primary, HTTP backup every 60s agar WSS stale ho
-                _bnb_age = 9999
-                _ts = market_cache.get("last_updated")
-                if _ts:
-                    try: _bnb_age = (datetime.utcnow() - datetime.fromisoformat(_ts.replace("Z",""))).total_seconds()
-                    except: pass
-                if _bnb_age > 30:  # WSS 30s se update nahi hua = HTTP se lo
-                    fetch_market_data()
-                fetch_pancakeswap_data()
-            except Exception as e:
-                print(f"Market fetch error: {e}")
-            _learn_trading_patterns()
-            _learn_from_new_pairs()
-            try:
-                if supabase:
-                    supabase.table("memory").upsert({
-                        "session_id": "MRBLACK_CYCLE",
-                        "role":       "system",
-                        "content":    str(cycle),
-                        "updated_at": datetime.utcnow().isoformat()
-                    }).execute()
-            except Exception: pass
-            if now - last_deep >= 300:
+                _learn_trading_patterns()
+                _learn_from_new_pairs()
+                try:
+                    if supabase:
+                        supabase.table("memory").upsert({
+                            "session_id": "MRBLACK_CYCLE",
+                            "role":       "system",
+                            "content":    str(cycle),
+                            "updated_at": datetime.utcnow().isoformat()
+                        }).execute()
+                except Exception: pass
+
+            # Deep LLM learning — har 10 min (was 5 min)
+            if now - last_deep >= 600:
                 last_deep = now
                 _deep_llm_learning()
                 update_self_awareness()
                 _save_brain_to_db()
                 print(f"📚 Cycle #{cycle} | W:{len(brain['trading']['best_patterns'])} L:{len(brain['trading']['avoid_patterns'])}")
+
             if now - last_hour >= 3600:
                 last_hour = now
                 _check_milestones()
 
         except Exception as e:
             print(f"Learning cycle error: {e}")
-        gc.collect()  # periodic RAM cleanup
-        time.sleep(120)  # MEM FIX: 60s→120s — half CPU usage
+        gc.collect()
+        time.sleep(30)  # har 30s — BNB backup check ke liye zaroori
 
 # ========== FEEDBACK LOOP ==========
 feedback_log = []
