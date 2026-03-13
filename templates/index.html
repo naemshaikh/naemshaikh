@@ -282,19 +282,59 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
     </button>
   </div>
 
-  <div class="bal-row" style="margin-top:0;">
-    <div class="bal-card" style="background:var(--ink2);grid-column:1/-1;width:100%;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-        <div class="bal-lbl" onclick="openPnlBreakdown()" style="cursor:pointer;">Total PnL <span style="font-size:9px;color:var(--txt3);">↗ breakdown</span></div>
-        <div style="display:flex;gap:4px;" id="pnl-period-tabs">
-          <button onclick="setPnlPeriod('1D')" id="pnl-tab-1D" style="font-size:9px;padding:2px 7px;border-radius:10px;border:1px solid var(--txt3);background:transparent;color:var(--txt3);cursor:pointer;font-weight:600;">1D</button>
-          <button onclick="setPnlPeriod('7D')" id="pnl-tab-7D" style="font-size:9px;padding:2px 7px;border-radius:10px;border:1px solid var(--txt3);background:transparent;color:var(--txt3);cursor:pointer;font-weight:600;">7D</button>
-          <button onclick="setPnlPeriod('1M')" id="pnl-tab-1M" style="font-size:9px;padding:2px 7px;border-radius:10px;border:1px solid var(--txt3);background:transparent;color:var(--txt3);cursor:pointer;font-weight:600;">1M</button>
-          <button onclick="setPnlPeriod('ALL')" id="pnl-tab-ALL" style="font-size:9px;padding:2px 7px;border-radius:10px;border:none;background:var(--em);color:#fff;cursor:pointer;font-weight:600;">ALL</button>
+  <!-- GMGN Style PNL Card -->
+  <div style="margin:8px 0 4px;">
+    <div style="background:var(--ink2);border-radius:14px;padding:14px 16px;border:1px solid rgba(0,0,0,0.06);box-shadow:0 1px 4px rgba(0,0,0,0.05);">
+
+      <!-- Period Tabs -->
+      <div style="display:flex;gap:0;background:var(--ink);border-radius:8px;padding:3px;margin-bottom:12px;width:fit-content;">
+        <button onclick="setPnlPeriod('1D')" id="pnl-tab-1D" style="font-size:11px;padding:4px 12px;border-radius:6px;border:none;background:transparent;color:var(--txt3);cursor:pointer;font-weight:600;transition:all 0.15s;">1D</button>
+        <button onclick="setPnlPeriod('7D')" id="pnl-tab-7D" style="font-size:11px;padding:4px 12px;border-radius:6px;border:none;background:transparent;color:var(--txt3);cursor:pointer;font-weight:600;transition:all 0.15s;">7D</button>
+        <button onclick="setPnlPeriod('1M')" id="pnl-tab-1M" style="font-size:11px;padding:4px 12px;border-radius:6px;border:none;background:transparent;color:var(--txt3);cursor:pointer;font-weight:600;transition:all 0.15s;">1M</button>
+        <button onclick="setPnlPeriod('ALL')" id="pnl-tab-ALL" style="font-size:11px;padding:4px 12px;border-radius:6px;border:none;background:var(--ink2);color:var(--txt);cursor:pointer;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,0.1);transition:all 0.15s;">ALL</button>
+      </div>
+
+      <!-- Main PNL Row -->
+      <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:10px;">
+        <div>
+          <div style="font-size:10px;color:var(--txt3);font-weight:500;letter-spacing:0.3px;margin-bottom:2px;">TOTAL PNL</div>
+          <div id="b-pnl" style="font-size:28px;font-weight:800;color:var(--txt);line-height:1;">—</div>
+          <div id="b-pnl-usd" style="font-size:11px;color:var(--txt3);margin-top:2px;">— USD</div>
+        </div>
+        <div style="text-align:right;cursor:pointer;" onclick="openPnlBreakdown()">
+          <div style="font-size:9px;color:var(--txt3);margin-bottom:4px;">↗ breakdown</div>
+          <div id="b-wr-badge" style="font-size:12px;font-weight:700;padding:4px 10px;border-radius:20px;background:var(--ink);color:var(--txt2);">—% WR</div>
         </div>
       </div>
-      <div class="bal-val" id="b-pnl" style="color:var(--txt2)">—</div>
-      <div class="bal-sub" id="b-wr">Win Rate: —%</div>
+
+      <!-- Stats Row -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding-top:10px;border-top:1px solid var(--ink);">
+        <div style="text-align:center;">
+          <div style="font-size:9px;color:var(--txt3);margin-bottom:2px;">TRADES</div>
+          <div id="b-stat-trades" style="font-size:14px;font-weight:700;color:var(--txt);">—</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:9px;color:var(--txt3);margin-bottom:2px;">REALIZED</div>
+          <div id="b-stat-realized" style="font-size:14px;font-weight:700;color:var(--em);">—</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:9px;color:var(--txt3);margin-bottom:2px;">UNREALIZED</div>
+          <div id="b-stat-unrealized" style="font-size:14px;font-weight:700;color:var(--txt2);">—</div>
+        </div>
+      </div>
+
+      <!-- Win/Loss bar -->
+      <div style="margin-top:10px;">
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--txt3);margin-bottom:3px;">
+          <span id="b-wins-lbl">W: 0</span>
+          <span id="b-losses-lbl">L: 0</span>
+        </div>
+        <div style="height:4px;border-radius:4px;background:var(--ink);overflow:hidden;">
+          <div id="b-wr-bar" style="height:100%;border-radius:4px;background:var(--em);width:0%;transition:width 0.4s;"></div>
+        </div>
+      </div>
+
+      <div class="bal-sub" id="b-wr" style="display:none;"></div>
     </div>
   </div>
 
@@ -991,9 +1031,15 @@ function setPnlPeriod(p){
     var el = document.getElementById('pnl-tab-'+t);
     if(!el) return;
     if(t===p){
-      el.style.background='var(--em)'; el.style.color='#fff'; el.style.borderColor='var(--em)';
+      el.style.background='var(--ink2)';
+      el.style.color='var(--txt)';
+      el.style.boxShadow='0 1px 3px rgba(0,0,0,0.1)';
+      el.style.fontWeight='700';
     } else {
-      el.style.background='transparent'; el.style.color='var(--txt3)'; el.style.borderColor='var(--txt3)';
+      el.style.background='transparent';
+      el.style.color='var(--txt3)';
+      el.style.boxShadow='none';
+      el.style.fontWeight='600';
     }
   });
   window._renderPnlCard(window._lastStats);
@@ -1011,38 +1057,63 @@ function _pnlPeriodFilter(trades, period){
 }
 
 window._renderPnlCard = function(_as){
-  var period = window._pnlPeriod||'ALL';
-  var pEl  = document.getElementById('b-pnl');
-  var _wrEl = document.getElementById('b-wr');
-  if(!pEl||!_wrEl) return;
+  var period  = window._pnlPeriod||'ALL';
+  var pEl     = document.getElementById('b-pnl');
+  var pUsdEl  = document.getElementById('b-pnl-usd');
+  var wrBadge = document.getElementById('b-wr-badge');
+  var statT   = document.getElementById('b-stat-trades');
+  var statR   = document.getElementById('b-stat-realized');
+  var statU   = document.getElementById('b-stat-unrealized');
+  var winsLbl = document.getElementById('b-wins-lbl');
+  var lossLbl = document.getElementById('b-losses-lbl');
+  var wrBar   = document.getElementById('b-wr-bar');
+  if(!pEl) return;
+
+  var _bnbNow = parseFloat((_as&&_as.bnb_price)||window._bnbReal||0);
+
+  function _fmt(pct){ return (pct>=0?'+':'')+pct.toFixed(2)+'%'; }
+  function _usd(bnb){ return _bnbNow>0?'$'+(bnb*_bnbNow).toFixed(2):'—'; }
+  function _col(v){ return v>0?'var(--em)':v<0?'var(--red)':'var(--txt3)'; }
 
   if(period==='ALL'){
-    // ALL = backend ka total (includes unrealized)
-    var pnl = parseFloat((_as&&_as.total_pnl_pct)||0);
-    pEl.textContent=(pnl>=0?'+':'')+pnl.toFixed(2)+'%';
-    pEl.style.color=pnl>0?'var(--em)':pnl<0?'var(--red)':'var(--txt2)';
-    var _rPnl = parseFloat((_as&&_as.realized_pnl_bnb)||0);
-    var _uPnl = parseFloat((_as&&_as.unrealized_pnl_bnb)||0);
-    var _bnbNow = parseFloat((_as&&_as.bnb_price)||window._bnbReal||0);
-    if(_as && (_rPnl!==0||_uPnl!==0) && _bnbNow>0){
-      var _rUSD=(_rPnl*_bnbNow).toFixed(2), _uUSD=(_uPnl*_bnbNow).toFixed(2);
-      _wrEl.innerHTML='<span style="color:var(--txt3);font-size:10px;">Realized: <b style="color:'+(_rPnl>=0?'var(--em)':'var(--red)')+'">'+(_rPnl>=0?'+':'')+_rUSD+'$</b> &nbsp; Unrealized: <b style="color:'+(_uPnl>=0?'var(--em)':'var(--red)')+'">'+(_uPnl>=0?'+':'')+_uUSD+'$</b></span>';
-    } else {
-      _wrEl.textContent='Win Rate: '+(_as?_as.win_rate:0)+'%';
-    }
+    var pnl  = parseFloat((_as&&_as.total_pnl_pct)||0);
+    var rBnb = parseFloat((_as&&_as.realized_pnl_bnb)||0);
+    var uBnb = parseFloat((_as&&_as.unrealized_pnl_bnb)||0);
+    var wins = parseInt((_as&&_as.wins)||0);
+    var losses = parseInt((_as&&_as.losses)||0);
+    var total = wins+losses;
+    var wr   = total>0?Math.round(wins/total*100):0;
+    var tBnb = rBnb+uBnb;
+
+    pEl.textContent=_fmt(pnl); pEl.style.color=_col(pnl);
+    if(pUsdEl){ pUsdEl.textContent=_bnbNow>0?(_usd(tBnb)+' total'):''; }
+    if(wrBadge){ wrBadge.textContent=wr+'% WR'; wrBadge.style.color=wr>=50?'var(--em)':'var(--red)'; }
+    if(statT)  statT.textContent=total;
+    if(statR){ statR.textContent=_usd(rBnb); statR.style.color=_col(rBnb); }
+    if(statU){ statU.textContent=_usd(uBnb); statU.style.color=_col(uBnb); }
+    if(winsLbl) winsLbl.textContent='W: '+wins;
+    if(lossLbl) lossLbl.textContent='L: '+losses;
+    if(wrBar)  wrBar.style.width=wr+'%';
+
   } else {
-    // 1D/7D/1M = filter trade_history by sold_at
-    var hist = (_as&&_as.trade_history)||[];
+    var hist     = (_as&&_as.trade_history)||[];
     var filtered = _pnlPeriodFilter(hist, period);
-    var totalInvested = filtered.reduce(function(s,t){ return s+parseFloat(t.size_bnb||0.01); }, 0);
-    var totalPnlBnb   = filtered.reduce(function(s,t){ return s+parseFloat(t.pnl_bnb||0); }, 0);
-    var wins = filtered.filter(function(t){ return parseFloat(t.pnl_pct||0)>0; }).length;
-    var losses = filtered.filter(function(t){ return parseFloat(t.pnl_pct||0)<=0; }).length;
-    var pnlPct = totalInvested>0 ? (totalPnlBnb/totalInvested*100) : 0;
-    var wr = filtered.length>0 ? Math.round(wins/filtered.length*100) : 0;
-    pEl.textContent=(pnlPct>=0?'+':'')+pnlPct.toFixed(2)+'%';
-    pEl.style.color=pnlPct>0?'var(--em)':pnlPct<0?'var(--red)':'var(--txt2)';
-    _wrEl.innerHTML='<span style="color:var(--txt3);font-size:10px;">'+filtered.length+' trades &nbsp; W:'+wins+' L:'+losses+' &nbsp; WR:<b style="color:'+(wr>=50?'var(--em)':'var(--red)')+'">'+wr+'%</b></span>';
+    var invested = filtered.reduce(function(s,t){ return s+parseFloat(t.size_bnb||0.01); },0);
+    var pnlBnb   = filtered.reduce(function(s,t){ return s+parseFloat(t.pnl_bnb||0); },0);
+    var wins     = filtered.filter(function(t){ return parseFloat(t.pnl_pct||0)>0; }).length;
+    var losses   = filtered.length - wins;
+    var pnlPct   = invested>0?(pnlBnb/invested*100):0;
+    var wr       = filtered.length>0?Math.round(wins/filtered.length*100):0;
+
+    pEl.textContent=_fmt(pnlPct); pEl.style.color=_col(pnlPct);
+    if(pUsdEl){ pUsdEl.textContent=_bnbNow>0?(_usd(pnlBnb)+' realized'):''; }
+    if(wrBadge){ wrBadge.textContent=wr+'% WR'; wrBadge.style.color=wr>=50?'var(--em)':'var(--red)'; }
+    if(statT)  statT.textContent=filtered.length;
+    if(statR){ statR.textContent=_usd(pnlBnb); statR.style.color=_col(pnlBnb); }
+    if(statU){ statU.textContent='—'; statU.style.color='var(--txt3)'; }
+    if(winsLbl) winsLbl.textContent='W: '+wins;
+    if(lossLbl) lossLbl.textContent='L: '+losses;
+    if(wrBar)  wrBar.style.width=wr+'%';
   }
 };
 
