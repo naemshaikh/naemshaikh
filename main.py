@@ -5291,15 +5291,23 @@ def wallet_info():
             if r.status_code == 200 and r.json().get("status") == "1":
                 bnb = float(r.json()["result"]) / 1e18
                 return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2)})
-        # Fallback — web3 direct
-        try:
-            from web3 import Web3
-            w3 = Web3(Web3.HTTPProvider(BSC_RPC))
-            bal = w3.eth.get_balance(Web3.to_checksum_address(addr))
-            bnb = float(bal) / 1e18
-            return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2)})
-        except Exception as we:
-            return jsonify({"wallet": addr, "bnb": 0, "usd": 0, "error": str(we)[:60]})
+        # Fallback — try multiple public RPCs
+        _rpcs = [
+            "https://bsc-dataseed1.defibit.io/",
+            "https://bsc-dataseed1.ninicoin.io/",
+            "https://bsc-dataseed2.defibit.io/",
+            "https://rpc.ankr.com/bsc",
+        ]
+        for _rpc in _rpcs:
+            try:
+                from web3 import Web3
+                w3t = Web3(Web3.HTTPProvider(_rpc, request_kwargs={"timeout": 6}))
+                bal = w3t.eth.get_balance(Web3.to_checksum_address(addr))
+                bnb = float(bal) / 1e18
+                return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2)})
+            except Exception:
+                continue
+        return jsonify({"wallet": addr, "bnb": 0, "usd": 0, "error": "RPC unavailable — add BSC_SCAN_KEY"})
     except Exception as e:
         return jsonify({"wallet": "", "bnb": 0, "usd": 0, "error": str(e)[:60]})
 
