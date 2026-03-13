@@ -1479,8 +1479,11 @@ window._renderPnlCard = function(_as){
 // PNL Breakdown Modal
 async function openRugDna(){
   document.getElementById('modal-title').textContent = '🧬 Rug DNA Records';
+  document.getElementById('modal-sub').textContent   = 'Tokens that triggered SL or dump';
+  document.getElementById('modal-pnl').textContent   = '';
+  document.getElementById('modal-actions').innerHTML = '<button class="mbtn dark" onclick="closeModal()" style="flex:1;">✕ Close</button>';
   document.getElementById('modal-body').innerHTML = '<div style="text-align:center;padding:20px;color:var(--txt3);">Loading...</div>';
-  document.getElementById('modal-bg').classList.add('on');
+  showModal();
   try {
     const d = await fetchJSON('/rug-dna',{},8000);
     const dna = d.dna || [];
@@ -1590,8 +1593,11 @@ async function openBrainInsights(){
 
 async function openWhaleDetail(){
   document.getElementById('modal-title').textContent = '🐋 Whale Wallets';
+  document.getElementById('modal-sub').textContent   = 'Tracked smart money wallets';
+  document.getElementById('modal-pnl').textContent   = '';
+  document.getElementById('modal-actions').innerHTML = '<button class="mbtn dark" onclick="closeModal()" style="flex:1;">✕ Close</button>';
   document.getElementById('modal-body').innerHTML = '<div style="text-align:center;padding:20px;color:var(--txt3);">Loading...</div>';
-  document.getElementById('modal-bg').classList.add('on');
+  showModal();
   try {
     const d = await fetchJSON('/whale-detail',{},8000);
     const wallets = d.wallets || [];
