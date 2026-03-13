@@ -2424,14 +2424,40 @@ def _startup_once():
             except Exception as e:
                 print(f"Session error: {e}")
 
-        threading.Thread(target=_bg_init,                             daemon=True).start()
-        threading.Thread(target=fetch_market_data,                    daemon=True).start()
+        threading.Thread(target=_bg_init, daemon=True).start()
 
-        def _bnb_retry():
-            _time.sleep(15)
-            if market_cache.get("bnb_price", 0) == 0:
-                fetch_market_data()
-        threading.Thread(target=_bnb_retry,                           daemon=True).start()
+        # ✅ Dedicated BNB price loop — tries every 30s until price is live
+        def _bnb_price_loop():
+            import time as _t
+            _sources = [
+                ("Binance",      "https://api.binance.com/api/v3/ticker/price",        {"symbol":"BNBUSDT"},                    lambda r: float(r.json().get("price",0) or 0)),
+                ("OKX",          "https://www.okx.com/api/v5/market/ticker",           {"instId":"BNB-USDT"},                   lambda r: float(((r.json() or {}).get("data") or [{}])[0].get("last",0) or 0)),
+                ("CryptoCompare","https://min-api.cryptocompare.com/data/price",       {"fsym":"BNB","tsyms":"USD"},             lambda r: float(r.json().get("USD",0) or 0)),
+                ("CoinGecko",    "https://api.coingecko.com/api/v3/simple/price",      {"ids":"binancecoin","vs_currencies":"usd"}, lambda r: float((r.json() or {}).get("binancecoin",{}).get("usd",0) or 0)),
+                ("GeckoTerminal","https://api.geckoterminal.com/api/v2/networks/bsc/pools/0x58f876857a02d6762e0101bb5c46a8c1ed44dc16", {}, lambda r: float(((r.json() or {}).get("data",{}).get("attributes",{}).get("token_price_usd")) or 0)),
+            ]
+            while True:
+                fetched = False
+                for name, url, params, parse in _sources:
+                    try:
+                        r = requests.get(url, params=params if params else None, timeout=15,
+                                        headers={"Accept":"application/json"})
+                        price = parse(r)
+                        if price and float(price) > 10:
+                            market_cache["bnb_price"]    = round(float(price), 4)
+                            market_cache["last_updated"] = datetime.utcnow().isoformat()
+                            print(f"✅ BNB price ({name}): ${float(price):.2f}")
+                            fetched = True
+                            break
+                        else:
+                            print(f"⚠️ BNB {name}: price={price} — skipping")
+                    except Exception as e:
+                        print(f"⚠️ BNB {name} error: {str(e)[:60]}")
+                if not fetched:
+                    print(f"❌ BNB price: ALL sources failed — retry in 30s")
+                _t.sleep(30)  # refresh every 30s
+
+        threading.Thread(target=_bnb_price_loop, daemon=True).start()
 
         # ✅ Real-time BNB price via NodeReal WSS — PancakeSwap on-chain swap events
         def _bnb_ws_stream():
