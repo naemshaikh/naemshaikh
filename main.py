@@ -1238,8 +1238,22 @@ def get_dexscreener_token_data(token_address: str) -> Dict:
 # ========== MARKET DATA ==========
 def fetch_market_data():
     bnb_fetched = False
-    # FIX: More sources + longer timeouts + retry loop
+    # NodeReal HTTP — on-chain PancakeSwap WBNB/BUSD reserves (most accurate)
+    def _nodereal_bnb():
+        _key = os.environ.get("NODEREAL_API_KEY", "")
+        if not _key: return 0
+        payload = {"jsonrpc":"2.0","id":1,"method":"eth_call","params":[{
+            "to":   "0x58F876857a02D6762E0101bb5C46A8c1ED44Dc16",
+            "data": "0x0902f1ac"  # getReserves()
+        },"latest"]}
+        r = requests.post(f"https://bsc-mainnet.nodereal.io/v1/{_key}", json=payload, timeout=10)
+        res = r.json().get("result","")
+        if not res or len(res) < 130: return 0
+        r0 = int(res[2:66],   16) / 1e18   # BUSD reserve (token0)
+        r1 = int(res[66:130], 16) / 1e18   # WBNB reserve (token1)
+        return r0 / r1 if r1 > 0 else 0
     sources = [
+        ("NodeReal",     _nodereal_bnb),
         ("Binance",      lambda: float(requests.get(
             "https://api.binance.com/api/v3/ticker/price",
             params={"symbol":"BNBUSDT"}, timeout=30
@@ -2346,43 +2360,72 @@ def _startup_once():
                 fetch_market_data()
         threading.Thread(target=_bnb_retry,                           daemon=True).start()
 
-        # ✅ Real-time BNB price via WebSocket — Binance stream (no polling, memory safe)
+        # ✅ Real-time BNB price via NodeReal WSS — PancakeSwap on-chain swap events
         def _bnb_ws_stream():
             import json as _j
+
+            POOL_ADDR  = "0x58F876857a02D6762E0101bb5C46A8c1ED44Dc16"  # WBNB/BUSD PancakeSwap V2
+            SWAP_TOPIC = "0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822"
+
+            def _parse_price(data_hex):
+                try:
+                    raw = data_hex[2:] if data_hex.startswith("0x") else data_hex
+                    if len(raw) < 256: return 0
+                    a0in  = int(raw[0:64],   16) / 1e18
+                    a1in  = int(raw[64:128],  16) / 1e18
+                    a0out = int(raw[128:192], 16) / 1e18
+                    a1out = int(raw[192:256], 16) / 1e18
+                    if a1in > 0 and a0out > 0:   return a0out / a1in   # BNB sold
+                    if a1out > 0 and a0in > 0:   return a0in  / a1out  # BNB bought
+                except Exception:
+                    pass
+                return 0
+
             async def _stream():
-                url  = "wss://stream.binance.com:9443/ws/bnbusdt@miniTicker"
+                _api_key = os.environ.get("NODEREAL_API_KEY", "")
+                if not _api_key:
+                    print("⚠️ NODEREAL_API_KEY not set — BNB WS stream skipped")
+                    return
+                url  = f"wss://bsc-mainnet.nodereal.io/ws/v1/{_api_key}"
                 fail = 0
                 while True:
                     try:
-                        async with websockets.connect(
-                            url, ping_interval=20, ping_timeout=10,
-                            close_timeout=5, max_size=2**16
-                        ) as ws:
-                            print("✅ BNB WebSocket stream connected (Binance)")
+                        async with websockets.connect(url, ping_interval=20, ping_timeout=15, close_timeout=5, max_size=2**18) as ws:
+                            await ws.send(_j.dumps({
+                                "jsonrpc": "2.0", "id": 2,
+                                "method":  "eth_subscribe",
+                                "params":  ["logs", {"address": POOL_ADDR, "topics": [SWAP_TOPIC]}]
+                            }))
+                            ack = await asyncio.wait_for(ws.recv(), timeout=10)
+                            print(f"✅ NodeReal BNB price stream live | sub={_j.loads(ack).get('result','?')}")
                             fail = 0
                             while True:
-                                msg = await asyncio.wait_for(ws.recv(), timeout=30)
+                                msg  = await asyncio.wait_for(ws.recv(), timeout=60)
                                 data = _j.loads(msg)
-                                price = float(data.get("c", 0) or 0)
-                                if price > 10:
-                                    market_cache["bnb_price"]    = price
-                                    market_cache["last_updated"] = datetime.utcnow().isoformat()
-                                del msg, data  # explicit cleanup
+                                raw  = ((data.get("params") or {}).get("result") or {}).get("data", "")
+                                if raw:
+                                    price = _parse_price(raw)
+                                    if price > 10:
+                                        market_cache["bnb_price"]    = round(price, 4)
+                                        market_cache["last_updated"] = datetime.utcnow().isoformat()
+                                del msg, data
                     except Exception as e:
                         fail += 1
                         wait = min(5 * fail, 60)
-                        print(f"⚠️ BNB WS error: {str(e)[:60]} — retry in {wait}s")
+                        print(f"⚠️ NodeReal BNB WS: {str(e)[:80]} — retry in {wait}s")
                         gc.collect()
                         await asyncio.sleep(wait)
+
             def _run():
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 try:
                     loop.run_until_complete(_stream())
                 except Exception as ex:
-                    print(f"⚠️ BNB WS thread: {ex}")
+                    print(f"⚠️ BNB WS thread crashed: {ex}")
                 finally:
                     loop.close()
+
             threading.Thread(target=_run, daemon=True).start()
 
         threading.Thread(target=_delayed(poll_new_pairs,        10),  daemon=True).start()
