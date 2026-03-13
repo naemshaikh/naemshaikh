@@ -2895,6 +2895,8 @@ def _save_brain_to_db():
     if _t.time() - _brain_save_cache["last_save"] < 60: return
     _brain_save_cache["last_save"] = _t.time()
     try:
+        with _smart_wallets_lock:
+            _sw_snapshot = dict(_smart_wallets)
         supabase.table("memory").upsert({
             "session_id": "MRBLACK_BRAIN",
             "role":       "system",
@@ -2907,7 +2909,9 @@ def _save_brain_to_db():
                 "brain_airdrop":  brain["airdrop"],
                 "brain_coding":   brain["coding"],
                 "cycles":         brain["total_learning_cycles"],
-                "total_tokens_discovered_ever": brain.get("total_tokens_discovered_ever", 0)
+                "total_tokens_discovered_ever": brain.get("total_tokens_discovered_ever", 0),
+                "smart_wallets":  _sw_snapshot,
+                "rug_dna":        _rug_dna[-100:],
             })
         }).execute()
         print(f"🧠 Brain saved (cycle #{brain['total_learning_cycles']})")
@@ -2963,6 +2967,17 @@ def _load_brain_from_db():
             if stored.get("brain_coding"):  brain["coding"].update(stored["brain_coding"])
             brain["total_learning_cycles"] = stored.get("cycles", 0)
             brain["total_tokens_discovered_ever"] = stored.get("total_tokens_discovered_ever", 0)
+            # Load smart wallets
+            _sw = stored.get("smart_wallets", {})
+            if isinstance(_sw, dict) and _sw:
+                with _smart_wallets_lock:
+                    _smart_wallets.update(_sw)
+                print(f"🐋 Smart wallets loaded: {len(_sw)}")
+            # Load rug DNA
+            _rd = stored.get("rug_dna", [])
+            if isinstance(_rd, list) and _rd:
+                _rug_dna.extend(_rd)
+                print(f"☠️ Rug DNA loaded: {len(_rd)}")
             print(f"🧠 Brain loaded! Cycles: {brain['total_learning_cycles']}")
     except Exception as e:
         print(f"⚠️ Brain load error: {e}")
@@ -5144,6 +5159,36 @@ def auto_stats_route():
         "trade_history": [], "learning_cycles": 0, "new_pairs_found": 0,
         "daily_loss": 0, "auto_buys": 0, "auto_sells": 0,
     })
+@app.route("/whale-detail")
+def whale_detail():
+    """Return top qualified whale wallets with stats"""
+    try:
+        with _smart_wallets_lock:
+            wallets = dict(_smart_wallets)
+        result = []
+        for addr, d in wallets.items():
+            wins   = d.get("wins", 0)
+            losses = d.get("losses", 0)
+            total  = wins + losses
+            wr     = round(wins / total * 100, 1) if total > 0 else 0
+            result.append({
+                "address":    addr,
+                "short":      addr[:6] + "..." + addr[-4:],
+                "wins":       wins,
+                "losses":     losses,
+                "total":      total,
+                "win_rate":   wr,
+                "total_pnl":  round(d.get("total_pnl", 0), 4),
+                "qualified":  d.get("qualified", False),
+                "first_seen": d.get("first_seen", "")[:10] if d.get("first_seen") else "—",
+                "last_seen":  _to_ist(d.get("last_seen", "")) if d.get("last_seen") else "—",
+            })
+        # Sort by wins desc
+        result.sort(key=lambda x: (x["qualified"], x["wins"]), reverse=True)
+        return jsonify({"wallets": result[:20], "total": len(result)})
+    except Exception as e:
+        return jsonify({"wallets": [], "total": 0, "error": str(e)})
+
 @app.route("/toggle-auto", methods=["POST"])
 def toggle_auto():
     global AUTO_TRADE_ENABLED
