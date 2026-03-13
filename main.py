@@ -3220,6 +3220,7 @@ SWAP_TOPIC = "0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822
 # {token_addr_lower: {"buys": N, "sells": N, "ts": float, "pair": str, "token0_is_wbnb": bool}}
 _rt_swap_data: dict = {}
 _rt_swap_lock = threading.Lock()
+_swap_monitor_resubscribe = threading.Event()  # ✅ fix: was missing
 
 # Pair → token mapping (taaki Swap event decode kar sakein)
 _pair_to_token: dict = {}   # {pair_lower: {"token": addr, "token0_is_wbnb": bool}}
