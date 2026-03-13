@@ -3258,7 +3258,13 @@ _pair_to_token: dict = {}   # {pair_lower: {"token": addr, "token0_is_wbnb": boo
 def _register_position_pair(token_address: str, known_pair: str = None):
     """Naya position open hua — pair address dhundo aur register karo"""
     try:
-        pair = known_pair or _get_v2_pair(token_address)
+        # Agar pair already known hai (from dex_data) — instant, no BSC call needed
+        if known_pair and known_pair != "0x0000000000000000000000000000000000000000":
+            pair = known_pair
+        else:
+            # BSC call — thread mein karo taaki buy flow block na ho
+            threading.Thread(target=_register_position_pair, args=(token_address, None), daemon=True).start()
+            return
         if not pair or pair == "0x0000000000000000000000000000000000000000":
             return
         # Find out if WBNB is token0 or token1 in this pair
