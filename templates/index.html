@@ -258,9 +258,9 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
       <div class="bal-sub" id="b-usd">approx $—</div>
     </div>
     <div class="bal-card ice" style="cursor:pointer;" onclick="openWalletModal()">
-      <div class="bal-lbl">Real Balance</div>
+      <div class="bal-lbl">Real Balance <span style="font-size:9px;color:var(--txt3);" id="wallet-short"></span></div>
       <div class="bal-val" id="b-real-bal" style="color:var(--ice)">— BNB</div>
-      <div class="bal-sub" id="b-real-usd" style="color:var(--txt3);">Tap to add wallet</div>
+      <div class="bal-sub" id="b-real-usd" style="color:var(--txt3);">Tap to view wallet</div>
     </div>
   </div>
 
@@ -276,8 +276,8 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
   </div>
 
   <div class="bal-row" style="margin-top:0;">
-    <div class="bal-card" style="background:var(--ink2);grid-column:1/-1;width:100%;">
-      <div class="bal-lbl">Total PnL</div>
+    <div class="bal-card" onclick="openPnlBreakdown()" style="background:var(--ink2);grid-column:1/-1;width:100%;cursor:pointer;">
+      <div class="bal-lbl">Total PnL <span style="font-size:9px;color:var(--txt3);">↗ tap for breakdown</span></div>
       <div class="bal-val" id="b-pnl" style="color:var(--txt2)">—</div>
       <div class="bal-sub" id="b-wr">Win Rate: —%</div>
     </div>
@@ -954,18 +954,58 @@ function _applyModeUI(){
   if(bar) bar.style.borderColor = isPaper ? 'var(--line)' : 'rgba(255,71,87,0.4)';
 }
 
-// Fetch real BNB balance from BSCScan
+// Fetch real BNB balance from backend (BSC_WALLET env se auto)
 async function fetchRealBalance(){
-  if(!_walletAddr) return;
   try{
-    const r = await fetchJSON('https://api.bscscan.com/api?module=account&action=balance&address='+_walletAddr+'&tag=latest&apikey=YourApiKeyToken',{},10000);
-    if(r && r.status==='1'){
-      const bnb = parseFloat(r.result) / 1e18;
+    const r = await fetchJSON('/wallet-info',{},10000);
+    if(r && !r.error && r.bnb >= 0){
       const bnbP = window._bnbReal || 0;
-      document.getElementById('b-real-bal').textContent = bnb.toFixed(4)+' BNB';
-      document.getElementById('b-real-usd').textContent = bnbP>0?'approx $'+Math.round(bnb*bnbP).toLocaleString():'price unavailable';
+      document.getElementById('b-real-bal').textContent = r.bnb.toFixed(4)+' BNB';
+      document.getElementById('b-real-usd').textContent = r.usd > 0 ? 'approx $'+r.usd.toLocaleString() : 'tap to view';
+      const ws = document.getElementById('wallet-short');
+      if(ws && r.wallet) ws.textContent = r.wallet.slice(0,6)+'...'+r.wallet.slice(-4);
+      _walletAddr = r.wallet || _walletAddr;
+    } else if(r && r.error === 'BSC_WALLET not set in env'){
+      document.getElementById('b-real-usd').textContent = 'Tap to add wallet';
     }
   }catch(e){}
+}
+
+// PNL Breakdown Modal
+async function openPnlBreakdown(){
+  document.getElementById('modal-title').textContent = '📊 PnL Breakdown';
+  document.getElementById('modal-sub').textContent   = 'Trade performance summary';
+  document.getElementById('modal-pnl').textContent   = '';
+  document.getElementById('modal-body').innerHTML    = '<div style="text-align:center;padding:20px;color:var(--txt3);">Loading...</div>';
+  document.getElementById('modal-actions').innerHTML = '<button class="mbtn dark" onclick="closeModal()" style="flex:1;">✕ Close</button>';
+  showModal();
+  try{
+    const d = await fetchJSON('/pnl-breakdown',{},10000);
+    if(!d){document.getElementById('modal-body').innerHTML='<div style="color:var(--red);padding:12px;">Failed to load</div>';return;}
+    const bnbP = window._bnbReal || d.bnb_price || 0;
+    function _row(label, data, clr){
+      const pnlUSD = bnbP > 0 ? ' (~$'+Math.abs(data.pnl_bnb*bnbP).toFixed(2)+')' : '';
+      const pnlClr = data.pnl_bnb >= 0 ? 'var(--em)' : 'var(--red)';
+      return '<div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr;gap:4px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);align-items:center;">'+
+        '<div style="font-size:11px;font-weight:800;color:'+clr+';">'+label+'</div>'+
+        '<div style="font-size:11px;color:var(--txt2);text-align:center;">'+data.trades+' trades<br><span style="color:var(--em);font-size:10px;">'+data.wins+'W</span> <span style="color:var(--red);font-size:10px;">'+data.losses+'L</span></div>'+
+        '<div style="font-size:11px;text-align:center;color:var(--gold);">'+data.win_rate+'%<br><span style="font-size:9px;color:var(--txt3);">win rate</span></div>'+
+        '<div style="font-size:11px;text-align:right;color:'+pnlClr+';">'+(data.pnl_bnb>=0?'+':'')+data.pnl_bnb.toFixed(4)+'<br><span style="font-size:9px;color:var(--txt3);">'+pnlUSD+'</span></div>'+
+      '</div>';
+    }
+    document.getElementById('modal-body').innerHTML =
+      '<div style="padding:4px 0;">'+
+        '<div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr;gap:4px;padding:4px 0;margin-bottom:4px;">'+
+          '<div style="font-size:9px;color:var(--txt3);">PERIOD</div>'+
+          '<div style="font-size:9px;color:var(--txt3);text-align:center;">TRADES</div>'+
+          '<div style="font-size:9px;color:var(--txt3);text-align:center;">WIN%</div>'+
+          '<div style="font-size:9px;color:var(--txt3);text-align:right;">PNL (BNB)</div>'+
+        '</div>'+
+        _row('TODAY',    d.today,    'var(--ice)')+
+        _row('WEEK',     d.week,     'var(--gold)')+
+        _row('ALL TIME', d.all_time, 'var(--em)')+
+      '</div>';
+  }catch(e){document.getElementById('modal-body').innerHTML='<div style="color:var(--red);padding:12px;">Error: '+e.message+'</div>';}
 }
 
 // Wallet Modal
@@ -1021,27 +1061,37 @@ function openModeSwitchModal(){
     showModal();
     return;
   }
-  // Paper → Real requires wallet
-  if(!_walletAddr){
-    showToast('❌ Pehle wallet add karo!');
-    openWalletModal();
-    return;
-  }
+  // Paper → Real: check wallet + win rate
+  const wr = parseFloat((document.getElementById('b-wr')||{}).textContent||'0') || 0;
+  const trades = parseInt((document.getElementById('sg-wins')||{}).textContent||'0')+parseInt((document.getElementById('sg-losses')||{}).textContent||'0');
+  const walletAddr = _walletAddr || '';
+
   document.getElementById('modal-title').textContent = '⚠️ Switch to REAL Mode?';
   document.getElementById('modal-sub').textContent   = 'Real money involved!';
   document.getElementById('modal-pnl').textContent   = '⚠️ CAUTION';
   document.getElementById('modal-pnl').className     = 'pnl-big n';
+
+  // Readiness checks
+  const checks = [
+    { ok: walletAddr.length > 10,  label: 'Wallet connected',         val: walletAddr ? walletAddr.slice(0,8)+'...' : 'Not set' },
+    { ok: trades >= 10,            label: 'Min 10 trades done',       val: trades+' trades' },
+    { ok: wr >= 50,                label: 'Win rate ≥ 50%',           val: wr+'%' },
+  ];
+  const allOk = checks.every(c => c.ok);
+  const checksHTML = checks.map(c =>
+    '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);">'+
+      '<span style="font-size:11px;color:var(--txt2);">'+(c.ok?'✅':'❌')+' '+c.label+'</span>'+
+      '<span style="font-size:11px;color:'+(c.ok?'var(--em)':'var(--red)')+';">'+c.val+'</span>'+
+    '</div>'
+  ).join('');
+
   document.getElementById('modal-body').innerHTML =
     '<div style="padding:12px 0;">'+
-      '<div style="background:var(--red-dim);border:1px solid rgba(255,71,87,0.3);border-radius:10px;padding:12px;margin-bottom:12px;">'+
-        '<div style="font-size:12px;font-weight:800;color:var(--red);margin-bottom:6px;">⚠️ Real mode risks:</div>'+
-        '<div style="font-size:12px;color:var(--txt2);line-height:1.7;">'+
-          '• Bot REAL BNB use karega trades ke liye<br>'+
-          '• Losses real money mein hongi<br>'+
-          '• Sirf tab switch karo jab 70%+ win rate ho<br>'+
-          '• Wallet: <b style="color:var(--em);font-family:JetBrains Mono,monospace;">'+_walletAddr.slice(0,12)+'...'+_walletAddr.slice(-6)+'</b>'+
-        '</div>'+
+      '<div style="background:var(--ink3);border-radius:10px;padding:10px 12px;margin-bottom:10px;">'+
+        '<div style="font-size:10px;color:var(--txt3);margin-bottom:6px;font-weight:800;">BOT READINESS</div>'+
+        checksHTML+
       '</div>'+
+      (!allOk ? '<div style="background:rgba(255,71,87,0.1);border:1px solid rgba(255,71,87,0.3);border-radius:8px;padding:8px 10px;margin-bottom:10px;font-size:11px;color:var(--red);">⚠️ Bot abhi ready nahi — real trading risky ho sakta hai!</div>' : '<div style="background:rgba(0,230,118,0.08);border:1px solid rgba(0,230,118,0.2);border-radius:8px;padding:8px 10px;margin-bottom:10px;font-size:11px;color:var(--em);">✅ Bot ready hai real trading ke liye!</div>')+
       '<div style="font-size:12px;color:var(--txt2);">Confirm karne ke liye <b style="color:var(--red)">REAL</b> type karo:</div>'+
       '<input id="confirm-input" type="text" placeholder="Type REAL to confirm" '+
         'style="width:100%;padding:12px;margin-top:8px;border:1.5px solid var(--red-dim);border-radius:10px;background:var(--ink3);color:var(--txt);font-size:14px;font-weight:800;outline:none;text-align:center;">'+
@@ -1070,9 +1120,9 @@ async function _doModeSwitch(){
 }
 
 // Init wallet on load
-if(_walletAddr) fetchRealBalance();
+fetchRealBalance();
 _applyModeUI();
-setInterval(fetchRealBalance, 30000);
+setInterval(fetchRealBalance, 60000);
 
 function _setAutoUI(enabled){
   _autoEnabled = enabled;

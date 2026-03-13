@@ -38,6 +38,7 @@ MODEL_DEEP  = "llama-3.3-70b-versatile"
 BSC_RPC          = "https://bsc-dataseed.binance.org/"
 BSC_SCAN_API     = "https://api.bscscan.com/api"
 BSC_SCAN_KEY     = os.getenv("BSC_SCAN_KEY") or os.getenv("BSCSCAN_API_KEY") or os.getenv("BSC_API_KEY", "") or os.getenv("BSCSCAN_API_KEY", "")
+BSC_WALLET       = os.getenv("BSC_WALLET", "")   # Real wallet address for balance display
 PANCAKE_ROUTER   = "0x10ED43C718714eb63d5aA57B78B54704E256024E"
 PANCAKE_FACTORY  = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
 WBNB             = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"  # FIX 1: WBNB defined
@@ -4832,3 +4833,54 @@ def health():
         "positions":     len(auto_trade_stats.get("running_positions", {})),
         "learning_cycles": brain.get("total_learning_cycles", 0),
     })
+
+@app.route("/wallet-info")
+def wallet_info():
+    """Real wallet balance from BSCScan"""
+    try:
+        addr = BSC_WALLET
+        if not addr:
+            return jsonify({"wallet": "", "bnb": 0, "usd": 0, "error": "BSC_WALLET not set in env"})
+        bnb_price = market_cache.get("bnb_price", 0)
+        if BSC_SCAN_KEY:
+            r = requests.get(BSC_SCAN_API, params={
+                "module": "account", "action": "balance",
+                "address": addr, "tag": "latest", "apikey": BSC_SCAN_KEY
+            }, timeout=10)
+            if r.status_code == 200 and r.json().get("status") == "1":
+                bnb = float(r.json()["result"]) / 1e18
+                return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2)})
+        # Fallback — web3 direct
+        try:
+            from web3 import Web3
+            w3 = Web3(Web3.HTTPProvider(BSC_RPC))
+            bal = w3.eth.get_balance(Web3.to_checksum_address(addr))
+            bnb = float(bal) / 1e18
+            return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2)})
+        except Exception as we:
+            return jsonify({"wallet": addr, "bnb": 0, "usd": 0, "error": str(we)[:60]})
+    except Exception as e:
+        return jsonify({"wallet": "", "bnb": 0, "usd": 0, "error": str(e)[:60]})
+
+@app.route("/pnl-breakdown")
+def pnl_breakdown():
+    """PNL breakdown — today, week, all time"""
+    try:
+        hist = auto_trade_stats.get("trade_history", [])
+        now  = datetime.utcnow()
+        def _calc(trades):
+            wins   = sum(1 for t in trades if float(t.get("pnl_bnb", 0) or 0) > 0)
+            losses = sum(1 for t in trades if float(t.get("pnl_bnb", 0) or 0) <= 0)
+            pnl    = round(sum(float(t.get("pnl_bnb", 0) or 0) for t in trades), 6)
+            wr     = round(wins / max(wins+losses, 1) * 100, 1)
+            return {"trades": len(trades), "wins": wins, "losses": losses, "pnl_bnb": pnl, "win_rate": wr}
+        today = [t for t in hist if t.get("sold_at","")[:10] == now.strftime("%Y-%m-%d")]
+        week  = [t for t in hist if t.get("sold_at") and (now - datetime.fromisoformat(t["sold_at"][:19])).days <= 7]
+        return jsonify({
+            "today":    _calc(today),
+            "week":     _calc(week),
+            "all_time": _calc(hist),
+            "bnb_price": market_cache.get("bnb_price", 0)
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)[:60]})
