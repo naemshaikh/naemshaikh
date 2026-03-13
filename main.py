@@ -1826,8 +1826,14 @@ def poll_new_pairs():
 
     if _ws is not None:
         def _run_ws():
-            try: asyncio.run(_ws_loop())
-            except Exception as ex: print(f"Warning: WSS thread: {ex}")
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(_ws_loop())
+            except Exception as ex:
+                print(f"Warning: WSS thread: {ex}")
+            finally:
+                loop.close()  # always close — no dangling loops
         threading.Thread(target=_run_ws, daemon=True).start()
 
 
@@ -2340,35 +2346,44 @@ def _startup_once():
                 fetch_market_data()
         threading.Thread(target=_bnb_retry,                           daemon=True).start()
 
-        # ✅ Real-time BNB price via WebSocket — Binance stream (no polling)
+        # ✅ Real-time BNB price via WebSocket — Binance stream (no polling, memory safe)
         def _bnb_ws_stream():
-            import asyncio as _aio
             import json as _j
             async def _stream():
-                url = "wss://stream.binance.com:9443/ws/bnbusdt@miniTicker"
+                url  = "wss://stream.binance.com:9443/ws/bnbusdt@miniTicker"
                 fail = 0
                 while True:
                     try:
-                        async with websockets.connect(url, ping_interval=20, ping_timeout=10, close_timeout=5) as ws:
+                        async with websockets.connect(
+                            url, ping_interval=20, ping_timeout=10,
+                            close_timeout=5, max_size=2**16
+                        ) as ws:
                             print("✅ BNB WebSocket stream connected (Binance)")
                             fail = 0
                             while True:
-                                msg  = await asyncio.wait_for(ws.recv(), timeout=30)
+                                msg = await asyncio.wait_for(ws.recv(), timeout=30)
                                 data = _j.loads(msg)
-                                price = float(data.get("c", 0) or 0)  # "c" = close/last price
+                                price = float(data.get("c", 0) or 0)
                                 if price > 10:
                                     market_cache["bnb_price"]    = price
                                     market_cache["last_updated"] = datetime.utcnow().isoformat()
+                                del msg, data  # explicit cleanup
                     except Exception as e:
                         fail += 1
                         wait = min(5 * fail, 60)
                         print(f"⚠️ BNB WS error: {str(e)[:60]} — retry in {wait}s")
+                        gc.collect()
                         await asyncio.sleep(wait)
-            try:
-                _aio.run(_stream())
-            except Exception as ex:
-                print(f"⚠️ BNB WS thread: {ex}")
-        threading.Thread(target=_bnb_ws_stream, daemon=True).start()
+            def _run():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    loop.run_until_complete(_stream())
+                except Exception as ex:
+                    print(f"⚠️ BNB WS thread: {ex}")
+                finally:
+                    loop.close()
+            threading.Thread(target=_run, daemon=True).start()
 
         threading.Thread(target=_delayed(poll_new_pairs,        10),  daemon=True).start()
         threading.Thread(target=_delayed(poll_four_meme,         20), daemon=True).start()
