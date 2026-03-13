@@ -1047,6 +1047,25 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         pos["size_bnb"]       = size * (1 - sell_pct / 100.0)
         pos["tp_sold"]        = pos.get("tp_sold", 0) + sell_pct
         pos["banked_pnl_bnb"] = round(pos.get("banked_pnl_bnb", 0.0) + pnl_bnb, 6)  # ✅ accumulate
+        # ✅ Store real TP sell events for frontend display
+        _bnb_at_tp = market_cache.get("bnb_price", 300) or 300
+        _gas_bnb   = 0.0003  # BSC gas estimate ~0.0003 BNB per tx
+        if not isinstance(pos.get("tp_events"), list):
+            pos["tp_events"] = []
+        pos["tp_events"].append({
+            "label":       reason,             # e.g. "TP+50%"
+            "sell_pct":    sell_pct,           # % sold this time
+            "exit_price":  round(current, 12), # real exit price in BNB
+            "exit_usd":    round(current * _bnb_at_tp, 10),  # real exit price in USD
+            "sell_bnb":    round(sell_size, 6),
+            "sell_usd":    round(max(0, return_bnb) * _bnb_at_tp, 2),
+            "pnl_bnb":     round(pnl_bnb, 6),
+            "pnl_pct":     round(pnl_pct, 2),
+            "gas_bnb":     _gas_bnb,
+            "gas_usd":     round(_gas_bnb * _bnb_at_tp, 3),
+            "tokens_sold": round(sell_size / current, 0) if current > 0 else 0,
+            "sold_at":     datetime.utcnow().isoformat(),
+        })
         _persist_positions()  # ✅ FIX: tp_sold + new size_bnb Supabase mein save
 
     print(f"AUTO SELL {sell_pct:.0f}%: {address[:10]} PnL:{pnl_pct:+.1f}% [{reason}]")
@@ -2818,6 +2837,8 @@ def auto_stats_route():
             "sl_pct":         pos.get("sl_pct", 15.0),
             "tp_sold":        pos.get("tp_sold", 0.0),
             "banked_pnl_bnb": banked,
+            "tp_events":      pos.get("tp_events", []),
+            "gas_bnb":        0.0003,  # BSC buy gas estimate
         })
 
     total_pnl = round(auto_trade_stats.get("auto_pnl_total", 0.0) / max(trade_count, 1), 2) if trade_count > 0 else 0.0

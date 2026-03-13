@@ -1386,7 +1386,7 @@ function openHoldDetail(json){
   const currentVal   = sz*(1+pnl/100);
   const boughtUSD    = (origSz*bnbP).toFixed(0);
   const currentUSD   = (currentVal*bnbP).toFixed(2);
-  const gasBNB       = 0.0005;
+  const gasBNB       = parseFloat(t.gas_bnb||0) || 0.0003;  // BSC real ~0.0003 BNB
   const gasUSD       = (gasBNB*bnbP).toFixed(3);
   const holdDur      = gHoldTime(t.bought_at);
   const buyTimeIST   = t.bought_at?new Date(_toUTC(t.bought_at)).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}):'—';
@@ -1495,38 +1495,56 @@ function openHoldDetail(json){
     (pnl>=0?'+':'')+pnl.toFixed(1)+'%', false
   );
 
-  // TP Sell rows — newest TP on top, oldest at bottom
-  // Each TP sells incremental chunk: TP1=25%, TP2=25%, TP3=25%, TP4=15%
+  // TP Sell rows — real data from tp_events if available, else estimate
   let tpRows='';
   if(tpSold>0){
-    const tpDefs=[
-      {cumul:90, prev:75, label:'TP4'},
-      {cumul:75, prev:50, label:'TP3'},
-      {cumul:50, prev:25, label:'TP2'},
-      {cumul:25, prev:0,  label:'TP1'},
-    ];
-    const soldBNBTotal = origSz - sz;
-    const avgExitPrice = soldBNBTotal>0 && banked!==0
-      ? entry * (1 + (banked / soldBNBTotal))
-      : entry * (1 + pnl/100);
-    tpDefs.forEach(function(lv){
-      if(tpSold>=lv.cumul){
-        const chunkPct    = lv.cumul - lv.prev;
-        const lvBNB       = origSz * (chunkPct / 100);
-        const lvUSD       = (lvBNB * bnbP).toFixed(0);
-        const tokensTP    = tokensBought>0 ? Math.round(tokensBought*(chunkPct/100)) : 0;
-        const sellPriceUSD= avgExitPrice>0 ? '$'+(avgExitPrice*bnbP).toFixed(8).replace(/\.?0+$/,'') : '—';
+    const tpEvents = (t.tp_events||[]).slice().reverse(); // newest first
+    if(tpEvents.length>0){
+      // ✅ Real data from backend
+      tpEvents.forEach(function(ev){
+        const evUSD     = ev.sell_usd>0 ? '$'+ev.sell_usd.toFixed(0) : '—';
+        const evTokens  = ev.tokens_sold>0 ? '~'+Number(Math.round(ev.tokens_sold)).toLocaleString()+' '+sym : '';
+        const evGas     = ev.gas_usd>0 ? '$'+ev.gas_usd.toFixed(3)+' ~' : '';
+        const evPrice   = ev.exit_usd>0 ? '$'+ev.exit_usd.toFixed(8).replace(/\.?0+$/,'') : '—';
+        const evPnl     = ev.pnl_pct>=0?'+'+ev.pnl_pct.toFixed(1)+'%':ev.pnl_pct.toFixed(1)+'%';
         tpRows+=actRow(
-          lv.label+' Sell','var(--gold)',
+          ev.label||'TP Sell','var(--gold)',
           '—','partial exit',
-          '$'+lvUSD,
-          tokensTP>0?'~'+Number(tokensTP).toLocaleString()+' '+sym:'',
-          '$'+gasUSD+' ~',
-          sellPriceUSD,
-          '','sold '+chunkPct+'%', true
+          evUSD, evTokens, evGas, evPrice,
+          '','sold '+ev.sell_pct.toFixed(0)+'%', true
         );
-      }
-    });
+      });
+    } else {
+      // Fallback estimate when tp_events not yet stored (old positions)
+      const tpDefs=[
+        {cumul:90, prev:75, label:'TP4'},
+        {cumul:75, prev:50, label:'TP3'},
+        {cumul:50, prev:25, label:'TP2'},
+        {cumul:25, prev:0,  label:'TP1'},
+      ];
+      const soldBNBTotal = origSz - sz;
+      const avgExitPrice = soldBNBTotal>0 && banked!==0
+        ? entry * (1 + (banked / soldBNBTotal))
+        : entry * (1 + pnl/100);
+      tpDefs.forEach(function(lv){
+        if(tpSold>=lv.cumul){
+          const chunkPct    = lv.cumul - lv.prev;
+          const lvBNB       = origSz * (chunkPct / 100);
+          const lvUSD       = (lvBNB * bnbP).toFixed(0);
+          const tokensTP    = tokensBought>0 ? Math.round(tokensBought*(chunkPct/100)) : 0;
+          const sellPriceUSD= avgExitPrice>0 ? '~$'+(avgExitPrice*bnbP).toFixed(8).replace(/\.?0+$/,'') : '—';
+          tpRows+=actRow(
+            lv.label+' Sell','var(--gold)',
+            '—','partial exit',
+            '~$'+lvUSD,
+            tokensTP>0?'~'+Number(tokensTP).toLocaleString()+' '+sym:'',
+            '~$'+gasUSD+' ~',
+            sellPriceUSD,
+            '','sold '+chunkPct+'%', true
+          );
+        }
+      });
+    }
   }
 
   // BUY row — shown LAST (oldest activity at bottom)
