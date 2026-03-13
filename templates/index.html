@@ -1534,10 +1534,16 @@ async function openRugDna(){
 
 async function openBrainInsights(){
   document.getElementById('modal-title').textContent = '🧠 Brain Insights';
+  document.getElementById('modal-sub').textContent   = 'What the bot has learned so far';
+  document.getElementById('modal-pnl').textContent   = '';
+  document.getElementById('modal-actions').innerHTML =
+    '<button class="mbtn dark" onclick="closeModal()" style="flex:1;">✕ Close</button>' +
+    '<button class="mbtn" onclick="downloadBrainReport()" style="flex:1;background:rgba(160,100,255,0.15);border-color:rgba(160,100,255,0.35);color:#a064ff;">⬇ Download Report</button>';
   document.getElementById('modal-body').innerHTML = '<div style="text-align:center;padding:20px;color:var(--txt3);">Analyzing...</div>';
-  document.getElementById('modal-bg').classList.add('on');
+  showModal();
   try {
     const d = await fetchJSON('/brain-insights',{},8000);
+    window._brainData = d;  // save for download
     if(d.error){ document.getElementById('modal-body').innerHTML='<div style="color:var(--red);padding:20px;">'+d.error+'</div>'; return; }
 
     const wr_clr = d.win_rate >= 50 ? 'var(--em)' : 'var(--red)';
@@ -1561,9 +1567,9 @@ async function openBrainInsights(){
       <div style="font-size:11px;color:var(--txt1);">${d.latest_note}</div>
     </div>`;
 
-    if(d.top_wins.length){
+    if(d.top_wins && d.top_wins.length){
       html += `<div style="font-size:10px;font-weight:700;color:var(--em);margin-bottom:6px;">🏆 TOP WINS (${d.top_wins.length})</div>`;
-      html += '<div style="max-height:200px;overflow-y:auto;margin-bottom:4px;">';
+      html += '<div style="max-height:160px;overflow-y:auto;margin-bottom:4px;">';
       d.top_wins.forEach(t => {
         html += `<div style="display:flex;justify-content:space-between;padding:5px 8px;background:rgba(0,212,170,0.06);border-radius:6px;margin-bottom:4px;">
           <span style="font-size:10px;color:var(--txt2);">${t.token||'—'}</span>
@@ -1573,9 +1579,9 @@ async function openBrainInsights(){
       html += '</div>';
     }
 
-    if(d.top_losses.length){
+    if(d.top_losses && d.top_losses.length){
       html += `<div style="font-size:10px;font-weight:700;color:var(--red);margin:10px 0 6px;">💀 WORST LOSSES (${d.top_losses.length})</div>`;
-      html += '<div style="max-height:200px;overflow-y:auto;">';
+      html += '<div style="max-height:160px;overflow-y:auto;">';
       d.top_losses.forEach(t => {
         html += `<div style="display:flex;justify-content:space-between;padding:5px 8px;background:rgba(255,71,87,0.06);border-radius:6px;margin-bottom:4px;">
           <span style="font-size:10px;color:var(--txt2);">${t.token||'—'}</span>
@@ -1585,10 +1591,64 @@ async function openBrainInsights(){
       html += '</div>';
     }
 
+    if(d.insights && d.insights.length){
+      html += `<div style="font-size:10px;font-weight:700;color:#a064ff;margin:10px 0 6px;">💡 MARKET INSIGHTS (${d.insights.length})</div>`;
+      html += '<div style="max-height:120px;overflow-y:auto;">';
+      d.insights.slice().reverse().forEach(ins => {
+        const note = typeof ins === 'string' ? ins : (ins.note || JSON.stringify(ins));
+        html += `<div style="font-size:10px;color:var(--txt2);padding:4px 8px;border-left:2px solid rgba(160,100,255,0.3);margin-bottom:4px;">${note}</div>`;
+      });
+      html += '</div>';
+    }
+
     document.getElementById('modal-body').innerHTML = html;
   } catch(e) {
     document.getElementById('modal-body').innerHTML = '<div style="text-align:center;padding:20px;color:var(--red);">Error loading brain data</div>';
   }
+}
+
+function downloadBrainReport(){
+  const d = window._brainData;
+  if(!d){ alert('No brain data loaded yet. Open Brain Insights first.'); return; }
+  const date = new Date().toISOString().slice(0,10);
+  let txt = `MRBLACK BOT — BRAIN REPORT\n`;
+  txt += `Generated: ${new Date().toLocaleString()}\n`;
+  txt += `${'='.repeat(50)}\n\n`;
+  txt += `SUMMARY\n`;
+  txt += `  Win Rate:     ${d.win_rate}%\n`;
+  txt += `  Total Trades: ${d.total_trades} (${d.wins}W / ${d.losses}L)\n`;
+  txt += `  Learn Cycles: ${d.cycles}\n`;
+  txt += `  Best Patterns: ${d.best_count} | Avoid Patterns: ${d.avoid_count}\n\n`;
+  txt += `LATEST STRATEGY NOTE\n  ${d.latest_note}\n\n`;
+  if(d.top_wins && d.top_wins.length){
+    txt += `TOP WINS (${d.top_wins.length})\n`;
+    d.top_wins.forEach((t,i) => {
+      txt += `  ${i+1}. ${t.token||'?'} — +${t.pnl.toFixed(2)}% — held ${t.hold}m\n`;
+    });
+    txt += '\n';
+  }
+  if(d.top_losses && d.top_losses.length){
+    txt += `WORST LOSSES (${d.top_losses.length})\n`;
+    d.top_losses.forEach((t,i) => {
+      txt += `  ${i+1}. ${t.token||'?'} — ${t.pnl.toFixed(2)}% — held ${t.hold}m\n`;
+    });
+    txt += '\n';
+  }
+  if(d.insights && d.insights.length){
+    txt += `MARKET INSIGHTS\n`;
+    d.insights.forEach((ins,i) => {
+      const note = typeof ins === 'string' ? ins : (ins.note || JSON.stringify(ins));
+      txt += `  ${i+1}. ${note}\n`;
+    });
+  }
+  const blob = new Blob([txt], {type:'text/plain'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = `mrblack_brain_${date}.txt`;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 async function openWhaleDetail(){
