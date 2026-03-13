@@ -1391,13 +1391,16 @@ function openHoldDetail(json){
   const holdDur      = gHoldTime(t.bought_at);
   const buyTimeIST   = t.bought_at?new Date(_toUTC(t.bought_at)).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}):'—';
 
+  // USD prices
+  const entryUSD  = entry>0?'$'+(entry*bnbP).toFixed(8).replace(/\.?0+$/,''):'—';
+  const currUSD   = current>0?'$'+(current*bnbP).toFixed(8).replace(/\.?0+$/,''):'—';
+
   // PnL values
   const unrealizedUSD = (Math.abs(pnlB)*bnbP).toFixed(2);
   const realizedUSD   = (Math.abs(banked)*bnbP).toFixed(2);
   const totalPnlB     = pnlB+banked;
   const totalPnlUSD   = (Math.abs(totalPnlB)*bnbP).toFixed(2);
   const totalPnlPct   = origSz>0?(totalPnlB/origSz*100):pnl;
-  const totalClr      = totalPnlB>=0?'var(--em)':'var(--red)';
 
   // Header
   document.getElementById('modal-title').innerHTML=
@@ -1414,7 +1417,7 @@ function openHoldDetail(json){
   document.getElementById('modal-pnl').className='pnl-big '+(totalPnlPct>=0?'p':'n');
   document.getElementById('modal-pnl').textContent=(totalPnlB>=0?'+':'-')+'$'+totalPnlUSD+' ('+(totalPnlPct>=0?'+':'')+totalPnlPct.toFixed(1)+'%)';
 
-  // ── PnL Summary row (Realized + Unrealized)
+  // ── PnL Summary (4 cards) — Holding card shows token qty
   const pnlSummary=
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">'+
       '<div style="background:var(--ink3);border-radius:10px;padding:12px;border:1px solid '+(pnlB>=0?'rgba(0,230,118,0.2)':'rgba(255,71,87,0.2)')+';">'+
@@ -1435,20 +1438,20 @@ function openHoldDetail(json){
       '<div style="background:var(--ink3);border-radius:10px;padding:12px;">'+
         '<div style="font-size:9px;color:var(--txt3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">Holding</div>'+
         '<div style="font-size:15px;font-weight:900;color:var(--ice);font-family:JetBrains Mono,monospace;">'+holdPct+'%</div>'+
-        '<div style="font-size:10px;color:var(--txt3);margin-top:2px;">'+holdDur+' · '+sz.toFixed(4)+' BNB</div>'+
+        '<div style="font-size:10px;color:var(--txt3);margin-top:2px;">'+(tokensLeft>0?'~'+Number(tokensLeft).toLocaleString()+' '+sym:holdDur+' · '+sz.toFixed(4)+' BNB')+'</div>'+
       '</div>'+
     '</div>'+
-    // Avg cost → current price
+    // Avg Cost (USD) → Current Price (USD)
     (entry>0?
     '<div style="background:var(--ink3);border-radius:10px;padding:11px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">'+
       '<div>'+
         '<div style="font-size:9px;color:var(--txt3);margin-bottom:3px;">Avg Cost</div>'+
-        '<div style="font-size:12px;font-weight:800;color:#64C8FF;font-family:JetBrains Mono,monospace;">'+fmtBNBPrice(entry)+'</div>'+
+        '<div style="font-size:12px;font-weight:800;color:#64C8FF;font-family:JetBrains Mono,monospace;">'+entryUSD+'</div>'+
       '</div>'+
       '<div style="color:var(--txt3);font-size:14px;">→</div>'+
       '<div style="text-align:right;">'+
         '<div style="font-size:9px;color:var(--txt3);margin-bottom:3px;">Current Price</div>'+
-        '<div style="font-size:12px;font-weight:800;color:'+clr+';font-family:JetBrains Mono,monospace;">'+fmtBNBPrice(current)+'</div>'+
+        '<div style="font-size:12px;font-weight:800;color:'+clr+';font-family:JetBrains Mono,monospace;">'+currUSD+'</div>'+
       '</div>'+
     '</div>':'');
 
@@ -1460,8 +1463,8 @@ function openHoldDetail(json){
     '</div>';
 
   // ── Activity row helper
-  function actRow(typeLabel, typeClr, timeStr, ageStr, amtUSD, tokensStr, gasStr, priceStr, rightTop, rightBot, borderBottom){
-    return '<div style="display:grid;grid-template-columns:72px 1fr auto;align-items:start;padding:10px 0;'+(borderBottom?'border-bottom:1px solid rgba(255,255,255,0.05);':'')+'gap:6px;">'+
+  function actRow(typeLabel, typeClr, timeStr, ageStr, amtUSD, tokensStr, gasStr, priceStr, rightTop, rightBot, borderTop){
+    return '<div style="display:grid;grid-template-columns:72px 1fr auto;align-items:start;padding:10px 0;'+(borderTop?'border-top:1px solid rgba(255,255,255,0.05);':'')+'gap:6px;">'+
       '<div>'+
         '<div style="font-size:11px;font-weight:800;color:'+typeClr+';">'+typeLabel+'</div>'+
         '<div style="font-size:9px;color:var(--txt3);margin-top:2px;">'+timeStr+'</div>'+
@@ -1480,65 +1483,54 @@ function openHoldDetail(json){
     '</div>';
   }
 
-  // BUY row
-  const buyRow = actRow(
-    'Buy','#64C8FF',
-    buyTimeIST+' IST', holdDur+' ago',
-    '$'+boughtUSD,
-    tokensBought>0?'~'+Number(tokensBought).toLocaleString()+' '+sym:'',
-    '$'+gasUSD+' ~',
-    entry>0?fmtBNBPrice(entry):'—',
-    '','entry', true
-  );
-
-  // TP Sell rows (one per TP level triggered)
-  let tpRows='';
-  if(tpSold>0){
-    const soldBNB = origSz-sz;
-    const soldUSD = (soldBNB*bnbP).toFixed(0);
-    const bankClr = banked>=0?'var(--em)':'var(--red)';
-    // Show individual TP levels if banked info available
-    const tpLevels=[{pct:25,label:'TP1'},{pct:50,label:'TP2'},{pct:75,label:'TP3'},{pct:90,label:'TP4'}];
-    let shown=false;
-    tpLevels.forEach(function(lv){
-      if(tpSold>=lv.pct){
-        const lvBNB=origSz*(lv.pct<=25?0.25:0.25);
-        const lvUSD=(lvBNB*bnbP).toFixed(0);
-        tpRows+=actRow(
-          lv.label+' Sell','var(--gold)',
-          '—','partial exit',
-          '$'+lvUSD,
-          '',
-          '$'+gasUSD+' ~',
-          '',
-          '','sold '+lv.pct+'%', lv.pct<tpSold||tpSold<90
-        );
-        shown=true;
-      }
-    });
-    if(!shown){
-      tpRows+=actRow(
-        'TP Sell','var(--gold)',
-        '—',tpSold.toFixed(0)+'% sold',
-        '$'+soldUSD,
-        soldBNB.toFixed(4)+' BNB received',
-        '$'+gasUSD+' ~',
-        '',
-        (banked>=0?'+':'-')+'$'+realizedUSD,'banked PnL', true
-      );
-    }
-  }
-
-  // HOLDING row
+  // HOLDING row — shown FIRST (latest activity on top)
   const holdRow = actRow(
     'HOLDING', clr,
     'Open pos','SL: -'+slPct+'%',
     '$'+currentUSD,
     tokensLeft>0?'~'+Number(tokensLeft).toLocaleString()+' '+sym:'',
     holdPct+'% remaining',
-    current>0?fmtBNBPrice(current):'—',
+    currUSD,
     (pnlB>=0?'+':'-')+'$'+unrealizedUSD,
     (pnl>=0?'+':'')+pnl.toFixed(1)+'%', false
+  );
+
+  // TP Sell rows — newest TP on top, oldest at bottom
+  let tpRows='';
+  if(tpSold>0){
+    const tpLevels=[{pct:90,label:'TP4'},{pct:75,label:'TP3'},{pct:50,label:'TP2'},{pct:25,label:'TP1'}];
+    tpLevels.forEach(function(lv){
+      if(tpSold>=lv.pct){
+        // Each TP sells 25% of origSz
+        const lvBNB   = origSz*0.25;
+        const lvUSD   = (lvBNB*bnbP).toFixed(0);
+        // Estimate sell price: origSz came at entry, partial sells happened at higher prices
+        // Use banked pnl to estimate avg sell price
+        const avgSellEntry = entry*(1+(pnl/100)*0.8); // rough estimate
+        const sellPriceUSD = avgSellEntry>0?'$'+(avgSellEntry*bnbP).toFixed(8).replace(/\.?0+$/,''):'—';
+        const tokensPerTP  = tokensBought>0?Math.round(tokensBought*0.25):0;
+        tpRows+=actRow(
+          lv.label+' Sell','var(--gold)',
+          '—','partial exit',
+          '$'+lvUSD,
+          tokensPerTP>0?'~'+Number(tokensPerTP).toLocaleString()+' '+sym:'',
+          '$'+gasUSD+' ~',
+          sellPriceUSD,
+          '','sold '+lv.pct+'%', true
+        );
+      }
+    });
+  }
+
+  // BUY row — shown LAST (oldest activity at bottom)
+  const buyRow = actRow(
+    'Buy','#64C8FF',
+    buyTimeIST+' IST', holdDur+' ago',
+    '$'+boughtUSD,
+    tokensBought>0?'~'+Number(tokensBought).toLocaleString()+' '+sym:'',
+    '$'+gasUSD+' ~',
+    entryUSD,
+    '','entry price', true
   );
 
   document.getElementById('modal-body').innerHTML=
@@ -1549,7 +1541,7 @@ function openHoldDetail(json){
     '</div>':'')+
     pnlSummary+
     actHeader+
-    '<div>'+buyRow+tpRows+holdRow+'</div>';
+    '<div>'+holdRow+tpRows+buyRow+'</div>';
 
   document.getElementById('modal-actions').innerHTML=addr?
     '<button class="mbtn dark" onclick="copyAddr(\''+addr+'\');closeModal()" style="flex:1;">📋 Copy</button>'+
