@@ -2842,6 +2842,36 @@ def feedback_validation_loop():
         gc.collect()
         time.sleep(1800)  # MEM FIX: 3600→1800
 
+def _memory_cleanup_loop():
+    """Periodic cleanup — _pair_to_token + _rt_swap_data orphan entries remove karo"""
+    time.sleep(60)
+    while True:
+        try:
+            now = time.time()
+            with _rt_swap_lock:
+                # Active position addresses
+                active = set(auto_trade_stats.get("running_positions", {}).keys())
+                active.update(monitored_positions.keys())
+
+                # _pair_to_token: sirf active positions ke entries rakhna
+                stale_pairs = [k for k, v in _pair_to_token.items()
+                               if v.get("token", "") not in active]
+                for k in stale_pairs:
+                    _pair_to_token.pop(k, None)
+
+                # _rt_swap_data: active + last 10 min mein updated entries rakhna
+                stale_rt = [k for k, v in _rt_swap_data.items()
+                            if k not in active and (now - v.get("ts", 0)) > 600]
+                for k in stale_rt:
+                    _rt_swap_data.pop(k, None)
+
+            if stale_pairs or stale_rt:
+                print(f"🧹 MemClean: removed {len(stale_pairs)} pairs, {len(stale_rt)} rt_swap entries")
+            gc.collect()
+        except Exception as e:
+            print(f"⚠️ MemCleanup error: {e}")
+        time.sleep(300)  # har 5 minute
+
 # ========== AUTO CHECK NEW PAIR ==========
 def _auto_check_new_pair(pair_address: str):
     if not _check_semaphore.acquire(blocking=False):
@@ -3253,11 +3283,8 @@ def poll_four_meme_wss():
 # keccak256("Swap(address,uint256,uint256,uint256,uint256,address)")
 SWAP_TOPIC = "0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822"
 
-# Real-time swap counters — position manager ye use karega DexScreener ki jagah
-# {token_addr_lower: {"buys": N, "sells": N, "ts": float, "pair": str, "token0_is_wbnb": bool}}
-_rt_swap_data: dict = {}
-_rt_swap_lock = threading.Lock()
-_swap_monitor_resubscribe = threading.Event()  # ✅ fix: was missing
+# _rt_swap_data + _rt_swap_lock already declared at line ~820 — DO NOT redeclare (memory leak fix)
+_swap_monitor_resubscribe = threading.Event()  # ✅ WSS resubscribe trigger
 
 # Pair → token mapping (taaki Swap event decode kar sakein)
 _pair_to_token: dict = {}   # {pair_lower: {"token": addr, "token0_is_wbnb": bool}}
@@ -4190,6 +4217,7 @@ def _startup_once():
         threading.Thread(target=_delayed(price_monitor_loop,    15),  daemon=True).start()
         threading.Thread(target=_delayed(continuous_learning,   25),  daemon=True).start()
         threading.Thread(target=_delayed(auto_position_manager, 30),  daemon=True).start()
+        threading.Thread(target=_delayed(_memory_cleanup_loop,  60),  daemon=True).start()  # MEM FIX
 
 
         def _startup_restore():
