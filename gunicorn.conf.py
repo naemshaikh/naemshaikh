@@ -2,15 +2,15 @@ import os
 
 bind             = "0.0.0.0:" + os.environ.get("PORT", "10000")
 workers          = 1
-worker_class     = "sync"
-timeout          = 300
+worker_class     = "gthread"
+threads          = 4
+timeout          = 120
 keepalive        = 2
-preload_app      = False  # FIX: True se daemon threads fork pe mar jaate hain — positions restore nahi hoti
+preload_app      = False
 loglevel         = "info"
 graceful_timeout = 30
 
 def post_fork(server, worker):
-    """Worker start hone ke baad startup karo — threads yahan survive karte hain"""
     import threading
     try:
         from main import _startup_once
