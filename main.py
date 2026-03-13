@@ -50,7 +50,8 @@ MODEL_FAST  = "llama-3.1-8b-instant"
 MODEL_DEEP  = "llama-3.3-70b-versatile"
 
 # ========== ENV CONFIG ==========
-BSC_RPC          = "https://bsc-dataseed.binance.org/"
+_NR_KEY          = os.getenv("NODEREAL_API_KEY", "")
+BSC_RPC          = f"https://bsc-mainnet.nodereal.io/v1/{_NR_KEY}" if _NR_KEY else "https://bsc-dataseed.binance.org/"
 BSC_SCAN_API     = "https://api.bscscan.com/api"
 BSC_SCAN_KEY     = os.getenv("BSC_SCAN_KEY") or os.getenv("BSCSCAN_API_KEY") or os.getenv("BSC_API_KEY", "") or os.getenv("BSCSCAN_API_KEY", "")
 BSC_WALLET       = os.getenv("BSC_WALLET", "")   # Real wallet address for balance display
@@ -225,7 +226,7 @@ def get_token_price_bnb(token_address: str) -> float:
     import time as _t
     # Cache: same token 1s ke andar dobara call nahi
     _cached = _monitor_price_cache.get(token_address)
-    if _cached and (_t.time() - _cached[1]) < 1.0:
+    if _cached and (_t.time() - _cached[1]) < 0.3:
         return _cached[0]
     try:
         dec = _get_dec(token_address)
