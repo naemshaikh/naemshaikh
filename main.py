@@ -2015,6 +2015,124 @@ def poll_new_pairs():
 
 
 
+def poll_four_meme_wss():
+    """
+    four.meme real-time token listener via BSC WebSocket.
+    four.meme factory contracts ka TokenCreated / PairCreated event sunna.
+    Polling ke saath parallel chalta hai — dono milke koi token miss nahi hoga.
+    """
+    import asyncio, json as _json
+    try:
+        import websockets as _ws
+    except ImportError:
+        _ws = None
+
+    # four.meme factory contracts — v1, v2, v3
+    FOUR_CONTRACTS = [
+        "0x5c952063c7fc8610ffdb798152d69f0b9550762b",  # v1
+        "0x8b8cF6D0C2B5F4CB61Da5E7dc94E52f4F1dD8D64",  # v2
+        "0x48a31B72F77a2A90eBE24E5C4c88bE43E2AD6BEB",  # v3
+    ]
+    # keccak256("TokenCreated(address,address,uint256)") — four.meme event
+    FOUR_TOPIC_CREATED  = "0x9d239d0744ed82176a90994b1b96316c6c1a2a4de3fe2e5ed29ef93f98d2b741"
+    # keccak256("PairCreated(address,address,address,uint256)") — pancake style
+    FOUR_TOPIC_PAIR     = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
+    FOUR_TOPIC_LAUNCH   = "0xb9ed0243fdf00f0545c63a0af8850c090d86bb46673f2a9a30adece5df78e34e"
+
+    WSS_ENDPOINTS = [
+        "wss://bsc-rpc.publicnode.com",
+        "wss://bsc.publicnode.com",
+        "wss://bsc-ws-node.nariox.org:443",
+        "wss://bsc.drpc.org",
+    ]
+
+    async def _listen_four(wss_url):
+        try:
+            async with _ws.connect(
+                wss_url,
+                ping_interval=10, ping_timeout=8, close_timeout=5, max_size=2**20
+            ) as ws:
+                # Subscribe to all three four.meme factory contracts + all known topics
+                await ws.send(_json.dumps({
+                    "id": 2, "method": "eth_subscribe",
+                    "params": ["logs", {
+                        "address": FOUR_CONTRACTS,
+                        "topics": [[FOUR_TOPIC_CREATED, FOUR_TOPIC_PAIR, FOUR_TOPIC_LAUNCH]]
+                    }],
+                    "jsonrpc": "2.0"
+                }))
+                await asyncio.wait_for(ws.recv(), timeout=10)
+                print("🔥 four.meme WSS: subscribed to token events")
+                while True:
+                    msg  = await asyncio.wait_for(ws.recv(), timeout=60)
+                    data = _json.loads(msg)
+                    log  = (data.get("params") or {}).get("result") or {}
+                    if not log: continue
+                    topics   = log.get("topics") or []
+                    raw_data = log.get("data", "0x")
+
+                    # Extract token address from topics or data
+                    token_addr = ""
+
+                    # topic[1] = token address (most four.meme events)
+                    if len(topics) > 1:
+                        t1 = topics[1]
+                        if len(t1) == 66:
+                            token_addr = "0x" + t1[-40:]
+
+                    # If topic extraction failed, try data field
+                    if not token_addr and len(raw_data) >= 66:
+                        token_addr = "0x" + raw_data[26:66]
+
+                    if token_addr and len(token_addr) == 42 and token_addr.lower() != WBNB.lower():
+                        threading.Thread(
+                            target=_process_new_token,
+                            args=(token_addr, token_addr, "FourMeme-WSS"),
+                            daemon=True
+                        ).start()
+                        print(f"⚡ four.meme WSS: new token {token_addr[:12]}...")
+
+        except Exception as e:
+            err = str(e).lower()
+            if "1013" in err or "timeout" in err or "connection" in err:
+                print(f"⚠️ four.meme WSS: {str(e)[:60]} — switching RPC")
+            else:
+                print(f"⚠️ four.meme WSS error: {str(e)[:80]}")
+            gc.collect()
+
+    async def _four_wss_loop():
+        idx = 0
+        fail_count = 0
+        while True:
+            try:
+                url = WSS_ENDPOINTS[idx % len(WSS_ENDPOINTS)]
+                print(f"🔌 four.meme WSS connecting: {url}")
+                await _listen_four(url)
+                fail_count = 0
+            except Exception as e:
+                fail_count += 1
+                wait = min(10 * fail_count, 120)
+                print(f"⚠️ four.meme WSS fail #{fail_count} — retry in {wait}s")
+                await asyncio.sleep(wait)
+                if fail_count % 5 == 0:
+                    gc.collect()
+            idx += 1
+
+    if _ws is not None:
+        def _run_four_wss():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(_four_wss_loop())
+            except Exception as ex:
+                print(f"⚠️ four.meme WSS thread: {ex}")
+            finally:
+                loop.close()
+        threading.Thread(target=_run_four_wss, daemon=True).start()
+    else:
+        print("⚠️ websockets not installed — four.meme WSS disabled")
+
+
 def _fallback_token_poller():
     """DexScreener fallback — har 5 min mein naye tokens dhundta hai"""
     _cycle = 0
@@ -2626,6 +2744,7 @@ def _startup_once():
 
         threading.Thread(target=_delayed(poll_new_pairs,        10),  daemon=True).start()
         threading.Thread(target=_delayed(poll_four_meme,         20), daemon=True).start()
+        threading.Thread(target=_delayed(poll_four_meme_wss,     15), daemon=True).start()  # ✅ real-time WSS
         threading.Thread(target=_delayed(price_monitor_loop,    15),  daemon=True).start()
         threading.Thread(target=_delayed(continuous_learning,   25),  daemon=True).start()
         threading.Thread(target=_delayed(auto_position_manager, 30),  daemon=True).start()
