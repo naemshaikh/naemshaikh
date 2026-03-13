@@ -3044,7 +3044,7 @@ def auto_stats_route():
             "size_bnb":       sz_rem,
             "orig_size_bnb":  orig_sz,
             "size":           f"{sz_rem:.4f} BNB",
-            "bought_usd":     pos.get("bought_usd", 0),
+            "bought_usd":     pos.get("bought_usd") or round(pos.get("size_bnb", AUTO_BUY_SIZE_BNB) * bnb_price, 2),
             "bought_at":      pos.get("bought_at", ""),
             "sl_pct":         pos.get("sl_pct", 15.0),
             "tp_sold":        pos.get("tp_sold", 0.0),

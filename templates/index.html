@@ -1279,7 +1279,9 @@ window._renderHPage = function(){
     var current     = parseFloat(p.current||p.entry||0);
     var _isLive     = current > 0 && current !== entry;
     var _rowBg      = _isLive ? (pnl>=0?'rgba(0,230,118,0.03)':'rgba(255,71,87,0.03)') : 'transparent';
-    var investedUSD = p.bought_usd!=null ? parseFloat(p.bought_usd) : (bnbP > 0 ? sz * bnbP : 0);
+    // bought_usd=0 means not saved — fallback to sz*bnbP calculation
+    var _busd = parseFloat(p.bought_usd||0);
+    var investedUSD = (_busd > 0) ? _busd : (bnbP > 0 ? sz * bnbP : 0);
     var origSz      = parseFloat(p.orig_size_bnb||sz);
     // Stale price cap — 10000x se zyada = rug/dead token, entry pe reset
     if(entry > 0 && current > entry * 10000) current = entry;
