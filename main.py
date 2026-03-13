@@ -3431,13 +3431,13 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
             _opp_sigs  = [s["type"] for s in _gs.get("signals", [])]
 
             if _opp_score < 1:
-                _log("pass", _final_name, f"Checklist SAFE ✅ but no opp signals — skipped", pair_address)
-                print(f"⏭️ SKIP {_final_name}: checklist SAFE ✅ but zero opportunity signals — no edge detected")
-            else:
-                _log("pass", _final_name, f"✅ SAFE {score}/{total} · signals: {', '.join(_opp_sigs[:2])}", pair_address)
-                print(f"✅ BUY CONFIRMED {_final_name}: checklist={overall} ({score}/{total}) + opp={_opp_score}pt signals={_opp_sigs}")
-                try: _auto_paper_buy(pair_address, _final_name, score, total, result)
-                except Exception as e: print(f"Auto buy error: {e}")
+                _log("pass", _final_name, f"Checklist SAFE ✅ but no opp signals — buying anyway", pair_address)
+                print(f"✅ BUY {_final_name}: checklist SAFE ✅ — no extra signals but checklist passed")
+            # Buy karo — checklist SAFE ho toh opportunity score optional
+            _log("pass", _final_name, f"✅ SAFE {score}/{total} · signals: {', '.join(_opp_sigs[:2])}", pair_address)
+            print(f"✅ BUY CONFIRMED {_final_name}: checklist={overall} ({score}/{total}) + opp={_opp_score}pt signals={_opp_sigs}")
+            try: _auto_paper_buy(pair_address, _final_name, score, total, result)
+            except Exception as e: print(f"Auto buy error: {e}")
 
         knowledge_base["bsc"]["new_tokens"] = knowledge_base["bsc"]["new_tokens"][-99:]
         knowledge_base["bsc"]["new_tokens"].append({
@@ -3975,10 +3975,17 @@ def run_full_sniper_checklist(address: str, prefetched_dex: dict = None) -> Dict
 
     # ── STEP 2: GoPlus — deep static analysis (cached 5 min) ──
     goplus_data = {}
-    try:
-        goplus_data = _get_goplus(address)
-    except Exception as e:
-        print(f"⚠️ GoPlus error: {e}")
+    for _gp_try in range(3):  # 3 retries
+        try:
+            goplus_data = _get_goplus(address)
+            if goplus_data:
+                break
+            if _gp_try < 2:
+                time.sleep(2)  # 2s gap before retry
+        except Exception as e:
+            print(f"⚠️ GoPlus error (try {_gp_try+1}): {e}")
+            if _gp_try < 2:
+                time.sleep(2)
 
     goplus_empty = not bool(goplus_data)
     result["_goplus_raw"] = goplus_data  # green signals ke liye
