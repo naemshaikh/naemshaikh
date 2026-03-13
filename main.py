@@ -1531,8 +1531,7 @@ def _learn_trading_patterns():
                 if pat not in brain["trading"]["avoid_patterns"]:
                     brain["trading"]["avoid_patterns"].append(pat)
                     brain["trading"]["avoid_patterns"] = brain["trading"]["avoid_patterns"][-100:]
-        brain["trading"]["best_patterns"]  = brain["trading"]["best_patterns"][-30:]
-        brain["trading"]["avoid_patterns"] = brain["trading"]["avoid_patterns"][-30:]
+        # patterns[-100:] already enforced above on each append — no additional trim needed
         brain["trading"]["last_updated"]   = datetime.utcnow().isoformat()
     except Exception as e:
         print(f"_learn_trading_patterns error: {e}")
@@ -2180,7 +2179,6 @@ def log_trade_internal(session_id: str, trade: Dict):
         sess["pattern_database"] = []
     sess["pattern_database"].append(lesson)
     sess["pattern_database"] = sess["pattern_database"][-100:]
-    sess["pattern_database"] = sess["pattern_database"][-100:]  # trim
     sess["trade_count"] += 1
     if win:
         sess["win_count"] += 1
@@ -2936,12 +2934,11 @@ def self_introspect() -> str:
             f"Positions: {len(auto_trade_stats.get('running_positions', {}))} | "
             f"BNB: ${market_cache.get('bnb_price', 0):.2f}"
         )
-        self_awareness["introspection_log"] = self_awareness["introspection_log"][-49:]
         self_awareness["introspection_log"].append({
             "time": datetime.utcnow().isoformat(),
             "observation": obs
         })
-        self_awareness["introspection_log"] = self_awareness["introspection_log"][-20:]
+        self_awareness["introspection_log"] = self_awareness["introspection_log"][-50:]
         return obs
     except Exception as e:
         return f"Introspection error: {e}"
