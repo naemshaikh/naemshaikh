@@ -1628,7 +1628,7 @@ def is_token_blacklisted(token_address: str) -> bool:
 _rug_dna: list = []   # [{"creator": str, "buy_tax": float, "sell_tax": float, "liq_usd": float, "ts": float}]
 _RUG_DNA_MAX = 200    # max fingerprints store
 
-def _record_rug_dna(token_address: str, creator: str, buy_tax: float, sell_tax: float, liq_usd: float):
+def _record_rug_dna(token_address: str, creator: str, buy_tax: float, sell_tax: float, liq_usd: float, reason: str = "", pnl_pct: float = 0.0):
     """Rug token ka DNA fingerprint save karo"""
     if not creator or len(creator) != 42: return
     dna = {
@@ -1636,7 +1636,9 @@ def _record_rug_dna(token_address: str, creator: str, buy_tax: float, sell_tax: 
         "creator":  creator.lower(),
         "buy_tax":  round(buy_tax,  1),
         "sell_tax": round(sell_tax, 1),
-        "liq_band": _liq_band(liq_usd),  # band mein group karo — exact match nahi chahiye
+        "liq_band": _liq_band(liq_usd),
+        "reason":   reason or "SL/Rug",
+        "pnl_pct":  round(pnl_pct, 1),
         "ts":       time.time()
     }
     _rug_dna.append(dna)
@@ -2346,7 +2348,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
             # Token blacklist — 24h
             blacklist_token(address, f"{reason} pnl={pnl_pct:.0f}%")
             # Rug DNA record
-            _record_rug_dna(address, _creator or "unknown", _buy_tax, _sell_tax, _liq_usd)
+            _record_rug_dna(address, _creator or "unknown", _buy_tax, _sell_tax, _liq_usd, reason=reason, pnl_pct=pnl_pct)
         except Exception: pass
 
     auto_trade_stats["last_action"] = f"SELL {sell_pct:.0f}% {token} PnL:{pnl_pct:+.1f}%"
@@ -5301,6 +5303,8 @@ def rug_dna_route():
                 "buy_tax":  d.get("buy_tax", 0),
                 "sell_tax": d.get("sell_tax", 0),
                 "liq_band": d.get("liq_band", "—"),
+                "reason":   d.get("reason", "SL/Rug"),
+                "pnl_pct":  d.get("pnl_pct", 0),
                 "ts":       ist_time,
             })
         return jsonify({"dna": result, "total": len(_rug_dna)})
