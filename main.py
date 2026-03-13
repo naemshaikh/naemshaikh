@@ -1128,6 +1128,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         _gas_bnb   = DataGuard.get_real_gas_bnb()  # real BSC gas price
         if not isinstance(pos.get("tp_events"), list):
             pos["tp_events"] = []
+        if len(pos.get("tp_events", [])) >= 4:
+            pos["tp_events"] = pos["tp_events"][-4:]
         pos["tp_events"].append({
             "label":       reason,             # e.g. "TP+50%"
             "sell_pct":    sell_pct,           # % sold this time
@@ -1499,6 +1501,7 @@ def _check_milestones():
         for condition, title in checks:
             if condition and title not in achieved:
                 milestones.append({"title": title, "achieved_at": datetime.utcnow().isoformat()})
+                brain["milestones"] = brain["milestones"][-50:]
                 pass
         self_awareness["growth_tracking"]["milestones"] = milestones
     except Exception as e:
@@ -1522,10 +1525,12 @@ def _learn_trading_patterns():
                 pat = f"WIN: {reason} | PnL:{pnl:.1f}%"
                 if pat not in brain["trading"]["best_patterns"]:
                     brain["trading"]["best_patterns"].append(pat)
+                    brain["trading"]["best_patterns"] = brain["trading"]["best_patterns"][-100:]
             elif result == "loss":
                 pat = f"LOSS: {reason} | PnL:{pnl:.1f}%"
                 if pat not in brain["trading"]["avoid_patterns"]:
                     brain["trading"]["avoid_patterns"].append(pat)
+                    brain["trading"]["avoid_patterns"] = brain["trading"]["avoid_patterns"][-100:]
         brain["trading"]["best_patterns"]  = brain["trading"]["best_patterns"][-30:]
         brain["trading"]["avoid_patterns"] = brain["trading"]["avoid_patterns"][-30:]
         brain["trading"]["last_updated"]   = datetime.utcnow().isoformat()
@@ -1619,7 +1624,7 @@ def _learn_from_new_pairs():
                         "mood":        "NEW_PAIR",
                         "quality":     "MEDIUM"
                     })
-        brain["trading"]["market_insights"] = brain["trading"]["market_insights"][-30:]
+        brain["trading"]["market_insights"] = brain["trading"]["market_insights"][-30:]  # capped
     except Exception as e:
         print(f"_learn_from_new_pairs error: {e}")
 
@@ -1773,6 +1778,7 @@ def _auto_check_new_pair(pair_address: str):
         else:
             print(f"⏭️ SKIP {pair_address[:10]}: overall={overall} score={score}/{total} ({round(score/max(total,1)*100)}%) — not buying")
 
+        knowledge_base["bsc"]["new_tokens"] = knowledge_base["bsc"]["new_tokens"][-99:]
         knowledge_base["bsc"]["new_tokens"].append({
             "address": pair_address, "overall": overall,
             "score": score, "total": total, "time": datetime.utcnow().isoformat()
@@ -2173,6 +2179,7 @@ def log_trade_internal(session_id: str, trade: Dict):
     if not isinstance(sess.get("pattern_database"), list):
         sess["pattern_database"] = []
     sess["pattern_database"].append(lesson)
+    sess["pattern_database"] = sess["pattern_database"][-100:]
     sess["pattern_database"] = sess["pattern_database"][-100:]  # trim
     sess["trade_count"] += 1
     if win:
@@ -2493,6 +2500,31 @@ def _startup_once():
         threading.Thread(target=_delayed(price_monitor_loop,    15),  daemon=True).start()
         threading.Thread(target=_delayed(continuous_learning,   25),  daemon=True).start()
         threading.Thread(target=_delayed(auto_position_manager, 30),  daemon=True).start()
+
+        # ✅ Memory watchdog — every 5 min, trim all large lists + force gc
+        def _mem_watchdog():
+            import gc as _gc
+            while True:
+                try:
+                    time.sleep(300)  # every 5 min
+                    # Trim brain lists
+                    brain["trading"]["best_patterns"]  = brain["trading"]["best_patterns"][-100:]
+                    brain["trading"]["avoid_patterns"] = brain["trading"]["avoid_patterns"][-100:]
+                    brain["trading"]["market_insights"]= brain["trading"]["market_insights"][-30:]
+                    brain["milestones"]                = brain.get("milestones", [])[-50:]
+                    self_awareness["introspection_log"]= self_awareness.get("introspection_log",[])[-50:]
+                    # Trim knowledge base
+                    knowledge_base["bsc"]["new_tokens"]= knowledge_base["bsc"]["new_tokens"][-100:]
+                    # Trim per-session data
+                    for _s in list(sessions.values()):
+                        _s["history"]          = _s.get("history", [])[-20:]
+                        _s["pattern_database"] = _s.get("pattern_database", [])[-100:]
+                    # Force garbage collection
+                    _gc.collect()
+                    print(f"🧹 Memory watchdog: cleaned up, gc done")
+                except Exception as e:
+                    print(f"⚠️ Watchdog error: {e}")
+        threading.Thread(target=_mem_watchdog, daemon=True).start()
         def _startup_restore():
             try:
                 if supabase:
@@ -2722,7 +2754,7 @@ def chat():
         return jsonify({"reply": "🛑 Daily loss limit (8%) reach ho gaya. Kal fresh start karo!", "session_id": session_id})
     _extract_user_info_from_message(user_msg)
     sess["history"].append({"role": "user", "content": user_msg})
-    if len(sess["history"]) > 10:  # MEM FIX: was 20
+    if len(sess["history"]) > 20:
         sess["history"] = sess["history"][-20:]
     reply = get_llm_reply(user_msg, sess["history"], sess)
     sess["history"].append({"role": "assistant", "content": reply})
@@ -2927,6 +2959,7 @@ def self_introspect() -> str:
             f"Positions: {len(auto_trade_stats.get('running_positions', {}))} | "
             f"BNB: ${market_cache.get('bnb_price', 0):.2f}"
         )
+        self_awareness["introspection_log"] = self_awareness["introspection_log"][-49:]
         self_awareness["introspection_log"].append({
             "time": datetime.utcnow().isoformat(),
             "observation": obs
