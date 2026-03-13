@@ -5283,6 +5283,30 @@ def sys_stats():
     except Exception as e:
         return jsonify({"error": str(e), "rss_mb": 0, "used_pct": 0})
 
+@app.route("/rug-dna")
+def rug_dna_route():
+    """Latest 100 rug DNA fingerprints"""
+    try:
+        data = list(reversed(_rug_dna[-100:]))  # latest first
+        result = []
+        for d in data:
+            ts = d.get("ts", 0)
+            try:
+                ist_time = datetime.fromtimestamp(ts, tz=_IST).strftime("%d %b %I:%M %p") if ts else "—"
+            except:
+                ist_time = "—"
+            result.append({
+                "token":    d.get("token","")[:6] + "..." + d.get("token","")[-4:] if d.get("token") else "—",
+                "creator":  d.get("creator","")[:6] + "..." + d.get("creator","")[-4:] if d.get("creator") else "—",
+                "buy_tax":  d.get("buy_tax", 0),
+                "sell_tax": d.get("sell_tax", 0),
+                "liq_band": d.get("liq_band", "—"),
+                "ts":       ist_time,
+            })
+        return jsonify({"dna": result, "total": len(_rug_dna)})
+    except Exception as e:
+        return jsonify({"dna": [], "total": 0, "error": str(e)})
+
 @app.route("/brain-insights")
 def brain_insights():
     """Return bot learning insights"""
