@@ -3054,10 +3054,75 @@ def _learn_trading_patterns():
 
 
 def _deep_llm_learning():
-    """Deep learning cycle — runs every 15 mins"""
+    """Deep learning cycle — trade history se patterns analyze karo"""
     try:
         _ensure_brain_structure()
-        print(f"Deep learning done | W:{len(brain['trading']['best_patterns'])} L:{len(brain['trading']['avoid_patterns'])}")
+        history = auto_trade_stats.get("trade_history", [])
+        if len(history) < 3:
+            return  # not enough data yet
+
+        wins   = [t for t in history if t.get("pnl_pct", 0) > 0]
+        losses = [t for t in history if t.get("pnl_pct", 0) <= 0]
+        total  = len(history)
+        win_rate = round(len(wins) / total * 100, 1) if total > 0 else 0
+
+        # ── Win patterns ──
+        for t in wins[-20:]:
+            pat = {
+                "token":    t.get("token", ""),
+                "pnl_pct":  t.get("pnl_pct", 0),
+                "hold_min": t.get("hold_minutes", 0),
+                "ts":       t.get("sold_at", "")[:10],
+            }
+            best = brain["trading"]["best_patterns"]
+            if not any(p.get("token") == pat["token"] for p in best):
+                best.append(pat)
+        brain["trading"]["best_patterns"] = brain["trading"]["best_patterns"][-100:]
+
+        # ── Loss patterns ──
+        for t in losses[-20:]:
+            pat = {
+                "token":    t.get("token", ""),
+                "pnl_pct":  t.get("pnl_pct", 0),
+                "hold_min": t.get("hold_minutes", 0),
+                "reason":   t.get("exit_reason", ""),
+                "ts":       t.get("sold_at", "")[:10],
+            }
+            avoid = brain["trading"]["avoid_patterns"]
+            if not any(p.get("token") == pat["token"] for p in avoid):
+                avoid.append(pat)
+        brain["trading"]["avoid_patterns"] = brain["trading"]["avoid_patterns"][-100:]
+
+        # ── Market insights ──
+        avg_win_hold  = round(sum(t.get("hold_minutes",0) for t in wins)  / max(len(wins),1),  1)
+        avg_loss_hold = round(sum(t.get("hold_minutes",0) for t in losses) / max(len(losses),1), 1)
+        avg_win_pnl   = round(sum(t.get("pnl_pct",0) for t in wins)   / max(len(wins),1),   1)
+        avg_loss_pnl  = round(sum(t.get("pnl_pct",0) for t in losses) / max(len(losses),1), 1)
+
+        insight = {
+            "ts":           datetime.utcnow().isoformat()[:16],
+            "total_trades": total,
+            "win_rate":     win_rate,
+            "avg_win_hold": avg_win_hold,
+            "avg_loss_hold":avg_loss_hold,
+            "avg_win_pnl":  avg_win_pnl,
+            "avg_loss_pnl": avg_loss_pnl,
+        }
+        brain["trading"]["market_insights"].append(insight)
+        brain["trading"]["market_insights"] = brain["trading"]["market_insights"][-50:]
+
+        # ── Strategy note ──
+        note_text = (f"WR={win_rate}% | AvgWin={avg_win_pnl:+.0f}% in {avg_win_hold}m | "
+                     f"AvgLoss={avg_loss_pnl:+.0f}% in {avg_loss_hold}m | Trades={total}")
+        brain["trading"]["strategy_notes"].append({
+            "note": note_text,
+            "ts":   datetime.utcnow().isoformat()[:16],
+        })
+        brain["trading"]["strategy_notes"] = brain["trading"]["strategy_notes"][-30:]
+
+        brain["total_learning_cycles"] = brain.get("total_learning_cycles", 0) + 1
+        _save_brain_to_db()
+        print(f"🧠 Learning cycle #{brain['total_learning_cycles']} | WR={win_rate}% | W:{len(wins)} L:{len(losses)}")
     except Exception as e:
         print(f"_deep_llm_learning error: {e}")
 
@@ -5159,6 +5224,39 @@ def auto_stats_route():
         "trade_history": [], "learning_cycles": 0, "new_pairs_found": 0,
         "daily_loss": 0, "auto_buys": 0, "auto_sells": 0,
     })
+@app.route("/brain-insights")
+def brain_insights():
+    """Return bot learning insights"""
+    try:
+        _ensure_brain_structure()
+        history  = auto_trade_stats.get("trade_history", [])
+        wins     = [t for t in history if t.get("pnl_pct", 0) > 0]
+        losses   = [t for t in history if t.get("pnl_pct", 0) <= 0]
+        total    = len(history)
+        wr       = round(len(wins)/total*100,1) if total > 0 else 0
+        insights = brain["trading"].get("market_insights", [])
+        notes    = brain["trading"].get("strategy_notes",  [])
+        best     = brain["trading"].get("best_patterns",   [])
+        avoid    = brain["trading"].get("avoid_patterns",  [])
+        # Top wins/losses
+        top_wins   = sorted(wins,   key=lambda x: x.get("pnl_pct",0), reverse=True)[:5]
+        top_losses = sorted(losses, key=lambda x: x.get("pnl_pct",0))[:5]
+        return jsonify({
+            "total_trades":   total,
+            "win_rate":       wr,
+            "wins":           len(wins),
+            "losses":         len(losses),
+            "cycles":         brain.get("total_learning_cycles", 0),
+            "best_count":     len(best),
+            "avoid_count":    len(avoid),
+            "latest_note":    notes[-1].get("note","") if notes else "Not enough data yet",
+            "top_wins":       [{"token": t.get("token",""), "pnl": t.get("pnl_pct",0), "hold": t.get("hold_minutes",0)} for t in top_wins],
+            "top_losses":     [{"token": t.get("token",""), "pnl": t.get("pnl_pct",0), "hold": t.get("hold_minutes",0)} for t in top_losses],
+            "insights":       insights[-5:],
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
 @app.route("/whale-detail")
 def whale_detail():
     """Return top qualified whale wallets with stats"""
@@ -5185,7 +5283,7 @@ def whale_detail():
             })
         # Sort by wins desc
         result.sort(key=lambda x: (x["qualified"], x["wins"]), reverse=True)
-        return jsonify({"wallets": result[:20], "total": len(result)})
+        return jsonify({"wallets": result[:50], "total": len(result)})
     except Exception as e:
         return jsonify({"wallets": [], "total": 0, "error": str(e)})
 

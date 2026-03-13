@@ -414,6 +414,9 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
           <div style="font-size:9px;color:var(--txt3)">Brain Patterns Learned</div>
         </div>
       </div>
+      <div style="grid-column:1/-1;margin-top:-4px;">
+        <button onclick="openBrainInsights()" style="width:100%;background:rgba(150,100,255,0.08);border:1px solid rgba(150,100,255,0.2);border-radius:8px;padding:5px;font-size:10px;color:#a064ff;cursor:pointer;">🧠 View Brain Insights</button>
+      </div>
     </div>
   </div>
 
@@ -1308,6 +1311,61 @@ window._renderPnlCard = function(_as){
 };
 
 // PNL Breakdown Modal
+async function openBrainInsights(){
+  document.getElementById('modal-title').textContent = '🧠 Brain Insights';
+  document.getElementById('modal-body').innerHTML = '<div style="text-align:center;padding:20px;color:var(--txt3);">Analyzing...</div>';
+  document.getElementById('modal-bg').classList.add('on');
+  try {
+    const d = await fetchJSON('/brain-insights',{},8000);
+    if(d.error){ document.getElementById('modal-body').innerHTML='<div style="color:var(--red);padding:20px;">'+d.error+'</div>'; return; }
+
+    const wr_clr = d.win_rate >= 50 ? 'var(--em)' : 'var(--red)';
+    let html = `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;">
+      <div style="background:var(--ink2);border:1px solid var(--line2);border-radius:10px;padding:10px;text-align:center;">
+        <div style="font-size:18px;font-weight:900;color:${wr_clr};">${d.win_rate}%</div>
+        <div style="font-size:9px;color:var(--txt3);">Win Rate</div>
+      </div>
+      <div style="background:var(--ink2);border:1px solid var(--line2);border-radius:10px;padding:10px;text-align:center;">
+        <div style="font-size:18px;font-weight:900;color:var(--txt1);">${d.total_trades}</div>
+        <div style="font-size:9px;color:var(--txt3);">Trades</div>
+      </div>
+      <div style="background:var(--ink2);border:1px solid var(--line2);border-radius:10px;padding:10px;text-align:center;">
+        <div style="font-size:18px;font-weight:900;color:#a064ff;">${d.cycles}</div>
+        <div style="font-size:9px;color:var(--txt3);">Cycles</div>
+      </div>
+    </div>
+    <div style="background:rgba(150,100,255,0.08);border:1px solid rgba(150,100,255,0.2);border-radius:10px;padding:10px;margin-bottom:12px;">
+      <div style="font-size:9px;color:#a064ff;font-weight:700;margin-bottom:4px;">📊 LATEST STRATEGY NOTE</div>
+      <div style="font-size:11px;color:var(--txt1);">${d.latest_note}</div>
+    </div>`;
+
+    if(d.top_wins.length){
+      html += '<div style="font-size:10px;font-weight:700;color:var(--em);margin-bottom:6px;">🏆 TOP WINS</div>';
+      d.top_wins.forEach(t => {
+        html += `<div style="display:flex;justify-content:space-between;padding:5px 8px;background:rgba(0,212,170,0.06);border-radius:6px;margin-bottom:4px;">
+          <span style="font-size:10px;color:var(--txt2);">${t.token||'—'}</span>
+          <span style="font-size:10px;color:var(--em);font-weight:700;">+${t.pnl.toFixed(1)}% · ${t.hold}m</span>
+        </div>`;
+      });
+    }
+
+    if(d.top_losses.length){
+      html += '<div style="font-size:10px;font-weight:700;color:var(--red);margin:10px 0 6px;">💀 WORST LOSSES</div>';
+      d.top_losses.forEach(t => {
+        html += `<div style="display:flex;justify-content:space-between;padding:5px 8px;background:rgba(255,71,87,0.06);border-radius:6px;margin-bottom:4px;">
+          <span style="font-size:10px;color:var(--txt2);">${t.token||'—'}</span>
+          <span style="font-size:10px;color:var(--red);font-weight:700;">${t.pnl.toFixed(1)}% · ${t.hold}m</span>
+        </div>`;
+      });
+    }
+
+    document.getElementById('modal-body').innerHTML = html;
+  } catch(e) {
+    document.getElementById('modal-body').innerHTML = '<div style="text-align:center;padding:20px;color:var(--red);">Error loading brain data</div>';
+  }
+}
+
 async function openWhaleDetail(){
   document.getElementById('modal-title').textContent = '🐋 Whale Wallets';
   document.getElementById('modal-body').innerHTML = '<div style="text-align:center;padding:20px;color:var(--txt3);">Loading...</div>';
