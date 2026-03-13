@@ -1185,17 +1185,20 @@ function _applyModeUI(){
   const btn  = document.getElementById('mode-switch-btn');
   const balLbl = document.getElementById('bal-mode-lbl');
   const hdrMode = document.getElementById('hdr-mode');
-  if(lbl) lbl.textContent = isPaper ? '📄 PAPER MODE' : '💰 REAL MODE';
-  if(sub) sub.textContent = isPaper ? 'Bot practice trades kar raha hai' : '⚠️ Bot REAL wallet se trade kar raha hai';
+  if(lbl) lbl.textContent = isPaper ? '📄 PAPER MODE' : '💰 REAL MODE ACTIVE';
+  if(sub) sub.textContent = isPaper ? 'Bot practice trades kar raha hai' : '⚠️ Bot REAL wallet se trade kar raha hai — Paper OFF';
   if(btn){
-    btn.textContent = isPaper ? 'Switch to Real →' : 'Switch to Paper →';
+    btn.textContent = isPaper ? 'Switch to Real →' : '← Switch to Paper';
     btn.style.background = isPaper ? 'linear-gradient(135deg,var(--em),#00bcd4)' : 'linear-gradient(135deg,var(--red),#c0392b)';
     btn.style.color = isPaper ? '#000' : '#fff';
   }
-  if(balLbl) balLbl.textContent = isPaper ? 'Paper Balance' : 'Real Balance';
-  if(hdrMode) hdrMode.textContent = isPaper ? 'BSC SNIPER · PAPER MODE' : 'BSC SNIPER · REAL MODE';
+  if(hdrMode) hdrMode.textContent = isPaper ? 'BSC SNIPER · PAPER MODE' : 'BSC SNIPER · REAL MODE 💰';
   const bar = document.getElementById('mode-switch-bar');
   if(bar) bar.style.borderColor = isPaper ? 'var(--line)' : 'rgba(255,71,87,0.4)';
+  // Paper balance card — real mode mein hide karo
+  const paperCard = document.querySelector('.bal-card.em');
+  if(paperCard) paperCard.style.display = isPaper ? '' : 'none';
+  if(balLbl) balLbl.textContent = 'Paper Balance';
 }
 
 // Fetch real BNB balance from backend (BSC_WALLET env se auto)

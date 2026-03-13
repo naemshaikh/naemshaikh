@@ -2103,6 +2103,9 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     if not AUTO_TRADE_ENABLED:
         print(f"⏸️ Auto-buy DISABLED")
         return
+    if TRADE_MODE == "real":
+        print(f"🚫 Paper buy BLOCKED — Real mode active")
+        return
     sess = get_or_create_session(AUTO_SESSION_ID)
 
     # Daily loss reset — naye din pe ya stale value pe
@@ -2225,8 +2228,9 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         if _real_result.get("entry_price", 0) > 0:
             entry_price = _real_result["entry_price"]
         print(f"✅ REAL BUY executed: tx={_real_result.get('tx_hash','')[:20]}")
-    # Paper mode: balance simulate karo
-    sess["paper_balance"] = round(paper_balance - size_bnb, 6)
+    # Paper mode: balance simulate karo (real mode mein skip)
+    if TRADE_MODE != "real":
+        sess["paper_balance"] = round(paper_balance - size_bnb, 6)
     _sl = CHECKLIST_SETTINGS.get("sl_new", 15.0)
     add_position_to_monitor(AUTO_SESSION_ID, address, token_name or address[:10], entry_price, size_bnb, stop_loss_pct=_sl)
     _bnb_at_buy = market_cache.get("bnb_price", 0)  # real only — DataGuard already verified
