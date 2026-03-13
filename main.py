@@ -512,6 +512,51 @@ def get_user_context_for_llm() -> str:
 BIRTH_TIME = datetime.utcnow()
 
 # ══════════════════════════════════════════════
+# VOLUME PRESSURE CACHE — position manager ke liye
+# DexScreener se har 60s fetch, rate limit se bachne ke liye
+# ══════════════════════════════════════════════
+_vol_pressure_cache: dict = {}   # {addr: {"buys": N, "sells": N, "ts": float}}
+_vol_pressure_lock  = threading.Lock()
+VOL_CACHE_TTL       = 60  # seconds — har 60s mein fresh data
+
+def _get_vol_pressure(address: str) -> dict:
+    """Buy/Sell pressure fetch karo — cached, 60s TTL, rate-limit safe"""
+    now = time.time()
+    with _vol_pressure_lock:
+        cached = _vol_pressure_cache.get(address.lower())
+        if cached and (now - cached.get("ts", 0)) < VOL_CACHE_TTL:
+            return cached
+    # Fresh fetch
+    try:
+        r = requests.get(
+            f"https://api.dexscreener.com/latest/dex/tokens/{address}",
+            timeout=6
+        )
+        if r.status_code == 200:
+            pairs = (r.json() or {}).get("pairs") or []
+            bsc   = [p for p in pairs if p and p.get("chainId") == "bsc"]
+            if bsc:
+                bsc.sort(key=lambda x: float((x.get("liquidity") or {}).get("usd", 0) or 0), reverse=True)
+                txns   = bsc[0].get("txns", {})
+                buys5  = int((txns.get("m5") or {}).get("buys",  0) or 0)
+                sells5 = int((txns.get("m5") or {}).get("sells", 0) or 0)
+                buys1h = int((txns.get("h1") or {}).get("buys",  0) or 0)
+                sells1h= int((txns.get("h1") or {}).get("sells", 0) or 0)
+                data   = {"buys5": buys5, "sells5": sells5,
+                          "buys1h": buys1h, "sells1h": sells1h, "ts": now}
+                with _vol_pressure_lock:
+                    _vol_pressure_cache[address.lower()] = data
+                    # Memory: max 30 entries
+                    if len(_vol_pressure_cache) > 30:
+                        oldest = sorted(_vol_pressure_cache.items(), key=lambda x: x[1].get("ts",0))
+                        for k, _ in oldest[:5]:
+                            _vol_pressure_cache.pop(k, None)
+                return data
+    except Exception:
+        pass
+    return {"buys5": 0, "sells5": 0, "buys1h": 0, "sells1h": 0, "ts": now}
+
+# ══════════════════════════════════════════════
 # DEV WALLET BLACKLIST — ruggers track karo
 # ══════════════════════════════════════════════
 _dev_blacklist: dict = {}   # {wallet_lower: {"reason": str, "rugs": int, "last_seen": iso}}
@@ -1247,7 +1292,35 @@ def auto_position_manager():
                     _trail_triggered = True
 
                 if not _trail_triggered:
-                    if   pnl <= -sl_pct:                        _auto_paper_sell(addr, f"SL -{sl_pct:.0f}%", 100.0)
+                    # ── VOLUME-AWARE STOP LOSS ──
+                    # Idea: price gira, lekin agar buy pressure > sell pressure
+                    # toh ye temporary dip hai — SL hold karo, upar jayega
+                    # Agar sell pressure dominant hai → real dump → jaldi sell
+                    _vol = _get_vol_pressure(addr)
+                    _b5  = _vol.get("buys5",  0)
+                    _s5  = _vol.get("sells5", 0)
+                    _ratio = _b5 / max(_s5, 1)   # buy:sell ratio (5min)
+
+                    # Ratio > 1.5 = strong buy pressure = dip, hold karo
+                    # Ratio < 0.5 = strong sell pressure = dump, jaldi bhaago
+                    _strong_buys  = _ratio >= 1.5 and _b5 >= 3   # real buys, not 0
+                    _strong_sells = _ratio <= 0.5 and _s5 >= 3   # real sells
+
+                    # Emergency sell: SL se PEHLE agar sell pressure bahut high
+                    # pnl <= -10% + sell pressure = dump shuru ho gaya
+                    if pnl <= -(sl_pct * 0.7) and _strong_sells and tp_sold < 50:
+                        _auto_paper_sell(addr, f"VolSL Dump pres. {_ratio:.1f}x", 100.0)
+                        print(f"🚨 VolSL: {addr[:10]} pnl={pnl:.1f}% ratio={_ratio:.1f}x → DUMP")
+
+                    elif pnl <= -sl_pct:
+                        if _strong_buys and pnl > -(sl_pct * 1.5):
+                            # Buy pressure strong hai, SL ko thoda extend karo
+                            # Max 1.5x sl_pct tak hi extend — unlimited nahi
+                            print(f"⏸️ SL hold: {addr[:10]} pnl={pnl:.1f}% ratio={_ratio:.1f}x buys>{_b5}")
+                        else:
+                            # Normal SL — ya sell pressure ke saath
+                            _auto_paper_sell(addr, f"SL -{sl_pct:.0f}% (ratio:{_ratio:.1f}x)", 100.0)
+
                     elif drop_hi <= -80 and tp_sold < 75:       _auto_paper_sell(addr, "Dump -80%", 100.0)
                     elif drop_hi <= -60 and tp_sold < 50:       _auto_paper_sell(addr, "Dump -60%", 75.0)
                     elif pnl >= _tp4 and tp_sold < 90:          _auto_paper_sell(addr, f"TP+{_tp4:.0f}%", 90-tp_sold)
