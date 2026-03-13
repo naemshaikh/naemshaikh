@@ -444,39 +444,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
     </div>
   </div>
 
-  <!-- Daily Stats Card -->
-  <div id="daily-stats-card" style="background:var(--ink2);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-      <div style="font-size:11px;font-weight:800;color:var(--txt2);letter-spacing:0.5px;text-transform:uppercase;">📅 Today</div>
-      <div id="daily-date" style="font-size:10px;color:var(--txt3);font-family:JetBrains Mono,monospace;">—</div>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px;">
-      <div style="background:var(--ink3);border-radius:6px;padding:7px 4px;text-align:center;">
-        <div id="daily-trades" style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;color:var(--txt1);">0</div>
-        <div style="font-size:8px;color:var(--txt3);text-transform:uppercase;margin-top:1px;">Trades</div>
-      </div>
-      <div style="background:var(--ink3);border-radius:6px;padding:7px 4px;text-align:center;">
-        <div id="daily-wr" style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;color:var(--em);">—%</div>
-        <div style="font-size:8px;color:var(--txt3);text-transform:uppercase;margin-top:1px;">Win%</div>
-      </div>
-      <div style="background:var(--ink3);border-radius:6px;padding:7px 4px;text-align:center;">
-        <div id="daily-pnl" style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:800;color:var(--em);">+0.000</div>
-        <div style="font-size:8px;color:var(--txt3);text-transform:uppercase;margin-top:1px;">PnL BNB</div>
-      </div>
-      <div style="background:var(--ink3);border-radius:6px;padding:7px 4px;text-align:center;">
-        <div id="daily-loss-bar-lbl" style="font-family:JetBrains Mono,monospace;font-size:11px;font-weight:800;color:var(--gold);">0%</div>
-        <div style="font-size:8px;color:var(--txt3);text-transform:uppercase;margin-top:1px;">Loss Used</div>
-      </div>
-    </div>
-    <!-- Daily loss progress bar -->
-    <div style="background:var(--ink3);border-radius:4px;height:5px;overflow:hidden;">
-      <div id="daily-loss-bar" style="height:100%;background:var(--em);border-radius:4px;width:0%;transition:width 0.5s;"></div>
-    </div>
-    <div style="display:flex;justify-content:space-between;margin-top:3px;">
-      <div style="font-size:9px;color:var(--txt3);">Daily Loss: <span id="daily-loss-val" style="color:var(--red);">0.0000</span> BNB</div>
-      <div style="font-size:9px;color:var(--txt3);">Limit: <span id="daily-loss-limit" style="color:var(--gold);">—</span> BNB</div>
-    </div>
-  </div>
+
 
   <div style="height:14px;"></div>
   <div class="sep">Trading History</div>
