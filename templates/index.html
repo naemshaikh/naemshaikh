@@ -9,51 +9,51 @@
 {% raw %}
 <style>
 /* ── EYE-FRIENDLY THEME SYSTEM ── */
-/* Night: Warm Graphite — not pure black, soft accents */
+/* NIGHT: Warm Graphite — NOT pure black, warm undertones, soft accents */
 :root{
-  --ink:   #1c1e24;
-  --ink2:  #23262e;
-  --ink3:  #2c2f3a;
-  --txt:   #dde2ec;
-  --txt2:  #8a95aa;
-  --txt3:  #4e5a72;
-  --line:  rgba(255,255,255,0.06);
-  --line2: rgba(255,255,255,0.10);
-  --em:    #2dd4a0;
-  --em-glow: 0 0 18px rgba(45,212,160,0.22);
-  --em-dim:  rgba(45,212,160,0.10);
-  --red:   #f07070;
-  --red-dim: rgba(240,112,112,0.10);
-  --gold:  #e8b84b;
-  --gold-dim: rgba(232,184,75,0.10);
-  --ice:   #60a5fa;
-  --ice-dim: rgba(96,165,250,0.10);
+  --ink:   #1a1d23;      /* warm graphite — not cold black */
+  --ink2:  #21242c;      /* card bg */
+  --ink3:  #292d38;      /* elevated surface */
+  --txt:   #d4d8e0;      /* warm off-white — not harsh pure white */
+  --txt2:  #7f8a9e;      /* secondary text */
+  --txt3:  #454f62;      /* muted/label text */
+  --line:  rgba(255,255,255,0.055);
+  --line2: rgba(255,255,255,0.09);
+  --em:    #34c992;      /* softer green — not neon */
+  --em-glow: 0 0 14px rgba(52,201,146,0.18);
+  --em-dim:  rgba(52,201,146,0.09);
+  --red:   #e06b6b;      /* muted red — not aggressive */
+  --red-dim: rgba(224,107,107,0.09);
+  --gold:  #d4a847;      /* warm gold */
+  --gold-dim: rgba(212,168,71,0.09);
+  --ice:   #5b9fd6;      /* muted blue */
+  --ice-dim: rgba(91,159,214,0.09);
   --r:14px;--r2:10px;
 }
-/* Day: Warm Paper — cream tones, no harsh white */
+/* DAY: Warm Paper — cream/linen tones, no harsh white, reduced contrast */
 body.day{
-  --ink:   #f0ede6;
-  --ink2:  #faf8f4;
-  --ink3:  #e8e4db;
-  --txt:   #2a2520;
-  --txt2:  #6b6056;
-  --txt3:  #9e9488;
-  --line:  rgba(0,0,0,0.07);
-  --line2: rgba(0,0,0,0.11);
-  --em:    #0d8f64;
-  --em-glow: 0 0 18px rgba(13,143,100,0.18);
-  --em-dim:  rgba(13,143,100,0.08);
-  --red:   #c0392b;
-  --red-dim: rgba(192,57,43,0.08);
-  --gold:  #b7860e;
-  --gold-dim: rgba(183,134,14,0.08);
-  --ice:   #1d6fa4;
-  --ice-dim: rgba(29,111,164,0.08);
+  --ink:   #eeeae2;      /* warm linen — not pure white */
+  --ink2:  #f7f4ee;      /* card bg */
+  --ink3:  #e4e0d6;      /* elevated surface */
+  --txt:   #282420;      /* warm dark brown — not pure black */
+  --txt2:  #655c50;
+  --txt3:  #9c9080;
+  --line:  rgba(0,0,0,0.065);
+  --line2: rgba(0,0,0,0.10);
+  --em:    #0a7a55;      /* deep teal — readable on cream */
+  --em-glow: 0 0 14px rgba(10,122,85,0.15);
+  --em-dim:  rgba(10,122,85,0.07);
+  --red:   #b83232;      /* deep red — readable */
+  --red-dim: rgba(184,50,50,0.07);
+  --gold:  #9e6e10;
+  --gold-dim: rgba(158,110,16,0.07);
+  --ice:   #1a5f8a;
+  --ice-dim: rgba(26,95,138,0.07);
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 html,body{height:100%;-webkit-tap-highlight-color:transparent;}
-body{background:var(--ink);color:var(--txt);font-family:'Outfit',sans-serif;font-size:14px;line-height:1.4;overflow-x:hidden;padding-bottom:60px;transition:background 0.3s,color 0.3s;}
-body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;background:radial-gradient(ellipse 600px 400px at 10% 0%,rgba(45,212,160,0.03) 0%,transparent 60%),radial-gradient(ellipse 400px 300px at 90% 100%,rgba(96,165,250,0.02) 0%,transparent 60%);}
+body{background:var(--ink);color:var(--txt);font-family:'Outfit',sans-serif;font-size:14.5px;line-height:1.5;overflow-x:hidden;padding-bottom:60px;transition:background 0.3s,color 0.3s;}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;background:radial-gradient(ellipse 700px 500px at 15% 0%,rgba(52,201,146,0.025) 0%,transparent 60%),radial-gradient(ellipse 500px 400px at 85% 100%,rgba(91,159,214,0.015) 0%,transparent 60%);}
 .hdr{position:sticky;top:0;z-index:200;background:rgba(28,30,36,0.96);backdrop-filter:blur(24px);border-bottom:1px solid var(--line);padding:0 14px;height:58px;display:flex;align-items:center;justify-content:space-between;}
 body.day .hdr{background:rgba(240,237,230,0.96);}
 .hdr-brand{display:flex;align-items:center;gap:10px;}
