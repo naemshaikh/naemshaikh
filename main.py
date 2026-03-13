@@ -2191,28 +2191,49 @@ def auto_position_manager():
                     # TP hit hone ke baad price aur upar bhi ja sakta hai
                     # Abhi: TP hit → 25% sell → price 10x ho jaaye → miss
                     # Trailing TP: TP hit → high track karo → high se 20% gire → sell rest
-                    elif pnl >= _tp4 and tp_sold < 90:
-                        # TP4 hit — 50% sell, rest pe trailing TP set karo
-                        _auto_paper_sell(addr, f"TP+{_tp4:.0f}%", 50.0)
-                        _pos_data["trail_tp_active"] = True
-                        _pos_data["trail_tp_pct"]    = 20.0  # high se 20% gire toh sell
-                        print(f"🎯 TrailTP activated @ +{pnl:.0f}% (20% drawdown)")
+                    # ══ LADDERED SELLS — pro standard ══
+                    # 2x/5x/10x pe guaranteed profit lock
+                    # Har milestone pe 20-25% sell → principal safe
+                    # Baaki hold → moonshot ka chance bhi
 
+                    # TrailTP check — TP4+ ke baad active hota hai
                     elif _pos_data.get("trail_tp_active") and drop_hi <= -_pos_data.get("trail_tp_pct", 20.0):
-                        # Trailing TP triggered — baaki sab sell
                         _ttp = _pos_data.get("trail_tp_pct", 20.0)
-                        _auto_paper_sell(addr, f"TrailTP -{_ttp:.0f}% from high", 100.0)
-                        print(f"🎯 TrailTP exit: {addr[:10]} high={high:.8f} current={current:.8f} drop={drop_hi:.1f}%")
+                        _auto_paper_sell(addr, f"TrailTP -{_ttp:.0f}% from high 🎯", 100.0)
+                        print(f"🎯 TrailTP exit: {addr[:10]} drop={drop_hi:.1f}%")
 
-                    elif pnl >= _tp3 and tp_sold < 75:
-                        _auto_paper_sell(addr, f"TP+{_tp3:.0f}%", 25.0)
-                        # TP3 hit — trailing TP tighten karo
-                        if _pos_data.get("trail_tp_active"):
-                            _pos_data["trail_tp_pct"] = 15.0
-                            print(f"🎯 TrailTP tightened 15% @ +{pnl:.0f}%")
+                    # 10x = +900% — sell 25%, tight trailing on rest
+                    elif pnl >= 900 and tp_sold < 85:
+                        _auto_paper_sell(addr, "Ladder 10x 🚀", 25.0)
+                        _pos_data["trail_tp_active"] = True
+                        _pos_data["trail_tp_pct"]    = 15.0
+                        print(f"🚀 10x LADDER: {addr[:10]} @ +{pnl:.0f}%")
 
-                    elif pnl >= _tp2 and tp_sold < 50:          _auto_paper_sell(addr, f"TP+{_tp2:.0f}%", 25.0)
-                    elif pnl >= _tp1 and tp_sold < 25:          _auto_paper_sell(addr, f"TP+{_tp1:.0f}%", 25.0)
+                    # 5x = +400%
+                    elif pnl >= 400 and tp_sold < 60:
+                        _auto_paper_sell(addr, "Ladder 5x 🔥", 25.0)
+                        _pos_data["trail_tp_active"] = True
+                        _pos_data["trail_tp_pct"]    = 20.0
+                        print(f"🔥 5x LADDER: {addr[:10]} @ +{pnl:.0f}%")
+
+                    # 3x = +200% (was TP4)
+                    elif pnl >= _tp4 and tp_sold < 40:
+                        _auto_paper_sell(addr, f"Ladder 3x ({_tp4:.0f}%) 💰", 20.0)
+                        _pos_data["trail_tp_active"] = True
+                        _pos_data["trail_tp_pct"]    = 25.0
+                        print(f"💰 3x LADDER: {addr[:10]} @ +{pnl:.0f}% TrailTP=25%")
+
+                    # 2x = +100%
+                    elif pnl >= _tp3 and tp_sold < 25:
+                        _auto_paper_sell(addr, f"Ladder 2x ({_tp3:.0f}%) ✅", 25.0)
+                        print(f"✅ 2x LADDER: {addr[:10]} @ +{pnl:.0f}%")
+
+                    # TP1/TP2 — early partial profits
+                    elif pnl >= _tp2 and tp_sold < 15:
+                        _auto_paper_sell(addr, f"TP+{_tp2:.0f}%", 15.0)
+                    elif pnl >= _tp1 and tp_sold < 10:
+                        _auto_paper_sell(addr, f"TP+{_tp1:.0f}%", 10.0)
+
                     elif pnl >= 20 and tp_sold < 1:
                         _pos_data["sl_pct"]  = 2.0   # break-even SL
                         _pos_data["tp_sold"] = 1
@@ -3490,6 +3511,45 @@ def run_full_sniper_checklist(address: str) -> Dict:
     add(f"Token Age ≥ {cs['min_token_age']} Min", "pass" if token_age_min >= cs['min_token_age'] else "warn", f"{token_age_min:.0f} min" if token_age_min > 0 else "Unknown", 3)
     add(f"Sniper Wait {cs['sniper_wait']} Min",   "pass" if token_age_min >= cs['sniper_wait']   else "warn", "OK" if token_age_min >= cs['sniper_wait'] else "WAIT", 3)
 
+    # ── SNIPER DETECTION ──
+    # Launch ke first 3 blocks = sniper window
+    # GoPlus holders mein check karo — kitne wallets pehle 60 sec mein the?
+    # Zyada snipers = insiders/bots ne pre-buy kiya = rug risk high
+    _sniper_count   = 0
+    _sniper_wallets = []
+    try:
+        _holders_list = goplus_data.get("holders", []) or []
+        # Real-time swap data se bhi check karo — pehle 60 sec mein buys
+        with _rt_swap_lock:
+            _rt_d = _rt_swap_data.get(address.lower(), {})
+        _early_buys = _rt_d.get("buys5", 0) if _rt_d else 0
+
+        # GoPlus: top holders jo bahut jaldi aaye
+        # Heuristic: agar token 5 min se kam purana hai aur top 10 mein 
+        # koi ek wallet 5%+ hold kar raha hai = sniper
+        if token_age_min < 10:
+            for h in _holders_list[:10]:
+                pct = float(h.get("percent", 0) or 0) * 100
+                _is_contract = h.get("is_contract", 0)
+                if pct >= 3.0 and not _is_contract:
+                    _sniper_wallets.append(h.get("address","")[:12])
+                    _sniper_count += 1
+
+        # DexScreener: first 5 min mein buys_5m > 20 + token < 5 min = bot activity
+        _dex_buys5 = dex_data.get("buys_5m", 0)
+        if token_age_min < 5 and _dex_buys5 > 20:
+            _sniper_count = max(_sniper_count, 3)  # suspicious activity
+
+        if _sniper_count == 0:
+            add("Sniper Detection", "pass", "No snipers detected ✅", 3)
+        elif _sniper_count <= 2:
+            add("Sniper Detection", "warn", f"{_sniper_count} possible snipers", 3)
+        else:
+            add("Sniper Detection", "fail", f"🚨 {_sniper_count} snipers detected — pre-sniped!", 3)
+
+    except Exception as _se:
+        add("Sniper Detection", "warn", "Check failed", 3)
+
     buys_5m = dex_data.get("buys_5m", 0); sells_5m = dex_data.get("sells_5m", 0)
     buys_1h = dex_data.get("buys_1h", 0); sells_1h = dex_data.get("sells_1h", 0)
 
@@ -3628,7 +3688,8 @@ def run_full_sniper_checklist(address: str) -> Dict:
     critical_labels_fixed = {"Honeypot Safe", "No Hidden Functions", "Transfer Allowed",
                               "Mint Authority Disabled", "Listed on DEX", "DEX Pools", "Price Exists",
                               "Dev Not Blacklisted",    # ✅ blacklisted dev = instant DANGER
-                              "Creator Launch History"} # ✅ serial launcher = instant DANGER
+                              "Creator Launch History",  # ✅ serial launcher = instant DANGER
+                              "Sniper Detection"}        # ✅ pre-sniped = instant DANGER
     critical_fails = [c for c in result["checklist"] if c["status"] == "fail" and (
         c["label"] in critical_labels_fixed or
         c["label"].startswith("Buy Tax") or
