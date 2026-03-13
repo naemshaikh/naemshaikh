@@ -1798,47 +1798,135 @@ def _auto_check_new_pair(pair_address: str):
 
 
 # ========== FOUR.MEME NEW TOKEN POLLER ==========
-FOUR_MEME_CONTRACT = "0x5c952063c7fc8610ffdb798152d69f0b9550762b"
+FOUR_MEME_CONTRACTS = [
+    "0x5c952063c7fc8610ffdb798152d69f0b9550762b",  # v1
+    "0x8b8cF6D0C2B5F4CB61Da5E7dc94E52f4F1dD8D64",  # v2
+    "0x48a31B72F77a2A90eBE24E5C4c88bE43E2AD6BEB",  # v3 latest
+]
+_four_meme_seen: set = set()  # dedup
 
-def poll_four_meme():
-    """four.meme se naye BSC meme tokens fetch karo via BSCScan"""
-    time.sleep(60)  # startup delay
-    while True:
-        try:
-            if not BSC_SCAN_KEY:
-                time.sleep(300)
-                continue
+def _poll_four_meme_api() -> list:
+    """four.meme direct API — no key needed, fastest source"""
+    found = []
+    try:
+        r = requests.get(
+            "https://four.meme/meme-api/v1/private/project/list",
+            params={"page": 1, "pageSize": 20, "orderBy": "createdAt", "sort": "desc"},
+            headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
+            timeout=8
+        )
+        if r.status_code == 200:
+            data = r.json()
+            items = data.get("data", {}).get("list") or data.get("list") or []
+            for item in items:
+                addr = item.get("tokenAddress") or item.get("address") or ""
+                if addr and len(addr) == 42:
+                    found.append(addr)
+    except Exception as e:
+        print(f"⚠️ four.meme direct API error: {e}")
+    return found
+
+def _poll_four_meme_gecko() -> list:
+    """GeckoTerminal four-meme pools — reliable fallback"""
+    found = []
+    try:
+        r = requests.get(
+            "https://api.geckoterminal.com/api/v2/networks/bsc/dexes/four-meme/pools",
+            params={"page": 1},
+            headers={"Accept": "application/json;version=20230302"},
+            timeout=10
+        )
+        if r.status_code == 200:
+            pools = r.json().get("data", [])
+            for pool in pools[:15]:
+                attrs = pool.get("attributes", {})
+                # base token address
+                rels = pool.get("relationships", {})
+                base = rels.get("base_token", {}).get("data", {}).get("id", "")
+                if base and "_" in base:
+                    addr = base.split("_")[-1]
+                    if len(addr) == 42:
+                        found.append(addr)
+    except Exception as e:
+        print(f"⚠️ four.meme gecko error: {e}")
+    return found
+
+def _poll_four_meme_bscscan() -> list:
+    """BSCScan tx monitor — fallback if no API key missing"""
+    if not BSC_SCAN_KEY:
+        return []
+    found = []
+    try:
+        for contract in FOUR_MEME_CONTRACTS:
             url = (
                 f"{BSC_SCAN_API}?module=account&action=txlist"
-                f"&address={FOUR_MEME_CONTRACT}"
+                f"&address={contract}"
                 f"&startblock=0&endblock=99999999"
                 f"&page=1&offset=10&sort=desc"
                 f"&apikey={BSC_SCAN_KEY}"
             )
-            r = requests.get(url, timeout=10)
+            r = requests.get(url, timeout=8)
             if r.status_code != 200:
-                time.sleep(300)
                 continue
             txns = r.json().get("result", [])
             if not isinstance(txns, list):
-                time.sleep(300)
                 continue
-            for tx in txns[:5]:  # sirf latest 5, RAM bachao
+            for tx in txns[:5]:
                 token_addr = tx.get("contractAddress", "")
                 if not token_addr or token_addr == "0x":
-                    # input data se token address nikalo
                     inp = tx.get("input", "")
                     if len(inp) >= 74:
                         token_addr = "0x" + inp[34:74]
                 if token_addr and len(token_addr) == 42:
+                    found.append(token_addr)
+    except Exception as e:
+        print(f"⚠️ four.meme bscscan error: {e}")
+    return found
+
+def poll_four_meme():
+    """four.meme naye tokens — 3 sources: direct API + GeckoTerminal + BSCScan"""
+    global _four_meme_seen
+    time.sleep(30)  # startup delay (was 60)
+    _cycle = 0
+    while True:
+        try:
+            _cycle += 1
+            addrs = []
+
+            # Source 1: four.meme direct API (fastest, no key)
+            addrs += _poll_four_meme_api()
+
+            # Source 2: GeckoTerminal (har 3rd cycle — 60 sec)
+            if _cycle % 3 == 0:
+                addrs += _poll_four_meme_gecko()
+
+            # Source 3: BSCScan all 3 contracts (har 6th cycle — 120 sec)
+            if _cycle % 6 == 0:
+                addrs += _poll_four_meme_bscscan()
+
+            # Dedup + process
+            new_count = 0
+            for addr in addrs:
+                addr_lower = addr.lower()
+                if addr_lower not in _four_meme_seen:
+                    _four_meme_seen.add(addr_lower)
+                    new_count += 1
                     threading.Thread(
                         target=_process_new_token,
-                        args=(token_addr, token_addr, "FourMeme"),
+                        args=(addr, addr, "FourMeme"),
                         daemon=True
                     ).start()
+
+            # Cleanup seen set — sirf last 500 rakhte hain
+            if len(_four_meme_seen) > 500:
+                _four_meme_seen = set(list(_four_meme_seen)[-500:])
+
+            if new_count > 0:
+                print(f"🔥 four.meme: {new_count} new tokens queued")
+
         except Exception as e:
             print(f"⚠️ four.meme poll error: {e}")
-        time.sleep(300)  # har 5 min mein check karo
+        time.sleep(20)  # har 20 sec (was 300!)
 
 # ========== POLL NEW PAIRS ==========
 def poll_new_pairs():
