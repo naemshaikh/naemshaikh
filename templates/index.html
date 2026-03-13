@@ -552,7 +552,7 @@ function holdBetween(a,b){
   if(!a||!b)return '—';
   try{const ms=new Date(_toUTC(b))-new Date(_toUTC(a)),m=Math.floor(ms/60000);if(m<1)return '<1m';if(m<60)return m+'m';return Math.floor(m/60)+'h '+(m%60?m%60+'m':'');}catch(e){return '—';}
 }
-function bp(){return _bnbReal||618;}
+function bp(){return _bnbReal||0;}
 function symOf(token,addr){return(token&&!token.startsWith('0x')&&token.length<20)?token.slice(0,6).toUpperCase():(addr||'????').slice(2,7).toUpperCase();}
 function showToast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2000);}
 function copyAddr(addr){
@@ -640,7 +640,7 @@ async function fetchHistory(){
     const trades=g.trades, addr=g.addr;
     const sym=(g.token&&!g.token.startsWith('0x')&&g.token.length<20)?g.token.toUpperCase():symOf(g.token,addr);
     const ic=iconClr(sym);
-    const bnbP=window._bnbReal||618;
+    const bnbP=window._bnbReal||0;
 
     const totalPnlB=trades.reduce(function(s,t){
       var pb=parseFloat(t.pnl_bnb||0);
@@ -785,10 +785,9 @@ async function sendMsg(){
 // ── Apply partial data from /trading-data immediately ──────────
 function _applyTD(td){
   if(!td) return;
-  // FIX: bnb_price fallback 300 — kabhi 0 nahi dikhega
-  const bnb=parseFloat(td.bnb_price||0)||(_bnbReal||300);
-  if(bnb>0)_bnbReal=bnb;
-  document.getElementById('h-bnb').textContent='$'+bnb.toFixed(0);
+  const bnb=parseFloat(td.bnb_price||0);
+  if(bnb>0){_bnbReal=bnb;document.getElementById('h-bnb').textContent='$'+bnb.toFixed(0);document.getElementById('h-bnb').style.color='';}
+  else{document.getElementById('h-bnb').textContent='ERR';document.getElementById('h-bnb').style.color='var(--red)';}
   const fg=td.fear_greed!=null?td.fear_greed:50;
   const fgEl=document.getElementById('h-fg');
   fgEl.textContent=fg;fgEl.style.color=fg>60?'var(--em)':fg<40?'var(--red)':'var(--gold)';
@@ -830,11 +829,10 @@ async function fetchStats(){
   if(_modeEl&&_as){
     _modeEl.textContent=_as.enabled?'BSC SNIPER · AUTO ON':'BSC SNIPER · PAPER MODE';
   }
-  // FIX: bnb_price — 0 aaye toh _bnbReal ya 300 use karo, UI blank nahi rahegi
-  const bnb=parseFloat((_as&&_as.bnb_price)||(_td&&_td.bnb_price)||0)||(_bnbReal||300);
+  const bnb=parseFloat((_as&&_as.bnb_price)||(_td&&_td.bnb_price)||0);
   const fg=(_td&&_td.fear_greed!=null)?_td.fear_greed:((_as&&_as.fear_greed)!=null?_as.fear_greed:50);
-  if(bnb>0)_bnbReal=bnb;
-  document.getElementById('h-bnb').textContent='$'+bnb.toFixed(0);
+  if(bnb>0){_bnbReal=bnb;document.getElementById('h-bnb').textContent='$'+bnb.toFixed(0);document.getElementById('h-bnb').style.color='';}
+  else if(!_bnbReal){document.getElementById('h-bnb').textContent='ERR';document.getElementById('h-bnb').style.color='var(--red)';}
   const fgEl=document.getElementById('h-fg');
   fgEl.textContent=fg;fgEl.style.color=fg>60?'var(--em)':fg<40?'var(--red)':'var(--gold)';
   // FIX: paper_balance safe parse — fallback 5.0
@@ -954,9 +952,9 @@ async function fetchRealBalance(){
     const r = await fetchJSON('https://api.bscscan.com/api?module=account&action=balance&address='+_walletAddr+'&tag=latest&apikey=YourApiKeyToken',{},10000);
     if(r && r.status==='1'){
       const bnb = parseFloat(r.result) / 1e18;
-      const bnbP = window._bnbReal || 618;
+      const bnbP = window._bnbReal || 0;
       document.getElementById('b-real-bal').textContent = bnb.toFixed(4)+' BNB';
-      document.getElementById('b-real-usd').textContent = 'approx $'+Math.round(bnb*bnbP).toLocaleString();
+      document.getElementById('b-real-usd').textContent = bnbP>0?'approx $'+Math.round(bnb*bnbP).toLocaleString():'price unavailable';
     }
   }catch(e){}
 }
@@ -1251,7 +1249,7 @@ window._renderHPage = function(){
   const PAGE  = 15;
   const items = window._hData.slice(0, PAGE * window._hPage);
   if(!items.length){ wrap.innerHTML='<div class="empty-state">No open positions</div>'; return; }
-  const bnbP  = window._bnbReal||618;
+  const bnbP  = window._bnbReal||0;
   let html = '<div style="display:grid;grid-template-columns:1fr 80px 90px 90px;padding:6px 4px;border-bottom:1px solid var(--line);gap:4px;">'+
     '<span style="font-size:10px;color:var(--txt3);">Token / Hold</span>'+
     '<span style="font-size:10px;color:var(--txt3);text-align:center;">Invested</span>'+
@@ -1374,7 +1372,15 @@ function openHoldDetail(json){
   const clr     = pClr(pnl);
   const entry   = parseFloat(t.entry||0);
   const current = parseFloat(t.current||entry);
-  const bnbP    = window._bnbReal||618;
+  const bnbP    = window._bnbReal||0;
+  if(!bnbP){
+    document.getElementById('modal-title').innerHTML='<div style="color:var(--red);font-size:14px;font-weight:800;">⚠️ BNB Price Unavailable</div>';
+    document.getElementById('modal-sub').textContent='Data load nahi hua — refresh karo';
+    document.getElementById('modal-pnl').textContent='';
+    document.getElementById('modal-body').innerHTML='<div style="color:var(--red);padding:20px;text-align:center;font-size:13px;">BNB price fetch nahi hua.<br>Calculations accurate nahi hongi.<br><br>Page refresh karo.</div>';
+    document.getElementById('modal-actions').innerHTML='<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
+    showModal(); return;
+  }
   const shortAddr = addr?(addr.slice(0,6)+'...'+addr.slice(-4)):'—';
   const tpSold  = parseFloat(t.tp_sold||0);
   const slPct   = parseFloat(t.sl_pct||15);
@@ -1608,7 +1614,7 @@ window._renderTPage = function(){
   }
   const PAGE = 20;
   const items = window._tData.slice(0, PAGE * window._tPage);
-  const bnbP = window._bnbReal||618;
+  const bnbP = window._bnbReal||0;
 
   let html = items.map(function(t){
     const sym = (t.token&&!t.token.startsWith('0x')&&t.token.length<20)?t.token.toUpperCase():symOf(t.token,t.address);
@@ -1655,7 +1661,7 @@ function openGroupTradeDetail(encoded){
   let g; try{g=JSON.parse(decodeURIComponent(encoded));}catch(e){return;}
   const sym=g.sym,addr=g.addr,trades=g.trades;
   const ic=iconClr(sym);
-  const bnbP=window._bnbReal||618;
+  const bnbP=window._bnbReal||0;
   const clr=g.totalPnlB>=0?'var(--em)':'var(--red)';
 
   // Compute stats like GMGN
@@ -1803,7 +1809,7 @@ function openTradeDetail(json){
   const exit   = parseFloat(t.exit||0);
   const sz     = parseFloat(t.size_bnb||0);
   const isWin  = pnl>=0;
-  const bnbP   = window._bnbReal||618;
+  const bnbP   = window._bnbReal||0;
   const pnlUSD = (Math.abs(pnlB)*bnbP).toFixed(2);
   const boughtUSD = (sz*bnbP).toFixed(0);
   const soldUSD   = (sz*(1+pnl/100)*bnbP).toFixed(0);
@@ -2259,7 +2265,7 @@ async function viewTokenData(){
   showToast('⏳ Fetching...');
   const d = await fetchJSON('/token-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({address:addr})},15000);
   if(!d){showToast('❌ Failed');return;}
-  const bnb = window._bnbReal||300;
+  const bnb = window._bnbReal||0;
   document.getElementById('modal-title').textContent='💎 Token Data';
   document.getElementById('modal-sub').textContent=addr.slice(0,20)+'...';
   document.getElementById('modal-pnl').textContent='$'+parseFloat(d.price_usd||0).toFixed(8);
