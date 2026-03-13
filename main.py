@@ -1114,6 +1114,9 @@ def price_monitor_loop():
                 current = get_token_price_bnb(addr)
                 if current <= 0:
                     continue
+                # Sanity check: 10000x se zyada spike = stale/wrong price, ignore karo
+                if pos["entry"] > 0 and current > pos["entry"] * 10000:
+                    continue
                 pos["current"] = current
                 if current > pos["high"]:
                     pos["high"] = current
@@ -2788,6 +2791,10 @@ def auto_stats_route():
         mon     = monitored_positions.get(addr, {})
         entry   = pos.get("entry", 0)
         current = mon.get("current", entry)
+        # Sanity check: agar price 50000x+ se zyada upar ho entry se — stale/fake price hai
+        # Real meme coins 10000x se zyada nahi jaate ek session mein
+        if entry > 0 and current > 0 and current > entry * 10000:
+            current = entry  # stale price reset karo entry pe
         pnl     = round(((current - entry) / entry * 100), 2) if entry > 0 else 0
         sz_rem   = pos.get("size_bnb", AUTO_BUY_SIZE_BNB)
         pnl_bnb  = sz_rem * (pnl / 100.0)
