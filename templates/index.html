@@ -345,6 +345,29 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
     <div class="sg-item"><div class="sg-val" id="sg-losses" style="color:var(--red)">—</div><div class="sg-lbl">Loss Trades</div></div>
   </div>
 
+  <!-- ── BOT ACTIVITY PANEL ── -->
+  <div class="sep" style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;padding-right:14px;">
+    <span>📡 Bot Activity</span>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <div id="act-dot" style="width:8px;height:8px;border-radius:50%;background:#555;"></div>
+      <span id="act-status" style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--txt3);">connecting...</span>
+    </div>
+  </div>
+  <div style="padding:0 12px 10px;">
+    <!-- Last action ticker -->
+    <div style="background:var(--ink2);border:1px solid var(--line2);border-radius:12px 12px 0 0;padding:10px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line2);">
+      <div style="font-size:16px;" id="act-icon">⏳</div>
+      <div style="flex:1;min-width:0;">
+        <div id="act-last" style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--txt1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Waiting for activity...</div>
+        <div id="act-last-time" style="font-size:9px;color:var(--txt3);margin-top:2px;">—</div>
+      </div>
+    </div>
+    <!-- Feed -->
+    <div id="act-feed" style="background:var(--ink2);border:1px solid var(--line2);border-top:none;border-radius:0 0 12px 12px;overflow:hidden;max-height:380px;overflow-y:auto;-webkit-overflow-scrolling:touch;">
+      <div style="padding:20px;text-align:center;color:var(--txt3);font-size:11px;">Loading activity...</div>
+    </div>
+  </div>
+
   <!-- Intelligence Panel -->
   <div class="sep" style="margin-top:10px;">🧠 Bot Intelligence</div>
   <div style="padding:0 12px 10px;">
@@ -1073,6 +1096,69 @@ init();
 setInterval(fetchStats,8000);
 setInterval(fetchHistory,30000);
 setInterval(loadSettings,30000);
+setInterval(fetchActivity, 5000);
+fetchActivity();
+
+// ── BOT ACTIVITY FEED ──
+const ACT_STYLES = {
+  discover: { icon:'🔍', color:'#888',     bg:'rgba(255,255,255,0.04)', label:'SCAN'    },
+  reject:   { icon:'❌', color:'#ff4757',  bg:'rgba(255,71,87,0.08)',   label:'REJECT'  },
+  pass:     { icon:'✅', color:'#00d4aa',  bg:'rgba(0,212,170,0.08)',   label:'PASS'    },
+  buy:      { icon:'🟢', color:'#00d4aa',  bg:'rgba(0,212,170,0.12)',   label:'BUY'     },
+  sell:     { icon:'💰', color:'#ffd32a',  bg:'rgba(255,211,42,0.10)',  label:'SELL'    },
+  whale:    { icon:'🐋', color:'#64b4ff',  bg:'rgba(100,180,255,0.10)', label:'WHALE'   },
+  rug:      { icon:'☠️', color:'#ff4757',  bg:'rgba(255,71,87,0.10)',   label:'RUG'     },
+};
+
+async function fetchActivity(){
+  try {
+    const r = await fetch('/activity'); if(!r.ok) return;
+    const d = await r.json();
+    const acts = d.activity || [];
+
+    // Status dot
+    const dot = document.getElementById('act-dot');
+    const sta = document.getElementById('act-status');
+    const now = Date.now();
+    dot.style.background = '#00d4aa';
+    dot.style.boxShadow  = '0 0 6px #00d4aa';
+    sta.textContent = acts.length + ' events';
+    sta.style.color = 'var(--em)';
+
+    // Last action ticker
+    if(acts.length > 0){
+      const la = acts[0];
+      const s  = ACT_STYLES[la.type] || ACT_STYLES.discover;
+      document.getElementById('act-icon').textContent = s.icon;
+      document.getElementById('act-last').textContent  = la.detail || la.token || '—';
+      document.getElementById('act-last').style.color  = s.color;
+      document.getElementById('act-last-time').textContent = la.ts || '—';
+    }
+
+    // Feed
+    const feed = document.getElementById('act-feed');
+    if(!acts.length){
+      feed.innerHTML = '<div style="padding:20px;text-align:center;color:var(--txt3);font-size:11px;">No activity yet — bot is scanning...</div>';
+      return;
+    }
+    feed.innerHTML = acts.map(function(a){
+      const s = ACT_STYLES[a.type] || ACT_STYLES.discover;
+      const addr = a.address ? a.address.slice(0,6)+'...'+a.address.slice(-4) : '';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line2);background:${s.bg};">
+        <div style="width:28px;height:28px;border-radius:8px;background:rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;">${s.icon}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:800;color:${s.color};background:${s.bg};border:1px solid ${s.color}33;padding:1px 5px;border-radius:4px;">${s.label}</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--txt1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;">${a.token||'—'}</span>
+          </div>
+          <div style="font-size:10px;color:var(--txt2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.detail||''}</div>
+          ${addr ? `<div style="font-size:9px;color:var(--txt3);font-family:'JetBrains Mono',monospace;margin-top:1px;">${addr}</div>` : ''}
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--txt3);flex-shrink:0;">${a.ts||''}</div>
+      </div>`;
+    }).join('');
+  } catch(e){ console.log('activity err',e); }
+}
 
 
 // ─── CONTROL PANEL ──────────────────────────────────────────

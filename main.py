@@ -1905,6 +1905,20 @@ def _persist_positions():
 
 # ========== NEW PAIRS ==========
 new_pairs_queue: deque = deque(maxlen=30)
+
+# ── Real-time Bot Event Log ──
+# Har action yahan log hoga — UI pe live dikhega
+_bot_log: deque = deque(maxlen=100)  # last 100 events
+
+def _log(event_type: str, token: str, detail: str, address: str = ""):
+    """Bot event log mein entry add karo"""
+    _bot_log.appendleft({
+        "type":    event_type,   # discover|reject|pass|buy|sell|whale|rug
+        "token":   token,
+        "detail":  detail,
+        "address": address,
+        "ts":      datetime.utcnow().strftime("%H:%M:%S"),
+    })
 discovered_addresses: dict = {}
 _discovered_lock  = threading.Lock()          # RACE FIX: protect discovered_addresses
 _token_semaphore  = threading.Semaphore(3)   # was 2 — more discovery throughput
@@ -2215,6 +2229,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     }
     auto_trade_stats["total_auto_buys"] += 1
     auto_trade_stats["last_action"] = f"BUY {token_name or address[:10]}"
+    _log("buy", token_name or address[:10], f"🟢 BUY {size_bnb:.4f} BNB @ ${entry_price:.8f}", address)
     # ✅ Pair register karo — known pair pass karo taaki BSC call na ho (instant!)
     _known_pair = (checklist_result.get("dex_data") or {}).get("pair_address", "")
     _register_position_pair(address, known_pair=_known_pair if _known_pair else None)
@@ -2311,6 +2326,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         except Exception: pass
 
     auto_trade_stats["last_action"] = f"SELL {sell_pct:.0f}% {token} PnL:{pnl_pct:+.1f}%"
+    _emoji = "🟢" if pnl_pct >= 0 else "🔴"
+    _log("sell", token, f"{_emoji} SELL {sell_pct:.0f}% · PnL {pnl_pct:+.1f}% · {reason}", address)
 
     if sell_pct >= 100.0:
         auto_trade_stats["running_positions"].pop(address, None)
@@ -3227,6 +3244,7 @@ def _memory_cleanup_loop():
 def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale_wallet: str = ""):
     # Sabse pehle — token blacklist check (zero cost, instant)
     if is_token_blacklisted(pair_address):
+        _log("reject", pair_address[:8], "Blacklisted 24h — skip", pair_address)
         print(f"🚫 Token blacklisted — skip: {pair_address[:10]}")
         return
     if not _check_semaphore.acquire(blocking=False):
@@ -3234,10 +3252,11 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
         return
     try:
         if whale_triggered:
+            _log("whale", pair_address[:8], f"🐋 Whale follow — scanning ({whale_wallet[:8]})", pair_address)
             print(f"🐋 WHALE FOLLOW scan (skip wait): {pair_address[:10]} ← {whale_wallet[:10]}")
-            # Whale ne kharida → 10s wait kaafi hai, 30s nahi
             time.sleep(10)
         else:
+            _log("discover", pair_address[:8], "New pair — waiting 30s for liquidity", pair_address)
             print(f"⏳ Waiting 30s: {pair_address[:10]}")
             time.sleep(30)
         _prefetched_dex = None
@@ -3249,9 +3268,9 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
                 if _bp:
                     _ct = _bp[0].get("pairCreatedAt", 0) or 0
                     if _ct and (time.time() - _ct / 1000) / 60 > 10080:
+                        _log("reject", pair_address[:8], "Token too old (7d+) — skip", pair_address)
                         del _ar_json, _bp, _ar
                         return
-                    # Reuse this data in checklist — avoid double call
                     _prefetched_dex = _ar_json
                 del _ar
         except Exception: pass
@@ -3280,21 +3299,22 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
 
         # ── GATE 1: Full Checklist — MUST be SAFE ──
         if overall != "SAFE":
+            _log("reject", _final_name, f"Checklist {overall} ({score}/{total}) — {rec[:40]}", pair_address)
             print(f"⏭️ SKIP {_final_name}: checklist={overall} — CAUTION/RISK/DANGER pe trade nahi")
         elif score < int(total * _safe_score / 100):
+            _log("reject", _final_name, f"Score {score}/{total} ({round(score/max(total,1)*100)}%) below threshold", pair_address)
             print(f"⏭️ SKIP {_final_name}: checklist score {score}/{total} ({round(score/max(total,1)*100)}%) < {_safe_score:.0f}% threshold")
         else:
-            # ── GATE 2: Opportunity Score — green signals analyze karo ──
-            _gs = detect_green_signals(pair_address,
-                result.get("_goplus_raw", {}),
-                _dex_d)
+            # ── GATE 2: Opportunity Score ──
+            _gs = detect_green_signals(pair_address, result.get("_goplus_raw", {}), _dex_d)
             _opp_score = _gs.get("score", 0)
             _opp_sigs  = [s["type"] for s in _gs.get("signals", [])]
 
-            # Minimum 1 positive signal chahiye — sirf safe hona kaafi nahi
             if _opp_score < 1:
+                _log("pass", _final_name, f"Checklist SAFE ✅ but no opp signals — skipped", pair_address)
                 print(f"⏭️ SKIP {_final_name}: checklist SAFE ✅ but zero opportunity signals — no edge detected")
             else:
+                _log("pass", _final_name, f"✅ SAFE {score}/{total} · signals: {', '.join(_opp_sigs[:2])}", pair_address)
                 print(f"✅ BUY CONFIRMED {_final_name}: checklist={overall} ({score}/{total}) + opp={_opp_score}pt signals={_opp_sigs}")
                 try: _auto_paper_buy(pair_address, _final_name, score, total, result)
                 except Exception as e: print(f"Auto buy error: {e}")
@@ -4851,61 +4871,7 @@ def readiness():
 
 @app.route("/activity", methods=["GET"])
 def activity_route():
-    from datetime import datetime as _dt
-    acts = []
-    for addr, pos in list(auto_trade_stats.get("running_positions",{}).items()):
-        e   = pos.get("entry", 0)
-        c   = monitored_positions.get(addr, {}).get("current", e)
-        pnl = ((c - e) / e * 100) if e > 0 else 0
-        b   = pos.get("bought_at", "")
-        tok = pos.get("token","")
-        td  = tok if (tok and not tok.startswith("0x") and len(tok) < 20) else addr[:8]
-        acts.append({
-            "type": "buy",
-            "token": td,
-            "address": addr,
-            "main": f"BUY {td} — {pos.get('size_bnb',0):.4f} BNB @ ${e:.8f}",
-            "meta": f"{addr[:8]}...{addr[-4:]} · PnL:{pnl:+.1f}%",
-            "t": b[11:16] if len(b) >= 16 else _dt.utcnow().strftime("%H:%M"),
-            "entry": f"${e:.10f}",
-            "bought_at": b,
-            "pnl": round(pnl, 2),
-            "size": f"{pos.get('size_bnb',0):.4f} BNB",
-        })
-    for h in list(reversed(auto_trade_stats.get("trade_history",[]) ))[:5]:
-        sold = h.get("sold_at","")
-        acts.insert(0, {
-            "type": "sell",
-            "token": h.get("token","?"),
-            "address": h.get("address",""),
-            "main": f"SELL {h.get('token','?')} — {h.get('pnl_pct',0):+.2f}% | {h.get('size_bnb',0):.4f} BNB",
-            "meta": f"Entry:{h.get('entry',0):.8f} → Exit:{h.get('exit',0):.8f}",
-            "t": sold[11:16] if len(sold) >= 16 else "—",
-            "entry": f"${h.get('entry',0):.10f}",
-            "exit":  f"${h.get('exit',0):.10f}",
-            "bought_at": h.get("bought_at",""),
-            "sold_at":   sold,
-            "pnl": h.get("pnl_pct",0),
-            "pnl_bnb": h.get("pnl_bnb",0),
-            "size": f"{h.get('size_bnb',0):.4f} BNB",
-            "result": h.get("result",""),
-        })
-    acts.append({
-        "type": "scan",
-        "main": f"SCAN: {len(discovered_addresses):,} checked · {len(new_pairs_queue)} queued · {len(monitored_positions)} monitoring",
-        "meta": "BSC Mainnet · WebSocket + DexScreener",
-        "t": _dt.utcnow().strftime("%H:%M")
-    })
-    fg = market_cache.get("fear_greed", 50)
-    bnb = market_cache.get("bnb_price", 0)
-    if bnb > 0:
-        acts.append({
-            "type": "scan",
-            "main": f"MARKET: BNB ${bnb:.2f} · F&G {fg}/100",
-            "meta": "CoinGecko + Alternative.me",
-            "t": _dt.utcnow().strftime("%H:%M")
-        })
-    return jsonify({"activity": acts[:30]})
+    return jsonify({"activity": list(_bot_log)})
 
 @app.route("/trade-history", methods=["GET"])
 def trade_history_route():
