@@ -4,8 +4,26 @@ import gc
 from flask import Flask, render_template, request, jsonify
 from supabase import create_client
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import requests
+
+# IST = UTC + 5:30
+_IST = timezone(timedelta(hours=5, minutes=30))
+
+def _to_ist(dt_str: str) -> str:
+    """ISO UTC string → IST HH:MM AM/PM"""
+    try:
+        if len(dt_str) >= 16:
+            d = datetime.fromisoformat(dt_str.replace("Z",""))
+            d_ist = d.replace(tzinfo=timezone.utc).astimezone(_IST)
+            return d_ist.strftime("%I:%M %p")
+    except:
+        pass
+    return dt_str[11:16] if len(dt_str) >= 16 else "—"
+
+def _now_ist() -> str:
+    """Current time in IST HH:MM AM/PM"""
+    return datetime.now(_IST).strftime("%I:%M %p")
 import time
 import threading
 import json
@@ -4499,7 +4517,7 @@ def activity_route():
             "address": addr,
             "main": f"BUY {td} — {pos.get('size_bnb',0):.4f} BNB @ ${e:.8f}",
             "meta": f"{addr[:8]}...{addr[-4:]} · PnL:{pnl:+.1f}%",
-            "t": b[11:16] if len(b) >= 16 else _dt.utcnow().strftime("%H:%M"),
+            "t": _to_ist(b) if len(b) >= 16 else _now_ist(),
             "entry": f"${e:.10f}",
             "bought_at": b,
             "pnl": round(pnl, 2),
@@ -4513,7 +4531,7 @@ def activity_route():
             "address": h.get("address",""),
             "main": f"SELL {h.get('token','?')} — {h.get('pnl_pct',0):+.2f}% | {h.get('size_bnb',0):.4f} BNB",
             "meta": f"Entry:{h.get('entry',0):.8f} → Exit:{h.get('exit',0):.8f}",
-            "t": sold[11:16] if len(sold) >= 16 else "—",
+            "t": _to_ist(sold) if len(sold) >= 16 else "—",
             "entry": f"${h.get('entry',0):.10f}",
             "exit":  f"${h.get('exit',0):.10f}",
             "bought_at": h.get("bought_at",""),
@@ -4527,7 +4545,7 @@ def activity_route():
         "type": "scan",
         "main": f"SCAN: {len(discovered_addresses):,} checked · {len(new_pairs_queue)} queued · {len(monitored_positions)} monitoring",
         "meta": "BSC Mainnet · WebSocket + DexScreener",
-        "t": _dt.utcnow().strftime("%H:%M")
+        "t": _now_ist()
     })
     fg = market_cache.get("fear_greed", 50)
     bnb = market_cache.get("bnb_price", 0)
@@ -4536,7 +4554,7 @@ def activity_route():
             "type": "scan",
             "main": f"MARKET: BNB ${bnb:.2f} · F&G {fg}/100",
             "meta": "CoinGecko + Alternative.me",
-            "t": _dt.utcnow().strftime("%H:%M")
+            "t": _now_ist()
         })
     return jsonify({"activity": acts[:30]})
 
