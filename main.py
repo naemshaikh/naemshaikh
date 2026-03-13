@@ -1356,20 +1356,31 @@ def detect_green_signals(token_address: str, goplus_data: dict, dex_data: dict) 
         score += 1
 
     # ── SIGNAL 5: Fresh Token Sweet Spot ──
-    # 5-30 min old = best entry window (snipers nikal chuke, organic buyers aa rahe hain)
+    # dex_data mein pairCreatedAt already hai — no extra API call
     try:
-        r = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{token_address}", timeout=6)
-        if r.status_code == 200:
-            bsc_p = [p for p in (r.json() or {}).get("pairs", []) or [] if p and p.get("chainId") == "bsc"]
-            if bsc_p:
-                age_min = (time.time() - (bsc_p[0].get("pairCreatedAt", 0) or 0) / 1000) / 60
-                if 5 <= age_min <= 30:
-                    signals.append({"type": "SWEET_SPOT_AGE", "detail": f"{age_min:.0f} min old (5-30 optimal)", "weight": 2})
-                    score += 2
-                elif 30 < age_min <= 60:
-                    signals.append({"type": "GOOD_AGE", "detail": f"{age_min:.0f} min old", "weight": 1})
-                    score += 1
+        _pair_created = dex_data.get("pair_created_at", 0) or 0
+        if not _pair_created:
+            # DexScreener raw data se try karo
+            _raw = dex_data.get("_raw_pair_created", 0) or 0
+            _pair_created = _raw
+        if _pair_created:
+            age_min = (time.time() - _pair_created / 1000) / 60
+            if 5 <= age_min <= 30:
+                signals.append({"type": "SWEET_SPOT_AGE", "detail": f"{age_min:.0f} min old (5-30 optimal)", "weight": 2})
+                score += 2
+            elif 30 < age_min <= 60:
+                signals.append({"type": "GOOD_AGE", "detail": f"{age_min:.0f} min old", "weight": 1})
+                score += 1
     except Exception: pass
+
+    # ── SIGNAL 8: Price Momentum ──
+    change_1h = dex_data.get("change_1h", 0) or 0
+    if change_1h >= 50:
+        signals.append({"type": "STRONG_MOMENTUM", "detail": f"+{change_1h:.0f}% in 1h", "weight": 2})
+        score += 2
+    elif change_1h >= 20:
+        signals.append({"type": "MOMENTUM", "detail": f"+{change_1h:.0f}% in 1h", "weight": 1})
+        score += 1
 
     # ── SIGNAL 6: MCap Sweet Spot ──
     # $10k-$100k mcap = early but real (not zero liquidity rug)
@@ -2450,9 +2461,10 @@ def get_dexscreener_token_data(token_address: str, prefetched_raw: dict = None) 
                 "sells_5m":      int(txns.get("m5", {}).get("sells", 0) or 0),
                 "buys_1h":       int(txns.get("h1", {}).get("buys", 0) or 0),
                 "sells_1h":      int(txns.get("h1", {}).get("sells", 0) or 0),
-                "fdv":           float(p.get("fdv", 0) or 0),
-                "pair_address":  p.get("pairAddress", ""),
-                "dex_url":       p.get("url", ""),
+                "fdv":             float(p.get("fdv", 0) or 0),
+                "pair_address":    p.get("pairAddress", ""),
+                "dex_url":         p.get("url", ""),
+                "pair_created_at": p.get("pairCreatedAt", 0) or 0,
             })
             bnb_price = market_cache.get("bnb_price", 0)
             result["price_bnb"]    = result["price_usd"] / bnb_price if result["price_usd"] else 0
@@ -3006,13 +3018,9 @@ def _auto_check_new_pair(pair_address: str):
         _ss = CHECKLIST_SETTINGS.get("score_safe", 50.0)
         print(f"📊 Score: {score}/{total} = {round(score/max(total,1)*100)}% | SAFE needs:{int(total*_ss/100)} ({_ss:.0f}%) | overall={overall}")
 
-        if overall in ["SAFE", "CAUTION"]:
-            pass
-        # Token name — dex_data se lo, nahi mila toh address
         _dex_d    = result.get("dex_data", {})
         _tok_sym  = _dex_d.get("symbol") or _dex_d.get("token_symbol") or ""
         _tok_name = _dex_d.get("name")   or _dex_d.get("token_name")   or ""
-        # new_pairs_queue mein bhi check karo
         if not _tok_sym:
             for _qp in list(new_pairs_queue):
                 if str(_qp.get("address","")).lower() == pair_address.lower():
@@ -3021,14 +3029,28 @@ def _auto_check_new_pair(pair_address: str):
                     break
         _final_name = _tok_sym or _tok_name or pair_address[:8]
 
-        _safe_score = CHECKLIST_SETTINGS.get("score_safe", 50.0)  # raised: was 40%
+        _safe_score = CHECKLIST_SETTINGS.get("score_safe", 50.0)
 
-        # SAFETY: Sirf SAFE pe buy — CAUTION/RISK/DANGER pe NEVER buy
-        if overall == "SAFE" and score >= int(total * _safe_score / 100):
-            try: _auto_paper_buy(pair_address, _final_name, score, total, result)
-            except Exception as e: print(f"Auto buy error: {e}")
+        # ── GATE 1: Full Checklist — MUST be SAFE ──
+        if overall != "SAFE":
+            print(f"⏭️ SKIP {_final_name}: checklist={overall} — CAUTION/RISK/DANGER pe trade nahi")
+        elif score < int(total * _safe_score / 100):
+            print(f"⏭️ SKIP {_final_name}: checklist score {score}/{total} ({round(score/max(total,1)*100)}%) < {_safe_score:.0f}% threshold")
         else:
-            print(f"⏭️ SKIP {pair_address[:10]}: overall={overall} score={score}/{total} ({round(score/max(total,1)*100)}%) — not buying")
+            # ── GATE 2: Opportunity Score — green signals analyze karo ──
+            _gs = detect_green_signals(pair_address,
+                result.get("_goplus_raw", {}),
+                _dex_d)
+            _opp_score = _gs.get("score", 0)
+            _opp_sigs  = [s["type"] for s in _gs.get("signals", [])]
+
+            # Minimum 1 positive signal chahiye — sirf safe hona kaafi nahi
+            if _opp_score < 1:
+                print(f"⏭️ SKIP {_final_name}: checklist SAFE ✅ but zero opportunity signals — no edge detected")
+            else:
+                print(f"✅ BUY CONFIRMED {_final_name}: checklist={overall} ({score}/{total}) + opp={_opp_score}pt signals={_opp_sigs}")
+                try: _auto_paper_buy(pair_address, _final_name, score, total, result)
+                except Exception as e: print(f"Auto buy error: {e}")
 
         knowledge_base["bsc"]["new_tokens"] = knowledge_base["bsc"]["new_tokens"][-99:]
         knowledge_base["bsc"]["new_tokens"].append({
