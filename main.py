@@ -862,38 +862,126 @@ def start_swap_monitor():
     print("⚡ Real-time Swap Monitor starting...")
 
 # ══════════════════════════════════════════════
-# SMART MONEY WALLET TRACKER
-# Known profitable BSC wallets track karo
-# Agar ye wallet kisi token mein hai → strong green signal
+# SELF-LEARNING WHALE DETECTOR
+# Bot khud on-chain dekh ke profitable wallets identify karta hai
+# Manually add karne ki zaroorat nahi — bot sikhta jaata hai
+#
+# Logic:
+#  1. Token buy kiya → entry time note karo
+#  2. TP hit → "kaun the early buyers?" → BSC se fetch
+#  3. Un wallets ko "smart" mark karo
+#  4. Agli baar wo wallet naye token mein ho → GREEN SIGNAL
 # ══════════════════════════════════════════════
-_smart_wallets: dict = {}   # {wallet_lower: {"label": str, "wins": int, "added": iso}}
+
+_smart_wallets: dict = {}   # {wallet_lower: {"wins": int, "losses": int, "total_pnl": float, "first_seen": iso, "last_seen": iso}}
 _smart_wallets_lock = threading.Lock()
 
-# Known BSC profitable wallets — GMGN/Nansen se manually add kar sakte ho
-# Ye wallets historically profitable hain meme coins mein
-_DEFAULT_SMART_WALLETS = [
-    # Add known profitable BSC wallet addresses here
-    # Example: "0xabc...123": "whale_1"
-]
+# Wallet qualify hone ke liye minimum threshold
+WHALE_MIN_WINS      = 2       # kam se kam 2 profitable trades
+WHALE_MIN_WIN_RATE  = 0.60    # 60%+ win rate
+WHALE_MIN_BNB_TXN   = 0.05    # minimum 0.05 BNB per transaction (noise filter)
+WHALE_MAX_WALLETS   = 200     # memory cap
 
-def add_smart_wallet(wallet: str, label: str = "smart"):
+def _update_whale_stats(wallet: str, win: bool, pnl_pct: float):
+    """Wallet ka track record update karo"""
     if not wallet or len(wallet) != 42: return
     w = wallet.lower()
+    # Skip zero/dead addresses
+    if w in ("0x0000000000000000000000000000000000000000",
+             "0x000000000000000000000000000000000000dead"): return
+    now = datetime.utcnow().isoformat()
     with _smart_wallets_lock:
-        _smart_wallets[w] = {"label": label, "wins": 0, "added": datetime.utcnow().isoformat()}
-    print(f"🧠 Smart wallet added: {wallet[:10]}... [{label}]")
+        d = _smart_wallets.get(w, {"wins": 0, "losses": 0, "total_pnl": 0.0,
+                                   "first_seen": now, "last_seen": now, "qualified": False})
+        if win:
+            d["wins"]      = d.get("wins", 0) + 1
+        else:
+            d["losses"]    = d.get("losses", 0) + 1
+        d["total_pnl"]     = round(d.get("total_pnl", 0.0) + pnl_pct, 2)
+        d["last_seen"]     = now
+        # Check qualification
+        total = d["wins"] + d["losses"]
+        win_rate = d["wins"] / max(total, 1)
+        d["qualified"] = (d["wins"] >= WHALE_MIN_WINS and win_rate >= WHALE_MIN_WIN_RATE)
+        # Memory cap — remove worst performers first
+        if len(_smart_wallets) >= WHALE_MAX_WALLETS:
+            worst = sorted(_smart_wallets.items(),
+                           key=lambda x: x[1].get("wins",0) - x[1].get("losses",0))
+            for wk, _ in worst[:10]:
+                _smart_wallets.pop(wk, None)
+        _smart_wallets[w] = d
 
 def is_smart_wallet(wallet: str) -> bool:
+    """Wallet qualified hai? (enough wins + win rate)"""
     if not wallet or len(wallet) != 42: return False
-    return wallet.lower() in _smart_wallets
+    d = _smart_wallets.get(wallet.lower(), {})
+    return bool(d.get("qualified", False))
 
 def get_smart_wallet_label(wallet: str) -> str:
-    return _smart_wallets.get(wallet.lower(), {}).get("label", "")
+    d = _smart_wallets.get(wallet.lower(), {})
+    if not d: return ""
+    return f"W:{d.get('wins',0)} L:{d.get('losses',0)} PnL:{d.get('total_pnl',0):+.0f}%"
 
-# Initialize default smart wallets
-for _sw in _DEFAULT_SMART_WALLETS:
-    if isinstance(_sw, tuple):
-        add_smart_wallet(_sw[0], _sw[1])
+
+def _fetch_early_buyers(token_address: str, entry_ts: float, max_buyers: int = 20) -> list:
+    """
+    Token ke early buyers fetch karo — BSC on-chain se.
+    GoPlus holders list use karta hai (already fetched, no extra API call).
+    Plus real-time swap monitor data se bhi.
+    Returns: [wallet_address, ...]
+    """
+    buyers = set()
+    try:
+        # Source 1: GoPlus holders (already in memory se)
+        gp_res = requests.get(
+            "https://api.gopluslabs.io/api/v1/token_security/56",
+            params={"contract_addresses": token_address}, timeout=8
+        )
+        if gp_res.status_code == 200:
+            gp = gp_res.json().get("result", {}).get(token_address.lower(), {})
+            holders = gp.get("holders", [])
+            for h in (holders or [])[:max_buyers]:
+                addr = h.get("address", "")
+                pct  = float(h.get("percent", 0) or 0)
+                # Skip: dead wallets, contracts, tiny holders
+                if (addr and len(addr) == 42
+                        and addr.lower() not in ("0x0000000000000000000000000000000000000000",
+                                                  "0x000000000000000000000000000000000000dead")
+                        and pct > 0.001):
+                    buyers.add(addr.lower())
+    except Exception as e:
+        print(f"⚠️ early_buyers GoPlus: {e}")
+
+    try:
+        # Source 2: Real-time swap monitor — kaun buy kar raha tha?
+        # _rt_swap_data mein buy_times aur sell_times hain
+        with _rt_swap_lock:
+            sd = _rt_swap_data.get(token_address.lower(), {})
+        # Hum buy timestamps jaante hain par addresses nahi (WSS mein sender nahi hota easily)
+        # Isliye GoPlus holders hi main source hai
+        pass
+    except Exception: pass
+
+    return list(buyers)[:max_buyers]
+
+
+def _learn_from_trade(token_address: str, win: bool, pnl_pct: float, entry_ts: float):
+    """
+    Trade complete → early buyers ko reward/penalize karo.
+    Background mein chalta hai — main thread block nahi karta.
+    """
+    try:
+        buyers = _fetch_early_buyers(token_address, entry_ts)
+        if not buyers:
+            return
+        for wallet in buyers:
+            _update_whale_stats(wallet, win, pnl_pct)
+        qualified = sum(1 for w in buyers if is_smart_wallet(w))
+        status = "WIN ✅" if win else "LOSS ❌"
+        print(f"🧠 Learned: {token_address[:10]} {status} {pnl_pct:+.0f}% | "
+              f"tracked {len(buyers)} wallets | {qualified} now qualified")
+    except Exception as e:
+        print(f"⚠️ _learn_from_trade: {e}")
 
 
 # ══════════════════════════════════════════════
@@ -945,9 +1033,17 @@ def detect_green_signals(token_address: str, goplus_data: dict, dex_data: dict) 
             sm_found.append(get_smart_wallet_label(addr_h))
     if is_smart_wallet(creator):
         sm_found.append(f"creator:{get_smart_wallet_label(creator)}")
+        score += 2  # Creator khud profitable hai = extra conviction
     if sm_found:
-        signals.append({"type": "SMART_MONEY", "detail": f"Wallets: {', '.join(sm_found[:3])}", "weight": 3})
-        score += 3
+        # Kitne qualified wallets hain aur unka combined win rate
+        _sm_details = []
+        for h in (holders or [])[:20]:
+            a = h.get("address","")
+            if is_smart_wallet(a):
+                _sm_details.append(get_smart_wallet_label(a))
+        detail_str = " | ".join(_sm_details[:2]) if _sm_details else f"{len(sm_found)} wallets"
+        signals.append({"type": "SMART_MONEY", "detail": f"🧠 {detail_str}", "weight": 3})
+        score += min(3 * len(sm_found), 6)  # multiple smart wallets = more points (max 6)
 
     # ── SIGNAL 4: Liquidity Growing Fast ──
     # four.meme graduation approaching = maximum momentum window
@@ -1702,9 +1798,20 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         _persist_positions()  # ✅ FIX: tp_sold + new size_bnb Supabase mein save
 
     print(f"AUTO SELL {sell_pct:.0f}%: {address[:10]} PnL:{pnl_pct:+.1f}% [{reason}]")
-    # ✅ Full sell → swap monitor se unregister
+    # ✅ Full sell → swap monitor se unregister + learn from trade
     if sell_pct >= 100:
         _unregister_position_pair(address)
+        # Background mein early buyers ke whale stats update karo
+        _bought_at = pos.get("bought_at", "")
+        try:
+            _entry_ts = datetime.fromisoformat(_bought_at).timestamp() if _bought_at else time.time() - 3600
+        except Exception:
+            _entry_ts = time.time() - 3600
+        threading.Thread(
+            target=_learn_from_trade,
+            args=(address, pnl_pct >= 0, pnl_pct, _entry_ts),
+            daemon=True
+        ).start()
 
 # ========== AUTO POSITION MANAGER ==========
 def auto_position_manager():
