@@ -1932,7 +1932,7 @@ def _log(event_type: str, token: str, detail: str, address: str = ""):
         "token":   token,
         "detail":  detail,
         "address": address,
-        "ts":      datetime.utcnow().strftime("%H:%M:%S"),
+        "ts":      _now_ist(),
     })
 discovered_addresses: dict = {}
 _discovered_lock  = threading.Lock()          # RACE FIX: protect discovered_addresses
