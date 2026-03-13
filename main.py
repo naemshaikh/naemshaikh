@@ -87,9 +87,7 @@ def _get_goplus(token_address: str) -> dict:
         )
         if r.status_code == 200:
             data = r.json().get("result", {}).get(key, {})
-            # Cache mein save karo
             _goplus_cache[key] = {"data": data, "ts": now}
-            # Max 100 tokens — purane hatao
             if len(_goplus_cache) > 100:
                 oldest = sorted(_goplus_cache.items(), key=lambda x: x[1]["ts"])[:20]
                 for k, _ in oldest:
@@ -97,6 +95,34 @@ def _get_goplus(token_address: str) -> dict:
             return data
     except Exception as e:
         print(f"⚠️ GoPlus error: {e}")
+    return {}
+
+# Honeypot.is cache — 5 min TTL, max 100 tokens
+_honeypot_cache: dict = {}  # {addr_lower: {"data": {...}, "ts": float}}
+_HONEYPOT_TTL = 300  # 5 minutes
+
+def _get_honeypot(token_address: str) -> dict:
+    """Honeypot.is on-chain simulation — cached 5 min"""
+    key = token_address.lower()
+    now = time.time()
+    cached = _honeypot_cache.get(key)
+    if cached and (now - cached["ts"]) < _HONEYPOT_TTL:
+        return cached["data"]
+    try:
+        r = requests.get(
+            "https://api.honeypot.is/v2/IsHoneypot",
+            params={"address": token_address, "chainID": "56"}, timeout=8
+        )
+        if r.status_code == 200:
+            data = r.json()
+            _honeypot_cache[key] = {"data": data, "ts": now}
+            if len(_honeypot_cache) > 100:
+                oldest = sorted(_honeypot_cache.items(), key=lambda x: x[1]["ts"])[:20]
+                for k, _ in oldest:
+                    _honeypot_cache.pop(k, None)
+            return data
+    except Exception as e:
+        print(f"⚠️ Honeypot.is error: {e}")
     return {}
 
 def _get_dec(addr):
@@ -2825,9 +2851,14 @@ def continuous_learning():
                         except: pass
                     if _bnb_age > 30:  # dedicated loop fail hua — backup se lo
                         fetch_market_data()
-                        fetch_pancakeswap_data()
                 except Exception as e:
                     print(f"BNB backup fetch error: {e}")
+
+            # PancakeSwap trending — har 10 min (BNB fetch se alag)
+            if now - last_deep >= 600:
+                try:
+                    fetch_pancakeswap_data()
+                except Exception: pass
 
             # Brain patterns learn — har 2 min
             if now - last_fast >= 120:
@@ -3513,12 +3544,8 @@ def run_full_sniper_checklist(address: str, prefetched_dex: dict = None) -> Dict
     hp_sell_tax    = 0.0
     hp_label       = "Unknown"
     try:
-        hp_res = requests.get(
-            "https://api.honeypot.is/v2/IsHoneypot",
-            params={"address": address, "chainID": "56"}, timeout=8
-        )
-        if hp_res.status_code == 200:
-            hp_json      = hp_res.json()
+        hp_json        = _get_honeypot(address)
+        if hp_json:
             hp_is_honeypot = hp_json.get("isHoneypot", False)
             hp_sim         = hp_json.get("simulationResult", {}) or {}
             hp_buy_tax     = float(hp_sim.get("buyTax",  0) or 0)
