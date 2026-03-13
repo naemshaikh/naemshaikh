@@ -51,7 +51,7 @@ MODEL_DEEP  = "llama-3.3-70b-versatile"
 
 # ========== ENV CONFIG ==========
 _NR_KEY          = os.getenv("NODEREAL_API_KEY", "")
-BSC_RPC          = f"https://bsc-mainnet.nodereal.io/v1/{_NR_KEY}" if _NR_KEY else "https://bsc-dataseed.binance.org/"
+BSC_RPC          = f"https://bsc-mainnet.nodereal.io/v1/{_NR_KEY}" if _NR_KEY else "https://rpc.ankr.com/bsc"
 BSC_SCAN_API     = "https://api.bscscan.com/api"
 BSC_SCAN_KEY     = os.getenv("BSC_SCAN_KEY") or os.getenv("BSCSCAN_API_KEY") or os.getenv("BSC_API_KEY", "") or os.getenv("BSCSCAN_API_KEY", "")
 BSC_WALLET       = os.getenv("BSC_WALLET", "")   # Real wallet address for balance display
