@@ -266,7 +266,7 @@ market_cache = {
 
 # ========== DATA GUARD — STRICT REAL DATA ENFORCEMENT ==========
 class DataGuard:
-    PRICE_STALE_SEC = 10
+    PRICE_STALE_SEC = 90  # BNB loop har 30s mein fetch karta hai — 90s safe margin
     MIN_BNB_PRICE   = 100
     MAX_BNB_PRICE   = 5000
     _gas_cache      = {"val": 0.0, "ts": 0}
