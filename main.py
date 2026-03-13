@@ -1989,7 +1989,7 @@ CHECKLIST_SETTINGS = {
     "tp4_pct":         200.0,    # Stage 11: TP4 — keep 10%
 }
 AUTO_BUY_SIZE_BNB  = 0.01
-AUTO_MAX_POSITIONS = 15  # MEM FIX: was 50
+AUTO_MAX_POSITIONS = 50  # max concurrent positions
 AUTO_SESSION_ID    = "AUTO_TRADER"
 
 auto_trade_stats = {
