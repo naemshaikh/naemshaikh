@@ -2310,7 +2310,9 @@ def auto_position_manager():
                         _pos_data["tp_sold"] = 1
             except Exception as e:
                 print(f"Auto manager err {addr[:10]}: {e}")
-        time.sleep(10)
+        # No positions? slow down — save CPU
+        _sleep = 10 if auto_trade_stats["running_positions"] else 60
+        time.sleep(_sleep)
 
 # ========== PRICE MONITOR ==========
 def price_monitor_loop():
@@ -2362,7 +2364,9 @@ def price_monitor_loop():
                     pass
             except Exception as e:
                 print(f"⚠️ Price monitor error ({addr}): {e}")
-        time.sleep(5)  # MEM FIX: 1s→5s saves 80% RAM
+        # No positions? slow down — save CPU
+        _sleep = 5 if monitored_positions else 30
+        time.sleep(_sleep)
 
 # ========== DEXSCREENER ==========
 def get_dexscreener_token_data(token_address: str, prefetched_raw: dict = None) -> Dict:
@@ -2823,7 +2827,7 @@ def continuous_learning():
         except Exception as e:
             print(f"Learning cycle error: {e}")
         gc.collect()  # periodic RAM cleanup
-        time.sleep(60)
+        time.sleep(120)  # MEM FIX: 60s→120s — half CPU usage
 
 # ========== FEEDBACK LOOP ==========
 feedback_log = []
