@@ -2407,9 +2407,52 @@ def get_dexscreener_token_data(token_address: str, prefetched_raw: dict = None) 
             result["name"]         = _bt.get("name",   "")
             result["token_symbol"] = _bt.get("symbol", "")
             result["token_name"]   = _bt.get("name",   "")
-            result["_raw_pairs"]   = True  # flag: symbol already fetched
+            result["_raw_pairs"]   = True
+            return result
     except Exception as e:
         print(f"⚠️ DexScreener error: {e}")
+
+    # ── FALLBACK: GeckoTerminal ──
+    try:
+        print(f"⚠️ DexScreener failed — trying GeckoTerminal for {token_address[:10]}")
+        gt = requests.get(
+            f"https://api.geckoterminal.com/api/v2/networks/bsc/tokens/{token_address}/pools",
+            params={"page": 1},
+            headers={"Accept": "application/json;version=20230302"},
+            timeout=10
+        )
+        if gt.status_code == 200:
+            pools = gt.json().get("data", [])
+            bsc_pools = [p for p in pools if p]
+            if bsc_pools:
+                # Sort by liquidity (reserve_in_usd)
+                bsc_pools.sort(key=lambda x: float(x.get("attributes", {}).get("reserve_in_usd", 0) or 0), reverse=True)
+                attrs = bsc_pools[0].get("attributes", {})
+                price_usd = float(attrs.get("base_token_price_usd", 0) or 0)
+                bnb_price = market_cache.get("bnb_price", 0)
+                result.update({
+                    "price_usd":     price_usd,
+                    "price_bnb":     price_usd / bnb_price if price_usd and bnb_price else 0,
+                    "volume_24h":    float(attrs.get("volume_usd", {}).get("h24", 0) or 0),
+                    "liquidity_usd": float(attrs.get("reserve_in_usd", 0) or 0),
+                    "change_1h":     float(attrs.get("price_change_percentage", {}).get("h1", 0) or 0),
+                    "change_24h":    float(attrs.get("price_change_percentage", {}).get("h24", 0) or 0),
+                    "fdv":           float(attrs.get("fdv_usd", 0) or 0),
+                    "pair_address":  attrs.get("address", ""),
+                    "source":        "geckoterminal",
+                    "_raw_pairs":    True,
+                })
+                # Token name from relationships
+                try:
+                    rels  = bsc_pools[0].get("relationships", {})
+                    bt_id = rels.get("base_token", {}).get("data", {}).get("id", "")
+                    result["symbol"]       = bt_id.split("_")[-1][:10] if "_" in bt_id else ""
+                    result["token_symbol"] = result["symbol"]
+                except Exception: pass
+                print(f"✅ GeckoTerminal fallback OK: {token_address[:10]} price=${price_usd:.6f}")
+    except Exception as e:
+        print(f"⚠️ GeckoTerminal fallback error: {e}")
+
     return result
 
 # ========== MARKET DATA ==========
