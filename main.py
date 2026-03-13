@@ -2176,14 +2176,7 @@ def auto_position_manager():
                         _auto_paper_sell(addr, f"VolSL Dump {_ratio:.1f}x [{_ratio_type}]", 100.0)
                         print(f"🚨 VolSL: {addr[:10]} pnl={pnl:.1f}% {_ratio_type}={_ratio:.1f}x bv={_bv5:.3f} sv={_sv5:.3f} BNB → DUMP")
 
-                    elif pnl <= -sl_pct:
-                        if _strong_buys and pnl > -(sl_pct * 1.5):
-                            # Buy pressure strong hai, SL ko thoda extend karo
-                            # Max 1.5x sl_pct tak hi extend — unlimited nahi
-                            print(f"⏸️ SL hold: {addr[:10]} pnl={pnl:.1f}% ratio={_ratio:.1f}x buys={_b5} [{_vol_src}]")
-                        else:
-                            # Normal SL — ya sell pressure ke saath
-                            _auto_paper_sell(addr, f"SL -{sl_pct:.0f}% (ratio:{_ratio:.1f}x)", 100.0)
+
 
                     elif drop_hi <= -80 and tp_sold < 75:       _auto_paper_sell(addr, "Dump -80%", 100.0)
                     elif drop_hi <= -60 and tp_sold < 50:       _auto_paper_sell(addr, "Dump -60%", 75.0)
