@@ -1574,6 +1574,108 @@ def is_dev_blacklisted(wallet: str) -> bool:
     if not wallet or len(wallet) != 42: return False
     return wallet.lower() in _dev_blacklist
 
+# ══════════════════════════════════════════════
+# TOKEN BLACKLIST — rug/SL tokens 24h block
+# ══════════════════════════════════════════════
+_token_blacklist: dict = {}  # {addr_lower: {"reason": str, "ts": float}}
+_TOKEN_BL_TTL = 86400  # 24 hours
+
+def blacklist_token(token_address: str, reason: str = "rug"):
+    """Token ko 24h ke liye blacklist karo — dobara check nahi hoga"""
+    if not token_address: return
+    _token_blacklist[token_address.lower()] = {
+        "reason": reason,
+        "ts":     time.time()
+    }
+    # Max 500 entries — purane hatao
+    if len(_token_blacklist) > 500:
+        cutoff = time.time() - _TOKEN_BL_TTL
+        stale = [k for k, v in _token_blacklist.items() if v["ts"] < cutoff]
+        for k in stale:
+            _token_blacklist.pop(k, None)
+    print(f"🚫 Token blacklisted 24h: {token_address[:10]}... reason={reason}")
+
+def is_token_blacklisted(token_address: str) -> bool:
+    if not token_address: return False
+    entry = _token_blacklist.get(token_address.lower())
+    if not entry: return False
+    # TTL check — expired toh remove
+    if time.time() - entry["ts"] > _TOKEN_BL_TTL:
+        _token_blacklist.pop(token_address.lower(), None)
+        return False
+    return True
+
+# ══════════════════════════════════════════════
+# RUG DNA SYSTEM — rug fingerprint learn karo
+# Creator + tax pattern + liq = unique rug signature
+# Same DNA wala naya token → auto reject
+# ══════════════════════════════════════════════
+_rug_dna: list = []   # [{"creator": str, "buy_tax": float, "sell_tax": float, "liq_usd": float, "ts": float}]
+_RUG_DNA_MAX = 200    # max fingerprints store
+
+def _record_rug_dna(token_address: str, creator: str, buy_tax: float, sell_tax: float, liq_usd: float):
+    """Rug token ka DNA fingerprint save karo"""
+    if not creator or len(creator) != 42: return
+    dna = {
+        "token":    token_address.lower(),
+        "creator":  creator.lower(),
+        "buy_tax":  round(buy_tax,  1),
+        "sell_tax": round(sell_tax, 1),
+        "liq_band": _liq_band(liq_usd),  # band mein group karo — exact match nahi chahiye
+        "ts":       time.time()
+    }
+    _rug_dna.append(dna)
+    if len(_rug_dna) > _RUG_DNA_MAX:
+        _rug_dna.pop(0)  # oldest remove
+    print(f"🧬 Rug DNA recorded: creator={creator[:10]} tax={buy_tax:.0f}/{sell_tax:.0f}% liq_band={dna['liq_band']}")
+
+def _liq_band(liq_usd: float) -> str:
+    """Liquidity ko band mein group karo — rough match ke liye"""
+    if liq_usd < 1_000:    return "micro"
+    if liq_usd < 5_000:    return "tiny"
+    if liq_usd < 15_000:   return "small"
+    if liq_usd < 50_000:   return "medium"
+    return "large"
+
+def _check_rug_dna(creator: str, buy_tax: float, sell_tax: float, liq_usd: float) -> dict:
+    """
+    Naye token ka DNA existing rug fingerprints se match karo.
+    Returns: {"match": bool, "confidence": int, "reason": str}
+    """
+    if not creator or not _rug_dna:
+        return {"match": False}
+
+    creator_l  = creator.lower()
+    liq_b      = _liq_band(liq_usd)
+    bt         = round(buy_tax,  1)
+    st         = round(sell_tax, 1)
+
+    creator_rugs = [d for d in _rug_dna if d["creator"] == creator_l]
+    tax_matches  = [d for d in _rug_dna
+                    if abs(d["buy_tax"] - bt) <= 2.0          # ±2% tax tolerance
+                    and abs(d["sell_tax"] - st) <= 2.0
+                    and d["liq_band"] == liq_b]
+
+    # Creator ne pehle rug kiya — sabse strong signal
+    if creator_rugs:
+        return {
+            "match":      True,
+            "confidence": 95,
+            "reason":     f"Creator ne {len(creator_rugs)}x pehle rug kiya ({creator[:10]})"
+        }
+
+    # Same tax + same liq band = suspicious pattern
+    if len(tax_matches) >= 2:
+        return {
+            "match":      True,
+            "confidence": 70,
+            "reason":     f"Rug DNA match: {len(tax_matches)} tokens same tax={bt}/{st}% liq={liq_b}"
+        }
+
+    return {"match": False}
+
+
+
 # _perf_tracker and _relationship removed — RAM optimization
 
 # RAM-optimized self_awareness — only functional fields kept
@@ -2192,13 +2294,20 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     if len(auto_trade_stats["trade_history"]) > 50:
         auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-50:]
 
-    # ── Auto-blacklist dev if SL hit or rug dump ──
-    if "SL" in reason or "Dump" in reason:
+    # ── Auto-blacklist dev + token + record rug DNA if SL hit or rug dump ──
+    if "SL" in reason or "Dump" in reason or "Rug" in reason:
         try:
-            _gp = _get_goplus(address)
-            _creator = _gp.get("creator_address", "")
+            _gp       = _get_goplus(address)
+            _creator  = _gp.get("creator_address", "")
+            _buy_tax  = float(_gp.get("buy_tax",  0) or 0)
+            _sell_tax = float(_gp.get("sell_tax", 0) or 0)
+            _liq_usd  = float(auto_trade_stats["running_positions"].get(address, pos).get("bought_usd", 0) or 0)
             if _creator and len(_creator) == 42:
                 blacklist_dev(_creator, f"SL/Rug on {token} {reason}")
+            # Token blacklist — 24h
+            blacklist_token(address, f"{reason} pnl={pnl_pct:.0f}%")
+            # Rug DNA record
+            _record_rug_dna(address, _creator or "unknown", _buy_tax, _sell_tax, _liq_usd)
         except Exception: pass
 
     auto_trade_stats["last_action"] = f"SELL {sell_pct:.0f}% {token} PnL:{pnl_pct:+.1f}%"
@@ -3116,6 +3225,10 @@ def _memory_cleanup_loop():
 
 # ========== AUTO CHECK NEW PAIR ==========
 def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale_wallet: str = ""):
+    # Sabse pehle — token blacklist check (zero cost, instant)
+    if is_token_blacklisted(pair_address):
+        print(f"🚫 Token blacklisted — skip: {pair_address[:10]}")
+        return
     if not _check_semaphore.acquire(blocking=False):
         print(f"⏭️ Check skipped (semaphore full): {pair_address[:10]}")
         return
@@ -3989,6 +4102,18 @@ def run_full_sniper_checklist(address: str, prefetched_dex: dict = None) -> Dict
     add("Dev Not Blacklisted",
         "fail" if dev_blocked else "pass",
         "BLACKLISTED" if dev_blocked else "CLEAN", 5)
+
+    # ── FEATURE 5b: Rug DNA Check ──
+    # Pehle ke rug tokens se creator/tax/liq pattern match karo
+    _buy_tax_gp  = float(goplus_data.get("buy_tax",  0) or 0)
+    _sell_tax_gp = float(goplus_data.get("sell_tax", 0) or 0)
+    _dna_result  = _check_rug_dna(creator_addr, _buy_tax_gp, _sell_tax_gp, liq_usd_dex)
+    if _dna_result.get("match"):
+        add("Rug DNA Clean",
+            "fail",
+            f"🧬 {_dna_result['reason']} (conf={_dna_result['confidence']}%)", 5)
+    else:
+        add("Rug DNA Clean", "pass", "No rug pattern match", 3)
 
     # ── four.meme Graduation Signal ──
     # $69k liquidity = four.meme graduation = PancakeSwap listing imminent
