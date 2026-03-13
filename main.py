@@ -556,6 +556,275 @@ def _get_vol_pressure(address: str) -> dict:
         pass
     return {"buys5": 0, "sells5": 0, "buys1h": 0, "sells1h": 0, "ts": now}
 
+
+# ══════════════════════════════════════════════
+# REAL-TIME ON-CHAIN SWAP MONITOR
+# Open positions ke pair contracts ke Swap events
+# directly BSC WebSocket se sunna — 100ms latency
+# DexScreener 60s delay ki zaroorat nahi
+# ══════════════════════════════════════════════
+
+# token_address → pair_address mapping cache
+_pair_addr_cache: dict = {}  # {token_lower: pair_addr}
+_pair_addr_lock  = threading.Lock()
+
+# Real-time swap counter — position manager yahan se read karta hai
+# {token_lower: {"buys5": N, "sells5": N, "buys1h": N, "sells1h": N,
+#                "last_buy_ts": float, "last_sell_ts": float, "ts": float}}
+_rt_swap_data: dict = {}
+_rt_swap_lock = threading.Lock()
+
+# PancakeSwap v2 Swap event topic
+# keccak256("Swap(address,uint256,uint256,uint256,uint256,address)")
+SWAP_TOPIC = "0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822"
+
+def _get_pair_for_token(token_address: str) -> str:
+    """Token ka v2 pair address lo — cached"""
+    tl = token_address.lower()
+    with _pair_addr_lock:
+        if tl in _pair_addr_cache:
+            return _pair_addr_cache[tl]
+    pair = _get_v2_pair(token_address)
+    if pair:
+        with _pair_addr_lock:
+            _pair_addr_cache[tl] = pair.lower()
+    return pair.lower() if pair else ""
+
+def _record_swap(token_addr: str, is_buy: bool):
+    """Swap event aaya → counter update karo"""
+    now  = time.time()
+    key  = token_addr.lower()
+    with _rt_swap_lock:
+        d = _rt_swap_data.get(key, {
+            "buys5": 0, "sells5": 0, "buys1h": 0, "sells1h": 0,
+            "buy_times": [], "sell_times": [], "ts": now
+        })
+        # Purani entries clean karo (5 min + 1 hr windows)
+        cutoff5  = now - 300
+        cutoff1h = now - 3600
+        d["buy_times"]  = [t for t in d.get("buy_times",  []) if t > cutoff1h]
+        d["sell_times"] = [t for t in d.get("sell_times", []) if t > cutoff1h]
+
+        if is_buy:
+            d["buy_times"].append(now)
+            d["last_buy_ts"] = now
+        else:
+            d["sell_times"].append(now)
+            d["last_sell_ts"] = now
+
+        # Recount windows
+        d["buys5"]   = sum(1 for t in d["buy_times"]  if t > cutoff5)
+        d["sells5"]  = sum(1 for t in d["sell_times"] if t > cutoff5)
+        d["buys1h"]  = len(d["buy_times"])
+        d["sells1h"] = len(d["sell_times"])
+        d["ts"]      = now
+
+        # Memory: cap times lists at 500 each
+        d["buy_times"]  = d["buy_times"][-500:]
+        d["sell_times"] = d["sell_times"][-500:]
+        _rt_swap_data[key] = d
+
+def _get_vol_pressure_rt(token_address: str) -> dict:
+    """
+    Real-time volume pressure — on-chain swap events se.
+    Agar real-time data nahi hai (position abhi add hui) toh
+    DexScreener fallback use karo.
+    """
+    now = time.time()
+    key = token_address.lower()
+    with _rt_swap_lock:
+        rt = _rt_swap_data.get(key)
+
+    # Real-time data hai aur 5 min se zyada purana nahi
+    if rt and (now - rt.get("ts", 0)) < 300:
+        return {
+            "buys5":  rt["buys5"],
+            "sells5": rt["sells5"],
+            "buys1h": rt["buys1h"],
+            "sells1h":rt["sells1h"],
+            "ts":     rt["ts"],
+            "source": "onchain"
+        }
+    # Fallback: DexScreener
+    fallback = _get_vol_pressure(token_address)
+    fallback["source"] = "dexscreener"
+    return fallback
+
+
+def start_swap_monitor():
+    """
+    Open positions ke pair contracts ke BSC Swap events real-time sunna.
+    Naye position add hone pe automatically subscribe karta hai.
+    """
+    import asyncio, json as _json
+    try:
+        import websockets as _ws
+    except ImportError:
+        print("⚠️ websockets nahi — swap monitor disabled")
+        return
+
+    WSS_ENDPOINTS = [
+        "wss://bsc-rpc.publicnode.com",
+        "wss://bsc.publicnode.com",
+        "wss://bsc-ws-node.nariox.org:443",
+        "wss://bsc.drpc.org",
+    ]
+
+    async def _swap_loop():
+        idx = 0
+        fail_count = 0
+        while True:
+            wss_url = WSS_ENDPOINTS[idx % len(WSS_ENDPOINTS)]
+            try:
+                async with _ws.connect(
+                    wss_url,
+                    ping_interval=15, ping_timeout=10,
+                    close_timeout=5, max_size=2**20
+                ) as ws:
+                    print(f"⚡ Swap Monitor connected: {wss_url}")
+                    fail_count = 0
+
+                    # Sab monitored positions ke pair addresses subscribe karo
+                    # Reverse map: pair_lower → token_lower
+                    pair_to_token: dict = {}
+
+                    # Subscribe to Swap events — pair addresses dynamically update
+                    # Initial subscription with currently monitored tokens
+                    async def _subscribe_current():
+                        pairs = []
+                        with monitor_lock:
+                            tokens = list(monitored_positions.keys())
+                        for tok in tokens:
+                            pair = _get_pair_for_token(tok)
+                            if pair:
+                                pairs.append(pair)
+                                pair_to_token[pair] = tok.lower()
+
+                        if not pairs:
+                            # Koi position nahi abhi, generic subscribe
+                            pairs = []
+
+                        sub_msg = _json.dumps({
+                            "id": 10, "method": "eth_subscribe",
+                            "params": ["logs", {
+                                "topics": [[SWAP_TOPIC]]
+                            }],
+                            "jsonrpc": "2.0"
+                        })
+                        await ws.send(sub_msg)
+                        await asyncio.wait_for(ws.recv(), timeout=10)
+                        print(f"⚡ Swap Monitor: subscribed (watching all pairs)")
+
+                    await _subscribe_current()
+
+                    # Reverse map refresh loop
+                    last_map_refresh = 0
+
+                    while True:
+                        msg = await asyncio.wait_for(ws.recv(), timeout=30)
+                        data = _json.loads(msg)
+                        log  = (data.get("params") or {}).get("result") or {}
+                        if not log: continue
+
+                        topics   = log.get("topics") or []
+                        if not topics or topics[0].lower() != SWAP_TOPIC.lower():
+                            continue
+
+                        pair_addr = log.get("address", "").lower()
+
+                        # Refresh pair→token map every 30s
+                        now_t = time.time()
+                        if now_t - last_map_refresh > 30:
+                            with monitor_lock:
+                                tokens = list(monitored_positions.keys())
+                            for tok in tokens:
+                                pair = _get_pair_for_token(tok)
+                                if pair:
+                                    pair_to_token[pair.lower()] = tok.lower()
+                            # Remove pairs for closed positions
+                            active_tokens = set(t.lower() for t in tokens)
+                            pair_to_token = {
+                                p: t for p, t in pair_to_token.items()
+                                if t in active_tokens
+                            }
+                            last_map_refresh = now_t
+
+                        # Is pair hamare kisi token ka hai?
+                        token_addr = pair_to_token.get(pair_addr)
+                        if not token_addr:
+                            continue
+
+                        # Decode Swap event: amount0In, amount1In, amount0Out, amount1Out
+                        # data = 4 × uint256 = 256 bytes
+                        raw = log.get("data", "0x")
+                        if len(raw) < 130:
+                            continue
+                        raw_hex = raw[2:]  # remove 0x
+                        try:
+                            a0in  = int(raw_hex[0:64],   16)
+                            a1in  = int(raw_hex[64:128],  16)
+                        except Exception:
+                            continue
+
+                        # token0 = WBNB ya token?
+                        # Agar pair mein token0 = WBNB:
+                        #   BUY  = amount1In > 0 (BNB in, token out)
+                        #   SELL = amount0In > 0 (token in, BNB out)  
+                        # Agar token0 = token:
+                        #   BUY  = amount0In > 0
+                        #   SELL = amount1In > 0
+
+                        # Simpler heuristic: whichever side has input = that side
+                        # We'll use WBNB check via cache
+                        pair_lower = pair_addr
+                        _tok_is_t0 = _pair_addr_cache.get("_t0_" + token_addr, None)
+                        if _tok_is_t0 is None:
+                            try:
+                                pc = w3.eth.contract(
+                                    address=Web3.to_checksum_address(pair_addr),
+                                    abi=PAIR_ABI_PRICE
+                                )
+                                t0 = pc.functions.token0().call().lower()
+                                _tok_is_t0 = (t0 == token_addr)
+                                _pair_addr_cache["_t0_" + token_addr] = _tok_is_t0
+                            except Exception:
+                                _tok_is_t0 = False
+
+                        if _tok_is_t0:
+                            # token = token0, WBNB = token1
+                            is_buy = a1in > 0  # BNB (token1) in = someone buying token
+                        else:
+                            # token = token1, WBNB = token0
+                            is_buy = a0in > 0  # BNB (token0) in = someone buying token
+
+                        _record_swap(token_addr, is_buy)
+
+            except Exception as e:
+                fail_count += 1
+                wait = min(10 * fail_count, 60)
+                err  = str(e).lower()
+                if "1013" in err or "timeout" in err:
+                    print(f"⚠️ Swap Monitor: reconnecting (#{fail_count})")
+                else:
+                    print(f"⚠️ Swap Monitor error: {str(e)[:60]}")
+                await asyncio.sleep(wait)
+                if fail_count % 5 == 0:
+                    import gc; gc.collect()
+                idx += 1
+
+    def _run_swap_monitor():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(_swap_loop())
+        except Exception as ex:
+            print(f"⚠️ Swap Monitor thread: {ex}")
+        finally:
+            loop.close()
+
+    threading.Thread(target=_run_swap_monitor, daemon=True).start()
+    print("⚡ Real-time Swap Monitor starting...")
+
 # ══════════════════════════════════════════════
 # DEV WALLET BLACKLIST — ruggers track karo
 # ══════════════════════════════════════════════
@@ -1322,7 +1591,7 @@ def auto_position_manager():
                         if _strong_buys and pnl > -(sl_pct * 1.5):
                             # Buy pressure strong hai, SL ko thoda extend karo
                             # Max 1.5x sl_pct tak hi extend — unlimited nahi
-                            print(f"⏸️ SL hold: {addr[:10]} pnl={pnl:.1f}% ratio={_ratio:.1f}x buys>{_b5}")
+                            print(f"⏸️ SL hold: {addr[:10]} pnl={pnl:.1f}% ratio={_ratio:.1f}x buys={_b5} [{_vol_src}]")
                         else:
                             # Normal SL — ya sell pressure ke saath
                             _auto_paper_sell(addr, f"SL -{sl_pct:.0f}% (ratio:{_ratio:.1f}x)", 100.0)
@@ -2328,52 +2597,10 @@ def _unregister_position_pair(token_address: str):
             _pair_to_token.pop(k, None)
 
 def get_rt_vol_pressure(token_address: str) -> dict:
-    """
-    Real-time buy/sell pressure — position manager ke liye.
-    DexScreener (60s delay) ki jagah on-chain data (100ms).
-    """
-    with _rt_swap_lock:
-        d = _rt_swap_data.get(token_address.lower(), {})
-        return {
-            "buys5":  d.get("buys",  0),
-            "sells5": d.get("sells", 0),
-            "buys1h": d.get("buys",  0),  # compatibility
-            "sells1h":d.get("sells", 0),
-            "ts":     d.get("ts",    0),
-            "source": "onchain"
-        }
+    """Alias — real-time vol pressure"""
+    return _get_vol_pressure_rt(token_address)
 
-def _decode_swap(log: dict, pair_info: dict) -> str:
-    """
-    Swap event decode karo — buy hai ya sell?
-    V2 Swap: Swap(address sender, uint256 amount0In, uint256 amount1In,
-                  uint256 amount0Out, uint256 amount1Out, address to)
-    Data = 4x uint256 = 32 bytes each = 128 bytes total
-    """
-    try:
-        raw = log.get("data", "0x")
-        if raw.startswith("0x"): raw = raw[2:]
-        if len(raw) < 256: return "unknown"   # 4 x 64 hex chars
-        a0in  = int(raw[0:64],   16)
-        a1in  = int(raw[64:128], 16)
-        a0out = int(raw[128:192],16)
-        a1out = int(raw[192:256],16)
-        wbnb_is_t0 = pair_info.get("token0_is_wbnb", False)
-        if wbnb_is_t0:
-            # token0=WBNB, token1=TOKEN
-            # BUY  = WBNB in  (a0in>0)  → user ne BNB deke token liya
-            # SELL = TOKEN in (a1in>0) → user ne token deke BNB liya
-            return "buy" if a0in > 0 else ("sell" if a1in > 0 else "unknown")
-        else:
-            # token0=TOKEN, token1=WBNB
-            # BUY  = WBNB in  (a1in>0)
-            # SELL = TOKEN in (a0in>0)
-            return "buy" if a1in > 0 else ("sell" if a0in > 0 else "unknown")
-    except:
-        return "unknown"
-
-# Event to trigger WSS re-subscribe when new position opens
-_swap_monitor_resubscribe = threading.Event()
+# _decode_swap + resubscribe event → merged into start_swap_monitor (line ~654)
 
 def _start_swap_monitor_wss():
     """
@@ -3148,7 +3375,8 @@ def _startup_once():
         threading.Thread(target=_delayed(poll_new_pairs,        10),  daemon=True).start()
         threading.Thread(target=_delayed(poll_four_meme,         20), daemon=True).start()
         threading.Thread(target=_delayed(poll_four_meme_wss,     15), daemon=True).start()  # ✅ real-time WSS
-        threading.Thread(target=_delayed(_start_swap_monitor_wss, 20), daemon=True).start()  # ✅ real-time swap monitor
+        threading.Thread(target=_delayed(start_swap_monitor,    20), daemon=True).start()  # ✅ real-time swap vol
+
         threading.Thread(target=_delayed(price_monitor_loop,    15),  daemon=True).start()
         threading.Thread(target=_delayed(continuous_learning,   25),  daemon=True).start()
         threading.Thread(target=_delayed(auto_position_manager, 30),  daemon=True).start()
