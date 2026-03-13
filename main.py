@@ -1224,17 +1224,22 @@ def auto_position_manager():
                 _tp3  = _cs.get("tp3_pct", 100.0)
                 _tp4  = _cs.get("tp4_pct", 200.0)
                 # ── TRAILING STOP LOSS ──
-                # Price high track karo, high se X% gire toh sell
+                # GMGN pro standard: meme coins 30-50% swing karte hain
+                # 25% trailing = normal candle pe hi sell = premature exit
+                # Pro bots 40% drawdown use karte hain (GMGN official docs)
                 _trail_pct = _pos_data.get("trail_pct", 0.0)
-                if pnl >= 200 and _trail_pct < 15:
-                    _pos_data["trail_pct"] = 15.0   # 200%+ profit: 15% trailing
-                    print(f"🔒 Trail SL set 15% for {addr[:10]} @ +{pnl:.0f}%")
-                elif pnl >= 100 and _trail_pct < 20:
-                    _pos_data["trail_pct"] = 20.0   # 100%+ profit: 20% trailing
-                    print(f"🔒 Trail SL set 20% for {addr[:10]} @ +{pnl:.0f}%")
-                elif pnl >= 50 and _trail_pct < 25:
-                    _pos_data["trail_pct"] = 25.0   # 50%+ profit: 25% trailing
-                    print(f"🔒 Trail SL set 25% for {addr[:10]} @ +{pnl:.0f}%")
+                if pnl >= 300 and _trail_pct < 25:
+                    _pos_data["trail_pct"] = 25.0   # 300%+: tight karo 25%
+                    print(f"🔒 Trail SL 25% for {addr[:10]} @ +{pnl:.0f}%")
+                elif pnl >= 200 and _trail_pct < 30:
+                    _pos_data["trail_pct"] = 30.0   # 200%+: 30% trailing
+                    print(f"🔒 Trail SL 30% for {addr[:10]} @ +{pnl:.0f}%")
+                elif pnl >= 100 and _trail_pct < 35:
+                    _pos_data["trail_pct"] = 35.0   # 100%+: 35% trailing
+                    print(f"🔒 Trail SL 35% for {addr[:10]} @ +{pnl:.0f}%")
+                elif pnl >= 50 and _trail_pct < 40:
+                    _pos_data["trail_pct"] = 40.0   # 50%+: 40% (GMGN standard)
+                    print(f"🔒 Trail SL 40% for {addr[:10]} @ +{pnl:.0f}%")
 
                 _trail_triggered = False
                 if _trail_pct > 0 and drop_hi <= -_trail_pct:
