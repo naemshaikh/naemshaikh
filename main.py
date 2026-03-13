@@ -1910,11 +1910,12 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         "token":          token_name or address[:10],
         "entry":          entry_price,
         "size_bnb":       size_bnb,
-        "orig_size_bnb":  size_bnb,          # ✅ original size for total PnL calc
+        "orig_size_bnb":  size_bnb,
         "bought_usd":     round(size_bnb * _bnb_at_buy, 2),
         "sl_pct":         CHECKLIST_SETTINGS.get("sl_new", 15.0),
+        "trail_pct":      20.0,   # ✅ immediate 20% trailing from entry
         "tp_sold":        0.0,
-        "banked_pnl_bnb": 0.0,               # ✅ accumulates partial sell profits
+        "banked_pnl_bnb": 0.0,
         "bought_at":      datetime.utcnow().isoformat(),
     }
     auto_trade_stats["total_auto_buys"] += 1
@@ -2125,61 +2126,51 @@ def auto_position_manager():
                 _tp2  = _cs.get("tp2_pct", 50.0)
                 _tp3  = _cs.get("tp3_pct", 100.0)
                 _tp4  = _cs.get("tp4_pct", 200.0)
-                # ── TRAILING STOP LOSS ──
-                # GMGN pro standard: meme coins 30-50% swing karte hain
-                # 25% trailing = normal candle pe hi sell = premature exit
-                # Pro bots 40% drawdown use karte hain (GMGN official docs)
-                _trail_pct = _pos_data.get("trail_pct", 0.0)
-                if pnl >= 300 and _trail_pct < 25:
-                    _pos_data["trail_pct"] = 25.0   # 300%+: tight karo 25%
-                    print(f"🔒 Trail SL 25% for {addr[:10]} @ +{pnl:.0f}%")
-                elif pnl >= 200 and _trail_pct < 30:
-                    _pos_data["trail_pct"] = 30.0   # 200%+: 30% trailing
-                    print(f"🔒 Trail SL 30% for {addr[:10]} @ +{pnl:.0f}%")
-                elif pnl >= 100 and _trail_pct < 35:
-                    _pos_data["trail_pct"] = 35.0   # 100%+: 35% trailing
-                    print(f"🔒 Trail SL 35% for {addr[:10]} @ +{pnl:.0f}%")
-                elif pnl >= 50 and _trail_pct < 40:
-                    _pos_data["trail_pct"] = 40.0   # 50%+: 40% (GMGN standard)
-                    print(f"🔒 Trail SL 40% for {addr[:10]} @ +{pnl:.0f}%")
+                # ── SMART TRAILING STOP LOSS (GMGN Pro Style) ──
+                # Buy hote hi -20% immediate protection
+                # Pump kare toh trail tighten hota jaata hai
+                _trail_pct = _pos_data.get("trail_pct", 20.0)  # default 20% from entry
 
+                # Trail tighten as profit grows
+                if pnl >= 300 and _trail_pct > 15:
+                    _pos_data["trail_pct"] = 15.0
+                    print(f"🔒 Trail SL 15% for {addr[:10]} @ +{pnl:.0f}%")
+                elif pnl >= 200 and _trail_pct > 20:
+                    _pos_data["trail_pct"] = 20.0
+                    print(f"🔒 Trail SL 20% for {addr[:10]} @ +{pnl:.0f}%")
+                elif pnl >= 100 and _trail_pct > 25:
+                    _pos_data["trail_pct"] = 25.0
+                    print(f"🔒 Trail SL 25% for {addr[:10]} @ +{pnl:.0f}%")
+                elif pnl >= 50 and _trail_pct > 30:
+                    _pos_data["trail_pct"] = 30.0
+                    print(f"🔒 Trail SL 30% for {addr[:10]} @ +{pnl:.0f}%")
+                elif pnl >= 30 and _trail_pct > 35:
+                    _pos_data["trail_pct"] = 35.0
+                    print(f"🔒 Trail SL 35% for {addr[:10]} @ +{pnl:.0f}%")
+
+                # Trigger: drop from high >= trail_pct → sell
                 _trail_triggered = False
-                if _trail_pct > 0 and drop_hi <= -_trail_pct:
+                if drop_hi <= -_trail_pct:
                     _auto_paper_sell(addr, f"TrailSL -{_trail_pct:.0f}% from high", 100.0)
                     _trail_triggered = True
 
                 if not _trail_triggered:
-                    # ── VOLUME-AWARE STOP LOSS ──
-                    # On-chain: count + BNB volume dono track hota hai
-                    # Volume ratio = whale activity pakad leta hai
+                    # Volume dump detection — sell pressure bahut high ho toh early exit
                     _vol     = _get_vol_pressure_rt(addr)
                     _b5      = _vol.get("buys5",    0)
                     _s5      = _vol.get("sells5",   0)
                     _bv5     = _vol.get("buy_vol5",  0.0)
                     _sv5     = _vol.get("sell_vol5", 0.0)
-                    _vol_src = _vol.get("source", "?")
                     if _bv5 > 0 or _sv5 > 0:
                         _ratio      = _bv5 / max(_sv5, 0.001)
                         _ratio_type = "vol"
                     else:
                         _ratio      = _b5 / max(_s5, 1)
                         _ratio_type = "cnt"
-
-                    # Ratio > 1.5 = strong buy pressure = dip, hold karo
-                    # Ratio < 0.5 = strong sell pressure = dump, jaldi bhaago
-                    _strong_buys  = _ratio >= 1.5 and _b5 >= 3   # real buys, not 0
-                    _strong_sells = _ratio <= 0.5 and _s5 >= 3   # real sells
-
-                    # Emergency sell: SL se PEHLE agar sell pressure bahut high
-                    # pnl <= -10% + sell pressure = dump shuru ho gaya
-                    if pnl <= -(sl_pct * 0.7) and _strong_sells and tp_sold < 50:
-                        _auto_paper_sell(addr, f"VolSL Dump {_ratio:.1f}x [{_ratio_type}]", 100.0)
-                        print(f"🚨 VolSL: {addr[:10]} pnl={pnl:.1f}% {_ratio_type}={_ratio:.1f}x bv={_bv5:.3f} sv={_sv5:.3f} BNB → DUMP")
-
-
-
-                    elif drop_hi <= -80 and tp_sold < 75:       _auto_paper_sell(addr, "Dump -80%", 100.0)
-                    elif drop_hi <= -60 and tp_sold < 50:       _auto_paper_sell(addr, "Dump -60%", 75.0)
+                    _strong_sells = _ratio <= 0.3 and _s5 >= 5  # very aggressive dump only
+                    if pnl <= -15 and _strong_sells and tp_sold < 50:
+                        _auto_paper_sell(addr, f"VolDump {_ratio:.1f}x [{_ratio_type}]", 100.0)
+                        print(f"🚨 VolDump: {addr[:10]} pnl={pnl:.1f}% ratio={_ratio:.1f}x → EXIT")
 
                     # ── TRAILING TAKE PROFIT (GMGN style) ──
                     # TP hit hone ke baad price aur upar bhi ja sakta hai
