@@ -511,6 +511,45 @@ def get_user_context_for_llm() -> str:
 # ========== SELF AWARENESS ==========
 BIRTH_TIME = datetime.utcnow()
 
+# ════════════════════════════════════════════
+# ANTI-MEV PROTECTION
+# BSC pe sandwich attack: MEV bot hamare buy tx
+# dekh ke pehle khud buy karta hai (frontrun)
+# → hamare entry price already pumped hota hai
+#
+# Defense strategies:
+# 1. Random delay (5-30s) — predictable timing = easy target
+# 2. Buy amount randomize — round numbers (0.01 BNB) = obvious bot
+# 3. High slippage ± random — MEV bot estimate nahi kar pata
+# 4. Multiple small buys instead of one big (future DCA)
+# ════════════════════════════════════════════
+import random as _random
+
+def _anti_mev_delay():
+    """Random delay so MEV bots can't predict our timing"""
+    delay = _random.uniform(2.0, 8.0)  # 2-8 sec random
+    print(f"🛡️ Anti-MEV delay: {delay:.1f}s")
+    time.sleep(delay)
+
+def _anti_mev_amount(base_bnb: float) -> float:
+    """
+    Amount randomize karo — round numbers obvious hain.
+    0.01 BNB → 0.0097-0.0103 BNB (±3% noise)
+    """
+    noise = _random.uniform(-0.03, 0.03)  # ±3%
+    jittered = round(base_bnb * (1 + noise), 5)
+    return max(jittered, 0.001)  # minimum 0.001
+
+def _anti_mev_slippage(base_slippage: float = 12.0) -> float:
+    """
+    Slippage randomize karo — fixed % = predictable.
+    MEV bot hamare exact slippage se price estimate karta hai.
+    """
+    noise = _random.uniform(-2.0, 3.0)  # ±2-3% noise
+    return round(base_slippage + noise, 1)
+
+_mev_buy_count = 0  # track kitni baar anti-mev triggered
+
 # ══════════════════════════════════════════════
 # VOLUME PRESSURE CACHE — position manager ke liye
 # DexScreener se har 60s fetch, rate limit se bachne ke liye
@@ -1638,6 +1677,10 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     size_bnb  = round(min(base_size * _gs_mult, paper_balance * 0.05), 4)
     if _gs_mult > 1.0:
         print(f"🟢 Size boost {_gs_mult}x → {size_bnb:.4f} BNB (signals: {_gs_score}pt)")
+
+    # ── ANTI-MEV: amount + delay randomize ──
+    size_bnb = _anti_mev_amount(size_bnb)  # ±3% noise on amount
+    _anti_mev_delay()                       # 2-8s random delay before buy
     sess["paper_balance"] = round(paper_balance - size_bnb, 6)
     _sl = CHECKLIST_SETTINGS.get("sl_new", 15.0)
     add_position_to_monitor(AUTO_SESSION_ID, address, token_name or address[:10], entry_price, size_bnb, stop_loss_pct=_sl)
@@ -1913,8 +1956,31 @@ def auto_position_manager():
 
                     elif drop_hi <= -80 and tp_sold < 75:       _auto_paper_sell(addr, "Dump -80%", 100.0)
                     elif drop_hi <= -60 and tp_sold < 50:       _auto_paper_sell(addr, "Dump -60%", 75.0)
-                    elif pnl >= _tp4 and tp_sold < 90:          _auto_paper_sell(addr, f"TP+{_tp4:.0f}%", 90-tp_sold)
-                    elif pnl >= _tp3 and tp_sold < 75:          _auto_paper_sell(addr, f"TP+{_tp3:.0f}%", 25.0)
+
+                    # ── TRAILING TAKE PROFIT (GMGN style) ──
+                    # TP hit hone ke baad price aur upar bhi ja sakta hai
+                    # Abhi: TP hit → 25% sell → price 10x ho jaaye → miss
+                    # Trailing TP: TP hit → high track karo → high se 20% gire → sell rest
+                    elif pnl >= _tp4 and tp_sold < 90:
+                        # TP4 hit — 50% sell, rest pe trailing TP set karo
+                        _auto_paper_sell(addr, f"TP+{_tp4:.0f}%", 50.0)
+                        _pos_data["trail_tp_active"] = True
+                        _pos_data["trail_tp_pct"]    = 20.0  # high se 20% gire toh sell
+                        print(f"🎯 TrailTP activated @ +{pnl:.0f}% (20% drawdown)")
+
+                    elif _pos_data.get("trail_tp_active") and drop_hi <= -_pos_data.get("trail_tp_pct", 20.0):
+                        # Trailing TP triggered — baaki sab sell
+                        _ttp = _pos_data.get("trail_tp_pct", 20.0)
+                        _auto_paper_sell(addr, f"TrailTP -{_ttp:.0f}% from high", 100.0)
+                        print(f"🎯 TrailTP exit: {addr[:10]} high={high:.8f} current={current:.8f} drop={drop_hi:.1f}%")
+
+                    elif pnl >= _tp3 and tp_sold < 75:
+                        _auto_paper_sell(addr, f"TP+{_tp3:.0f}%", 25.0)
+                        # TP3 hit — trailing TP tighten karo
+                        if _pos_data.get("trail_tp_active"):
+                            _pos_data["trail_tp_pct"] = 15.0
+                            print(f"🎯 TrailTP tightened 15% @ +{pnl:.0f}%")
+
                     elif pnl >= _tp2 and tp_sold < 50:          _auto_paper_sell(addr, f"TP+{_tp2:.0f}%", 25.0)
                     elif pnl >= _tp1 and tp_sold < 25:          _auto_paper_sell(addr, f"TP+{_tp1:.0f}%", 25.0)
                     elif pnl >= 20 and tp_sold < 1:
@@ -3219,6 +3285,58 @@ def run_full_sniper_checklist(address: str) -> Dict:
     add(f"Owner Wallet < {cs['max_owner_pct']}%",  "pass" if owner_pct   < cs['max_owner_pct']   else ("warn" if owner_pct   < cs['max_owner_pct']*3   else "fail"), f"{owner_pct:.1f}%",   7)
     add(f"Whale Conc. < {cs['max_whale_top10']}%", "pass" if top10_pct   < cs['max_whale_top10'] else "fail",  f"{top10_pct:.1f}% top10", 7)
 
+    # ── CREATOR LAUNCH HISTORY ──
+    # GoPlus: creator_address → BSCScan se token creation count
+    # Serial launcher = red flag (rugger pattern)
+    creator_addr = goplus_data.get("creator_address", "")
+    _creator_launches = 0
+    _creator_status   = "unknown"
+    if creator_addr and len(creator_addr) == 42:
+        try:
+            # BSCScan token creation txns — free API, no key needed for basic
+            _bsc_r = requests.get(
+                "https://api.bscscan.com/api",
+                params={
+                    "module":  "account",
+                    "action":  "tokentx",
+                    "address": creator_addr,
+                    "page":    "1",
+                    "offset":  "50",
+                    "sort":    "desc",
+                },
+                timeout=6
+            )
+            if _bsc_r.status_code == 200:
+                _txns = _bsc_r.json().get("result", [])
+                if isinstance(_txns, list):
+                    # Unique contract addresses creator ne deploy kiye
+                    _deployed = set()
+                    for tx in _txns:
+                        _ca = tx.get("contractAddress", "")
+                        if _ca and len(_ca) == 42:
+                            _deployed.add(_ca.lower())
+                    _creator_launches = len(_deployed)
+        except Exception: pass
+
+        if _creator_launches == 0:
+            _creator_status = "First token"
+            _launch_status  = "pass"
+        elif _creator_launches <= 2:
+            _creator_status = f"{_creator_launches} prev tokens"
+            _launch_status  = "warn"
+        elif _creator_launches <= 5:
+            _creator_status = f"⚠️ {_creator_launches} tokens launched"
+            _launch_status  = "warn"
+        else:
+            _creator_status = f"🚨 {_creator_launches} tokens = serial launcher"
+            _launch_status  = "fail"
+
+        add("Creator Launch History", _launch_status, _creator_status, 7)
+
+        # Serial rugger blacklist — 10+ launches = auto blacklist
+        if _creator_launches >= 10:
+            blacklist_dev(creator_addr, f"Serial launcher: {_creator_launches} tokens")
+
     lp_holders = int(_gp_str(goplus_data, "lp_holder_count", "0"))
 
     # Stage 8 — LP checks
@@ -3279,7 +3397,8 @@ def run_full_sniper_checklist(address: str) -> Dict:
     # ── Critical fail check (label-independent) ──
     critical_labels_fixed = {"Honeypot Safe", "No Hidden Functions", "Transfer Allowed",
                               "Mint Authority Disabled", "Listed on DEX", "DEX Pools", "Price Exists",
-                              "Dev Not Blacklisted"}  # ✅ blacklisted dev = instant DANGER
+                              "Dev Not Blacklisted",    # ✅ blacklisted dev = instant DANGER
+                              "Creator Launch History"} # ✅ serial launcher = instant DANGER
     critical_fails = [c for c in result["checklist"] if c["status"] == "fail" and (
         c["label"] in critical_labels_fixed or
         c["label"].startswith("Buy Tax") or
