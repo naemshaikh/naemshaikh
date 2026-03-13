@@ -2365,7 +2365,7 @@ def price_monitor_loop():
         time.sleep(5)  # MEM FIX: 1s→5s saves 80% RAM
 
 # ========== DEXSCREENER ==========
-def get_dexscreener_token_data(token_address: str) -> Dict:
+def get_dexscreener_token_data(token_address: str, prefetched_raw: dict = None) -> Dict:
     result = {
         "price_usd": 0.0, "price_bnb": 0.0, "volume_24h": 0.0,
         "liquidity_usd": 0.0, "change_1h": 0.0, "change_6h": 0.0, "change_24h": 0.0,
@@ -2373,38 +2373,41 @@ def get_dexscreener_token_data(token_address: str) -> Dict:
         "fdv": 0.0, "pair_address": "", "dex_url": "", "source": "dexscreener"
     }
     try:
-        r = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{token_address}", timeout=10)
-        if r.status_code == 200:
-            pairs = (r.json() or {}).get("pairs") or []
-            if not isinstance(pairs, list): pairs = []
-            bsc   = [p for p in pairs if p and p.get("chainId") == "bsc"]
-            if bsc:
-                bsc.sort(key=lambda x: float(x.get("liquidity", {}).get("usd", 0) or 0), reverse=True)
-                p = bsc[0]
-                txns = p.get("txns", {})
-                result.update({
-                    "price_usd":     float(p.get("priceUsd", 0) or 0),
-                    "volume_24h":    float(p.get("volume", {}).get("h24", 0) or 0),
-                    "liquidity_usd": float(p.get("liquidity", {}).get("usd", 0) or 0),
-                    "change_1h":     float(p.get("priceChange", {}).get("h1", 0) or 0),
-                    "change_6h":     float(p.get("priceChange", {}).get("h6", 0) or 0),
-                    "change_24h":    float(p.get("priceChange", {}).get("h24", 0) or 0),
-                    "buys_5m":       int(txns.get("m5", {}).get("buys", 0) or 0),
-                    "sells_5m":      int(txns.get("m5", {}).get("sells", 0) or 0),
-                    "buys_1h":       int(txns.get("h1", {}).get("buys", 0) or 0),
-                    "sells_1h":      int(txns.get("h1", {}).get("sells", 0) or 0),
-                    "fdv":           float(p.get("fdv", 0) or 0),
-                    "pair_address":  p.get("pairAddress", ""),
-                    "dex_url":       p.get("url", ""),
-                })
-                bnb_price = market_cache.get("bnb_price", 0)
-                result["price_bnb"]    = result["price_usd"] / bnb_price if result["price_usd"] else 0
-                _bt = p.get("baseToken") or {}
-                result["symbol"]       = _bt.get("symbol", "")
-                result["name"]         = _bt.get("name",   "")
-                result["token_symbol"] = _bt.get("symbol", "")
-                result["token_name"]   = _bt.get("name",   "")
-                result["_raw_pairs"]   = True  # flag: symbol already fetched
+        if prefetched_raw is not None:
+            raw_json = prefetched_raw
+        else:
+            r = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{token_address}", timeout=10)
+            raw_json = r.json() if r.status_code == 200 else {}
+        pairs = (raw_json or {}).get("pairs") or []
+        if not isinstance(pairs, list): pairs = []
+        bsc   = [p for p in pairs if p and p.get("chainId") == "bsc"]
+        if bsc:
+            bsc.sort(key=lambda x: float(x.get("liquidity", {}).get("usd", 0) or 0), reverse=True)
+            p = bsc[0]
+            txns = p.get("txns", {})
+            result.update({
+                "price_usd":     float(p.get("priceUsd", 0) or 0),
+                "volume_24h":    float(p.get("volume", {}).get("h24", 0) or 0),
+                "liquidity_usd": float(p.get("liquidity", {}).get("usd", 0) or 0),
+                "change_1h":     float(p.get("priceChange", {}).get("h1", 0) or 0),
+                "change_6h":     float(p.get("priceChange", {}).get("h6", 0) or 0),
+                "change_24h":    float(p.get("priceChange", {}).get("h24", 0) or 0),
+                "buys_5m":       int(txns.get("m5", {}).get("buys", 0) or 0),
+                "sells_5m":      int(txns.get("m5", {}).get("sells", 0) or 0),
+                "buys_1h":       int(txns.get("h1", {}).get("buys", 0) or 0),
+                "sells_1h":      int(txns.get("h1", {}).get("sells", 0) or 0),
+                "fdv":           float(p.get("fdv", 0) or 0),
+                "pair_address":  p.get("pairAddress", ""),
+                "dex_url":       p.get("url", ""),
+            })
+            bnb_price = market_cache.get("bnb_price", 0)
+            result["price_bnb"]    = result["price_usd"] / bnb_price if result["price_usd"] else 0
+            _bt = p.get("baseToken") or {}
+            result["symbol"]       = _bt.get("symbol", "")
+            result["name"]         = _bt.get("name",   "")
+            result["token_symbol"] = _bt.get("symbol", "")
+            result["token_name"]   = _bt.get("name",   "")
+            result["_raw_pairs"]   = True  # flag: symbol already fetched
     except Exception as e:
         print(f"⚠️ DexScreener error: {e}")
     return result
@@ -2868,21 +2871,23 @@ def _auto_check_new_pair(pair_address: str):
     try:
         print(f"⏳ Waiting 60s: {pair_address[:10]}")
         time.sleep(60)
+        _prefetched_dex = None
         try:
             _ar = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{pair_address}", timeout=8)
             if _ar.status_code == 200:
                 _ar_json = _ar.json() or {}
                 _bp = [p for p in (_ar_json.get("pairs") or []) if p and p.get("chainId") == "bsc"]
-                del _ar_json
                 if _bp:
                     _ct = _bp[0].get("pairCreatedAt", 0) or 0
-                    del _bp
                     if _ct and (time.time() - _ct / 1000) / 60 > 10080:
+                        del _ar_json, _bp, _ar
                         return
-            del _ar
+                    # Reuse this data in checklist — avoid double call
+                    _prefetched_dex = _ar_json
+                del _ar
         except Exception: pass
 
-        result  = run_full_sniper_checklist(pair_address)
+        result  = run_full_sniper_checklist(pair_address, prefetched_dex=_prefetched_dex)
         score   = result.get("score", 0)
         total   = result.get("total", 1)
         rec     = result.get("recommendation", "")
@@ -3416,7 +3421,7 @@ def _start_swap_monitor_wss():
 
 
 
-def run_full_sniper_checklist(address: str) -> Dict:
+def run_full_sniper_checklist(address: str, prefetched_dex: dict = None) -> Dict:
     result = {
         "address": address, "checklist": [],
         "overall": "UNKNOWN", "score": 0, "total": 0,
@@ -3469,7 +3474,12 @@ def run_full_sniper_checklist(address: str) -> Dict:
     result["_goplus_raw"] = goplus_data  # green signals ke liye
     bscscan_source = "verified" if _gp_str(goplus_data, "is_open_source", "0") == "1" else ""
 
-    dex_data = get_dexscreener_token_data(address)
+    # ── STEP 3: DexScreener — use prefetched data if available (avoid double call) ──
+    if prefetched_dex is not None:
+        # Data already fetched in _auto_check_new_pair — parse it directly
+        dex_data = get_dexscreener_token_data(address, prefetched_raw=prefetched_dex)
+    else:
+        dex_data = get_dexscreener_token_data(address)
     # Token name/symbol — get_dexscreener_token_data ke result se hi lo, duplicate call nahi
     try:
         _nd_raw = dex_data.get("_raw_pairs")
