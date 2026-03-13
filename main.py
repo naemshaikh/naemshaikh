@@ -4740,7 +4740,7 @@ def _startup_once():
                         if _saved:
                             _restored = 0
                             _skipped  = 0
-                            _MAX_RESTORE = 50  # All open positions restore karo
+                            _MAX_RESTORE = 200  # All open positions restore karo
                             _sorted_saved = sorted(_saved.items(), key=lambda x: x[1].get("bought_at",""), reverse=True)
                             for _addr, _pd in _sorted_saved:
                                 if _restored >= _MAX_RESTORE:
