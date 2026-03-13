@@ -2979,37 +2979,6 @@ def _poll_four_meme_gecko() -> list:
         print(f"⚠️ four.meme gecko error: {e}")
     return found
 
-def _poll_four_meme_bscscan() -> list:
-    """BSCScan tx monitor — fallback if no API key missing"""
-    if not BSC_SCAN_KEY:
-        return []
-    found = []
-    try:
-        for contract in FOUR_MEME_CONTRACTS:
-            url = (
-                f"{BSC_SCAN_API}?module=account&action=txlist"
-                f"&address={contract}"
-                f"&startblock=0&endblock=99999999"
-                f"&page=1&offset=10&sort=desc"
-                f"&apikey={BSC_SCAN_KEY}"
-            )
-            r = requests.get(url, timeout=8)
-            if r.status_code != 200:
-                continue
-            txns = r.json().get("result", [])
-            if not isinstance(txns, list):
-                continue
-            for tx in txns[:5]:
-                token_addr = tx.get("contractAddress", "")
-                if not token_addr or token_addr == "0x":
-                    inp = tx.get("input", "")
-                    if len(inp) >= 74:
-                        token_addr = "0x" + inp[34:74]
-                if token_addr and len(token_addr) == 42:
-                    found.append(token_addr)
-    except Exception as e:
-        print(f"⚠️ four.meme bscscan error: {e}")
-    return found
 
 def poll_four_meme():
     """four.meme naye tokens — 3 sources: direct API + GeckoTerminal + BSCScan"""
@@ -3027,10 +2996,6 @@ def poll_four_meme():
             # Source 2: GeckoTerminal (har 3rd cycle — 60 sec)
             if _cycle % 3 == 0:
                 addrs += _poll_four_meme_gecko()
-
-            # Source 3: BSCScan all 3 contracts (har 6th cycle — 120 sec)
-            if _cycle % 6 == 0:
-                addrs += _poll_four_meme_bscscan()
 
             # Dedup + process
             new_count = 0
@@ -3449,44 +3414,8 @@ def _start_swap_monitor_wss():
     threading.Thread(target=_run, daemon=True).start()
     print("📊 Real-time SwapMonitor started")
 
-def _fallback_token_poller():
-    """DexScreener fallback — har 5 min mein naye tokens dhundta hai"""
-    _cycle = 0
-    while True:
-        try:
-            _cycle += 1
-            _nc = time.time()
-            # Cleanup old entries — BUG FIX: use lock to prevent race condition
-            with _discovered_lock:
-                discovered_addresses_clean = {k: v for k, v in discovered_addresses.items() if _nc - v < DISCOVERY_TTL}
-                discovered_addresses.clear()
-                discovered_addresses.update(discovered_addresses_clean)
 
-            try:
-                rb = requests.get("https://api.dexscreener.com/token-boosts/latest/v1", timeout=10)
-                if rb.status_code == 200:
-                    _rb_json = rb.json(); boosts = _rb_json if isinstance(_rb_json, list) else []; del _rb_json
-                    for item in boosts[:5]:
-                        if item.get("chainId") == "bsc":
-                            addr = item.get("tokenAddress", "")
-                            if addr:
-                                threading.Thread(target=_process_new_token, args=(addr, addr, "DexBoost"), daemon=True).start()
-            except Exception: pass
 
-            queries = ["new","moon","pepe","meme","inu","doge","safe","baby","elon","based"]
-            q = queries[_cycle % len(queries)]
-            try:
-                rs = requests.get(f"https://api.dexscreener.com/latest/dex/search?q={q}", timeout=10)
-                if rs.status_code == 200:
-                    _dex_pairs = [p for p in (rs.json() or {}).get("pairs", []) if p and p.get("chainId") == "bsc"]
-                    for p in _dex_pairs[:5]:
-                        addr = (p.get("baseToken") or {}).get("address", "")
-                        if addr:
-                            threading.Thread(target=_process_new_token, args=(addr, p.get("pairAddress", ""), "DexSearch"), daemon=True).start()
-            except Exception: pass
-        except Exception as e:
-            print(f"Warning: Fallback error: {e}")
-        time.sleep(300)
 def run_full_sniper_checklist(address: str) -> Dict:
     result = {
         "address": address, "checklist": [],
