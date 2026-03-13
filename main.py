@@ -5228,6 +5228,61 @@ def auto_stats_route():
         "trade_history": [], "learning_cycles": 0, "new_pairs_found": 0,
         "daily_loss": 0, "auto_buys": 0, "auto_sells": 0,
     })
+@app.route("/sys-stats")
+def sys_stats():
+    """Live RAM usage — paper vs real mode breakdown"""
+    try:
+        import psutil, os, sys
+        proc = psutil.Process(os.getpid())
+        mem  = proc.memory_info()
+        rss_mb  = round(mem.rss  / 1024 / 1024, 1)  # actual RAM used
+        vms_mb  = round(mem.vms  / 1024 / 1024, 1)  # virtual memory
+
+        # System total
+        sys_mem  = psutil.virtual_memory()
+        total_mb = round(sys_mem.total   / 1024 / 1024, 1)
+        avail_mb = round(sys_mem.available / 1024 / 1024, 1)
+        used_pct = round(sys_mem.percent, 1)
+
+        # Estimate paper vs real breakdown
+        # Paper: running_positions, trade_history, brain, smart_wallets
+        import sys as _sys
+        pos_count   = len(auto_trade_stats.get("running_positions", {}))
+        hist_count  = len(auto_trade_stats.get("trade_history", []))
+        brain_pats  = len(brain["trading"].get("best_patterns",[])) + len(brain["trading"].get("avoid_patterns",[]))
+        whale_count = len(_smart_wallets)
+        rug_count   = len(_rug_dna)
+        disc_count  = len(discovered_addresses)
+
+        # Rough estimates (KB)
+        paper_kb = round((hist_count * 0.5) + (brain_pats * 0.2) + (whale_count * 0.3) + (rug_count * 0.15) + (disc_count * 0.1), 1)
+        real_kb  = round(pos_count * 2.0, 1)  # active positions heavier
+        paper_mb = round(paper_kb / 1024, 2)
+        real_mb  = round(real_kb  / 1024, 2)
+
+        return jsonify({
+            "rss_mb":    rss_mb,
+            "vms_mb":    vms_mb,
+            "total_mb":  total_mb,
+            "avail_mb":  avail_mb,
+            "used_pct":  used_pct,
+            "paper_mb":  paper_mb,
+            "real_mb":   real_mb,
+            "paper_items": {
+                "trade_history": hist_count,
+                "brain_patterns": brain_pats,
+                "whale_wallets": whale_count,
+                "rug_dna": rug_count,
+                "discovered": disc_count,
+            },
+            "real_items": {
+                "open_positions": pos_count,
+            },
+            "trade_mode": TRADE_MODE,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e), "rss_mb": 0, "used_pct": 0})
+
 @app.route("/brain-insights")
 def brain_insights():
     """Return bot learning insights"""

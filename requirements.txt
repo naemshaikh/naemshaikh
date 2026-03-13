@@ -8,3 +8,4 @@ python-dotenv==1.2.1
 httpx==0.28.1
 cryptography==44.0.2
 websockets==15.0.1
+psutil
