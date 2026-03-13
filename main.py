@@ -2261,14 +2261,19 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         return
 
     if current <= 0:
-        print(f"⚠️ Sell SKIP: price=0 for {address[:10]}")
-        return
-
-    current = current * 0.995  # 0.5% sell slippage
-    pnl_pct   = ((current - entry) / entry) * 100
-    sell_size = size * (sell_pct / 100.0)
-    pnl_bnb   = sell_size * (pnl_pct / 100.0)  # FIX: was undefined
-    return_bnb = sell_size * (1 + pnl_pct / 100.0)
+        # Rug pull — price = 0, 100% loss force karo
+        # Skip mat karo — position close karni hai
+        current = 0
+        pnl_pct    = -100.0
+        sell_size  = size * (sell_pct / 100.0)
+        pnl_bnb    = -sell_size   # full loss
+        return_bnb = 0.0
+    else:
+        current = current * 0.995  # 0.5% sell slippage
+        pnl_pct    = ((current - entry) / entry) * 100
+        sell_size  = size * (sell_pct / 100.0)
+        pnl_bnb    = sell_size * (pnl_pct / 100.0)
+        return_bnb = sell_size * (1 + pnl_pct / 100.0)
 
     sess = get_or_create_session(AUTO_SESSION_ID)
     sess["paper_balance"] = round(sess.get("paper_balance", 5.0) + return_bnb, 6)
@@ -2300,7 +2305,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         "pnl_bnb":    _total_pnl_bnb_trade,
         "size_bnb":   _orig_sz,
         "bought_usd": _saved_bought_usd if _saved_bought_usd else round(_orig_sz * _bnb_at_sell, 2),
-        "sold_usd":   round(max(0, return_bnb) * _bnb_at_sell, 2),
+        "sold_usd":   round(max(0.0, return_bnb) * _bnb_at_sell, 2),  # 0 = rug, positive = proceeds
         "bought_at":  bought_at_str,
         "sold_at":    datetime.utcnow().isoformat(),
         "result":     "win" if _total_pnl_pct_trade > 0 else "loss",
