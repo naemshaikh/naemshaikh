@@ -2228,6 +2228,18 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
 
     base_size = max(min(AUTO_BUY_SIZE_BNB, paper_balance * 0.025), 0.001)
     size_bnb  = round(min(base_size * _gs_mult, paper_balance * 0.05), 4)
+
+    # ── Small Capital Protection ──
+    # Gas fees ~$0.10-0.30 per tx — trade must be worth it
+    # Minimum $2 (~0.003 BNB) effective floor
+    _bnb_now = market_cache.get("bnb_price", 600)
+    _min_bnb = max(2.0 / _bnb_now, 0.003)  # $2 minimum
+    if size_bnb < _min_bnb:
+        if paper_balance < _min_bnb * 2:
+            # Balance bahut kam hai — trade skip karo
+            print(f"🛑 Auto-buy BLOCKED: balance too small for gas-efficient trade ({paper_balance:.4f} BNB)")
+            return
+        size_bnb = round(_min_bnb, 4)
     if _gs_mult > 1.0:
         print(f"🟢 Size boost {_gs_mult}x → {size_bnb:.4f} BNB (signals: {_gs_score}pt)")
 
