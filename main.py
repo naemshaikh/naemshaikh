@@ -512,43 +512,249 @@ def get_user_context_for_llm() -> str:
 BIRTH_TIME = datetime.utcnow()
 
 # ════════════════════════════════════════════
-# ANTI-MEV PROTECTION
-# BSC pe sandwich attack: MEV bot hamare buy tx
-# dekh ke pehle khud buy karta hai (frontrun)
-# → hamare entry price already pumped hota hai
-#
-# Defense strategies:
-# 1. Random delay (5-30s) — predictable timing = easy target
-# 2. Buy amount randomize — round numbers (0.01 BNB) = obvious bot
-# 3. High slippage ± random — MEV bot estimate nahi kar pata
-# 4. Multiple small buys instead of one big (future DCA)
+# ANTI-MEV + REAL TRADING ENGINE
+# Real mode ke liye actual BSC transactions
+# Paper mode: simulation only
 # ════════════════════════════════════════════
 import random as _random
 
-def _anti_mev_delay():
-    """Random delay so MEV bots can't predict our timing"""
-    delay = _random.uniform(2.0, 8.0)  # 2-8 sec random
-    print(f"🛡️ Anti-MEV delay: {delay:.1f}s")
-    time.sleep(delay)
+# PancakeSwap v2 Router ABI — swapExactETHForTokens
+ROUTER_SWAP_ABI = [
+    {
+        "name": "swapExactETHForTokensSupportingFeeOnTransferTokens",
+        "type": "function",
+        "stateMutability": "payable",
+        "inputs": [
+            {"name": "amountOutMin",  "type": "uint256"},
+            {"name": "path",          "type": "address[]"},
+            {"name": "to",            "type": "address"},
+            {"name": "deadline",      "type": "uint256"}
+        ],
+        "outputs": [{"name": "amounts", "type": "uint256[]"}]
+    },
+    {
+        "name": "swapExactTokensForETHSupportingFeeOnTransferTokens",
+        "type": "function",
+        "stateMutability": "nonpayable",
+        "inputs": [
+            {"name": "amountIn",     "type": "uint256"},
+            {"name": "amountOutMin", "type": "uint256"},
+            {"name": "path",         "type": "address[]"},
+            {"name": "to",           "type": "address"},
+            {"name": "deadline",     "type": "uint256"}
+        ],
+        "outputs": [{"name": "amounts", "type": "uint256[]"}]
+    },
+    {
+        "name": "getAmountsOut",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [
+            {"name": "amountIn", "type": "uint256"},
+            {"name": "path",     "type": "address[]"}
+        ],
+        "outputs": [{"name": "amounts", "type": "uint256[]"}]
+    }
+]
+
+# ERC20 approve ABI
+ERC20_ABI_APPROVE = [
+    {"name": "approve",  "type": "function", "stateMutability": "nonpayable",
+     "inputs": [{"name": "spender", "type": "address"}, {"name": "amount", "type": "uint256"}],
+     "outputs": [{"name": "", "type": "bool"}]},
+    {"name": "balanceOf","type": "function", "stateMutability": "view",
+     "inputs": [{"name": "account", "type": "address"}],
+     "outputs": [{"name": "", "type": "uint256"}]},
+    {"name": "allowance","type": "function", "stateMutability": "view",
+     "inputs": [{"name": "owner", "type": "address"}, {"name": "spender", "type": "address"}],
+     "outputs": [{"name": "", "type": "uint256"}]}
+]
+
+REAL_PRIVATE_KEY = os.environ.get("WALLET_PRIVATE_KEY", "")  # env se lo — kabhi hardcode mat karo
 
 def _anti_mev_amount(base_bnb: float) -> float:
-    """
-    Amount randomize karo — round numbers obvious hain.
-    0.01 BNB → 0.0097-0.0103 BNB (±3% noise)
-    """
-    noise = _random.uniform(-0.03, 0.03)  # ±3%
+    """Amount randomize ±3% — round numbers MEV bots ko obvious lagte hain"""
+    noise    = _random.uniform(-0.03, 0.03)
     jittered = round(base_bnb * (1 + noise), 5)
-    return max(jittered, 0.001)  # minimum 0.001
+    return max(jittered, 0.001)
 
-def _anti_mev_slippage(base_slippage: float = 12.0) -> float:
+def _anti_mev_slippage(buy_tax: float = 0.0, sell_tax: float = 0.0) -> int:
     """
-    Slippage randomize karo — fixed % = predictable.
-    MEV bot hamare exact slippage se price estimate karta hai.
+    Smart slippage calculation:
+    Base: tax + buffer + random noise
+    MEV sandwich profitable tabhi hota hai jab slippage tight ho.
+    High random slippage = MEV bot ke liye unprofitable.
     """
-    noise = _random.uniform(-2.0, 3.0)  # ±2-3% noise
-    return round(base_slippage + noise, 1)
+    base    = max(buy_tax + sell_tax + 5.0, 12.0)   # min 12%
+    noise   = _random.uniform(1.0, 5.0)              # 1-5% random noise
+    slippage = min(round(base + noise), 49)           # max 49%
+    return int(slippage)
 
-_mev_buy_count = 0  # track kitni baar anti-mev triggered
+def _get_gas_price_fast() -> int:
+    """BSC fast gas price — 5 gwei default, higher = faster confirmation"""
+    try:
+        gp = w3.eth.gas_price
+        # 10% above current = fast lane
+        return int(gp * 1.1)
+    except Exception:
+        return w3.to_wei(5, "gwei")  # 5 gwei fallback
+
+def real_buy_token(token_address: str, bnb_amount: float,
+                   buy_tax: float = 0.0, sell_tax: float = 0.0) -> dict:
+    """
+    Real BSC buy transaction with full anti-MEV protection.
+    Returns: {success, tx_hash, tokens_received, entry_price, gas_used, error}
+    """
+    result = {"success": False, "tx_hash": "", "tokens_received": 0,
+              "entry_price": 0.0, "gas_used": 0, "error": ""}
+
+    if not REAL_PRIVATE_KEY:
+        result["error"] = "WALLET_PRIVATE_KEY env nahi set — real trading disabled"
+        return result
+
+    try:
+        account  = w3.eth.account.from_key(REAL_PRIVATE_KEY)
+        wallet   = account.address
+        router   = w3.eth.contract(address=Web3.to_checksum_address(PANCAKE_ROUTER), abi=ROUTER_SWAP_ABI)
+        token_cs = Web3.to_checksum_address(token_address)
+        wbnb_cs  = Web3.to_checksum_address(WBNB)
+
+        # Anti-MEV: amount noise
+        bnb_wei  = w3.to_wei(_anti_mev_amount(bnb_amount), "ether")
+
+        # Slippage: tax-aware + random
+        slippage_pct = _anti_mev_slippage(buy_tax, sell_tax)
+        expected_out = router.functions.getAmountsOut(bnb_wei, [wbnb_cs, token_cs]).call()
+        amount_out_min = int(expected_out[1] * (1 - slippage_pct / 100))
+
+        # Deadline: 60 sec
+        deadline = int(time.time()) + 60
+        nonce    = w3.eth.get_transaction_count(wallet)
+        gas_price = _get_gas_price_fast()
+
+        txn = router.functions.swapExactETHForTokensSupportingFeeOnTransferTokens(
+            amount_out_min,
+            [wbnb_cs, token_cs],
+            wallet,
+            deadline
+        ).build_transaction({
+            "from":     wallet,
+            "value":    bnb_wei,
+            "gas":      300000,
+            "gasPrice": gas_price,
+            "nonce":    nonce,
+            "chainId":  56  # BSC mainnet
+        })
+
+        signed  = w3.eth.account.sign_transaction(txn, REAL_PRIVATE_KEY)
+        tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
+        print(f"🔴 REAL BUY TX: {tx_hash.hex()[:20]}... slippage={slippage_pct}%")
+
+        # Wait for receipt (30 sec max)
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
+        if receipt["status"] == 1:
+            result["success"]      = True
+            result["tx_hash"]      = tx_hash.hex()
+            result["gas_used"]     = receipt["gasUsed"]
+            # Entry price from on-chain
+            result["entry_price"]  = get_token_price_bnb(token_address)
+            print(f"✅ REAL BUY confirmed: {tx_hash.hex()[:20]}... gas={receipt['gasUsed']}")
+        else:
+            result["error"] = "Transaction reverted"
+            print(f"❌ REAL BUY reverted: {tx_hash.hex()[:20]}")
+
+    except Exception as e:
+        result["error"] = str(e)[:200]
+        print(f"❌ REAL BUY error: {e}")
+
+    return result
+
+
+def real_sell_token(token_address: str, sell_pct: float = 100.0,
+                    buy_tax: float = 0.0, sell_tax: float = 0.0) -> dict:
+    """
+    Real BSC sell transaction with anti-MEV slippage.
+    sell_pct: percentage of holdings to sell (25, 50, 100 etc)
+    """
+    result = {"success": False, "tx_hash": "", "bnb_received": 0.0,
+              "gas_used": 0, "error": ""}
+
+    if not REAL_PRIVATE_KEY:
+        result["error"] = "WALLET_PRIVATE_KEY not set"
+        return result
+
+    try:
+        account  = w3.eth.account.from_key(REAL_PRIVATE_KEY)
+        wallet   = account.address
+        router   = w3.eth.contract(address=Web3.to_checksum_address(PANCAKE_ROUTER), abi=ROUTER_SWAP_ABI)
+        token_cs = Web3.to_checksum_address(token_address)
+        wbnb_cs  = Web3.to_checksum_address(WBNB)
+        token_c  = w3.eth.contract(address=token_cs, abi=ERC20_ABI_APPROVE)
+
+        # Get token balance
+        balance   = token_c.functions.balanceOf(wallet).call()
+        sell_amt  = int(balance * sell_pct / 100)
+        if sell_amt <= 0:
+            result["error"] = "Zero balance"
+            return result
+
+        # Check + set allowance
+        allowance = token_c.functions.allowance(wallet, Web3.to_checksum_address(PANCAKE_ROUTER)).call()
+        if allowance < sell_amt:
+            nonce_a = w3.eth.get_transaction_count(wallet)
+            approve_txn = token_c.functions.approve(
+                Web3.to_checksum_address(PANCAKE_ROUTER),
+                2**256 - 1  # max approval
+            ).build_transaction({
+                "from": wallet, "gas": 100000,
+                "gasPrice": _get_gas_price_fast(),
+                "nonce": nonce_a, "chainId": 56
+            })
+            signed_a = w3.eth.account.sign_transaction(approve_txn, REAL_PRIVATE_KEY)
+            w3.eth.send_raw_transaction(signed_a.rawTransaction)
+            time.sleep(3)  # approval confirm ka wait
+            print(f"✅ Approved token for sell")
+
+        # Slippage for sell
+        slippage_pct = _anti_mev_slippage(buy_tax, sell_tax)
+        expected_bnb = router.functions.getAmountsOut(sell_amt, [token_cs, wbnb_cs]).call()
+        min_bnb      = int(expected_bnb[1] * (1 - slippage_pct / 100))
+        deadline     = int(time.time()) + 60
+        nonce        = w3.eth.get_transaction_count(wallet)
+
+        txn = router.functions.swapExactTokensForETHSupportingFeeOnTransferTokens(
+            sell_amt, min_bnb,
+            [token_cs, wbnb_cs],
+            wallet, deadline
+        ).build_transaction({
+            "from": wallet, "gas": 300000,
+            "gasPrice": _get_gas_price_fast(),
+            "nonce": nonce, "chainId": 56
+        })
+
+        signed  = w3.eth.account.sign_transaction(txn, REAL_PRIVATE_KEY)
+        tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
+        print(f"🔴 REAL SELL TX: {tx_hash.hex()[:20]}... slippage={slippage_pct}%")
+
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
+        if receipt["status"] == 1:
+            result["success"]      = True
+            result["tx_hash"]      = tx_hash.hex()
+            result["gas_used"]     = receipt["gasUsed"]
+            bnb_received           = min_bnb / 1e18
+            result["bnb_received"] = bnb_received
+            print(f"✅ REAL SELL confirmed: {tx_hash.hex()[:20]}...")
+        else:
+            result["error"] = "Sell reverted"
+
+    except Exception as e:
+        result["error"] = str(e)[:200]
+        print(f"❌ REAL SELL error: {e}")
+
+    return result
+
+
+_mev_buy_count = 0
 
 # ══════════════════════════════════════════════
 # VOLUME PRESSURE CACHE — position manager ke liye
@@ -1678,9 +1884,23 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     if _gs_mult > 1.0:
         print(f"🟢 Size boost {_gs_mult}x → {size_bnb:.4f} BNB (signals: {_gs_score}pt)")
 
-    # ── ANTI-MEV: amount + delay randomize ──
-    size_bnb = _anti_mev_amount(size_bnb)  # ±3% noise on amount
-    _anti_mev_delay()                       # 2-8s random delay before buy
+    # ── ANTI-MEV: amount randomize (both modes) ──
+    size_bnb = _anti_mev_amount(size_bnb)  # ±3% noise
+
+    # ── REAL vs PAPER execution ──
+    _buy_tax  = float((checklist_result.get("dex_data") or {}).get("buy_tax",  0) or 0)
+    _sell_tax = float((checklist_result.get("dex_data") or {}).get("sell_tax", 0) or 0)
+
+    if TRADE_MODE == "real":
+        _real_result = real_buy_token(address, size_bnb, _buy_tax, _sell_tax)
+        if not _real_result.get("success"):
+            print(f"❌ REAL BUY failed: {_real_result.get('error','?')}")
+            return  # real buy fail → position nahi kholte
+        # Real buy successful → entry price on-chain se lo
+        if _real_result.get("entry_price", 0) > 0:
+            entry_price = _real_result["entry_price"]
+        print(f"✅ REAL BUY executed: tx={_real_result.get('tx_hash','')[:20]}")
+    # Paper mode: balance simulate karo
     sess["paper_balance"] = round(paper_balance - size_bnb, 6)
     _sl = CHECKLIST_SETTINGS.get("sl_new", 15.0)
     add_position_to_monitor(AUTO_SESSION_ID, address, token_name or address[:10], entry_price, size_bnb, stop_loss_pct=_sl)
@@ -1839,6 +2059,16 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
             "sold_at":     datetime.utcnow().isoformat(),
         })
         _persist_positions()  # ✅ FIX: tp_sold + new size_bnb Supabase mein save
+
+    # ── REAL SELL execution ──
+    if TRADE_MODE == "real":
+        _buy_tax_s  = float(pos.get("buy_tax",  0) or 0)
+        _sell_tax_s = float(pos.get("sell_tax", 0) or 0)
+        _real_sell  = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
+        if not _real_sell.get("success"):
+            print(f"⚠️ REAL SELL failed: {_real_sell.get('error','?')} — continuing paper tracking")
+        else:
+            print(f"✅ REAL SELL: tx={_real_sell.get('tx_hash','')[:20]} BNB={_real_sell.get('bnb_received',0):.4f}")
 
     print(f"AUTO SELL {sell_pct:.0f}%: {address[:10]} PnL:{pnl_pct:+.1f}% [{reason}]")
     # ✅ Full sell → swap monitor se unregister + learn from trade
