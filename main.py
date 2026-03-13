@@ -511,6 +511,29 @@ def get_user_context_for_llm() -> str:
 # ========== SELF AWARENESS ==========
 BIRTH_TIME = datetime.utcnow()
 
+# ══════════════════════════════════════════════
+# DEV WALLET BLACKLIST — ruggers track karo
+# ══════════════════════════════════════════════
+_dev_blacklist: dict = {}   # {wallet_lower: {"reason": str, "rugs": int, "last_seen": iso}}
+_dev_blacklist_lock = threading.Lock()
+
+def blacklist_dev(wallet: str, reason: str = "rug"):
+    """Dev wallet ko blacklist karo — future tokens automatically skip honge"""
+    if not wallet or len(wallet) != 42: return
+    w = wallet.lower()
+    with _dev_blacklist_lock:
+        existing = _dev_blacklist.get(w, {"rugs": 0})
+        _dev_blacklist[w] = {
+            "reason":    reason,
+            "rugs":      existing.get("rugs", 0) + 1,
+            "last_seen": datetime.utcnow().isoformat()
+        }
+    print(f"🚫 Dev blacklisted: {wallet[:10]}... reason={reason}")
+
+def is_dev_blacklisted(wallet: str) -> bool:
+    if not wallet or len(wallet) != 42: return False
+    return wallet.lower() in _dev_blacklist
+
 # _perf_tracker and _relationship removed — RAM optimization
 
 # RAM-optimized self_awareness — only functional fields kept
@@ -1089,6 +1112,18 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     if len(auto_trade_stats["trade_history"]) > 50:
         auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-50:]
 
+    # ── Auto-blacklist dev if SL hit or rug dump ──
+    if "SL" in reason or "Dump" in reason:
+        try:
+            _gp = requests.get(
+                "https://api.gopluslabs.io/api/v1/token_security/56",
+                params={"contract_addresses": address}, timeout=6
+            ).json().get("result", {}).get(address.lower(), {})
+            _creator = _gp.get("creator_address", "")
+            if _creator and len(_creator) == 42:
+                blacklist_dev(_creator, f"SL/Rug on {token} {reason}")
+        except Exception: pass
+
     auto_trade_stats["last_action"] = f"SELL {sell_pct:.0f}% {token} PnL:{pnl_pct:+.1f}%"
 
     if sell_pct >= 100.0:
@@ -1188,16 +1223,35 @@ def auto_position_manager():
                 _tp2  = _cs.get("tp2_pct", 50.0)
                 _tp3  = _cs.get("tp3_pct", 100.0)
                 _tp4  = _cs.get("tp4_pct", 200.0)
-                if   pnl <= -sl_pct:                        _auto_paper_sell(addr, f"SL -{sl_pct:.0f}%", 100.0)
-                elif drop_hi <= -80 and tp_sold < 75:       _auto_paper_sell(addr, "Dump -80%", 100.0)
-                elif drop_hi <= -60 and tp_sold < 50:       _auto_paper_sell(addr, "Dump -60%", 75.0)
-                elif pnl >= _tp4 and tp_sold < 90:          _auto_paper_sell(addr, f"TP+{_tp4:.0f}%", 90-tp_sold)
-                elif pnl >= _tp3 and tp_sold < 75:          _auto_paper_sell(addr, f"TP+{_tp3:.0f}%", 25.0)
-                elif pnl >= _tp2 and tp_sold < 50:          _auto_paper_sell(addr, f"TP+{_tp2:.0f}%", 25.0)
-                elif pnl >= _tp1 and tp_sold < 25:          _auto_paper_sell(addr, f"TP+{_tp1:.0f}%", 25.0)
-                elif pnl >= 20  and tp_sold < 1:
-                    _pos_data["sl_pct"] = 2.0  # break-even SL
-                    _pos_data["tp_sold"] = 1
+                # ── TRAILING STOP LOSS ──
+                # Price high track karo, high se X% gire toh sell
+                _trail_pct = _pos_data.get("trail_pct", 0.0)
+                if pnl >= 200 and _trail_pct < 15:
+                    _pos_data["trail_pct"] = 15.0   # 200%+ profit: 15% trailing
+                    print(f"🔒 Trail SL set 15% for {addr[:10]} @ +{pnl:.0f}%")
+                elif pnl >= 100 and _trail_pct < 20:
+                    _pos_data["trail_pct"] = 20.0   # 100%+ profit: 20% trailing
+                    print(f"🔒 Trail SL set 20% for {addr[:10]} @ +{pnl:.0f}%")
+                elif pnl >= 50 and _trail_pct < 25:
+                    _pos_data["trail_pct"] = 25.0   # 50%+ profit: 25% trailing
+                    print(f"🔒 Trail SL set 25% for {addr[:10]} @ +{pnl:.0f}%")
+
+                _trail_triggered = False
+                if _trail_pct > 0 and drop_hi <= -_trail_pct:
+                    _auto_paper_sell(addr, f"TrailSL -{_trail_pct:.0f}% from high", 100.0)
+                    _trail_triggered = True
+
+                if not _trail_triggered:
+                    if   pnl <= -sl_pct:                        _auto_paper_sell(addr, f"SL -{sl_pct:.0f}%", 100.0)
+                    elif drop_hi <= -80 and tp_sold < 75:       _auto_paper_sell(addr, "Dump -80%", 100.0)
+                    elif drop_hi <= -60 and tp_sold < 50:       _auto_paper_sell(addr, "Dump -60%", 75.0)
+                    elif pnl >= _tp4 and tp_sold < 90:          _auto_paper_sell(addr, f"TP+{_tp4:.0f}%", 90-tp_sold)
+                    elif pnl >= _tp3 and tp_sold < 75:          _auto_paper_sell(addr, f"TP+{_tp3:.0f}%", 25.0)
+                    elif pnl >= _tp2 and tp_sold < 50:          _auto_paper_sell(addr, f"TP+{_tp2:.0f}%", 25.0)
+                    elif pnl >= _tp1 and tp_sold < 25:          _auto_paper_sell(addr, f"TP+{_tp1:.0f}%", 25.0)
+                    elif pnl >= 20 and tp_sold < 1:
+                        _pos_data["sl_pct"]  = 2.0   # break-even SL
+                        _pos_data["tp_sold"] = 1
             except Exception as e:
                 print(f"Auto manager err {addr[:10]}: {e}")
         time.sleep(10)
@@ -2322,6 +2376,44 @@ def run_full_sniper_checklist(address: str) -> Dict:
     # Stage 9 — tax real check
     add("Low Tax Fast Trade", "pass" if low_tax else "warn", "FAST OK" if low_tax else f"{buy_tax:.0f}%+{sell_tax:.0f}%", 9)
 
+    # ── FEATURE 3: Market Cap Filter ──
+    fdv = dex_data.get("fdv", 0)
+    liq_usd_dex = dex_data.get("liquidity_usd", 0)
+    mcap_ok   = 0 < fdv < 500_000   # sweet spot: $0–$500k mcap only
+    mcap_warn = fdv >= 500_000 and fdv < 2_000_000
+    if fdv > 0:
+        add("MCap < $500k",
+            "pass" if mcap_ok else ("warn" if mcap_warn else "fail"),
+            f"${fdv:,.0f}", 5)
+    else:
+        add("MCap Check", "warn", "Unknown", 5)
+
+    # ── FEATURE 4: Volume Velocity ──
+    buys_5m_v  = dex_data.get("buys_5m", 0)
+    sells_5m_v = dex_data.get("sells_5m", 0)
+    vol_5m     = dex_data.get("volume_5m", buys_5m_v + sells_5m_v)
+    vol_ratio  = (buys_5m_v / max(sells_5m_v, 1))
+    momentum   = buys_5m_v >= 5 and vol_ratio >= 1.5   # 5+ buys, 1.5x more buys than sells
+    add("Buy Momentum (5m)",
+        "pass" if momentum else ("warn" if buys_5m_v >= 2 else "fail"),
+        f"B:{buys_5m_v} S:{sells_5m_v} ratio:{vol_ratio:.1f}x", 5)
+
+    # ── FEATURE 5: Dev Wallet Blacklist ──
+    creator_addr = goplus_data.get("creator_address", "")
+    owner_addr   = goplus_data.get("owner_address", "")
+    dev_blocked  = is_dev_blacklisted(creator_addr) or is_dev_blacklisted(owner_addr)
+    add("Dev Not Blacklisted",
+        "fail" if dev_blocked else "pass",
+        "BLACKLISTED" if dev_blocked else "CLEAN", 5)
+
+    # ── four.meme Graduation Signal ──
+    # $69k liquidity = four.meme graduation = PancakeSwap listing imminent
+    graduated = liq_usd_dex >= 50_000   # near graduation threshold
+    near_grad  = liq_usd_dex >= 30_000 and liq_usd_dex < 50_000
+    add("four.meme Graduation",
+        "pass" if graduated else ("warn" if near_grad else "warn"),
+        f"Liq:${liq_usd_dex:,.0f}" + (" 🎓GRADUATED" if graduated else " 🔜near" if near_grad else ""), 5)
+
     passed = sum(1 for c in result["checklist"] if c["status"] == "pass")
     failed = sum(1 for c in result["checklist"] if c["status"] == "fail")
     warned = sum(1 for c in result["checklist"] if c["status"] == "warn")
@@ -2333,7 +2425,8 @@ def run_full_sniper_checklist(address: str) -> Dict:
 
     # ── Critical fail check (label-independent) ──
     critical_labels_fixed = {"Honeypot Safe", "No Hidden Functions", "Transfer Allowed",
-                              "Mint Authority Disabled", "Listed on DEX", "DEX Pools", "Price Exists"}
+                              "Mint Authority Disabled", "Listed on DEX", "DEX Pools", "Price Exists",
+                              "Dev Not Blacklisted"}  # ✅ blacklisted dev = instant DANGER
     critical_fails = [c for c in result["checklist"] if c["status"] == "fail" and (
         c["label"] in critical_labels_fixed or
         c["label"].startswith("Buy Tax") or
