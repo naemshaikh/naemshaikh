@@ -68,6 +68,37 @@ ROUTER_ABI_PRICE = [
 TOKEN_DEC_ABI = [{"name":"decimals","type":"function","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"uint8"}]}]
 _dec_cache = {}
 
+# GoPlus cache — 5 min TTL, max 100 tokens
+# Contract security nahi badalti 5 min mein — API calls bachao
+_goplus_cache: dict = {}  # {addr_lower: {"data": {...}, "ts": float}}
+_GOPLUS_TTL = 300  # 5 minutes
+
+def _get_goplus(token_address: str) -> dict:
+    """GoPlus security data — cached 5 min"""
+    key = token_address.lower()
+    now = time.time()
+    cached = _goplus_cache.get(key)
+    if cached and (now - cached["ts"]) < _GOPLUS_TTL:
+        return cached["data"]
+    try:
+        r = requests.get(
+            "https://api.gopluslabs.io/api/v1/token_security/56",
+            params={"contract_addresses": token_address}, timeout=12
+        )
+        if r.status_code == 200:
+            data = r.json().get("result", {}).get(key, {})
+            # Cache mein save karo
+            _goplus_cache[key] = {"data": data, "ts": now}
+            # Max 100 tokens — purane hatao
+            if len(_goplus_cache) > 100:
+                oldest = sorted(_goplus_cache.items(), key=lambda x: x[1]["ts"])[:20]
+                for k, _ in oldest:
+                    _goplus_cache.pop(k, None)
+            return data
+    except Exception as e:
+        print(f"⚠️ GoPlus error: {e}")
+    return {}
+
 def _get_dec(addr):
     if addr.lower() in _dec_cache: return _dec_cache[addr.lower()]
     try: d = w3.eth.contract(address=Web3.to_checksum_address(addr), abi=TOKEN_DEC_ABI).functions.decimals().call()
@@ -1178,13 +1209,9 @@ def _fetch_early_buyers(token_address: str, entry_ts: float, max_buyers: int = 2
     """
     buyers = set()
     try:
-        # Source 1: GoPlus holders (already in memory se)
-        gp_res = requests.get(
-            "https://api.gopluslabs.io/api/v1/token_security/56",
-            params={"contract_addresses": token_address}, timeout=8
-        )
-        if gp_res.status_code == 200:
-            gp = gp_res.json().get("result", {}).get(token_address.lower(), {})
+        # Source 1: GoPlus holders (cached)
+        gp = _get_goplus(token_address)
+        if gp:
             holders = gp.get("holders", [])
             for h in (holders or [])[:max_buyers]:
                 addr = h.get("address", "")
@@ -2002,10 +2029,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     # ── Auto-blacklist dev if SL hit or rug dump ──
     if "SL" in reason or "Dump" in reason:
         try:
-            _gp = requests.get(
-                "https://api.gopluslabs.io/api/v1/token_security/56",
-                params={"contract_addresses": address}, timeout=6
-            ).json().get("result", {}).get(address.lower(), {})
+            _gp = _get_goplus(address)
             _creator = _gp.get("creator_address", "")
             if _creator and len(_creator) == 42:
                 blacklist_dev(_creator, f"SL/Rug on {token} {reason}")
@@ -3513,15 +3537,10 @@ def run_full_sniper_checklist(address: str, prefetched_dex: dict = None) -> Dict
         result["recommendation"] = f"❌ HONEYPOT — sell blocked on-chain ({hp_label})"
         return result
 
-    # ── STEP 2: GoPlus — deep static analysis (tax, mint, owner, holders) ──
+    # ── STEP 2: GoPlus — deep static analysis (cached 5 min) ──
     goplus_data = {}
     try:
-        gp_res = requests.get(
-            "https://api.gopluslabs.io/api/v1/token_security/56",
-            params={"contract_addresses": address}, timeout=12
-        )
-        if gp_res.status_code == 200:
-            goplus_data = gp_res.json().get("result", {}).get(address.lower(), {})
+        goplus_data = _get_goplus(address)
     except Exception as e:
         print(f"⚠️ GoPlus error: {e}")
 
