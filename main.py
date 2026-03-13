@@ -1284,10 +1284,130 @@ def _learn_from_trade(token_address: str, win: bool, pnl_pct: float, entry_ts: f
 
 
 # ══════════════════════════════════════════════
-# GREEN SIGNAL DETECTOR
-# Token ke liye multiple positive signals check karo
-# Score jitna zyada = stronger conviction = zyada size buy
+# WHALE FOLLOW SYSTEM
+# Qualified whale wallets ki recent activity monitor karo
+# Agar whale ne koi naya token kharida → bot bhi us token ko scan kare
 # ══════════════════════════════════════════════
+_whale_last_checked: dict = {}  # {wallet_lower: last_check_timestamp}
+_whale_follow_seen:  set  = set()  # tokens already queued via whale follow (dedup)
+_WHALE_CHECK_INTERVAL = 300  # har 5 min ek whale check karo (BSCScan rate limit safe)
+
+def _get_whale_recent_tokens(wallet: str) -> list:
+    """
+    BSCScan se wallet ki last 10 BEP20 transfers fetch karo.
+    Returns: [token_address, ...] — unique token addresses
+    """
+    if not BSC_SCAN_KEY:
+        return []
+    try:
+        r = requests.get(BSC_SCAN_API, params={
+            "module":     "account",
+            "action":     "tokentx",
+            "address":    wallet,
+            "page":       1,
+            "offset":     20,
+            "sort":       "desc",
+            "apikey":     BSC_SCAN_KEY,
+        }, timeout=8)
+        if r.status_code != 200:
+            return []
+        txns = r.json().get("result", [])
+        if not isinstance(txns, list):
+            return []
+        # Sirf BSC pe, sirf BUY (wallet = to), last 30 min mein
+        cutoff = time.time() - 1800
+        tokens = []
+        seen   = set()
+        for tx in txns:
+            if str(tx.get("to", "")).lower() != wallet.lower(): continue
+            ts = int(tx.get("timeStamp", 0) or 0)
+            if ts < cutoff: continue
+            ca = tx.get("contractAddress", "")
+            if ca and ca not in seen:
+                seen.add(ca)
+                tokens.append(ca)
+        return tokens[:5]  # max 5 naye tokens per whale
+    except Exception as e:
+        print(f"⚠️ whale_recent_tokens {wallet[:10]}: {e}")
+        return []
+
+def _whale_follow_loop():
+    """
+    Background: qualified whales ki recent buys check karo.
+    Agar whale ne koi naya token kharida → auto-check queue mein dalo.
+    """
+    time.sleep(120)  # startup delay
+    while True:
+        try:
+            now = time.time()
+            with _smart_wallets_lock:
+                qualified = [
+                    (w, d) for w, d in _smart_wallets.items()
+                    if d.get("qualified", False)
+                ]
+
+            if not qualified:
+                time.sleep(60)
+                continue
+
+            # Sabse zyada wins wale whales pehle check karo
+            qualified.sort(key=lambda x: x[1].get("wins", 0), reverse=True)
+            checked = 0
+
+            for wallet, wdata in qualified[:20]:  # max 20 qualified whales monitor
+                # Rate limit — har whale ko sirf har 5 min check karo
+                if now - _whale_last_checked.get(wallet, 0) < _WHALE_CHECK_INTERVAL:
+                    continue
+
+                _whale_last_checked[wallet] = now
+                tokens = _get_whale_recent_tokens(wallet)
+                checked += 1
+
+                for token_addr in tokens:
+                    ta = token_addr.lower()
+                    if ta in _whale_follow_seen:
+                        continue
+                    if ta in discovered_addresses:
+                        continue  # already processed
+                    _whale_follow_seen.add(ta)
+                    if len(_whale_follow_seen) > 500:
+                        # cleanup old entries
+                        _whale_follow_seen.clear()
+
+                    w_label = get_smart_wallet_label(wallet)
+                    print(f"🐋 Whale Follow: {wallet[:10]} ({w_label}) bought {token_addr[:10]} → auto-scan")
+                    # Directly auto_check queue mein dalo
+                    threading.Thread(
+                        target=_auto_check_new_pair,
+                        args=(token_addr,),
+                        kwargs={"whale_triggered": True, "whale_wallet": wallet},
+                        daemon=True
+                    ).start()
+
+                time.sleep(1)  # BSCScan rate limit
+
+            if checked > 0:
+                print(f"🐋 Whale monitor: checked {checked} wallets, {len(qualified)} qualified total")
+
+        except Exception as e:
+            print(f"⚠️ whale_follow_loop: {e}")
+        time.sleep(60)  # har 60s ek cycle
+
+
+def _count_whales_in_token(token_address: str, goplus_data: dict) -> int:
+    """
+    Token ke holders mein kitne qualified whales hain — score ke liye.
+    """
+    holders = goplus_data.get("holders", []) or []
+    count   = 0
+    for h in holders[:30]:
+        addr = h.get("address", "")
+        if addr and is_smart_wallet(addr):
+            count += 1
+    return count
+
+
+
 def detect_green_signals(token_address: str, goplus_data: dict, dex_data: dict) -> dict:
     """
     Multiple green signals detect karo — har signal pe bot confidence badhata hai.
@@ -1321,12 +1441,12 @@ def detect_green_signals(token_address: str, goplus_data: dict, dex_data: dict) 
             signals.append({"type": "BUY_PRESSURE", "detail": f"BuyVol {vol_ratio:.1f}x SellVol", "weight": 1})
             score += 1
 
-    # ── SIGNAL 3: Smart Money Wallet Detected ──
-    # GoPlus holders mein koi known profitable wallet hai?
+    # ── SIGNAL 3: Smart Money / Whale Wallet Detected ──
+    # GoPlus holders mein koi known profitable whale hai?
     holders = goplus_data.get("holders", [])
     creator = goplus_data.get("creator_address", "")
     sm_found = []
-    for h in (holders or [])[:20]:
+    for h in (holders or [])[:30]:
         addr_h = h.get("address", "")
         if is_smart_wallet(addr_h):
             sm_found.append(get_smart_wallet_label(addr_h))
@@ -1334,15 +1454,24 @@ def detect_green_signals(token_address: str, goplus_data: dict, dex_data: dict) 
         sm_found.append(f"creator:{get_smart_wallet_label(creator)}")
         score += 2  # Creator khud profitable hai = extra conviction
     if sm_found:
-        # Kitne qualified wallets hain aur unka combined win rate
         _sm_details = []
-        for h in (holders or [])[:20]:
+        for h in (holders or [])[:30]:
             a = h.get("address","")
             if is_smart_wallet(a):
                 _sm_details.append(get_smart_wallet_label(a))
-        detail_str = " | ".join(_sm_details[:2]) if _sm_details else f"{len(sm_found)} wallets"
-        signals.append({"type": "SMART_MONEY", "detail": f"🧠 {detail_str}", "weight": 3})
-        score += min(3 * len(sm_found), 6)  # multiple smart wallets = more points (max 6)
+        detail_str = " | ".join(_sm_details[:3]) if _sm_details else f"{len(sm_found)} wallets"
+        whale_count = len(sm_found)
+
+        # Whale count ke hisaab se signal strength
+        if whale_count >= 3:
+            signals.append({"type": "MULTI_WHALE", "detail": f"🐋🐋🐋 {whale_count} whales in: {detail_str}", "weight": 5})
+            score += 5  # 3+ whales = very strong conviction
+        elif whale_count == 2:
+            signals.append({"type": "DOUBLE_WHALE", "detail": f"🐋🐋 2 whales: {detail_str}", "weight": 4})
+            score += 4
+        else:
+            signals.append({"type": "SMART_MONEY", "detail": f"🧠 {detail_str}", "weight": 3})
+            score += 3
 
     # ── SIGNAL 4: Liquidity Growing Fast ──
     # four.meme graduation approaching = maximum momentum window
@@ -2986,13 +3115,18 @@ def _memory_cleanup_loop():
         time.sleep(300)  # har 5 minute
 
 # ========== AUTO CHECK NEW PAIR ==========
-def _auto_check_new_pair(pair_address: str):
+def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale_wallet: str = ""):
     if not _check_semaphore.acquire(blocking=False):
-        print(f"⏭️ Check skipped (10 already running): {pair_address[:10]}")
+        print(f"⏭️ Check skipped (semaphore full): {pair_address[:10]}")
         return
     try:
-        print(f"⏳ Waiting 30s: {pair_address[:10]}")
-        time.sleep(30)
+        if whale_triggered:
+            print(f"🐋 WHALE FOLLOW scan (skip wait): {pair_address[:10]} ← {whale_wallet[:10]}")
+            # Whale ne kharida → 10s wait kaafi hai, 30s nahi
+            time.sleep(10)
+        else:
+            print(f"⏳ Waiting 30s: {pair_address[:10]}")
+            time.sleep(30)
         _prefetched_dex = None
         try:
             _ar = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{pair_address}", timeout=8)
@@ -4299,6 +4433,7 @@ def _startup_once():
         threading.Thread(target=_delayed(continuous_learning,   25),  daemon=True).start()
         threading.Thread(target=_delayed(auto_position_manager, 30),  daemon=True).start()
         threading.Thread(target=_delayed(_memory_cleanup_loop,  60),  daemon=True).start()  # MEM FIX
+        threading.Thread(target=_delayed(_whale_follow_loop,   120),  daemon=True).start()  # WHALE FOLLOW
 
 
         def _startup_restore():
