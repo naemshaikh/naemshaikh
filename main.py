@@ -2673,40 +2673,36 @@ def auto_position_manager():
                         print(f"✅ 2x LADDER: {addr[:10]} @ +{pnl:.0f}%")
 
                     # ══════════════════════════════════════════════════════
-                    # AGGRESSIVE EARLY PARTIALS — Data-driven rug protection
+                    # PRO LADDER — GMGN Whale Pattern (observed live wallets)
                     # ──────────────────────────────────────────────────────
-                    # Problem: Token +43-71% → instant rug → -78% net loss
-                    # Old: +30% → 5% sell = useless, +50% → 7% sell = useless
-                    # Fix: sell meaningful chunks ASAP before rug hits
-                    #
-                    # Ladder:
-                    #  +20% → sell 30% immediately (first chunk, early bank)
-                    #  +40% → sell 25% more (total 55%, principal near-recovered)
-                    #  +80% → sell 15% more (total 70%, deep profit locked)
-                    #  Rest rides with TrailSL → moonshot chance
+                    # Meme coins rug after first pump — exit fast, exit big
+                    # +30% → 40% sell → capital ~90% recovered immediately
+                    # +60% → 30% sell → total 70% out, deep profit locked
+                    # +100% → 20% sell → total 90% out, 2x confirmed
+                    # Remaining 10% → free ride on TrailSL → moonshot
                     # ══════════════════════════════════════════════════════
-                    elif pnl >= 80 and tp_sold < 70:         # +80% → bank more
-                        _auto_paper_sell(addr, f"EarlyTP +80% [70% banked] 💰", 15.0)
-                        print(f"💰 EarlyTP80: {addr[:10]} pnl={pnl:.1f}% tp_sold={tp_sold:.0f}%")
-                    elif pnl >= 40 and tp_sold < 55:         # +40% → principal safe
-                        _auto_paper_sell(addr, f"EarlyTP +40% [55% banked] 🔒", 25.0)
-                        print(f"🔒 EarlyTP40: {addr[:10]} pnl={pnl:.1f}% tp_sold={tp_sold:.0f}%")
-                    elif pnl >= 20 and tp_sold < 30:         # +20% → first chunk ASAP
-                        _auto_paper_sell(addr, f"EarlyTP +20% [30% banked] ✂️", 30.0)
-                        print(f"✂️ EarlyTP20: {addr[:10]} pnl={pnl:.1f}%")
+                    elif pnl >= 100 and tp_sold < 90:        # +100% → 20% sell (total 90%)
+                        _auto_paper_sell(addr, f"ProTP +100% [90% banked] 🌙", 20.0)
+                        print(f"🌙 ProTP100: {addr[:10]} pnl={pnl:.1f}% tp_sold={tp_sold:.0f}%")
+                    elif pnl >= 60 and tp_sold < 70:         # +60% → 30% sell (total 70%)
+                        _auto_paper_sell(addr, f"ProTP +60% [70% banked] 💰", 30.0)
+                        print(f"💰 ProTP60: {addr[:10]} pnl={pnl:.1f}% tp_sold={tp_sold:.0f}%")
+                    elif pnl >= 30 and tp_sold < 40:         # +30% → 40% sell (capital recover)
+                        _auto_paper_sell(addr, f"ProTP +30% [40% banked] 🔒", 40.0)
+                        print(f"🔒 ProTP30: {addr[:10]} pnl={pnl:.1f}%")
             except Exception as e:
                 print(f"Auto manager err {addr[:10]}: {e}")
-        # No positions → 60s sleep. Positions in profit → 3s fast cycle. Else → 5s
+        # No positions → 30s sleep. Any position in profit → 0.3s ultra fast. Else → 1s
         _positions = auto_trade_stats["running_positions"]
         if not _positions:
-            _sleep = 60
+            _sleep = 30
         elif any(
-            ((monitored_positions.get(a, {}).get("current", 0) - v.get("entry", 1e-18)) / max(v.get("entry", 1e-18), 1e-18)) * 100 >= 15
+            ((monitored_positions.get(a, {}).get("current", 0) - v.get("entry", 1e-18)) / max(v.get("entry", 1e-18), 1e-18)) * 100 >= 10
             for a, v in list(_positions.items())
         ):
-            _sleep = 3   # 🔥 fast cycle — koi position 15%+ mein hai
+            _sleep = 0.3   # ⚡ ultra fast — koi position 10%+ mein hai, whale speed
         else:
-            _sleep = 5
+            _sleep = 1.0   # 1s default — positions hain but abhi pump nahi
         time.sleep(_sleep)
 
 # ========== PRICE MONITOR ==========
@@ -2759,8 +2755,8 @@ def price_monitor_loop():
                     pass
             except Exception as e:
                 print(f"⚠️ Price monitor error ({addr}): {e}")
-        # No positions? slow down — save CPU
-        _sleep = 5 if monitored_positions else 30
+        # Positions hain? 1s. Nahi? 15s
+        _sleep = 1.0 if monitored_positions else 15
         time.sleep(_sleep)
 
 # ========== DEXSCREENER ==========
