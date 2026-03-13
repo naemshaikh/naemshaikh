@@ -2673,23 +2673,22 @@ def auto_position_manager():
                         print(f"✅ 2x LADDER: {addr[:10]} @ +{pnl:.0f}%")
 
                     # ══════════════════════════════════════════════════════
-                    # PRO LADDER — GMGN Whale Pattern (observed live wallets)
+                    # PRO LADDER — Balanced: Rug protection + Moonshot chance
                     # ──────────────────────────────────────────────────────
-                    # Meme coins rug after first pump — exit fast, exit big
-                    # +30% → 40% sell → capital ~90% recovered immediately
-                    # +60% → 30% sell → total 70% out, deep profit locked
-                    # +100% → 20% sell → total 90% out, 2x confirmed
+                    # +40%  → 50% sell → capital ~71% recover, risk halved
+                    # +80%  → 25% sell → total 75% out, deep profit locked
+                    # +150% → 15% sell → total 90% out, 2.5x confirmed
                     # Remaining 10% → free ride on TrailSL → moonshot
                     # ══════════════════════════════════════════════════════
-                    elif pnl >= 100 and tp_sold < 90:        # +100% → 20% sell (total 90%)
-                        _auto_paper_sell(addr, f"ProTP +100% [90% banked] 🌙", 20.0)
-                        print(f"🌙 ProTP100: {addr[:10]} pnl={pnl:.1f}% tp_sold={tp_sold:.0f}%")
-                    elif pnl >= 60 and tp_sold < 70:         # +60% → 30% sell (total 70%)
-                        _auto_paper_sell(addr, f"ProTP +60% [70% banked] 💰", 30.0)
-                        print(f"💰 ProTP60: {addr[:10]} pnl={pnl:.1f}% tp_sold={tp_sold:.0f}%")
-                    elif pnl >= 30 and tp_sold < 40:         # +30% → 40% sell (capital recover)
-                        _auto_paper_sell(addr, f"ProTP +30% [40% banked] 🔒", 40.0)
-                        print(f"🔒 ProTP30: {addr[:10]} pnl={pnl:.1f}%")
+                    elif pnl >= 150 and tp_sold < 90:        # +150% → 15% sell (total 90%)
+                        _auto_paper_sell(addr, f"ProTP +150% [90% banked] 🌙", 15.0)
+                        print(f"🌙 ProTP150: {addr[:10]} pnl={pnl:.1f}% tp_sold={tp_sold:.0f}%")
+                    elif pnl >= 80 and tp_sold < 75:         # +80% → 25% sell (total 75%)
+                        _auto_paper_sell(addr, f"ProTP +80% [75% banked] 💰", 25.0)
+                        print(f"💰 ProTP80: {addr[:10]} pnl={pnl:.1f}% tp_sold={tp_sold:.0f}%")
+                    elif pnl >= 40 and tp_sold < 50:         # +40% → 50% sell (capital 71% back)
+                        _auto_paper_sell(addr, f"ProTP +40% [50% banked] 🔒", 50.0)
+                        print(f"🔒 ProTP40: {addr[:10]} pnl={pnl:.1f}%")
             except Exception as e:
                 print(f"Auto manager err {addr[:10]}: {e}")
         # No positions → 30s sleep. Any position in profit → 0.3s ultra fast. Else → 1s
