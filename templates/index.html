@@ -1358,8 +1358,9 @@ window._renderHPage = function(){
     var holdTm      = gHoldTime(p.bought_at);
     var origSz      = parseFloat(p.orig_size_bnb||sz);
     var soldPct     = parseFloat(p.tp_sold||0);
-    var tokenQty    = entry > 0 ? (origSz / entry) : 0;  // original tokens at buy
-    var currTokQty  = entry > 0 ? (sz / entry) : 0;      // remaining tokens (sz shrinks on sells)
+    var tokenQty    = entry > 0 ? (origSz / entry) : 0;           // total tokens bought
+    var currTokQty  = tokenQty * Math.max(0, (100 - soldPct) / 100); // remaining tokens after TP sells
+    var currValUSD  = currTokQty > 0 && current > 0 && bnbP > 0 ? (currTokQty * current * bnbP) : 0;
     var _fmtUSD = function(v){
       if(!v||v<=0) return '—';
       if(v >= 1) return '$'+v.toFixed(4);
@@ -1369,7 +1370,6 @@ window._renderHPage = function(){
     };
     var entryUSDfmt = entry > 0 ? _fmtUSD(entry * bnbP) : '—';
     var currUSDfmt  = current > 0 ? _fmtUSD(current * bnbP) : '—';
-    var currValUSD  = (bnbP > 0 && sz > 0 && current > 0) ? (sz / entry * current * bnbP) : 0;
     var remClr      = remPct >= 50 ? 'var(--em)' : 'var(--gold)';
     var nowClr      = pnl >= 0 ? 'var(--em)' : 'var(--red)';
     return '<div style="display:grid;grid-template-columns:1fr 80px 90px 90px;align-items:center;padding:9px 4px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;gap:4px;background:'+_rowBg+';" onclick="openHoldDetail(\''+encodeURIComponent(JSON.stringify(Object.assign({},p,{address:addr})))+'\')">'+
