@@ -5542,7 +5542,7 @@ def wallet_info():
                 return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2)})
             except Exception:
                 continue
-        return jsonify({"wallet": addr, "bnb": 0, "usd": 0, "error": "RPC unavailable — add BSC_SCAN_KEY"})
+        return jsonify({"wallet": addr, "bnb": 0, "usd": 0, "error": "RPC blocked — add api.bscscan.com in Render outbound domains"})
     except Exception as e:
         return jsonify({"wallet": "", "bnb": 0, "usd": 0, "error": str(e)[:60]})
 
