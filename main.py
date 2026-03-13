@@ -2805,7 +2805,7 @@ def continuous_learning():
                 except Exception as e:
                     print(f"BNB backup fetch error: {e}")
 
-            # Trading patterns — har 120s
+            # Brain patterns learn — har 2 min
             if now - last_fast >= 120:
                 last_fast = now
                 _learn_trading_patterns()
@@ -2820,7 +2820,7 @@ def continuous_learning():
                         }).execute()
                 except Exception: pass
 
-            # Deep LLM learning — har 10 min (was 5 min)
+            # Deep LLM + brain save — har 10 min
             if now - last_deep >= 600:
                 last_deep = now
                 _deep_llm_learning()
