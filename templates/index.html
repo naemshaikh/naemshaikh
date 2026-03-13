@@ -786,7 +786,7 @@ async function sendMsg(){
 function _applyTD(td){
   if(!td) return;
   const bnb=parseFloat(td.bnb_price||0);
-  if(bnb>0){_bnbReal=bnb;document.getElementById('h-bnb').textContent='$'+bnb.toFixed(0);document.getElementById('h-bnb').style.color='';}
+  if(bnb>0){_bnbReal=bnb;window._bnbReal=bnb;document.getElementById('h-bnb').textContent='$'+bnb.toFixed(0);document.getElementById('h-bnb').style.color='';}
   else{document.getElementById('h-bnb').textContent='ERR';document.getElementById('h-bnb').style.color='var(--red)';}
   const fg=td.fear_greed!=null?td.fear_greed:50;
   const fgEl=document.getElementById('h-fg');
@@ -831,8 +831,16 @@ async function fetchStats(){
   }
   const bnb=parseFloat((_as&&_as.bnb_price)||(_td&&_td.bnb_price)||0);
   const fg=(_td&&_td.fear_greed!=null)?_td.fear_greed:((_as&&_as.fear_greed)!=null?_as.fear_greed:50);
-  if(bnb>0){_bnbReal=bnb;document.getElementById('h-bnb').textContent='$'+bnb.toFixed(0);document.getElementById('h-bnb').style.color='';}
-  else if(!_bnbReal){document.getElementById('h-bnb').textContent='ERR';document.getElementById('h-bnb').style.color='var(--red)';}
+  // ✅ _bnbReal PEHLE set karo — renderGHolding iske baad call hoga toh $0.00 nahi ayega
+  if(bnb>0){
+    _bnbReal=bnb;
+    window._bnbReal=bnb;
+    document.getElementById('h-bnb').textContent='$'+bnb.toFixed(0);
+    document.getElementById('h-bnb').style.color='';
+  } else if(!_bnbReal){
+    document.getElementById('h-bnb').textContent='ERR';
+    document.getElementById('h-bnb').style.color='var(--red)';
+  }
   const fgEl=document.getElementById('h-fg');
   fgEl.textContent=fg;fgEl.style.color=fg>60?'var(--em)':fg<40?'var(--red)':'var(--gold)';
   // FIX: paper_balance safe parse — fallback 5.0
@@ -868,7 +876,8 @@ async function fetchStats(){
     const _dll = document.getElementById('daily-loss-limit');  if(_dll) _dll.textContent=_dlim.toFixed(4);
     const _dd  = document.getElementById('daily-date');        if(_dd)  _dd.textContent=new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
 
-    renderGHolding(_as.open_trades||_as.positions||[]);
+    // ✅ Re-render holdings agar bnbP abhi set hua — $0.00 fix
+    if(window._bnbReal>0) renderGHolding(_as.open_trades||_as.positions||[]);
     window._lastStats=_as;
     if(document.getElementById('gtab-trades')&&document.getElementById('gtab-trades').style.display!=='none')window._renderTPage();
     if(_as.open_trades&&_as.open_trades.length){
