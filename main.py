@@ -139,7 +139,7 @@ def _get_dexpaprika_price_bnb(token_address):
         if r.status_code == 200:
             pusd = float((r.json().get("summary") or {}).get("price_usd", 0) or 0)
             if pusd > 0:
-                bnb = market_cache.get("bnb_price", 300) or 300
+                bnb = market_cache.get("bnb_price", 0)
                 return pusd / bnb
     except: pass
     return 0.0
@@ -202,7 +202,7 @@ def get_token_price_bnb_full(token_address: str) -> float:
             if bsc:
                 bsc.sort(key=lambda x: float((x.get("liquidity") or {}).get("usd",0) or 0), reverse=True)
                 pusd = float(bsc[0].get("priceUsd",0) or 0)
-                bnb  = market_cache.get("bnb_price",300) or 300
+                bnb  = market_cache.get("bnb_price", 0)
                 return pusd/bnb if pusd > 0 else 0.0
     except: pass
     return 0.0
@@ -263,6 +263,74 @@ market_cache = {
     "trending":     [],
     "last_updated": None
 }
+
+# ========== DATA GUARD — STRICT REAL DATA ENFORCEMENT ==========
+class DataGuard:
+    PRICE_STALE_SEC = 10
+    MIN_BNB_PRICE   = 100
+    MAX_BNB_PRICE   = 5000
+    _gas_cache      = {"val": 0.0, "ts": 0}
+
+    @staticmethod
+    def bnb_price_ok():
+        price = market_cache.get("bnb_price", 0)
+        if not price or price <= 0:
+            return False, "BNB price = 0 — NodeReal stream connected nahi"
+        if price < DataGuard.MIN_BNB_PRICE or price > DataGuard.MAX_BNB_PRICE:
+            return False, f"BNB price suspicious: ${price:.2f}"
+        ts = market_cache.get("last_updated")
+        if not ts:
+            return False, "BNB price timestamp missing"
+        try:
+            age = (datetime.utcnow() - datetime.fromisoformat(ts.replace("Z",""))).total_seconds()
+            if age > DataGuard.PRICE_STALE_SEC:
+                return False, f"BNB price stale: {age:.0f}s purana — stream down"
+        except Exception:
+            return False, "BNB timestamp parse error"
+        return True, "ok"
+
+    @staticmethod
+    def token_price_ok(price_bnb, address):
+        if not price_bnb or price_bnb <= 0:
+            return False, f"Token price=0 for {address[:10]}"
+        if price_bnb > 1.0:
+            return False, f"Token price > 1 BNB — suspicious"
+        if price_bnb < 1e-18:
+            return False, f"Token price too tiny — dead token"
+        return True, "ok"
+
+    @staticmethod
+    def get_real_gas_bnb():
+        now = time.time()
+        if now - DataGuard._gas_cache["ts"] < 30 and DataGuard._gas_cache["val"] > 0:
+            return DataGuard._gas_cache["val"]
+        try:
+            _key = os.environ.get("NODEREAL_API_KEY", "")
+            if _key:
+                r = requests.post(
+                    f"https://bsc-mainnet.nodereal.io/v1/{_key}",
+                    json={"jsonrpc":"2.0","id":1,"method":"eth_gasPrice","params":[]},
+                    timeout=5
+                )
+                gwei_hex = r.json().get("result", "0x0")
+                gwei     = int(gwei_hex, 16) / 1e9
+                if 0.5 < gwei < 100:
+                    gas_bnb = (gwei * 1e9 * 150000) / 1e18
+                    DataGuard._gas_cache = {"val": gas_bnb, "ts": now}
+                    return gas_bnb
+        except Exception as e:
+            print(f"⚠️ Gas fetch error: {e}")
+        return 0.0
+
+    @staticmethod
+    def trade_allowed(address, token_price_bnb):
+        ok, msg = DataGuard.bnb_price_ok()
+        if not ok:
+            return False, f"DATA_GUARD [BNB]: {msg}"
+        ok, msg = DataGuard.token_price_ok(token_price_bnb, address)
+        if not ok:
+            return False, f"DATA_GUARD [TOKEN]: {msg}"
+        return True, "All data verified real"
 
 # ========== GLOBAL USER PROFILE ==========
 user_profile = {
@@ -865,26 +933,17 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         print(f"🛑 Auto-buy BLOCKED: balance={paper_balance:.4f} too low")
         return
 
-    # ✅ BNB price validity check — price 0 ya 10 min+ purana ho toh trade mat lo
-    _bnb_now = market_cache.get("bnb_price", 0)
-    if not _bnb_now or _bnb_now < 10:
-        print(f"🛑 Auto-buy BLOCKED: BNB price unavailable ({_bnb_now}) — API fail lag rahi hai")
+    # ✅ DataGuard — strict real data check before any trade
+    _dg_ok, _dg_msg = DataGuard.bnb_price_ok()
+    if not _dg_ok:
+        print(f"🛑 Auto-buy BLOCKED: {_dg_msg}")
         return
-    _price_ts = market_cache.get("last_updated", "")
-    if _price_ts:
-        try:
-            _age_sec = (datetime.utcnow() - datetime.fromisoformat(_price_ts.replace("Z",""))).total_seconds()
-            if _age_sec > 10:  # WebSocket real-time hai — 10s se zyada = stream disconnected
-                print(f"🛑 Auto-buy BLOCKED: BNB price stale ({_age_sec:.0f}s purana) — WebSocket reconnect hone tak wait karo")
-                return
-        except Exception:
-            pass
 
     # Step 1: DexScreener price use karo (checklist mein already fetch hua)
     dex   = checklist_result.get("dex_data", {})
-    bnb_p = market_cache.get("bnb_price", 300) or 300
+    bnb_p = market_cache.get("bnb_price", 0)  # real price only — no fallback
     entry_price = float(dex.get("price_bnb", 0) or 0)
-    if entry_price <= 0 and float(dex.get("price_usd", 0) or 0) > 0:
+    if entry_price <= 0 and float(dex.get("price_usd", 0) or 0) > 0 and bnb_p > 0:
         entry_price = dex["price_usd"] / bnb_p
 
     # Step 2: On-chain fallback
@@ -918,7 +977,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
                     _bsc2 = [p for p in (_r2.json() or {}).get("pairs", []) or [] if p and p.get("chainId") == "bsc"]
                     if _bsc2:
                         _pusd2 = float(_bsc2[0].get("priceUsd", 0) or 0)
-                        bnb_p2 = market_cache.get("bnb_price", 300) or 300
+                        bnb_p2 = market_cache.get("bnb_price", 0)
                         if _pusd2 > 0:
                             entry_price = _pusd2 / bnb_p2
             except Exception as _re:
@@ -934,19 +993,20 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         print(f"❌ Auto-buy BLOCKED: price too tiny={entry_price:.2e} for {address[:10]}")
         return
 
-    entry_price = entry_price * 1.005
-    if entry_price <= 0:  # FIX: zero price guard
-        print(f"❌ BLOCKED: zero price for {address[:10]}")
-        return
-    # FIX: Double check after slippage — price kabhi 0 nahi hona chahiye
+    entry_price = entry_price * 1.005  # 0.5% buy slippage
     if entry_price <= 0:
-        print(f"❌ Auto-buy BLOCKED (post-slippage): price=0 for {address[:10]}")
+        print(f"❌ BLOCKED: zero price after slippage for {address[:10]}")
+        return
+    # ✅ Final DataGuard check — token price + BNB price both verified
+    _ok, _msg = DataGuard.trade_allowed(address, entry_price)
+    if not _ok:
+        print(f"🛑 Auto-buy BLOCKED: {_msg}")
         return
     size_bnb = max(min(AUTO_BUY_SIZE_BNB, paper_balance * 0.025), 0.001)
     sess["paper_balance"] = round(paper_balance - size_bnb, 6)
     _sl = CHECKLIST_SETTINGS.get("sl_new", 15.0)
     add_position_to_monitor(AUTO_SESSION_ID, address, token_name or address[:10], entry_price, size_bnb, stop_loss_pct=_sl)
-    _bnb_at_buy = market_cache.get("bnb_price", 300) or 300
+    _bnb_at_buy = market_cache.get("bnb_price", 0)  # real only — DataGuard already verified
     auto_trade_stats["running_positions"][address] = {
         "token":          token_name or address[:10],
         "entry":          entry_price,
@@ -1007,7 +1067,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     if sell_pct >= 100.0:
      if not isinstance(auto_trade_stats.get("trade_history"), list):
         auto_trade_stats["trade_history"] = []
-     _bnb_at_sell = market_cache.get("bnb_price", 300) or 300
+     _bnb_at_sell = market_cache.get("bnb_price", 0)  # real only
      _saved_bought_usd = auto_trade_stats["running_positions"].get(address, {}).get("bought_usd", 0)
      auto_trade_stats["trade_history"].append({
         "token":      token,
@@ -1064,8 +1124,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         pos["tp_sold"]        = pos.get("tp_sold", 0) + sell_pct
         pos["banked_pnl_bnb"] = round(pos.get("banked_pnl_bnb", 0.0) + pnl_bnb, 6)  # ✅ accumulate
         # ✅ Store real TP sell events for frontend display
-        _bnb_at_tp = market_cache.get("bnb_price", 300) or 300
-        _gas_bnb   = 0.0003  # BSC gas estimate ~0.0003 BNB per tx
+        _bnb_at_tp = market_cache.get("bnb_price", 0)  # real only
+        _gas_bnb   = DataGuard.get_real_gas_bnb()  # real BSC gas price
         if not isinstance(pos.get("tp_events"), list):
             pos["tp_events"] = []
         pos["tp_events"].append({
@@ -1223,7 +1283,7 @@ def get_dexscreener_token_data(token_address: str) -> Dict:
                     "pair_address":  p.get("pairAddress", ""),
                     "dex_url":       p.get("url", ""),
                 })
-                bnb_price = market_cache.get("bnb_price", 300) or 300
+                bnb_price = market_cache.get("bnb_price", 0)
                 result["price_bnb"]    = result["price_usd"] / bnb_price if result["price_usd"] else 0
                 _bt = p.get("baseToken") or {}
                 result["symbol"]       = _bt.get("symbol", "")
@@ -1951,7 +2011,7 @@ def run_full_sniper_checklist(address: str) -> Dict:
             liq_locked += float(pool.get("lock_ratio", 0) or 0)
         liq_locked = (liq_locked / len(dex_list)) * 100
 
-    bnb_price = market_cache.get("bnb_price", 300) or 300
+    bnb_price = market_cache.get("bnb_price", 0)
     liq_bnb   = liq_usd / bnb_price
 
     buy_tax  = _gp_float(goplus_data, "buy_tax")  * 100
@@ -2620,7 +2680,7 @@ def trading_data():
     # FIX: Hamesha AUTO_SESSION_ID ka data do — random SID se ghost sessions mat banao
     # Random SID se get_or_create_session call hoti thi → memory leak
     _auto_sess_td = sessions.get(AUTO_SESSION_ID) or {"paper_balance":5.0,"trade_count":0,"win_count":0,"loss_count":0,"positions":[],"pnl":0,"daily_loss":0}
-    bnb_price     = market_cache.get("bnb_price", 0) or 300
+    bnb_price     = market_cache.get("bnb_price", 0)
     trade_count   = _auto_sess_td.get("trade_count", 0)
     win_count     = _auto_sess_td.get("win_count", 0)
     win_rate      = round((win_count / trade_count * 100), 1) if trade_count > 0 else 0
@@ -2642,7 +2702,7 @@ def trading_data():
     })
   except Exception as e:
     print(f"❌ trading_data error: {e}")
-    return jsonify({"paper":"5.0000","real":"0.000","pnl":"+0.0%","bnb_price":300,"fear_greed":50,"positions":[],"trade_count":0,"win_rate":0,"daily_loss":0,"limit_reached":False,"new_pairs_found":0,"monitoring":0})
+    return jsonify({"error":"data_unavailable","bnb_price":0,"positions":[],"trade_count":0,"win_rate":0,"monitoring":0})
 
 @app.route("/chat", methods=["POST"])
 def chat():
@@ -2905,7 +2965,7 @@ def auto_stats_route():
 
 
     # FIX: bnb_price 0 hai toh 300 fallback use karo — UI blank nahi rahegi
-    bnb_price   = market_cache.get("bnb_price", 0) or 300
+    bnb_price   = market_cache.get("bnb_price", 0)
     paper_bal   = float(sess.get("paper_balance") or 5.0)
 
     # Build open_trades array for UI
@@ -2942,7 +3002,7 @@ def auto_stats_route():
             "tp_sold":        pos.get("tp_sold", 0.0),
             "banked_pnl_bnb": banked,
             "tp_events":      pos.get("tp_events", []),
-            "gas_bnb":        0.0003,  # BSC buy gas estimate
+            "gas_bnb":        DataGuard.get_real_gas_bnb(),  # real BSC gas
         })
 
     total_pnl = round(auto_trade_stats.get("auto_pnl_total", 0.0) / max(trade_count, 1), 2) if trade_count > 0 else 0.0
