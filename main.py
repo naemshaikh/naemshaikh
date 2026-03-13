@@ -2127,9 +2127,9 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         sess["daily_loss"] = 0.0
         sess["daily_loss_date"] = today
     _balance = sess.get("paper_balance", 5.0) or 5.0
-    _daily_limit = _balance * (CHECKLIST_SETTINGS.get("daily_loss_pct", 15.0) / 100)
+    _daily_limit = _balance * (CHECKLIST_SETTINGS.get("daily_loss_pct", 50.0) / 100)
     if sess.get("daily_loss", 0) >= _daily_limit:
-        print(f"🛑 Auto-buy BLOCKED: daily_loss={sess.get('daily_loss',0):.4f} BNB >= {_daily_limit:.4f} BNB (15% of {_balance:.3f})")
+        print(f"🛑 Auto-buy BLOCKED: daily_loss={sess.get('daily_loss',0):.4f} BNB >= {_daily_limit:.4f} BNB")
         return
     if len(auto_trade_stats["running_positions"]) >= AUTO_MAX_POSITIONS:
         print(f"🛑 Auto-buy BLOCKED: max {AUTO_MAX_POSITIONS} positions reached")
@@ -2140,6 +2140,13 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     paper_balance = sess.get("paper_balance", 5.0)
     if paper_balance < AUTO_BUY_SIZE_BNB:
         print(f"🛑 Auto-buy BLOCKED: balance={paper_balance:.4f} too low")
+        return
+
+    # ── 80% Capital Cap — 20% gas reserve ──
+    _total_invested = sum(p.get("size_bnb", 0) for p in auto_trade_stats["running_positions"].values())
+    _max_deploy     = paper_balance * 0.80  # 80% max, 20% gas reserve
+    if _total_invested >= _max_deploy:
+        print(f"🛑 Auto-buy BLOCKED: capital cap hit — invested={_total_invested:.4f} BNB >= 80% of {paper_balance:.4f} BNB")
         return
 
     # ✅ DataGuard — strict real data check before any trade
