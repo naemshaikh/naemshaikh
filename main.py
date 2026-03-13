@@ -1982,7 +1982,7 @@ CHECKLIST_SETTINGS = {
     "sl_mature":        10.0,    # Stage 10: SL % for mature tokens
     "score_safe":       50.0,    # Auto buy: SAFE min score % (raised from 40)
     "score_caution":    50.0,    # Auto buy: CAUTION min score % (CAUTION buys disabled)
-    "daily_loss_pct":   15.0,    # Max daily loss % of balance
+    "daily_loss_pct":   50.0,    # Max daily loss % of balance
     "tp1_pct":          30.0,    # Stage 11: TP1 — sell 25%
     "tp2_pct":          50.0,    # Stage 11: TP2 — sell 25%
     "tp3_pct":         100.0,    # Stage 11: TP3 — sell 25%
