@@ -806,12 +806,11 @@ async function fetchHistory(){
     const totalPnlUSD=(Math.abs(totalPnlB)*bnbP).toFixed(2);
     const pnlPctAvg=trades.reduce(function(s,t){return s+parseFloat(t.pnl_pct||t.pnl||0);},0)/trades.length;
     const totalSzBNB=trades.reduce(function(s,t){return s+parseFloat(t.size_bnb||0);},0);
-    const boughtUSD=(trades[0].bought_usd!=null&&trades[0].bought_usd>0?trades[0].bought_usd:(totalSzBNB*bnbP)).toFixed(0);
+    const boughtUSD=(trades[0].bought_usd!=null&&trades[0].bought_usd>0?trades[0].bought_usd:(totalSzBNB*bnbP)).toFixed(2);
     // soldUSD: backend se sold_usd lo, warna calculate karo
-    // sold_usd = 0 only on rug (price=0), loss pe bhi thoda wapas milta hai
     const _backendSold = trades.reduce(function(s,t){return s+parseFloat(t.sold_usd||0);},0);
     const _calcSold = (totalSzBNB + totalPnlB) * bnbP;
-    const soldUSD = (_backendSold > 0 ? _backendSold : Math.max(0, _calcSold)).toFixed(0);
+    const soldUSD = (_backendSold > 0 ? _backendSold : Math.max(0, _calcSold)).toFixed(2);
     const wins=trades.filter(function(t){return parseFloat(t.pnl_pct||t.pnl||0)>0;}).length;
     const losses=trades.length-wins;
     const clr=totalPnlB>=0?'var(--em)':'var(--red)';
