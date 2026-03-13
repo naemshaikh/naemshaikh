@@ -874,8 +874,8 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     if _price_ts:
         try:
             _age_sec = (datetime.utcnow() - datetime.fromisoformat(_price_ts.replace("Z",""))).total_seconds()
-            if _age_sec > 90:  # 90s = 60s fetch interval + 30s grace — agar 90s mein update nahi hua = API fail
-                print(f"🛑 Auto-buy BLOCKED: BNB price stale ({_age_sec:.0f}s purana) — API restored hone tak wait karo")
+            if _age_sec > 10:  # WebSocket real-time hai — 10s se zyada = stream disconnected
+                print(f"🛑 Auto-buy BLOCKED: BNB price stale ({_age_sec:.0f}s purana) — WebSocket reconnect hone tak wait karo")
                 return
         except Exception:
             pass
@@ -1564,8 +1564,7 @@ def continuous_learning():
             if now - last_fast >= 120:  # MEM FIX: was 60
                 last_fast = now
             try:
-                fetch_market_data()
-                fetch_pancakeswap_data()
+                fetch_pancakeswap_data()  # BNB price ab WebSocket se aata hai — sirf pancakeswap data fetch karo
             except Exception as e:
                 print(f"Market fetch error: {e}")
             _learn_trading_patterns()
@@ -2340,6 +2339,37 @@ def _startup_once():
             if market_cache.get("bnb_price", 0) == 0:
                 fetch_market_data()
         threading.Thread(target=_bnb_retry,                           daemon=True).start()
+
+        # ✅ Real-time BNB price via WebSocket — Binance stream (no polling)
+        def _bnb_ws_stream():
+            import asyncio as _aio
+            import json as _j
+            async def _stream():
+                url = "wss://stream.binance.com:9443/ws/bnbusdt@miniTicker"
+                fail = 0
+                while True:
+                    try:
+                        async with websockets.connect(url, ping_interval=20, ping_timeout=10, close_timeout=5) as ws:
+                            print("✅ BNB WebSocket stream connected (Binance)")
+                            fail = 0
+                            while True:
+                                msg  = await asyncio.wait_for(ws.recv(), timeout=30)
+                                data = _j.loads(msg)
+                                price = float(data.get("c", 0) or 0)  # "c" = close/last price
+                                if price > 10:
+                                    market_cache["bnb_price"]    = price
+                                    market_cache["last_updated"] = datetime.utcnow().isoformat()
+                    except Exception as e:
+                        fail += 1
+                        wait = min(5 * fail, 60)
+                        print(f"⚠️ BNB WS error: {str(e)[:60]} — retry in {wait}s")
+                        await asyncio.sleep(wait)
+            try:
+                _aio.run(_stream())
+            except Exception as ex:
+                print(f"⚠️ BNB WS thread: {ex}")
+        threading.Thread(target=_bnb_ws_stream, daemon=True).start()
+
         threading.Thread(target=_delayed(poll_new_pairs,        10),  daemon=True).start()
         threading.Thread(target=_delayed(poll_four_meme,         20), daemon=True).start()
         threading.Thread(target=_delayed(price_monitor_loop,    15),  daemon=True).start()
