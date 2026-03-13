@@ -2127,51 +2127,96 @@ def auto_position_manager():
                 _tp2  = _cs.get("tp2_pct", 50.0)
                 _tp3  = _cs.get("tp3_pct", 100.0)
                 _tp4  = _cs.get("tp4_pct", 200.0)
-                # ── SMART TRAILING STOP LOSS (GMGN Pro Style) ──
-                # Buy hote hi -20% immediate protection
-                # Pump kare toh trail tighten hota jaata hai
-                _trail_pct = _pos_data.get("trail_pct", 20.0)  # default 20% from entry
 
-                # Trail tighten as profit grows
-                if pnl >= 300 and _trail_pct > 15:
-                    _pos_data["trail_pct"] = 15.0
-                    print(f"🔒 Trail SL 15% for {addr[:10]} @ +{pnl:.0f}%")
-                elif pnl >= 200 and _trail_pct > 20:
-                    _pos_data["trail_pct"] = 20.0
-                    print(f"🔒 Trail SL 20% for {addr[:10]} @ +{pnl:.0f}%")
-                elif pnl >= 100 and _trail_pct > 25:
-                    _pos_data["trail_pct"] = 25.0
-                    print(f"🔒 Trail SL 25% for {addr[:10]} @ +{pnl:.0f}%")
-                elif pnl >= 50 and _trail_pct > 30:
-                    _pos_data["trail_pct"] = 30.0
-                    print(f"🔒 Trail SL 30% for {addr[:10]} @ +{pnl:.0f}%")
-                elif pnl >= 30 and _trail_pct > 35:
-                    _pos_data["trail_pct"] = 35.0
-                    print(f"🔒 Trail SL 35% for {addr[:10]} @ +{pnl:.0f}%")
+                # ══════════════════════════════════════════════════════
+                # STOP LOSS SYSTEM
+                # PRIMARY:  Volume based — on-chain sell pressure detect
+                # BACKUP:   Fixed trailing — agar volume data na aaye
+                #
+                # Fixed trailing SL levels (profit → SL locked at):
+                #   Entry      →  -20% (rug protection)
+                #   +40%       →   0%  (breakeven)
+                #   +80%       →  +40%
+                #   +100%      →  +60%
+                #   +200%      → +120%
+                #   +300%      → +180%
+                #   +400%      → +240%
+                #   +500%      → +300%
+                #   +700%      → +420%
+                #   +1000%     → +600%
+                #   +2000%     → +1200%
+                #   +5000%     → +3000%
+                #   +10000%    → +6000%
+                # ══════════════════════════════════════════════════════
 
-                # Trigger: drop from high >= trail_pct → sell
+                # ── Volume Data ──
+                _vol      = _get_vol_pressure_rt(addr)
+                _bv5      = _vol.get("buy_vol5",  0.0)
+                _sv5      = _vol.get("sell_vol5", 0.0)
+                _b5       = _vol.get("buys5",     0)
+                _s5       = _vol.get("sells5",    0)
+                _has_vol  = (_bv5 > 0 or _sv5 > 0 or _b5 > 0 or _s5 > 0)
+                _vol_src  = _vol.get("source", "?")
+
                 _trail_triggered = False
-                if drop_hi <= -_trail_pct:
-                    _auto_paper_sell(addr, f"TrailSL -{_trail_pct:.0f}% from high", 100.0)
-                    _trail_triggered = True
 
-                if not _trail_triggered:
-                    # Volume dump detection — sell pressure bahut high ho toh early exit
-                    _vol     = _get_vol_pressure_rt(addr)
-                    _b5      = _vol.get("buys5",    0)
-                    _s5      = _vol.get("sells5",   0)
-                    _bv5     = _vol.get("buy_vol5",  0.0)
-                    _sv5     = _vol.get("sell_vol5", 0.0)
+                # ── PRIMARY: Volume SL ──
+                if _has_vol:
                     if _bv5 > 0 or _sv5 > 0:
-                        _ratio      = _bv5 / max(_sv5, 0.001)
-                        _ratio_type = "vol"
+                        _ratio = _sv5 / max(_bv5, 0.0001)
                     else:
-                        _ratio      = _b5 / max(_s5, 1)
-                        _ratio_type = "cnt"
-                    _strong_sells = _ratio <= 0.3 and _s5 >= 5  # very aggressive dump only
-                    if pnl <= -15 and _strong_sells and tp_sold < 50:
-                        _auto_paper_sell(addr, f"VolDump {_ratio:.1f}x [{_ratio_type}]", 100.0)
-                        print(f"🚨 VolDump: {addr[:10]} pnl={pnl:.1f}% ratio={_ratio:.1f}x → EXIT")
+                        _ratio = _s5 / max(_b5, 1)
+
+                    # Confirmed rug — instant exit
+                    if _ratio >= 5.0 and _s5 >= 3:
+                        _auto_paper_sell(addr, f"VolRug {_ratio:.1f}x 🚨", 100.0)
+                        print(f"🚨 VolRug: {addr[:10]} ratio={_ratio:.1f}x sv={_sv5:.3f} bv={_bv5:.3f}")
+                        _trail_triggered = True
+
+                    # Dump shuru — exit
+                    elif _ratio >= 3.0 and _s5 >= 5 and pnl <= -10:
+                        _auto_paper_sell(addr, f"VolDump {_ratio:.1f}x", 100.0)
+                        print(f"⚠️ VolDump: {addr[:10]} ratio={_ratio:.1f}x pnl={pnl:.1f}%")
+                        _trail_triggered = True
+
+                # ── BACKUP: Fixed Trailing SL ──
+                if not _trail_triggered:
+                    # SL level = locked profit based on current pnl high
+                    # drop_hi = current drop from all-time high of this position
+                    _trail_pct = _pos_data.get("trail_pct", 20.0)
+
+                    # ── Fixed Trailing: SL locks at ~60% of peak profit ──
+                    # +40%   → SL  0% (breakeven)
+                    # +80%   → SL +40%
+                    # +100%  → SL +60%
+                    # +200%  → SL +120%
+                    # +300%  → SL +180%
+                    # +500%  → SL +300%
+                    # +1000% → SL +600%
+                    # +5000% → SL +3000%
+                    # +10000%→ SL +6000%
+                    # Formula: sl_locked = pnl_high * 0.6  (for pnl >= 40%)
+                    #          trail_pct stays 20% always
+                    # "high se 20% girne pe sell" — but SL floor = pnl_high * 0.6
+
+                    _pnl_high = _pos_data.get("pnl_high", 0.0)
+                    if pnl > _pnl_high:
+                        _pos_data["pnl_high"] = pnl
+                        _pnl_high = pnl
+
+                    # SL floor — agar pnl high 40%+ hai toh lock karo
+                    _sl_floor = (_pnl_high * 0.6) if _pnl_high >= 40 else -20.0
+
+                    # Trail trigger: current pnl ne floor tod diya?
+                    if pnl <= _sl_floor and _pnl_high >= 40:
+                        _auto_paper_sell(addr, f"TrailSL locked +{_sl_floor:.0f}% {'(vol fallback)' if not _has_vol else ''}", 100.0)
+                        _trail_triggered = True
+                        print(f"🔒 TrailSL: {addr[:10]} pnl={pnl:.1f}% floor={_sl_floor:.0f}% peak={_pnl_high:.0f}%")
+                    elif drop_hi <= -20.0:
+                        # Entry protection — below 40% peak, 20% drop from high
+                        _auto_paper_sell(addr, f"TrailSL -20% entry {'(vol fallback)' if not _has_vol else ''}", 100.0)
+                        _trail_triggered = True
+                        print(f"🔒 TrailSL entry: {addr[:10]} drop={drop_hi:.1f}%")
 
                     # ── TRAILING TAKE PROFIT (GMGN style) ──
                     # TP hit hone ke baad price aur upar bhi ja sakta hai
