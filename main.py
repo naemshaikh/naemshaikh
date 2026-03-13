@@ -2585,7 +2585,7 @@ def auto_position_manager():
                         _pnl_high = pnl
 
                     # SL floor — agar pnl high 40%+ hai toh lock karo
-                    _sl_floor = (_pnl_high * 0.6) if _pnl_high >= 40 else -20.0
+                    _sl_floor = (_pnl_high * 0.7) if _pnl_high >= 30 else -20.0  # tighter lock: 70% of peak, triggers at +30%
 
                     # Trail trigger: current pnl ne floor tod diya?
                     if pnl <= _sl_floor and _pnl_high >= 40:
@@ -2672,11 +2672,18 @@ def auto_position_manager():
                         _auto_paper_sell(addr, f"Ladder 2x ✅", 10.0)
                         print(f"✅ 2x LADDER: {addr[:10]} @ +{pnl:.0f}%")
 
-                    # TP1/TP2 — early partials
-                    elif pnl >= _tp2 and tp_sold < 7:
-                        _auto_paper_sell(addr, f"TP+{_tp2:.0f}%", 7.0)
-                    elif pnl >= _tp1 and tp_sold < 5:
-                        _auto_paper_sell(addr, f"TP+{_tp1:.0f}%", 5.0)
+                    # ── AGGRESSIVE EARLY PARTIALS — Rug protection ──
+                    # Data se pata chala: token +43% pe aata hai, phir instant rug
+                    # Old: sirf 5-7% sell = 95% position lost. Fix:
+                    # +30% hit = 25% sell immediately (first chunk bank)
+                    # +50% hit = 25% sell more (ab 50% banked, 50% still riding)
+                    # Result: even agar token rug ho, aadha profit safe hai
+                    elif pnl >= _tp2 and tp_sold < 50:        # +50% reached
+                        _auto_paper_sell(addr, f"TP+{_tp2:.0f}% [50% banked]", 25.0)
+                        print(f"EARLYTP50: {addr[:10]} pnl={pnl:.1f}%")
+                    elif pnl >= _tp1 and tp_sold < 25:        # +30% reached
+                        _auto_paper_sell(addr, f"TP+{_tp1:.0f}% [25% banked]", 25.0)
+                        print(f"EARLYTP30: {addr[:10]} pnl={pnl:.1f}%")
 
                     elif pnl >= 20 and tp_sold < 1:
                         _pos_data["sl_pct"]  = 2.0   # break-even SL
