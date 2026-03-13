@@ -283,8 +283,16 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
   </div>
 
   <div class="bal-row" style="margin-top:0;">
-    <div class="bal-card" onclick="openPnlBreakdown()" style="background:var(--ink2);grid-column:1/-1;width:100%;cursor:pointer;">
-      <div class="bal-lbl">Total PnL <span style="font-size:9px;color:var(--txt3);">↗ tap for breakdown</span></div>
+    <div class="bal-card" style="background:var(--ink2);grid-column:1/-1;width:100%;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <div class="bal-lbl" onclick="openPnlBreakdown()" style="cursor:pointer;">Total PnL <span style="font-size:9px;color:var(--txt3);">↗ breakdown</span></div>
+        <div style="display:flex;gap:4px;" id="pnl-period-tabs">
+          <button onclick="setPnlPeriod('1D')" id="pnl-tab-1D" style="font-size:9px;padding:2px 7px;border-radius:10px;border:1px solid var(--txt3);background:transparent;color:var(--txt3);cursor:pointer;font-weight:600;">1D</button>
+          <button onclick="setPnlPeriod('7D')" id="pnl-tab-7D" style="font-size:9px;padding:2px 7px;border-radius:10px;border:1px solid var(--txt3);background:transparent;color:var(--txt3);cursor:pointer;font-weight:600;">7D</button>
+          <button onclick="setPnlPeriod('1M')" id="pnl-tab-1M" style="font-size:9px;padding:2px 7px;border-radius:10px;border:1px solid var(--txt3);background:transparent;color:var(--txt3);cursor:pointer;font-weight:600;">1M</button>
+          <button onclick="setPnlPeriod('ALL')" id="pnl-tab-ALL" style="font-size:9px;padding:2px 7px;border-radius:10px;border:none;background:var(--em);color:#fff;cursor:pointer;font-weight:600;">ALL</button>
+        </div>
+      </div>
       <div class="bal-val" id="b-pnl" style="color:var(--txt2)">—</div>
       <div class="bal-sub" id="b-wr">Win Rate: —%</div>
     </div>
@@ -855,22 +863,7 @@ async function fetchStats(){
   document.getElementById('b-bal').textContent=bal.toFixed(4)+' BNB';
   const _usdVal=bnb>0?'approx $'+Math.round(bal*bnb).toLocaleString():bal.toFixed(4)+' BNB';
   document.getElementById('b-usd').textContent=_usdVal;
-  const pnl=parseFloat((_as&&_as.total_pnl_pct)||0);
-  const pEl=document.getElementById('b-pnl');
-  pEl.textContent=(pnl>=0?'+':'')+pnl.toFixed(2)+'%';
-  pEl.style.color=pnl>0?'var(--em)':pnl<0?'var(--red)':'var(--txt2)';
-  // Realized / Unrealized sub-line
-  const _rPnl = parseFloat((_as&&_as.realized_pnl_bnb)||0);
-  const _uPnl = parseFloat((_as&&_as.unrealized_pnl_bnb)||0);
-  const _bnbNow = parseFloat((_as&&_as.bnb_price)||window._bnbReal||0);
-  const _wrEl = document.getElementById('b-wr');
-  if(_as && (_rPnl!==0 || _uPnl!==0) && _bnbNow>0){
-    const _rUSD = (_rPnl*_bnbNow).toFixed(2);
-    const _uUSD = (_uPnl*_bnbNow).toFixed(2);
-    _wrEl.innerHTML='<span style="color:var(--txt3);font-size:10px;">Realized: <b style="color:'+(_rPnl>=0?'var(--em)':'var(--red)')+'">'+(_rPnl>=0?'+':'')+_rUSD+'$</b> &nbsp; Unrealized: <b style="color:'+(_uPnl>=0?'var(--em)':'var(--red)')+'">'+(_uPnl>=0?'+':'')+_uUSD+'$</b></span>';
-  } else {
-    _wrEl.textContent='Win Rate: '+(_as?_as.win_rate:0)+'%';
-  }
+  window._renderPnlCard(_as);
   document.getElementById('sg-scan').textContent=((_as&&_as.total_scanned!=null?_as.total_scanned:null)||(_td&&_td.new_pairs_found)||0).toLocaleString();
   document.getElementById('sg-watch').textContent=(_as&&_as.open_positions!=null?_as.open_positions:(_as&&_as.monitoring!=null?_as.monitoring:(_td&&_td.monitoring)||0));
   document.getElementById('sg-wins').textContent=(_as&&_as.wins)||0;
@@ -988,6 +981,70 @@ async function fetchRealBalance(){
     }
   }catch(e){}
 }
+
+// ── PNL Period Filter ──
+window._pnlPeriod = 'ALL';
+
+function setPnlPeriod(p){
+  window._pnlPeriod = p;
+  ['1D','7D','1M','ALL'].forEach(function(t){
+    var el = document.getElementById('pnl-tab-'+t);
+    if(!el) return;
+    if(t===p){
+      el.style.background='var(--em)'; el.style.color='#fff'; el.style.borderColor='var(--em)';
+    } else {
+      el.style.background='transparent'; el.style.color='var(--txt3)'; el.style.borderColor='var(--txt3)';
+    }
+  });
+  window._renderPnlCard(window._lastStats);
+}
+
+function _pnlPeriodFilter(trades, period){
+  if(period==='ALL' || !trades) return trades||[];
+  var now = Date.now();
+  var ms = period==='1D'? 86400000 : period==='7D'? 604800000 : 2592000000; // 1D/7D/1M
+  return trades.filter(function(t){
+    var d = t.sold_at||t.bought_at;
+    if(!d) return false;
+    return (now - new Date(d).getTime()) <= ms;
+  });
+}
+
+window._renderPnlCard = function(_as){
+  var period = window._pnlPeriod||'ALL';
+  var pEl  = document.getElementById('b-pnl');
+  var _wrEl = document.getElementById('b-wr');
+  if(!pEl||!_wrEl) return;
+
+  if(period==='ALL'){
+    // ALL = backend ka total (includes unrealized)
+    var pnl = parseFloat((_as&&_as.total_pnl_pct)||0);
+    pEl.textContent=(pnl>=0?'+':'')+pnl.toFixed(2)+'%';
+    pEl.style.color=pnl>0?'var(--em)':pnl<0?'var(--red)':'var(--txt2)';
+    var _rPnl = parseFloat((_as&&_as.realized_pnl_bnb)||0);
+    var _uPnl = parseFloat((_as&&_as.unrealized_pnl_bnb)||0);
+    var _bnbNow = parseFloat((_as&&_as.bnb_price)||window._bnbReal||0);
+    if(_as && (_rPnl!==0||_uPnl!==0) && _bnbNow>0){
+      var _rUSD=(_rPnl*_bnbNow).toFixed(2), _uUSD=(_uPnl*_bnbNow).toFixed(2);
+      _wrEl.innerHTML='<span style="color:var(--txt3);font-size:10px;">Realized: <b style="color:'+(_rPnl>=0?'var(--em)':'var(--red)')+'">'+(_rPnl>=0?'+':'')+_rUSD+'$</b> &nbsp; Unrealized: <b style="color:'+(_uPnl>=0?'var(--em)':'var(--red)')+'">'+(_uPnl>=0?'+':'')+_uUSD+'$</b></span>';
+    } else {
+      _wrEl.textContent='Win Rate: '+(_as?_as.win_rate:0)+'%';
+    }
+  } else {
+    // 1D/7D/1M = filter trade_history by sold_at
+    var hist = (_as&&_as.trade_history)||[];
+    var filtered = _pnlPeriodFilter(hist, period);
+    var totalInvested = filtered.reduce(function(s,t){ return s+parseFloat(t.size_bnb||0.01); }, 0);
+    var totalPnlBnb   = filtered.reduce(function(s,t){ return s+parseFloat(t.pnl_bnb||0); }, 0);
+    var wins = filtered.filter(function(t){ return parseFloat(t.pnl_pct||0)>0; }).length;
+    var losses = filtered.filter(function(t){ return parseFloat(t.pnl_pct||0)<=0; }).length;
+    var pnlPct = totalInvested>0 ? (totalPnlBnb/totalInvested*100) : 0;
+    var wr = filtered.length>0 ? Math.round(wins/filtered.length*100) : 0;
+    pEl.textContent=(pnlPct>=0?'+':'')+pnlPct.toFixed(2)+'%';
+    pEl.style.color=pnlPct>0?'var(--em)':pnlPct<0?'var(--red)':'var(--txt2)';
+    _wrEl.innerHTML='<span style="color:var(--txt3);font-size:10px;">'+filtered.length+' trades &nbsp; W:'+wins+' L:'+losses+' &nbsp; WR:<b style="color:'+(wr>=50?'var(--em)':'var(--red)')+'">'+wr+'%</b></span>';
+  }
+};
 
 // PNL Breakdown Modal
 async function openPnlBreakdown(){
