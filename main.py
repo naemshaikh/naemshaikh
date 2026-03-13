@@ -4740,7 +4740,7 @@ def _startup_once():
                         if _saved:
                             _restored = 0
                             _skipped  = 0
-                            _MAX_RESTORE = 10  # FIX: max 10 positions — 50 positions * BSC calls = memory exceed
+                            _MAX_RESTORE = 50  # All open positions restore karo
                             _sorted_saved = sorted(_saved.items(), key=lambda x: x[1].get("bought_at",""), reverse=True)
                             for _addr, _pd in _sorted_saved:
                                 if _restored >= _MAX_RESTORE:
@@ -4777,8 +4777,8 @@ def _startup_once():
                                     _restored += 1
                                     print(f"  ↳ Restored {_pd.get('token',_addr[:10])}: tp_sold={_tp_sold:.0f}% size={_size_bnb:.4f} sl={_sl_pct:.0f}%")
                             if _skipped:
-                                print(f"🧹 Skipped {_skipped} positions on startup (cap=10 or invalid)")
-                            print(f"✅ Restored {_restored} positions from Supabase (capped at {_MAX_RESTORE})")
+                                print(f"🧹 Skipped {_skipped} positions (invalid entry price)")
+                            print(f"✅ Restored {_restored} positions from Supabase")
                             # ✅ FIX: Turant complete data DB mein overwrite karo
                             # (purane records mein tp_sold missing tha — ye ek baar fix kar deta hai)
                             time.sleep(2)  # monitor thread start hone do pehle
