@@ -8,28 +8,54 @@
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 {% raw %}
 <style>
+/* ── EYE-FRIENDLY THEME SYSTEM ── */
+/* Night: Warm Graphite — not pure black, soft accents */
 :root{
-  --ink:#f0f2f5;--ink2:#ffffff;--ink3:#e8ebf0;
-  --txt:#1a1d23;--txt2:#4a5568;--txt3:#718096;
-  --line:rgba(0,0,0,0.08);--line2:rgba(0,0,0,0.12);
-  --em:#00a854;--em-glow:0 0 20px rgba(0,168,84,0.3);--em-dim:rgba(0,168,84,0.08);
-  --red:#e53e3e;--red-dim:rgba(229,62,62,0.08);
-  --gold:#d69e2e;--gold-dim:rgba(214,158,46,0.08);
-  --ice:#2b6cb0;--ice-dim:rgba(43,108,176,0.08);
+  --ink:   #1c1e24;
+  --ink2:  #23262e;
+  --ink3:  #2c2f3a;
+  --txt:   #dde2ec;
+  --txt2:  #8a95aa;
+  --txt3:  #4e5a72;
+  --line:  rgba(255,255,255,0.06);
+  --line2: rgba(255,255,255,0.10);
+  --em:    #2dd4a0;
+  --em-glow: 0 0 18px rgba(45,212,160,0.22);
+  --em-dim:  rgba(45,212,160,0.10);
+  --red:   #f07070;
+  --red-dim: rgba(240,112,112,0.10);
+  --gold:  #e8b84b;
+  --gold-dim: rgba(232,184,75,0.10);
+  --ice:   #60a5fa;
+  --ice-dim: rgba(96,165,250,0.10);
   --r:14px;--r2:10px;
-  --line:rgba(255,255,255,0.06);--line2:rgba(255,255,255,0.1);
-  --em:#00e676;--em-dim:rgba(0,230,118,0.12);--em-glow:0 0 24px rgba(0,230,118,0.25);
-  --gold:#f0c040;--gold-dim:rgba(240,192,64,0.1);
-  --ice:#40c4ff;--ice-dim:rgba(64,196,255,0.1);
-  --red:#ff4757;--red-dim:rgba(255,71,87,0.1);
-  --txt:#dce8f5;--txt2:#6b82a0;--txt3:#3a4e66;
-  --r:14px;--r2:10px;
+}
+/* Day: Warm Paper — cream tones, no harsh white */
+body.day{
+  --ink:   #f0ede6;
+  --ink2:  #faf8f4;
+  --ink3:  #e8e4db;
+  --txt:   #2a2520;
+  --txt2:  #6b6056;
+  --txt3:  #9e9488;
+  --line:  rgba(0,0,0,0.07);
+  --line2: rgba(0,0,0,0.11);
+  --em:    #0d8f64;
+  --em-glow: 0 0 18px rgba(13,143,100,0.18);
+  --em-dim:  rgba(13,143,100,0.08);
+  --red:   #c0392b;
+  --red-dim: rgba(192,57,43,0.08);
+  --gold:  #b7860e;
+  --gold-dim: rgba(183,134,14,0.08);
+  --ice:   #1d6fa4;
+  --ice-dim: rgba(29,111,164,0.08);
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 html,body{height:100%;-webkit-tap-highlight-color:transparent;}
-body{background:var(--ink);color:var(--txt);font-family:'Outfit',sans-serif;font-size:14px;line-height:1.4;overflow-x:hidden;padding-bottom:60px;}
-body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;background:radial-gradient(ellipse 600px 400px at 10% 0%,rgba(0,168,84,0.04) 0%,transparent 60%),radial-gradient(ellipse 400px 300px at 90% 100%,rgba(43,108,176,0.03) 0%,transparent 60%);}
-.hdr{position:sticky;top:0;z-index:200;background:rgba(240,242,245,0.97);backdrop-filter:blur(24px);border-bottom:1px solid var(--line);padding:0 14px;height:58px;display:flex;align-items:center;justify-content:space-between;}
+body{background:var(--ink);color:var(--txt);font-family:'Outfit',sans-serif;font-size:14px;line-height:1.4;overflow-x:hidden;padding-bottom:60px;transition:background 0.3s,color 0.3s;}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;background:radial-gradient(ellipse 600px 400px at 10% 0%,rgba(45,212,160,0.03) 0%,transparent 60%),radial-gradient(ellipse 400px 300px at 90% 100%,rgba(96,165,250,0.02) 0%,transparent 60%);}
+.hdr{position:sticky;top:0;z-index:200;background:rgba(28,30,36,0.96);backdrop-filter:blur(24px);border-bottom:1px solid var(--line);padding:0 14px;height:58px;display:flex;align-items:center;justify-content:space-between;}
+body.day .hdr{background:rgba(240,237,230,0.96);}
 .hdr-brand{display:flex;align-items:center;gap:10px;}
 .hdr-logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--em),#00bcd4);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;color:#000;box-shadow:var(--em-glow);}
 .hdr-name{font-size:17px;font-weight:800;color:var(--txt);}
@@ -253,6 +279,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
       <div class="hdr-c-val" id="h-fg">—</div>
       <div class="hdr-c-lbl">F&amp;G</div>
     </div>
+    <button id="theme-btn" onclick="toggleTheme()" style="width:32px;height:32px;border-radius:50%;border:1.5px solid var(--line2);background:var(--ink3);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;-webkit-tap-highlight-color:transparent;">🌙</button>
     <div class="live-dot" id="live-dot"></div>
   </div>
 </header>
@@ -1856,6 +1883,31 @@ async function _doModeSwitch(){
 fetchRealBalance();
 _applyModeUI();
 setInterval(fetchRealBalance, 60000);
+
+// ── THEME SYSTEM — Day/Night eye-friendly ──
+function _applyTheme(isDay){
+  const btn = document.getElementById('theme-btn');
+  if(isDay){
+    document.body.classList.add('day');
+    if(btn) btn.textContent = '☀️';
+  } else {
+    document.body.classList.remove('day');
+    if(btn) btn.textContent = '🌙';
+  }
+  try{ localStorage.setItem('mbTheme', isDay ? 'day' : 'night'); }catch(e){}
+}
+function toggleTheme(){
+  _applyTheme(!document.body.classList.contains('day'));
+}
+// Auto: 7am-7pm = day, rest = night — manual toggle overrides
+(function(){
+  try{
+    const saved = localStorage.getItem('mbTheme');
+    if(saved){ _applyTheme(saved === 'day'); return; }
+  }catch(e){}
+  const h = new Date().getHours();
+  _applyTheme(h >= 7 && h < 19);
+})();
 
 function _setAutoUI(enabled){
   _autoEnabled = enabled;
