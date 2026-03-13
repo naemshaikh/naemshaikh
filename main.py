@@ -2440,9 +2440,23 @@ def auto_position_manager():
                 high    = mon.get("high", entry)
                 tp_sold = _pos_data.get("tp_sold", 0.0)  # FIX4
                 sl_pct  = _pos_data.get("sl_pct", 15.0)  # FIX4
-                if current <= 0 or entry <= 0:  # FIX v4: skip, never sell on price=0
-                    print(f"⚠️ Skipping {addr[:10]}: current={current:.8f} entry={entry:.8f}")
+                if entry <= 0:
                     continue
+
+                # ── RUG DETECTION: price = 0 → liquidity removed ──
+                # current=0 matlab liquidity pull ho gayi — rug confirmed
+                # Counter track karo — 3 consecutive zeros = force close
+                if current <= 0:
+                    _zero_count = _pos_data.get("_zero_price_count", 0) + 1
+                    _pos_data["_zero_price_count"] = _zero_count
+                    print(f"⚠️ Price=0: {addr[:10]} count={_zero_count}/3")
+                    if _zero_count >= 3:
+                        # 3 baar price 0 aaya = rug confirmed = force close
+                        print(f"🚨 RUG: {addr[:10]} price=0 x3 → force close")
+                        _auto_paper_sell(addr, "🚨 RUG price=0", 100.0)
+                    continue
+                else:
+                    _pos_data["_zero_price_count"] = 0  # reset on valid price
                 pnl     = ((current - entry) / entry) * 100
                 drop_hi = ((current - high) / high) * 100 if high > 0 else 0
                 _cs   = CHECKLIST_SETTINGS
