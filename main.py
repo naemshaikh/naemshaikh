@@ -1665,8 +1665,8 @@ def _persist_positions():
 new_pairs_queue: deque = deque(maxlen=30)
 discovered_addresses: dict = {}
 _discovered_lock  = threading.Lock()          # RACE FIX: protect discovered_addresses
-_token_semaphore  = threading.Semaphore(2)   # MEM FIX: was 4
-_check_semaphore  = threading.Semaphore(3)   # MEM FIX: was 10
+_token_semaphore  = threading.Semaphore(3)   # was 2 — more discovery throughput
+_check_semaphore  = threading.Semaphore(5)   # was 3 — more concurrent checks
 DISCOVERY_TTL = 7200
 PAIR_CREATED_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
 
@@ -2979,8 +2979,8 @@ def _auto_check_new_pair(pair_address: str):
         print(f"⏭️ Check skipped (10 already running): {pair_address[:10]}")
         return
     try:
-        print(f"⏳ Waiting 60s: {pair_address[:10]}")
-        time.sleep(60)
+        print(f"⏳ Waiting 30s: {pair_address[:10]}")
+        time.sleep(30)
         _prefetched_dex = None
         try:
             _ar = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{pair_address}", timeout=8)
