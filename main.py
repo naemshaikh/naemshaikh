@@ -2202,37 +2202,70 @@ def auto_position_manager():
                         _auto_paper_sell(addr, f"TrailTP -{_ttp:.0f}% from high 🎯", 100.0)
                         print(f"🎯 TrailTP exit: {addr[:10]} drop={drop_hi:.1f}%")
 
-                    # 10x = +900% — sell 25%, tight trailing on rest
-                    elif pnl >= 900 and tp_sold < 85:
-                        _auto_paper_sell(addr, "Ladder 10x 🚀", 25.0)
+                    # ══════════════════════════════════════
+                    # LADDERED SELLS — Full moonshot plan
+                    # Har level pe sirf 10-15% sell karo
+                    # Zyada position hold = zyada moonshot profit
+                    #
+                    # Position remaining after all levels:
+                    # 2x→90%, 3x→80%, 5x→65%, 10x→50%,
+                    # 20x→35%, 50x→20%, 100x→10% still riding!
+                    # ══════════════════════════════════════
+
+                    # TrailTP — extreme levels ke baad activate hota hai
+                    elif _pos_data.get("trail_tp_active") and drop_hi <= -_pos_data.get("trail_tp_pct", 20.0):
+                        _ttp = _pos_data.get("trail_tp_pct", 20.0)
+                        _auto_paper_sell(addr, f"TrailTP -{_ttp:.0f}% from high 🎯", 100.0)
+                        print(f"🎯 TrailTP exit: {addr[:10]} drop={drop_hi:.1f}%")
+
+                    # 100x = +9900% 🌙 — sirf 10% sell, 90% still riding!
+                    elif pnl >= 9900 and tp_sold < 90:
+                        _auto_paper_sell(addr, "Ladder 100x 🌙", 10.0)
+                        _pos_data["trail_tp_pct"] = 10.0   # tight 10% — itna upar gaya toh protect karo
+                        print(f"🌙 100x LADDER: {addr[:10]} @ +{pnl:.0f}%")
+
+                    # 50x = +4900% 🌟
+                    elif pnl >= 4900 and tp_sold < 80:
+                        _auto_paper_sell(addr, "Ladder 50x 🌟", 15.0)
+                        _pos_data["trail_tp_pct"] = 12.0
+                        print(f"🌟 50x LADDER: {addr[:10]} @ +{pnl:.0f}%")
+
+                    # 20x = +1900% 💎
+                    elif pnl >= 1900 and tp_sold < 65:
+                        _auto_paper_sell(addr, "Ladder 20x 💎", 15.0)
                         _pos_data["trail_tp_active"] = True
                         _pos_data["trail_tp_pct"]    = 15.0
-                        print(f"🚀 10x LADDER: {addr[:10]} @ +{pnl:.0f}%")
+                        print(f"💎 20x LADDER: {addr[:10]} @ +{pnl:.0f}%")
 
-                    # 5x = +400%
-                    elif pnl >= 400 and tp_sold < 60:
-                        _auto_paper_sell(addr, "Ladder 5x 🔥", 25.0)
+                    # 10x = +900% 🚀
+                    elif pnl >= 900 and tp_sold < 50:
+                        _auto_paper_sell(addr, "Ladder 10x 🚀", 15.0)
                         _pos_data["trail_tp_active"] = True
                         _pos_data["trail_tp_pct"]    = 20.0
-                        print(f"🔥 5x LADDER: {addr[:10]} @ +{pnl:.0f}%")
+                        print(f"🚀 10x LADDER: {addr[:10]} @ +{pnl:.0f}%")
 
-                    # 3x = +200% (was TP4)
-                    elif pnl >= _tp4 and tp_sold < 40:
-                        _auto_paper_sell(addr, f"Ladder 3x ({_tp4:.0f}%) 💰", 20.0)
+                    # 5x = +400% 🔥
+                    elif pnl >= 400 and tp_sold < 35:
+                        _auto_paper_sell(addr, "Ladder 5x 🔥", 15.0)
                         _pos_data["trail_tp_active"] = True
                         _pos_data["trail_tp_pct"]    = 25.0
-                        print(f"💰 3x LADDER: {addr[:10]} @ +{pnl:.0f}% TrailTP=25%")
+                        print(f"🔥 5x LADDER: {addr[:10]} @ +{pnl:.0f}%")
 
-                    # 2x = +100%
-                    elif pnl >= _tp3 and tp_sold < 25:
-                        _auto_paper_sell(addr, f"Ladder 2x ({_tp3:.0f}%) ✅", 25.0)
+                    # 3x = +200% 💰
+                    elif pnl >= _tp4 and tp_sold < 20:
+                        _auto_paper_sell(addr, f"Ladder 3x 💰", 10.0)
+                        print(f"💰 3x LADDER: {addr[:10]} @ +{pnl:.0f}%")
+
+                    # 2x = +100% ✅
+                    elif pnl >= _tp3 and tp_sold < 10:
+                        _auto_paper_sell(addr, f"Ladder 2x ✅", 10.0)
                         print(f"✅ 2x LADDER: {addr[:10]} @ +{pnl:.0f}%")
 
-                    # TP1/TP2 — early partial profits
-                    elif pnl >= _tp2 and tp_sold < 15:
-                        _auto_paper_sell(addr, f"TP+{_tp2:.0f}%", 15.0)
-                    elif pnl >= _tp1 and tp_sold < 10:
-                        _auto_paper_sell(addr, f"TP+{_tp1:.0f}%", 10.0)
+                    # TP1/TP2 — early partials
+                    elif pnl >= _tp2 and tp_sold < 7:
+                        _auto_paper_sell(addr, f"TP+{_tp2:.0f}%", 7.0)
+                    elif pnl >= _tp1 and tp_sold < 5:
+                        _auto_paper_sell(addr, f"TP+{_tp1:.0f}%", 5.0)
 
                     elif pnl >= 20 and tp_sold < 1:
                         _pos_data["sl_pct"]  = 2.0   # break-even SL
