@@ -1968,25 +1968,32 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         auto_trade_stats["auto_pnl_total"] += pnl_pct
     auto_trade_stats["total_auto_sells"] += 1
 
+    # Partial sell pe banked_pnl accumulate karo
+    _banked = pos.get("banked_pnl_bnb", 0.0)
+    pos["banked_pnl_bnb"] = round(_banked + pnl_bnb, 6)
+
     # FIX 4: Save to trade_history — sirf 100% sell pe (partial sells skip)
     if sell_pct >= 100.0:
      if not isinstance(auto_trade_stats.get("trade_history"), list):
         auto_trade_stats["trade_history"] = []
-     _bnb_at_sell = market_cache.get("bnb_price", 0)  # real only
+     _bnb_at_sell = market_cache.get("bnb_price", 0)
      _saved_bought_usd = auto_trade_stats["running_positions"].get(address, {}).get("bought_usd", 0)
+     _orig_sz = pos.get("orig_size_bnb", size)
+     _total_pnl_bnb_trade = round(pos.get("banked_pnl_bnb", 0.0), 6)
+     _total_pnl_pct_trade = round((_total_pnl_bnb_trade / _orig_sz * 100), 2) if _orig_sz > 0 else pnl_pct
      auto_trade_stats["trade_history"].append({
         "token":      token,
         "address":    address,
         "entry":      entry,
         "exit":       current,
-        "pnl_pct":    round(pnl_pct, 2),
-        "pnl_bnb":    round(pnl_bnb, 6),
-        "size_bnb":   pos.get("orig_size_bnb", size),  # FIX: original invested size, not remaining
-        "bought_usd": _saved_bought_usd if _saved_bought_usd else round(sell_size * _bnb_at_sell, 2),
+        "pnl_pct":    _total_pnl_pct_trade,
+        "pnl_bnb":    _total_pnl_bnb_trade,
+        "size_bnb":   _orig_sz,
+        "bought_usd": _saved_bought_usd if _saved_bought_usd else round(_orig_sz * _bnb_at_sell, 2),
         "sold_usd":   round(max(0, return_bnb) * _bnb_at_sell, 2),
         "bought_at":  bought_at_str,
         "sold_at":    datetime.utcnow().isoformat(),
-        "result":     "win" if pnl_pct > 0 else "loss",
+        "result":     "win" if _total_pnl_pct_trade > 0 else "loss",
         "reason":     reason,
     })
     if len(auto_trade_stats["trade_history"]) > 50:
