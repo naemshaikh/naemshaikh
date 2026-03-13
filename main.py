@@ -1920,8 +1920,9 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     }
     auto_trade_stats["total_auto_buys"] += 1
     auto_trade_stats["last_action"] = f"BUY {token_name or address[:10]}"
-    # ✅ Real-time swap monitor mein register karo
-    threading.Thread(target=_register_position_pair, args=(address,), daemon=True).start()
+    # ✅ Pair register karo — known pair pass karo taaki BSC call na ho (instant!)
+    _known_pair = (checklist_result.get("dex_data") or {}).get("pair_address", "")
+    _register_position_pair(address, known_pair=_known_pair if _known_pair else None)
     if not isinstance(sess.get("positions"), list):
         sess["positions"] = []
     sess["positions"].append({
@@ -3209,10 +3210,10 @@ _swap_monitor_resubscribe = threading.Event()  # ✅ fix: was missing
 # Pair → token mapping (taaki Swap event decode kar sakein)
 _pair_to_token: dict = {}   # {pair_lower: {"token": addr, "token0_is_wbnb": bool}}
 
-def _register_position_pair(token_address: str):
+def _register_position_pair(token_address: str, known_pair: str = None):
     """Naya position open hua — pair address dhundo aur register karo"""
     try:
-        pair = _get_v2_pair(token_address)
+        pair = known_pair or _get_v2_pair(token_address)
         if not pair or pair == "0x0000000000000000000000000000000000000000":
             return
         # Find out if WBNB is token0 or token1 in this pair
