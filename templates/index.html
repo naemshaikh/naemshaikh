@@ -1534,35 +1534,8 @@ function openHoldDetail(json){
         );
       });
     } else {
-      // Fallback estimate when tp_events not yet stored (old positions)
-      const tpDefs=[
-        {cumul:90, prev:75, label:'TP4'},
-        {cumul:75, prev:50, label:'TP3'},
-        {cumul:50, prev:25, label:'TP2'},
-        {cumul:25, prev:0,  label:'TP1'},
-      ];
-      const soldBNBTotal = origSz - sz;
-      const avgExitPrice = soldBNBTotal>0 && banked!==0
-        ? entry * (1 + (banked / soldBNBTotal))
-        : entry * (1 + pnl/100);
-      tpDefs.forEach(function(lv){
-        if(tpSold>=lv.cumul){
-          const chunkPct    = lv.cumul - lv.prev;
-          const lvBNB       = origSz * (chunkPct / 100);
-          const lvUSD       = (lvBNB * bnbP).toFixed(0);
-          const tokensTP    = tokensBought>0 ? Math.round(tokensBought*(chunkPct/100)) : 0;
-          const sellPriceUSD= avgExitPrice>0 ? '~$'+(avgExitPrice*bnbP).toFixed(8).replace(/\.?0+$/,'') : '—';
-          tpRows+=actRow(
-            lv.label+' Sell','var(--gold)',
-            '—','partial exit',
-            '~$'+lvUSD,
-            tokensTP>0?'~'+Number(tokensTP).toLocaleString()+' '+sym:'',
-            '~$'+gasUSD+' ~',
-            sellPriceUSD,
-            '','sold '+chunkPct+'%', true
-          );
-        }
-      });
+      // Old position — tp_events not stored, show honest message
+      tpRows += '<div style="padding:10px 4px;color:var(--txt3);font-size:11px;font-family:JetBrains Mono,monospace;border-bottom:1px solid rgba(255,255,255,0.04);">⚠️ TP sell details not available — position was opened before detailed logging was added. New trades will show full real data.</div>';
     }
   }
 
