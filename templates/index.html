@@ -859,7 +859,18 @@ async function fetchStats(){
   const pEl=document.getElementById('b-pnl');
   pEl.textContent=(pnl>=0?'+':'')+pnl.toFixed(2)+'%';
   pEl.style.color=pnl>0?'var(--em)':pnl<0?'var(--red)':'var(--txt2)';
-  document.getElementById('b-wr').textContent='Win Rate: '+(_as?_as.win_rate:0)+'%';
+  // Realized / Unrealized sub-line
+  const _rPnl = parseFloat((_as&&_as.realized_pnl_bnb)||0);
+  const _uPnl = parseFloat((_as&&_as.unrealized_pnl_bnb)||0);
+  const _bnbNow = parseFloat((_as&&_as.bnb_price)||window._bnbReal||0);
+  const _wrEl = document.getElementById('b-wr');
+  if(_as && (_rPnl!==0 || _uPnl!==0) && _bnbNow>0){
+    const _rUSD = (_rPnl*_bnbNow).toFixed(2);
+    const _uUSD = (_uPnl*_bnbNow).toFixed(2);
+    _wrEl.innerHTML='<span style="color:var(--txt3);font-size:10px;">Realized: <b style="color:'+(_rPnl>=0?'var(--em)':'var(--red)')+'">'+(_rPnl>=0?'+':'')+_rUSD+'$</b> &nbsp; Unrealized: <b style="color:'+(_uPnl>=0?'var(--em)':'var(--red)')+'">'+(_uPnl>=0?'+':'')+_uUSD+'$</b></span>';
+  } else {
+    _wrEl.textContent='Win Rate: '+(_as?_as.win_rate:0)+'%';
+  }
   document.getElementById('sg-scan').textContent=((_as&&_as.total_scanned!=null?_as.total_scanned:null)||(_td&&_td.new_pairs_found)||0).toLocaleString();
   document.getElementById('sg-watch').textContent=(_as&&_as.open_positions!=null?_as.open_positions:(_as&&_as.monitoring!=null?_as.monitoring:(_td&&_td.monitoring)||0));
   document.getElementById('sg-wins').textContent=(_as&&_as.wins)||0;

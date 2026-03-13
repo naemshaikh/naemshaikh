@@ -4653,22 +4653,36 @@ def auto_stats_route():
             "gas_bnb":        DataGuard.get_real_gas_bnb(),  # real BSC gas
         })
 
-    # PNL: trade_history se weighted average calculate karo
+    # ── GMGN STYLE PNL ──
+    # Total PNL = Realized (closed trades) + Unrealized (open positions)
+    # % = Total PNL BNB / Total Invested BNB × 100
+
     _hist = auto_trade_stats.get("trade_history", [])
-    _total_pnl_bnb  = sum(float(t.get("pnl_bnb",  0) or 0) for t in _hist)
-    _total_invested = sum(float(t.get("size_bnb",  AUTO_BUY_SIZE_BNB) or AUTO_BUY_SIZE_BNB) for t in _hist)
+
+    # Realized — closed trades
+    _realized_pnl_bnb  = sum(float(t.get("pnl_bnb", 0) or 0) for t in _hist)
+    _realized_invested = sum(float(t.get("size_bnb", AUTO_BUY_SIZE_BNB) or AUTO_BUY_SIZE_BNB) for t in _hist)
+
+    # Unrealized — open positions
+    _unrealized_pnl_bnb  = sum(float(p.get("pnl_bnb", 0) or 0) for p in open_trades)
+    _unrealized_invested = sum(float(p.get("orig_size_bnb", p.get("size_bnb", AUTO_BUY_SIZE_BNB)) or AUTO_BUY_SIZE_BNB) for p in open_trades)
+
+    _total_pnl_bnb   = _realized_pnl_bnb + _unrealized_pnl_bnb
+    _total_invested  = _realized_invested + _unrealized_invested
+
     total_pnl = round((_total_pnl_bnb / _total_invested * 100), 2) if _total_invested > 0 else 0.0
-    # Sanity: agar unrealistic ho toh pnl_pct ka simple average use karo
-    if _hist and (total_pnl < -200 or total_pnl > 10000):
-        total_pnl = round(sum(float(t.get("pnl_pct", 0) or 0) for t in _hist) / len(_hist), 2)
 
     return jsonify({
-        "paper_balance":   paper_bal,
-        "trade_count":     trade_count,
-        "wins":            wins,
-        "losses":          losses,
-        "win_rate":        win_rate,
-        "total_pnl_pct":   total_pnl,
+        "paper_balance":        paper_bal,
+        "trade_count":          trade_count,
+        "wins":                 wins,
+        "losses":               losses,
+        "win_rate":             win_rate,
+        "total_pnl_pct":        total_pnl,
+        "total_pnl_bnb":        round(_total_pnl_bnb, 6),
+        "realized_pnl_bnb":     round(_realized_pnl_bnb, 6),
+        "unrealized_pnl_bnb":   round(_unrealized_pnl_bnb, 6),
+        "total_invested_bnb":   round(_total_invested, 6),
         "total_scanned":   max(len(discovered_addresses), brain.get("total_tokens_discovered_ever", 0)),
         "open_positions":  len(open_trades),
         "monitoring":      len(monitored_positions),
