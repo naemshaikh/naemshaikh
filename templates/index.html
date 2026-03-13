@@ -348,31 +348,72 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
       <div class="sg-item"><div class="sg-val" id="sg-losses" style="color:var(--red)">—</div><div class="sg-lbl">Loss</div></div>
     </div>
 
-    <!-- RIGHT: RAM Usage -->
-    <div style="background:var(--ink2);border:1px solid var(--line);border-radius:var(--r2);padding:10px 10px;display:flex;flex-direction:column;justify-content:space-between;">
-      <div style="font-size:9px;color:var(--txt3);font-weight:800;letter-spacing:0.5px;margin-bottom:6px;">💾 MEMORY USAGE</div>
+    <!-- RIGHT: RAM Usage — detailed -->
+    <div style="background:var(--ink2);border:1px solid var(--line);border-radius:var(--r2);padding:10px 10px;display:flex;flex-direction:column;gap:7px;">
+      <div style="font-size:9px;color:var(--txt3);font-weight:800;letter-spacing:0.5px;">💾 MEMORY USAGE</div>
 
-      <!-- RAM bar -->
-      <div style="margin-bottom:8px;">
-        <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
-          <span style="font-size:9px;color:var(--txt3);">RAM Used</span>
-          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:var(--txt1);" id="ram-rss">—</span>
+      <!-- Total RAM bar -->
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+          <span style="font-size:9px;color:var(--txt3);">Total RAM</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:800;color:var(--txt1);" id="ram-rss">—</span>
         </div>
-        <div style="height:4px;background:var(--ink3);border-radius:4px;overflow:hidden;">
-          <div id="ram-bar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--em),#00bcd4);border-radius:4px;transition:width 1s;"></div>
+        <div style="height:5px;background:var(--ink3);border-radius:4px;overflow:hidden;">
+          <div id="ram-bar" style="height:100%;width:0%;border-radius:4px;transition:width 1s;"></div>
         </div>
-        <div style="text-align:right;font-size:8px;color:var(--txt3);margin-top:2px;" id="ram-pct">0%</div>
+        <div style="display:flex;justify-content:space-between;margin-top:2px;">
+          <span style="font-size:8px;color:var(--txt3);" id="ram-avail">— free</span>
+          <span style="font-size:8px;font-weight:700;" id="ram-pct">0%</span>
+        </div>
       </div>
 
-      <!-- Paper vs Real -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
-        <div style="background:rgba(0,212,170,0.07);border:1px solid rgba(0,212,170,0.15);border-radius:6px;padding:5px 6px;text-align:center;">
-          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--em);" id="ram-paper">—</div>
-          <div style="font-size:8px;color:var(--txt3);margin-top:1px;">📄 Paper</div>
+      <!-- Paper row -->
+      <div style="background:rgba(0,212,170,0.07);border:1px solid rgba(0,212,170,0.2);border-radius:8px;padding:6px 8px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;">
+          <div style="display:flex;align-items:center;gap:5px;">
+            <span style="font-size:10px;">📄</span>
+            <span style="font-size:9px;font-weight:700;color:var(--em);">PAPER</span>
+          </div>
+          <div id="paper-status-badge" style="font-size:8px;font-weight:800;padding:1px 6px;border-radius:4px;background:rgba(0,212,170,0.2);color:var(--em);">ACTIVE</div>
         </div>
-        <div style="background:rgba(100,180,255,0.07);border:1px solid rgba(100,180,255,0.15);border-radius:6px;padding:5px 6px;text-align:center;">
-          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--ice);" id="ram-real">—</div>
-          <div style="font-size:8px;color:var(--txt3);margin-top:1px;">💰 Real</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;">
+          <div style="text-align:center;">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;color:var(--em);" id="ram-paper">—</div>
+            <div style="font-size:7px;color:var(--txt3);">RAM</div>
+          </div>
+          <div style="text-align:center;">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;color:var(--txt1);" id="paper-positions">—</div>
+            <div style="font-size:7px;color:var(--txt3);">Positions</div>
+          </div>
+          <div style="text-align:center;">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;color:var(--txt1);" id="paper-trades">—</div>
+            <div style="font-size:7px;color:var(--txt3);">Trades</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Real row -->
+      <div id="real-mem-card" style="background:rgba(255,71,87,0.07);border:1px solid rgba(255,71,87,0.2);border-radius:8px;padding:6px 8px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;">
+          <div style="display:flex;align-items:center;gap:5px;">
+            <span style="font-size:10px;">💰</span>
+            <span style="font-size:9px;font-weight:700;color:var(--red);">REAL</span>
+          </div>
+          <div id="real-status-badge" style="font-size:8px;font-weight:800;padding:1px 6px;border-radius:4px;background:rgba(255,71,87,0.15);color:var(--red);">IDLE</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;">
+          <div style="text-align:center;">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;color:var(--red);" id="ram-real">—</div>
+            <div style="font-size:7px;color:var(--txt3);">RAM</div>
+          </div>
+          <div style="text-align:center;">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;color:var(--txt1);" id="real-positions">—</div>
+            <div style="font-size:7px;color:var(--txt3);">Positions</div>
+          </div>
+          <div style="text-align:center;">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;color:var(--txt1);" id="real-mode-label">—</div>
+            <div style="font-size:7px;color:var(--txt3);">Mode</div>
+          </div>
         </div>
       </div>
     </div>
@@ -1152,17 +1193,76 @@ async function fetchRamStats(){
     const barEl   = document.getElementById('ram-bar');
     const paperEl = document.getElementById('ram-paper');
     const realEl  = document.getElementById('ram-real');
+    const availEl = document.getElementById('ram-avail');
     if(rssEl)   rssEl.textContent   = d.rss_mb + ' MB';
-    if(pctEl)   pctEl.textContent   = d.used_pct + '%';
-    if(barEl)   barEl.style.width   = Math.min(d.used_pct, 100) + '%';
-    // Color bar based on usage
+    if(pctEl){
+      pctEl.textContent = d.used_pct + '%';
+      pctEl.style.color = d.used_pct > 80 ? 'var(--red)' : d.used_pct > 60 ? '#ffbe00' : 'var(--txt3)';
+    }
+    if(availEl && d.avail_mb) availEl.textContent = d.avail_mb + ' MB free';
     if(barEl){
-      if(d.used_pct > 80)       barEl.style.background = 'linear-gradient(90deg,var(--red),#c0392b)';
-      else if(d.used_pct > 60)  barEl.style.background = 'linear-gradient(90deg,#ffbe00,#ff9800)';
-      else                      barEl.style.background = 'linear-gradient(90deg,var(--em),#00bcd4)';
+      barEl.style.width = Math.min(d.used_pct, 100) + '%';
+      if(d.used_pct > 80)      barEl.style.background = 'linear-gradient(90deg,#ff4757,#c0392b)';
+      else if(d.used_pct > 60) barEl.style.background = 'linear-gradient(90deg,#ffbe00,#ff9800)';
+      else                     barEl.style.background = 'linear-gradient(90deg,var(--em),#00bcd4)';
     }
     if(paperEl) paperEl.textContent = d.paper_mb > 0 ? d.paper_mb + ' MB' : '< 0.1 MB';
     if(realEl)  realEl.textContent  = d.real_mb  > 0 ? d.real_mb  + ' MB' : '< 0.1 MB';
+
+    // Paper detail
+    const pi = d.paper_items || {};
+    const ppEl = document.getElementById('paper-positions');
+    const ptEl = document.getElementById('paper-trades');
+    if(ppEl) ppEl.textContent = (pi.trade_history||0);
+    if(ptEl) ptEl.textContent = (pi.brain_patterns||0) + ' Brain';
+
+    // Real detail + idle/active badge
+    const ri = d.real_items || {};
+    const rpEl  = document.getElementById('real-positions');
+    const rmEl  = document.getElementById('real-mode-label');
+    const rBadge = document.getElementById('real-status-badge');
+    const rCard  = document.getElementById('real-mem-card');
+    const pBadge = document.getElementById('paper-status-badge');
+    const isReal = d.trade_mode === 'real';
+    const realPos = ri.open_positions || 0;
+
+    if(rpEl) rpEl.textContent = realPos + ' open';
+    if(rmEl) rmEl.textContent = isReal ? 'LIVE' : 'OFF';
+
+    // Paper badge
+    if(pBadge){
+      if(!isReal){
+        pBadge.textContent = 'ACTIVE';
+        pBadge.style.background = 'rgba(0,212,170,0.2)';
+        pBadge.style.color = 'var(--em)';
+      } else {
+        pBadge.textContent = 'IDLE';
+        pBadge.style.background = 'rgba(255,255,255,0.06)';
+        pBadge.style.color = 'var(--txt3)';
+      }
+    }
+    // Real badge + card border
+    if(rBadge && rCard){
+      if(isReal && realPos > 0){
+        rBadge.textContent = 'ACTIVE';
+        rBadge.style.background = 'rgba(0,212,170,0.2)';
+        rBadge.style.color = 'var(--em)';
+        rCard.style.borderColor = 'rgba(0,212,170,0.3)';
+        rCard.style.background  = 'rgba(0,212,170,0.07)';
+      } else if(isReal){
+        rBadge.textContent = 'LIVE • NO POS';
+        rBadge.style.background = 'rgba(255,190,0,0.18)';
+        rBadge.style.color = '#ffbe00';
+        rCard.style.borderColor = 'rgba(255,190,0,0.25)';
+        rCard.style.background  = 'rgba(255,190,0,0.05)';
+      } else {
+        rBadge.textContent = 'IDLE';
+        rBadge.style.background = 'rgba(255,71,87,0.15)';
+        rBadge.style.color = 'var(--red)';
+        rCard.style.borderColor = 'rgba(255,71,87,0.2)';
+        rCard.style.background  = 'rgba(255,71,87,0.07)';
+      }
+    }
   } catch(e){}
 }
 fetchRamStats();
