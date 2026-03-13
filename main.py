@@ -2501,30 +2501,7 @@ def _startup_once():
         threading.Thread(target=_delayed(continuous_learning,   25),  daemon=True).start()
         threading.Thread(target=_delayed(auto_position_manager, 30),  daemon=True).start()
 
-        # ✅ Memory watchdog — every 5 min, trim all large lists + force gc
-        def _mem_watchdog():
-            import gc as _gc
-            while True:
-                try:
-                    time.sleep(300)  # every 5 min
-                    # Trim brain lists
-                    brain["trading"]["best_patterns"]  = brain["trading"]["best_patterns"][-100:]
-                    brain["trading"]["avoid_patterns"] = brain["trading"]["avoid_patterns"][-100:]
-                    brain["trading"]["market_insights"]= brain["trading"]["market_insights"][-30:]
-                    brain["milestones"]                = brain.get("milestones", [])[-50:]
-                    self_awareness["introspection_log"]= self_awareness.get("introspection_log",[])[-50:]
-                    # Trim knowledge base
-                    knowledge_base["bsc"]["new_tokens"]= knowledge_base["bsc"]["new_tokens"][-100:]
-                    # Trim per-session data
-                    for _s in list(sessions.values()):
-                        _s["history"]          = _s.get("history", [])[-20:]
-                        _s["pattern_database"] = _s.get("pattern_database", [])[-100:]
-                    # Force garbage collection
-                    _gc.collect()
-                    print(f"🧹 Memory watchdog: cleaned up, gc done")
-                except Exception as e:
-                    print(f"⚠️ Watchdog error: {e}")
-        threading.Thread(target=_mem_watchdog, daemon=True).start()
+
         def _startup_restore():
             try:
                 if supabase:
