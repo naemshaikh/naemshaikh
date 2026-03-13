@@ -3422,6 +3422,38 @@ def run_full_sniper_checklist(address: str) -> Dict:
         "overall": "UNKNOWN", "score": 0, "total": 0,
         "recommendation": "", "dex_data": {}
     }
+
+    # ── STEP 1: Honeypot.is — on-chain buy/sell simulation (fastest reject) ──
+    hp_is_honeypot = False
+    hp_buy_tax     = 0.0
+    hp_sell_tax    = 0.0
+    hp_label       = "Unknown"
+    try:
+        hp_res = requests.get(
+            "https://api.honeypot.is/v2/IsHoneypot",
+            params={"address": address, "chainID": "56"}, timeout=8
+        )
+        if hp_res.status_code == 200:
+            hp_json      = hp_res.json()
+            hp_is_honeypot = hp_json.get("isHoneypot", False)
+            hp_sim         = hp_json.get("simulationResult", {}) or {}
+            hp_buy_tax     = float(hp_sim.get("buyTax",  0) or 0)
+            hp_sell_tax    = float(hp_sim.get("sellTax", 0) or 0)
+            hp_label       = hp_json.get("honeypotResult", {}).get("name", "Unknown") if hp_is_honeypot else "Safe"
+            print(f"🍯 Honeypot.is: {address[:10]}... → {'HONEYPOT ❌' if hp_is_honeypot else 'SAFE ✅'} buy={hp_buy_tax:.1f}% sell={hp_sell_tax:.1f}%")
+    except Exception as e:
+        print(f"⚠️ Honeypot.is error: {e}")
+
+    # Honeypot detected — immediate reject, skip GoPlus + DexScreener
+    if hp_is_honeypot:
+        result["checklist"].append({"label": "Honeypot Check", "status": "fail", "value": f"HONEYPOT ({hp_label})", "stage": 1})
+        result["overall"]        = "DANGER"
+        result["score"]          = 0
+        result["total"]          = 1
+        result["recommendation"] = f"❌ HONEYPOT — sell blocked on-chain ({hp_label})"
+        return result
+
+    # ── STEP 2: GoPlus — deep static analysis (tax, mint, owner, holders) ──
     goplus_data = {}
     try:
         gp_res = requests.get(
@@ -3466,6 +3498,8 @@ def run_full_sniper_checklist(address: str) -> Dict:
         "0x0000000000000000000000000000000000000000",
         "0x000000000000000000000000000000000000dead", ""]
 
+    # Honeypot.is result — safe tokens ke liye bhi show karo
+    add("Honeypot Check", "pass", f"SAFE (buy={hp_buy_tax:.1f}% sell={hp_sell_tax:.1f}%)", 1)
     add("Contract Verified",       "pass" if verified  else "fail", "YES" if verified  else "NO",    1)
     add("Mint Authority Disabled", "pass" if mint_ok   else "fail", "SAFE" if mint_ok  else "RISK",  1)
     add("Ownership Renounced",     "pass" if renounced else "warn", "YES" if renounced else "MAYBE", 1)
