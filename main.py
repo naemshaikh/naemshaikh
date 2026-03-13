@@ -5539,10 +5539,13 @@ def wallet_info():
             if r.status_code == 200 and r.json().get("status") == "1":
                 bnb = float(r.json()["result"]) / 1e18
                 return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2)})
-        # Fallback — try multiple public RPCs
+        # Fallback — try multiple public RPCs (same jo bot use karta hai)
         _rpcs = [
+            BSC_RPC,                              # Main bot RPC (already working)
             "https://bsc-dataseed.bnbchain.org",  # Official BNB Chain
+            "https://bsc-dataseed1.binance.org",  # Binance backup
             "https://bsc.drpc.org",               # dRPC backup
+            "https://bsc.publicnode.com",         # PublicNode backup
         ]
         for _rpc in _rpcs:
             try:
