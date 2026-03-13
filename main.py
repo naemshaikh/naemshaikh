@@ -1375,6 +1375,11 @@ def _whale_follow_loop():
                     continue
 
                 _whale_last_checked[wallet] = now
+                # Max 200 entries — purane timestamps hatao
+                if len(_whale_last_checked) > 200:
+                    oldest = sorted(_whale_last_checked.items(), key=lambda x: x[1])[:50]
+                    for k, _ in oldest:
+                        _whale_last_checked.pop(k, None)
                 tokens = _get_whale_recent_tokens(wallet)
                 checked += 1
 
@@ -1583,6 +1588,11 @@ def blacklist_dev(wallet: str, reason: str = "rug"):
             "rugs":      existing.get("rugs", 0) + 1,
             "last_seen": datetime.utcnow().isoformat()
         }
+        # Max 300 entries — purane (1 rug wale) hatao
+        if len(_dev_blacklist) > 300:
+            _single = [k for k, v in _dev_blacklist.items() if v.get("rugs", 1) <= 1]
+            for k in _single[:50]:
+                _dev_blacklist.pop(k, None)
     print(f"🚫 Dev blacklisted: {wallet[:10]}... reason={reason}")
 
 def is_dev_blacklisted(wallet: str) -> bool:
