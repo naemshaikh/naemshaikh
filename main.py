@@ -4,8 +4,23 @@ import gc
 from flask import Flask, render_template, request, jsonify
 from supabase import create_client
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import requests
+
+_IST = timezone(timedelta(hours=5, minutes=30))
+
+def _to_ist(dt_str: str) -> str:
+    try:
+        if len(dt_str) >= 16:
+            d = datetime.fromisoformat(dt_str.replace("Z",""))
+            d_ist = d.replace(tzinfo=timezone.utc).astimezone(_IST)
+            return d_ist.strftime("%I:%M %p")
+    except:
+        pass
+    return dt_str[11:16] if len(dt_str) >= 16 else "—"
+
+def _now_ist() -> str:
+    return datetime.now(_IST).strftime("%I:%M %p")
 import time
 import threading
 import json
