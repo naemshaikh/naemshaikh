@@ -1025,6 +1025,8 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     sess["positions"].append({
         "address": address, "token": token_name or address[:10], "entry": entry_price, "size_bnb": size_bnb, "type": "auto"
     })
+    if len(sess["positions"]) > 20:
+        sess["positions"] = sess["positions"][-20:]  # ✅ memory leak fix
     _persist_positions()  # ✅ FIX: full data save with tp_sold, sl_pct, bought_usd
     print(f"AUTO BUY: {address[:10]} @ {entry_price:.10f} size={size_bnb:.4f}")
 
@@ -2770,10 +2772,9 @@ def chat():
         return jsonify({"reply": "🛑 Daily loss limit (8%) reach ho gaya. Kal fresh start karo!", "session_id": session_id})
     _extract_user_info_from_message(user_msg)
     sess["history"].append({"role": "user", "content": user_msg})
+    sess["history"].append({"role": "assistant", "content": get_llm_reply(user_msg, sess["history"], sess)})
     if len(sess["history"]) > 20:
-        sess["history"] = sess["history"][-20:]
-    reply = get_llm_reply(user_msg, sess["history"], sess)
-    sess["history"].append({"role": "assistant", "content": reply})
+        sess["history"] = sess["history"][-20:]  # ✅ trim after both appends
     threading.Thread(target=learn_from_message, args=(user_msg, reply, session_id), daemon=True).start()
     threading.Thread(target=_save_session_to_db, args=(session_id,), daemon=True).start()
     return jsonify({"reply": reply, "session_id": session_id,
