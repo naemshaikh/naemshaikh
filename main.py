@@ -2432,22 +2432,10 @@ def fetch_market_data():
             "https://api.binance.com/api/v3/ticker/price",
             params={"symbol":"BNBUSDT"}, timeout=30
         ).json().get("price",0) or 0)),
-        ("CoinGecko",    lambda: float((requests.get(
-            "https://api.coingecko.com/api/v3/simple/price",
-            params={"ids":"binancecoin","vs_currencies":"usd"}, timeout=25
-        ).json() or {}).get("binancecoin",{}).get("usd",0) or 0)),
-        ("CryptoCompare",lambda: float(requests.get(
-            "https://min-api.cryptocompare.com/data/price",
-            params={"fsym":"BNB","tsyms":"USD"}, timeout=25
-        ).json().get("USD",0) or 0)),
         ("OKX",          lambda: float(((requests.get(
             "https://www.okx.com/api/v5/market/ticker",
             params={"instId":"BNB-USDT"}, timeout=20
         ).json() or {}).get("data") or [{}])[0].get("last",0) or 0)),
-        ("GeckoTerminal", lambda: float(((requests.get(
-            "https://api.geckoterminal.com/api/v2/networks/bsc/pools/0x58f876857a02d6762e0101bb5c46a8c1ed44dc16",
-            headers={"Accept":"application/json;version=20230302"}, timeout=20
-        ).json() or {}).get("data",{}).get("attributes",{}).get("token_price_usd") or 0) or 0)),
     ]
     for attempt in range(2):  # 2 attempts
         if bnb_fetched: break
@@ -4107,9 +4095,6 @@ def _startup_once():
             _sources = [
                 ("Binance",      "https://api.binance.com/api/v3/ticker/price",        {"symbol":"BNBUSDT"},                    lambda r: float(r.json().get("price",0) or 0)),
                 ("OKX",          "https://www.okx.com/api/v5/market/ticker",           {"instId":"BNB-USDT"},                   lambda r: float(((r.json() or {}).get("data") or [{}])[0].get("last",0) or 0)),
-                ("CryptoCompare","https://min-api.cryptocompare.com/data/price",       {"fsym":"BNB","tsyms":"USD"},             lambda r: float(r.json().get("USD",0) or 0)),
-                ("CoinGecko",    "https://api.coingecko.com/api/v3/simple/price",      {"ids":"binancecoin","vs_currencies":"usd"}, lambda r: float((r.json() or {}).get("binancecoin",{}).get("usd",0) or 0)),
-                ("GeckoTerminal","https://api.geckoterminal.com/api/v2/networks/bsc/pools/0x58f876857a02d6762e0101bb5c46a8c1ed44dc16", {}, lambda r: float(((r.json() or {}).get("data",{}).get("attributes",{}).get("token_price_usd")) or 0)),
             ]
             while True:
                 fetched = False
