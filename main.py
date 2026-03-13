@@ -590,36 +590,49 @@ def _get_pair_for_token(token_address: str) -> str:
             _pair_addr_cache[tl] = pair.lower()
     return pair.lower() if pair else ""
 
-def _record_swap(token_addr: str, is_buy: bool):
-    """Swap event aaya → counter update karo"""
+def _record_swap(token_addr: str, is_buy: bool, bnb_amount: float = 0.0):
+    """
+    Swap event aaya → count + BNB VOLUME dono track karo.
+    Count akela misleading hai — 1 whale sell = 100 small buys se dangerous.
+    """
     now  = time.time()
     key  = token_addr.lower()
     with _rt_swap_lock:
         d = _rt_swap_data.get(key, {
             "buys5": 0, "sells5": 0, "buys1h": 0, "sells1h": 0,
-            "buy_times": [], "sell_times": [], "ts": now
+            "buy_vol5": 0.0, "sell_vol5": 0.0,    # BNB volume last 5 min
+            "buy_vol1h": 0.0, "sell_vol1h": 0.0,  # BNB volume last 1 hr
+            "buy_times": [], "sell_times": [],     # [(timestamp, bnb_amt), ...]
+            "ts": now
         })
-        # Purani entries clean karo (5 min + 1 hr windows)
         cutoff5  = now - 300
         cutoff1h = now - 3600
-        d["buy_times"]  = [t for t in d.get("buy_times",  []) if t > cutoff1h]
-        d["sell_times"] = [t for t in d.get("sell_times", []) if t > cutoff1h]
+
+        # Purani entries clean karo — (ts, amt) tuples
+        d["buy_times"]  = [(t, a) for t, a in d.get("buy_times",  []) if t > cutoff1h]
+        d["sell_times"] = [(t, a) for t, a in d.get("sell_times", []) if t > cutoff1h]
 
         if is_buy:
-            d["buy_times"].append(now)
+            d["buy_times"].append((now, bnb_amount))
             d["last_buy_ts"] = now
         else:
-            d["sell_times"].append(now)
+            d["sell_times"].append((now, bnb_amount))
             d["last_sell_ts"] = now
 
-        # Recount windows
-        d["buys5"]   = sum(1 for t in d["buy_times"]  if t > cutoff5)
-        d["sells5"]  = sum(1 for t in d["sell_times"] if t > cutoff5)
+        # Count windows
+        d["buys5"]   = sum(1   for t, a in d["buy_times"]  if t > cutoff5)
+        d["sells5"]  = sum(1   for t, a in d["sell_times"] if t > cutoff5)
         d["buys1h"]  = len(d["buy_times"])
         d["sells1h"] = len(d["sell_times"])
-        d["ts"]      = now
 
-        # Memory: cap times lists at 500 each
+        # Volume windows (BNB)
+        d["buy_vol5"]   = sum(a for t, a in d["buy_times"]  if t > cutoff5)
+        d["sell_vol5"]  = sum(a for t, a in d["sell_times"] if t > cutoff5)
+        d["buy_vol1h"]  = sum(a for t, a in d["buy_times"])
+        d["sell_vol1h"] = sum(a for t, a in d["sell_times"])
+        d["ts"]         = now
+
+        # Memory: max 500 entries each
         d["buy_times"]  = d["buy_times"][-500:]
         d["sell_times"] = d["sell_times"][-500:]
         _rt_swap_data[key] = d
@@ -638,12 +651,16 @@ def _get_vol_pressure_rt(token_address: str) -> dict:
     # Real-time data hai aur 5 min se zyada purana nahi
     if rt and (now - rt.get("ts", 0)) < 300:
         return {
-            "buys5":  rt["buys5"],
-            "sells5": rt["sells5"],
-            "buys1h": rt["buys1h"],
-            "sells1h":rt["sells1h"],
-            "ts":     rt["ts"],
-            "source": "onchain"
+            "buys5":      rt.get("buys5",    0),
+            "sells5":     rt.get("sells5",   0),
+            "buys1h":     rt.get("buys1h",   0),
+            "sells1h":    rt.get("sells1h",  0),
+            "buy_vol5":   rt.get("buy_vol5",  0.0),   # ✅ BNB volume
+            "sell_vol5":  rt.get("sell_vol5", 0.0),   # ✅ BNB volume
+            "buy_vol1h":  rt.get("buy_vol1h", 0.0),
+            "sell_vol1h": rt.get("sell_vol1h",0.0),
+            "ts":         rt["ts"],
+            "source":     "onchain"
         }
     # Fallback: DexScreener
     fallback = _get_vol_pressure(token_address)
@@ -790,14 +807,33 @@ def start_swap_monitor():
                             except Exception:
                                 _tok_is_t0 = False
 
-                        if _tok_is_t0:
-                            # token = token0, WBNB = token1
-                            is_buy = a1in > 0  # BNB (token1) in = someone buying token
-                        else:
-                            # token = token1, WBNB = token0
-                            is_buy = a0in > 0  # BNB (token0) in = someone buying token
+                        # Full decode: all 4 amounts for BNB volume
+                        try:
+                            a0out = int(raw_hex[128:192], 16)
+                            a1out = int(raw_hex[192:256], 16)
+                        except Exception:
+                            a0out = a1out = 0
 
-                        _record_swap(token_addr, is_buy)
+                        if _tok_is_t0:
+                            # token=token0, WBNB=token1
+                            # BUY:  BNB in (a1in)   → a1in = BNB spent
+                            # SELL: BNB out (a1out)  → a1out = BNB received
+                            is_buy    = a1in > 0
+                            bnb_wei   = a1in if is_buy else a1out
+                        else:
+                            # token=token1, WBNB=token0
+                            # BUY:  BNB in (a0in)   → a0in = BNB spent
+                            # SELL: BNB out (a0out)  → a0out = BNB received
+                            is_buy    = a0in > 0
+                            bnb_wei   = a0in if is_buy else a0out
+
+                        bnb_amt = bnb_wei / 1e18  # wei → BNB
+                        _record_swap(token_addr, is_buy, bnb_amt)
+
+                        # Log significant swaps (> 0.1 BNB)
+                        if bnb_amt >= 0.1:
+                            _dir = "🟢BUY " if is_buy else "🔴SELL"
+                            print(f"⚡ {_dir} {token_addr[:10]} {bnb_amt:.3f} BNB")
 
             except Exception as e:
                 fail_count += 1
@@ -1567,14 +1603,20 @@ def auto_position_manager():
 
                 if not _trail_triggered:
                     # ── VOLUME-AWARE STOP LOSS ──
-                    # Real-time on-chain data — DexScreener (60s) ki jagah
-                    # BSC Swap events se directly count hota hai — 100ms latency
-                    _rt   = get_rt_vol_pressure(addr)
-                    _vol  = _rt if _rt.get("ts", 0) > 0 else _get_vol_pressure(addr)
-                    _b5   = _vol.get("buys5",  0)
-                    _s5   = _vol.get("sells5", 0)
-                    _src  = _vol.get("source", "dexscreener")
-                    _ratio = _b5 / max(_s5, 1)   # buy:sell ratio
+                    # On-chain: count + BNB volume dono track hota hai
+                    # Volume ratio = whale activity pakad leta hai
+                    _vol     = _get_vol_pressure_rt(addr)
+                    _b5      = _vol.get("buys5",    0)
+                    _s5      = _vol.get("sells5",   0)
+                    _bv5     = _vol.get("buy_vol5",  0.0)
+                    _sv5     = _vol.get("sell_vol5", 0.0)
+                    _vol_src = _vol.get("source", "?")
+                    if _bv5 > 0 or _sv5 > 0:
+                        _ratio      = _bv5 / max(_sv5, 0.001)
+                        _ratio_type = "vol"
+                    else:
+                        _ratio      = _b5 / max(_s5, 1)
+                        _ratio_type = "cnt"
 
                     # Ratio > 1.5 = strong buy pressure = dip, hold karo
                     # Ratio < 0.5 = strong sell pressure = dump, jaldi bhaago
@@ -1584,8 +1626,8 @@ def auto_position_manager():
                     # Emergency sell: SL se PEHLE agar sell pressure bahut high
                     # pnl <= -10% + sell pressure = dump shuru ho gaya
                     if pnl <= -(sl_pct * 0.7) and _strong_sells and tp_sold < 50:
-                        _auto_paper_sell(addr, f"VolSL Dump pres. {_ratio:.1f}x", 100.0)
-                        print(f"🚨 VolSL: {addr[:10]} pnl={pnl:.1f}% ratio={_ratio:.1f}x → DUMP")
+                        _auto_paper_sell(addr, f"VolSL Dump {_ratio:.1f}x [{_ratio_type}]", 100.0)
+                        print(f"🚨 VolSL: {addr[:10]} pnl={pnl:.1f}% {_ratio_type}={_ratio:.1f}x bv={_bv5:.3f} sv={_sv5:.3f} BNB → DUMP")
 
                     elif pnl <= -sl_pct:
                         if _strong_buys and pnl > -(sl_pct * 1.5):
