@@ -5526,7 +5526,8 @@ def health():
 def wallet_info():
     """Real wallet balance from BSCScan"""
     try:
-        addr = BSC_WALLET
+        # BSC_WALLET env var pehle — nahi toh REAL_WALLET (UI se set)
+        addr = BSC_WALLET or REAL_WALLET or ""
         if not addr:
             return jsonify({"wallet": "", "bnb": 0, "usd": 0, "error": "BSC_WALLET not set in env"})
         bnb_price = market_cache.get("bnb_price", 0)
