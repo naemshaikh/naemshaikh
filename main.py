@@ -5293,10 +5293,14 @@ def wallet_info():
                 return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2)})
         # Fallback — try multiple public RPCs
         _rpcs = [
-            "https://bsc-dataseed1.defibit.io/",
-            "https://bsc-dataseed1.ninicoin.io/",
-            "https://bsc-dataseed2.defibit.io/",
-            "https://rpc.ankr.com/bsc",
+            "https://bsc-dataseed.bnbchain.org",       # Official BNB Chain
+            "https://bsc.drpc.org",                    # dRPC - no key needed
+            "https://rpc.ankr.com/bsc",                # Ankr - no key needed
+            "https://bsc-dataseed1.defibit.io/",       # defibit
+            "https://bsc-dataseed1.ninicoin.io/",      # ninicoin
+            "https://bsc-dataseed2.defibit.io/",       # defibit2
+            "https://bscrpc.com",                      # bscrpc.com
+            "https://bsc-dataseed.binance.org/",       # binance (last resort)
         ]
         for _rpc in _rpcs:
             try:
