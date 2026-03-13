@@ -874,7 +874,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     if _price_ts:
         try:
             _age_sec = (datetime.utcnow() - datetime.fromisoformat(_price_ts.replace("Z",""))).total_seconds()
-            if _age_sec > 600:  # 10 minutes
+            if _age_sec > 90:  # 90s = 60s fetch interval + 30s grace — agar 90s mein update nahi hua = API fail
                 print(f"🛑 Auto-buy BLOCKED: BNB price stale ({_age_sec:.0f}s purana) — API restored hone tak wait karo")
                 return
         except Exception:
