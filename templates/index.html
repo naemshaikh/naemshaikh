@@ -1341,23 +1341,27 @@ async function openBrainInsights(){
     </div>`;
 
     if(d.top_wins.length){
-      html += '<div style="font-size:10px;font-weight:700;color:var(--em);margin-bottom:6px;">🏆 TOP WINS</div>';
+      html += `<div style="font-size:10px;font-weight:700;color:var(--em);margin-bottom:6px;">🏆 TOP WINS (${d.top_wins.length})</div>`;
+      html += '<div style="max-height:200px;overflow-y:auto;margin-bottom:4px;">';
       d.top_wins.forEach(t => {
         html += `<div style="display:flex;justify-content:space-between;padding:5px 8px;background:rgba(0,212,170,0.06);border-radius:6px;margin-bottom:4px;">
           <span style="font-size:10px;color:var(--txt2);">${t.token||'—'}</span>
           <span style="font-size:10px;color:var(--em);font-weight:700;">+${t.pnl.toFixed(1)}% · ${t.hold}m</span>
         </div>`;
       });
+      html += '</div>';
     }
 
     if(d.top_losses.length){
-      html += '<div style="font-size:10px;font-weight:700;color:var(--red);margin:10px 0 6px;">💀 WORST LOSSES</div>';
+      html += `<div style="font-size:10px;font-weight:700;color:var(--red);margin:10px 0 6px;">💀 WORST LOSSES (${d.top_losses.length})</div>`;
+      html += '<div style="max-height:200px;overflow-y:auto;">';
       d.top_losses.forEach(t => {
         html += `<div style="display:flex;justify-content:space-between;padding:5px 8px;background:rgba(255,71,87,0.06);border-radius:6px;margin-bottom:4px;">
           <span style="font-size:10px;color:var(--txt2);">${t.token||'—'}</span>
           <span style="font-size:10px;color:var(--red);font-weight:700;">${t.pnl.toFixed(1)}% · ${t.hold}m</span>
         </div>`;
       });
+      html += '</div>';
     }
 
     document.getElementById('modal-body').innerHTML = html;

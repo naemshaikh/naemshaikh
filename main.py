@@ -3041,12 +3041,12 @@ def _learn_trading_patterns():
                 pat = f"WIN: {reason} | PnL:{pnl:.1f}%"
                 if pat not in brain["trading"]["best_patterns"]:
                     brain["trading"]["best_patterns"].append(pat)
-                    brain["trading"]["best_patterns"] = brain["trading"]["best_patterns"][-100:]
+                    brain["trading"]["best_patterns"] = brain["trading"]["best_patterns"][-500:]
             elif result == "loss":
                 pat = f"LOSS: {reason} | PnL:{pnl:.1f}%"
                 if pat not in brain["trading"]["avoid_patterns"]:
                     brain["trading"]["avoid_patterns"].append(pat)
-                    brain["trading"]["avoid_patterns"] = brain["trading"]["avoid_patterns"][-100:]
+                    brain["trading"]["avoid_patterns"] = brain["trading"]["avoid_patterns"][-500:]
         # patterns[-100:] already enforced above on each append — no additional trim needed
         brain["trading"]["last_updated"]   = datetime.utcnow().isoformat()
     except Exception as e:
@@ -3077,7 +3077,7 @@ def _deep_llm_learning():
             best = brain["trading"]["best_patterns"]
             if not any(p.get("token") == pat["token"] for p in best):
                 best.append(pat)
-        brain["trading"]["best_patterns"] = brain["trading"]["best_patterns"][-100:]
+        brain["trading"]["best_patterns"] = brain["trading"]["best_patterns"][-500:]
 
         # ── Loss patterns ──
         for t in losses[-20:]:
@@ -3091,7 +3091,7 @@ def _deep_llm_learning():
             avoid = brain["trading"]["avoid_patterns"]
             if not any(p.get("token") == pat["token"] for p in avoid):
                 avoid.append(pat)
-        brain["trading"]["avoid_patterns"] = brain["trading"]["avoid_patterns"][-100:]
+        brain["trading"]["avoid_patterns"] = brain["trading"]["avoid_patterns"][-500:]
 
         # ── Market insights ──
         avg_win_hold  = round(sum(t.get("hold_minutes",0) for t in wins)  / max(len(wins),1),  1)
@@ -3109,7 +3109,7 @@ def _deep_llm_learning():
             "avg_loss_pnl": avg_loss_pnl,
         }
         brain["trading"]["market_insights"].append(insight)
-        brain["trading"]["market_insights"] = brain["trading"]["market_insights"][-50:]
+        brain["trading"]["market_insights"] = brain["trading"]["market_insights"][-200:]
 
         # ── Strategy note ──
         note_text = (f"WR={win_rate}% | AvgWin={avg_win_pnl:+.0f}% in {avg_win_hold}m | "
@@ -3118,7 +3118,7 @@ def _deep_llm_learning():
             "note": note_text,
             "ts":   datetime.utcnow().isoformat()[:16],
         })
-        brain["trading"]["strategy_notes"] = brain["trading"]["strategy_notes"][-30:]
+        brain["trading"]["strategy_notes"] = brain["trading"]["strategy_notes"][-100:]
 
         brain["total_learning_cycles"] = brain.get("total_learning_cycles", 0) + 1
         _save_brain_to_db()
@@ -5239,8 +5239,8 @@ def brain_insights():
         best     = brain["trading"].get("best_patterns",   [])
         avoid    = brain["trading"].get("avoid_patterns",  [])
         # Top wins/losses
-        top_wins   = sorted(wins,   key=lambda x: x.get("pnl_pct",0), reverse=True)[:5]
-        top_losses = sorted(losses, key=lambda x: x.get("pnl_pct",0))[:5]
+        top_wins   = sorted(wins,   key=lambda x: x.get("pnl_pct",0), reverse=True)[:50]
+        top_losses = sorted(losses, key=lambda x: x.get("pnl_pct",0))[:50]
         return jsonify({
             "total_trades":   total,
             "win_rate":       wr,
@@ -5252,7 +5252,7 @@ def brain_insights():
             "latest_note":    notes[-1].get("note","") if notes else "Not enough data yet",
             "top_wins":       [{"token": t.get("token",""), "pnl": t.get("pnl_pct",0), "hold": t.get("hold_minutes",0)} for t in top_wins],
             "top_losses":     [{"token": t.get("token",""), "pnl": t.get("pnl_pct",0), "hold": t.get("hold_minutes",0)} for t in top_losses],
-            "insights":       insights[-5:],
+            "insights":       insights[-20:],
         })
     except Exception as e:
         return jsonify({"error": str(e)})
