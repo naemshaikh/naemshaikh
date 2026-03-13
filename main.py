@@ -1844,7 +1844,7 @@ def _save_session_to_db(session_id: str):
                 "total_sells":   auto_trade_stats.get("total_auto_sells", 0),
                 "pnl_total":     auto_trade_stats.get("auto_pnl_total", 0.0),
                 "last_action":   auto_trade_stats.get("last_action", ""),
-                "trade_history": list(auto_trade_stats.get("trade_history", []))[-100:],
+                "trade_history": list(auto_trade_stats.get("trade_history", []))[-500:],
                 "total_scanned": max(len(discovered_addresses), brain.get("total_tokens_discovered_ever", 0)),
                 "wins":          auto_trade_stats.get("wins", 0),
                 "losses":        auto_trade_stats.get("losses", 0),
@@ -2291,8 +2291,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         "result":     "win" if _total_pnl_pct_trade > 0 else "loss",
         "reason":     reason,
     })
-    if len(auto_trade_stats["trade_history"]) > 50:
-        auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-50:]
+    if len(auto_trade_stats["trade_history"]) > 500:
+        auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-500:]
 
     # ── Auto-blacklist dev + token + record rug DNA if SL hit or rug dump ──
     if "SL" in reason or "Dump" in reason or "Rug" in reason:
@@ -5115,7 +5115,7 @@ def auto_stats_route():
         "last_action":     auto_trade_stats.get("last_action", ""),
         "open_trades":     open_trades,
         "positions":       {t["address"]: t for t in open_trades},
-        "trade_history":   list(reversed(auto_trade_stats.get("trade_history", [])[-20:])),
+        "trade_history":   list(reversed(auto_trade_stats.get("trade_history", [])[-5000:])),
         "learning_cycles": brain.get("total_learning_cycles", 0),
         "new_pairs_found": len(new_pairs_queue),
         "daily_loss":      round(sess.get("daily_loss", 0), 4),

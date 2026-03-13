@@ -493,7 +493,14 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 
 
   <div style="height:14px;"></div>
-  <div class="sep">Trading History</div>
+  <div class="sep" style="display:flex;align-items:center;justify-content:space-between;padding-right:14px;">
+    <span>Trading History</span>
+    <div style="display:flex;gap:6px;">
+      <button onclick="downloadTrades(100)" style="background:rgba(0,212,170,0.12);border:1px solid rgba(0,212,170,0.25);color:var(--em);font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;padding:4px 8px;border-radius:6px;cursor:pointer;">⬇ 100</button>
+      <button onclick="downloadTrades(200)" style="background:rgba(0,212,170,0.12);border:1px solid rgba(0,212,170,0.25);color:var(--em);font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;padding:4px 8px;border-radius:6px;cursor:pointer;">⬇ 200</button>
+      <button onclick="downloadTrades('all')" style="background:rgba(100,180,255,0.12);border:1px solid rgba(100,180,255,0.25);color:#64b4ff;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;padding:4px 8px;border-radius:6px;cursor:pointer;">⬇ ALL</button>
+    </div>
+  </div>
   <div class="feed-card">
     <div style="padding:8px 10px 0;">
 
@@ -679,6 +686,31 @@ function openTrade(t){
 }
 
 // ─── HISTORY ────────────────────────────────────────────────
+function downloadTrades(count){
+  var hist = (window._lastStats&&window._lastStats.trade_history)||[];
+  if(!hist.length){alert('No trade history yet!');return;}
+  var rows = count==='all' ? hist : hist.slice(0,count);
+  // CSV headers
+  var cols = ['token','address','result','pnl_pct','pnl_bnb','size_bnb','entry','sold_at','bought_at','reason'];
+  var csv  = cols.join(',') + '\n';
+  rows.forEach(function(t){
+    var line = cols.map(function(c){
+      var v = t[c]!=null ? String(t[c]) : '';
+      return '"'+v.replace(/"/g,'""')+'"';
+    }).join(',');
+    csv += line + '\n';
+  });
+  var blob = new Blob([csv],{type:'text/csv'});
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a');
+  a.href   = url;
+  var label= count==='all'?'all':count;
+  a.download = 'mrblack_trades_'+label+'_'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 function setHF(f,el){histFilter=f;document.querySelectorAll('.hf').forEach(b=>b.classList.remove('on'));el.classList.add('on');fetchHistory();}
 async function fetchHistory(){
   const d=await fetchJSON('/trade-history?filter='+histFilter,{},20000);if(!d)return;
