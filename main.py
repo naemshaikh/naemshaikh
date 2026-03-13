@@ -1642,7 +1642,15 @@ def continuous_learning():
             if now - last_fast >= 120:  # MEM FIX: was 60
                 last_fast = now
             try:
-                fetch_pancakeswap_data()  # BNB price ab WebSocket se aata hai — sirf pancakeswap data fetch karo
+                # BNB price: WSS primary, HTTP backup every 60s agar WSS stale ho
+                _bnb_age = 9999
+                _ts = market_cache.get("last_updated")
+                if _ts:
+                    try: _bnb_age = (datetime.utcnow() - datetime.fromisoformat(_ts.replace("Z",""))).total_seconds()
+                    except: pass
+                if _bnb_age > 30:  # WSS 30s se update nahi hua = HTTP se lo
+                    fetch_market_data()
+                fetch_pancakeswap_data()
             except Exception as e:
                 print(f"Market fetch error: {e}")
             _learn_trading_patterns()
@@ -2479,6 +2487,13 @@ def _startup_once():
                         wait = min(5 * fail, 60)
                         print(f"⚠️ NodeReal BNB WS: {str(e)[:80]} — retry in {wait}s")
                         gc.collect()
+                        # WSS fail → HTTP fallback (Render pe WSS block ho toh bhi price milega)
+                        try:
+                            fetch_market_data()
+                            if market_cache.get("bnb_price", 0) > 10:
+                                print(f"✅ BNB HTTP fallback: ${market_cache['bnb_price']:.2f}")
+                        except Exception:
+                            pass
                         await asyncio.sleep(wait)
 
             def _run():
