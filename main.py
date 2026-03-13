@@ -3948,40 +3948,35 @@ def run_full_sniper_checklist(address: str, prefetched_dex: dict = None) -> Dict
     add(f"Sniper Wait {cs['sniper_wait']} Min",   "pass" if token_age_min >= cs['sniper_wait']   else "warn", "OK" if token_age_min >= cs['sniper_wait'] else "WAIT", 3)
 
     # ── SNIPER DETECTION ──
-    # Launch ke first 3 blocks = sniper window
-    # GoPlus holders mein check karo — kitne wallets pehle 60 sec mein the?
-    # Zyada snipers = insiders/bots ne pre-buy kiya = rug risk high
-    _sniper_count   = 0
-    _sniper_wallets = []
+    # ── Sniper Detection — pct>=5% AND amount>=$300 dono saath hona chahiye ──
+    # Retail snipers (<$300) = ignore, dump power nahi
+    # Whale snipers (5%+ hold, $300+) = real danger = FAIL
+    _sniper_count = 0
+    _sniper_bnb   = 0.0
     try:
         _holders_list = goplus_data.get("holders", []) or []
-        # Real-time swap data se bhi check karo — pehle 60 sec mein buys
-        with _rt_swap_lock:
-            _rt_d = _rt_swap_data.get(address.lower(), {})
-        _early_buys = _rt_d.get("buys5", 0) if _rt_d else 0
+        _bnb_price    = max(market_cache.get("bnb_price", 600), 1)
+        _liq_usd      = dex_data.get("liquidity_usd", 0) or 0
 
-        # GoPlus: top holders jo bahut jaldi aaye
-        # Heuristic: agar token 5 min se kam purana hai aur top 10 mein 
-        # koi ek wallet 5%+ hold kar raha hai = sniper
         if token_age_min < 10:
             for h in _holders_list[:10]:
-                pct = float(h.get("percent", 0) or 0) * 100
+                pct          = float(h.get("percent", 0) or 0) * 100
                 _is_contract = h.get("is_contract", 0)
-                if pct >= 3.0 and not _is_contract:
-                    _sniper_wallets.append(h.get("address","")[:12])
-                    _sniper_count += 1
+                if pct >= 5.0 and not _is_contract:
+                    holder_usd = (_liq_usd * pct / 100) if _liq_usd > 0 else 0
+                    if holder_usd >= 300:  # $300+ = real dump power
+                        _sniper_count += 1
+                        _sniper_bnb   += holder_usd / _bnb_price
 
-        # DexScreener: first 5 min mein buys_5m > 20 + token < 5 min = bot activity
-        _dex_buys5 = dex_data.get("buys_5m", 0)
-        if token_age_min < 5 and _dex_buys5 > 20:
-            _sniper_count = max(_sniper_count, 3)  # suspicious activity
+        # Bot activity — first 5 min mein 20+ buys = suspicious
+        if token_age_min < 5 and dex_data.get("buys_5m", 0) > 20:
+            _sniper_count = max(_sniper_count, 3)
 
         if _sniper_count == 0:
-            add("Sniper Detection", "pass", "No snipers detected ✅", 3)
-        elif _sniper_count <= 2:
-            add("Sniper Detection", "warn", f"{_sniper_count} possible snipers", 3)
+            add("Sniper Detection", "pass", "No dangerous snipers ✅", 3)
         else:
-            add("Sniper Detection", "fail", f"🚨 {_sniper_count} snipers detected — pre-sniped!", 3)
+            add("Sniper Detection", "fail",
+                f"🚨 {_sniper_count} whale snipers ~{_sniper_bnb:.1f} BNB (5%+ hold + $300+) — SKIP", 3)
 
     except Exception as _se:
         add("Sniper Detection", "warn", "Check failed", 3)
