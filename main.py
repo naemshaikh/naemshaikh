@@ -864,6 +864,22 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     if paper_balance < AUTO_BUY_SIZE_BNB:
         print(f"🛑 Auto-buy BLOCKED: balance={paper_balance:.4f} too low")
         return
+
+    # ✅ BNB price validity check — price 0 ya 10 min+ purana ho toh trade mat lo
+    _bnb_now = market_cache.get("bnb_price", 0)
+    if not _bnb_now or _bnb_now < 10:
+        print(f"🛑 Auto-buy BLOCKED: BNB price unavailable ({_bnb_now}) — API fail lag rahi hai")
+        return
+    _price_ts = market_cache.get("last_updated", "")
+    if _price_ts:
+        try:
+            _age_sec = (datetime.utcnow() - datetime.fromisoformat(_price_ts.replace("Z",""))).total_seconds()
+            if _age_sec > 600:  # 10 minutes
+                print(f"🛑 Auto-buy BLOCKED: BNB price stale ({_age_sec:.0f}s purana) — API restored hone tak wait karo")
+                return
+        except Exception:
+            pass
+
     # Step 1: DexScreener price use karo (checklist mein already fetch hua)
     dex   = checklist_result.get("dex_data", {})
     bnb_p = market_cache.get("bnb_price", 300) or 300
