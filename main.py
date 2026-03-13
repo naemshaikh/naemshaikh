@@ -862,6 +862,161 @@ def start_swap_monitor():
     print("⚡ Real-time Swap Monitor starting...")
 
 # ══════════════════════════════════════════════
+# SMART MONEY WALLET TRACKER
+# Known profitable BSC wallets track karo
+# Agar ye wallet kisi token mein hai → strong green signal
+# ══════════════════════════════════════════════
+_smart_wallets: dict = {}   # {wallet_lower: {"label": str, "wins": int, "added": iso}}
+_smart_wallets_lock = threading.Lock()
+
+# Known BSC profitable wallets — GMGN/Nansen se manually add kar sakte ho
+# Ye wallets historically profitable hain meme coins mein
+_DEFAULT_SMART_WALLETS = [
+    # Add known profitable BSC wallet addresses here
+    # Example: "0xabc...123": "whale_1"
+]
+
+def add_smart_wallet(wallet: str, label: str = "smart"):
+    if not wallet or len(wallet) != 42: return
+    w = wallet.lower()
+    with _smart_wallets_lock:
+        _smart_wallets[w] = {"label": label, "wins": 0, "added": datetime.utcnow().isoformat()}
+    print(f"🧠 Smart wallet added: {wallet[:10]}... [{label}]")
+
+def is_smart_wallet(wallet: str) -> bool:
+    if not wallet or len(wallet) != 42: return False
+    return wallet.lower() in _smart_wallets
+
+def get_smart_wallet_label(wallet: str) -> str:
+    return _smart_wallets.get(wallet.lower(), {}).get("label", "")
+
+# Initialize default smart wallets
+for _sw in _DEFAULT_SMART_WALLETS:
+    if isinstance(_sw, tuple):
+        add_smart_wallet(_sw[0], _sw[1])
+
+
+# ══════════════════════════════════════════════
+# GREEN SIGNAL DETECTOR
+# Token ke liye multiple positive signals check karo
+# Score jitna zyada = stronger conviction = zyada size buy
+# ══════════════════════════════════════════════
+def detect_green_signals(token_address: str, goplus_data: dict, dex_data: dict) -> dict:
+    """
+    Multiple green signals detect karo — har signal pe bot confidence badhata hai.
+    Returns: {signals: [...], score: N, size_multiplier: float}
+    """
+    signals = []
+    score   = 0
+
+    bnb_price = market_cache.get("bnb_price", 600)
+
+    # ── SIGNAL 1: Large Buy Detected (Whale Entry) ──
+    # Real-time swap monitor se — last 5 min mein koi bada buy aaya?
+    _vol = _get_vol_pressure_rt(token_address)
+    buy_vol5  = _vol.get("buy_vol5",  0.0)
+    sell_vol5 = _vol.get("sell_vol5", 0.0)
+
+    if buy_vol5 >= 1.0:       # 1+ BNB bought in 5 min = whale entry
+        signals.append({"type": "WHALE_BUY", "detail": f"{buy_vol5:.2f} BNB bought (5m)", "weight": 3})
+        score += 3
+    elif buy_vol5 >= 0.3:     # 0.3+ BNB = significant buy
+        signals.append({"type": "LARGE_BUY", "detail": f"{buy_vol5:.2f} BNB bought (5m)", "weight": 2})
+        score += 2
+
+    # ── SIGNAL 2: Buy Pressure Dominant (Volume-based) ──
+    if buy_vol5 > 0 or sell_vol5 > 0:
+        vol_ratio = buy_vol5 / max(sell_vol5, 0.001)
+        if vol_ratio >= 3.0:
+            signals.append({"type": "STRONG_BUY_PRESSURE", "detail": f"BuyVol {vol_ratio:.1f}x SellVol", "weight": 2})
+            score += 2
+        elif vol_ratio >= 1.5:
+            signals.append({"type": "BUY_PRESSURE", "detail": f"BuyVol {vol_ratio:.1f}x SellVol", "weight": 1})
+            score += 1
+
+    # ── SIGNAL 3: Smart Money Wallet Detected ──
+    # GoPlus holders mein koi known profitable wallet hai?
+    holders = goplus_data.get("holders", [])
+    creator = goplus_data.get("creator_address", "")
+    sm_found = []
+    for h in (holders or [])[:20]:
+        addr_h = h.get("address", "")
+        if is_smart_wallet(addr_h):
+            sm_found.append(get_smart_wallet_label(addr_h))
+    if is_smart_wallet(creator):
+        sm_found.append(f"creator:{get_smart_wallet_label(creator)}")
+    if sm_found:
+        signals.append({"type": "SMART_MONEY", "detail": f"Wallets: {', '.join(sm_found[:3])}", "weight": 3})
+        score += 3
+
+    # ── SIGNAL 4: Liquidity Growing Fast ──
+    # four.meme graduation approaching = maximum momentum window
+    liq_usd = dex_data.get("liquidity_usd", 0)
+    fdv     = dex_data.get("fdv", 0)
+    if 40_000 <= liq_usd < 69_000:
+        signals.append({"type": "NEAR_GRADUATION", "detail": f"Liq ${liq_usd:,.0f} → graduation $69k", "weight": 3})
+        score += 3
+    elif 20_000 <= liq_usd < 40_000:
+        signals.append({"type": "LIQ_BUILDING", "detail": f"Liq ${liq_usd:,.0f} growing", "weight": 1})
+        score += 1
+
+    # ── SIGNAL 5: Fresh Token Sweet Spot ──
+    # 5-30 min old = best entry window (snipers nikal chuke, organic buyers aa rahe hain)
+    try:
+        r = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{token_address}", timeout=6)
+        if r.status_code == 200:
+            bsc_p = [p for p in (r.json() or {}).get("pairs", []) or [] if p and p.get("chainId") == "bsc"]
+            if bsc_p:
+                age_min = (time.time() - (bsc_p[0].get("pairCreatedAt", 0) or 0) / 1000) / 60
+                if 5 <= age_min <= 30:
+                    signals.append({"type": "SWEET_SPOT_AGE", "detail": f"{age_min:.0f} min old (5-30 optimal)", "weight": 2})
+                    score += 2
+                elif 30 < age_min <= 60:
+                    signals.append({"type": "GOOD_AGE", "detail": f"{age_min:.0f} min old", "weight": 1})
+                    score += 1
+    except Exception: pass
+
+    # ── SIGNAL 6: MCap Sweet Spot ──
+    # $10k-$100k mcap = early but real (not zero liquidity rug)
+    if 10_000 < fdv <= 100_000:
+        signals.append({"type": "MCAP_SWEET_SPOT", "detail": f"MCap ${fdv:,.0f} (early entry)", "weight": 2})
+        score += 2
+
+    # ── SIGNAL 7: Tx Velocity ──
+    # Last 5 min mein 10+ transactions = high activity
+    buys5  = _vol.get("buys5",  0)
+    sells5 = _vol.get("sells5", 0)
+    txns5  = buys5 + sells5
+    if txns5 >= 20:
+        signals.append({"type": "HIGH_VELOCITY", "detail": f"{txns5} txns in 5min", "weight": 2})
+        score += 2
+    elif txns5 >= 10:
+        signals.append({"type": "ACTIVE", "detail": f"{txns5} txns in 5min", "weight": 1})
+        score += 1
+
+    # ── Size Multiplier based on signal score ──
+    # Zyada green signals = zyada conviction = zyada size
+    if score >= 8:
+        size_mult = 2.0    # double size — very strong signals
+    elif score >= 5:
+        size_mult = 1.5    # 1.5x size
+    elif score >= 3:
+        size_mult = 1.25   # 1.25x size
+    else:
+        size_mult = 1.0    # normal size
+
+    if signals:
+        sigs_str = " | ".join(s["type"] for s in signals)
+        print(f"🟢 GREEN SIGNALS [{score}pt] {token_address[:10]}: {sigs_str}")
+
+    return {
+        "signals":         signals,
+        "score":           score,
+        "size_multiplier": size_mult,
+    }
+
+
+# ══════════════════════════════════════════════
 # DEV WALLET BLACKLIST — ruggers track karo
 # ══════════════════════════════════════════════
 _dev_blacklist: dict = {}   # {wallet_lower: {"reason": str, "rugs": int, "last_seen": iso}}
@@ -1375,7 +1530,18 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     if not _ok:
         print(f"🛑 Auto-buy BLOCKED: {_msg}")
         return
-    size_bnb = max(min(AUTO_BUY_SIZE_BNB, paper_balance * 0.025), 0.001)
+    # ── GREEN SIGNALS: size multiplier decide karo ──
+    _gs = detect_green_signals(address,
+        checklist_result.get("_goplus_raw", {}),
+        checklist_result.get("dex_data", {}))
+    _gs_mult  = _gs.get("size_multiplier", 1.0)
+    _gs_score = _gs.get("score", 0)
+    _gs_sigs  = [s["type"] for s in _gs.get("signals", [])]
+
+    base_size = max(min(AUTO_BUY_SIZE_BNB, paper_balance * 0.025), 0.001)
+    size_bnb  = round(min(base_size * _gs_mult, paper_balance * 0.05), 4)
+    if _gs_mult > 1.0:
+        print(f"🟢 Size boost {_gs_mult}x → {size_bnb:.4f} BNB (signals: {_gs_score}pt)")
     sess["paper_balance"] = round(paper_balance - size_bnb, 6)
     _sl = CHECKLIST_SETTINGS.get("sl_new", 15.0)
     add_position_to_monitor(AUTO_SESSION_ID, address, token_name or address[:10], entry_price, size_bnb, stop_loss_pct=_sl)
@@ -2822,6 +2988,7 @@ def run_full_sniper_checklist(address: str) -> Dict:
         print(f"⚠️ GoPlus error: {e}")
 
     goplus_empty = not bool(goplus_data)
+    result["_goplus_raw"] = goplus_data  # green signals ke liye
     bscscan_source = "verified" if _gp_str(goplus_data, "is_open_source", "0") == "1" else ""
 
     dex_data = get_dexscreener_token_data(address)
@@ -3030,6 +3197,12 @@ def run_full_sniper_checklist(address: str) -> Dict:
         result["overall"]        = "DANGER"
         result["recommendation"] = f"❌ Critical fail: {critical_fails[0]['label']}. Skip."
         return result
+
+    # ── Green Signals in checklist result ──
+    _gs_pre = detect_green_signals(address, goplus_data, dex_data)
+    result["green_signals"]      = _gs_pre.get("signals", [])
+    result["green_score"]        = _gs_pre.get("score", 0)
+    result["green_size_mult"]    = _gs_pre.get("size_multiplier", 1.0)
 
     # ── Score-based (raised +10% from previous thresholds) ──
     # Old: SAFE=55%, CAUTION=35-55%, RISK<35%
