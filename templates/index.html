@@ -345,6 +345,75 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
     <div class="sg-item"><div class="sg-val" id="sg-losses" style="color:var(--red)">—</div><div class="sg-lbl">Loss Trades</div></div>
   </div>
 
+  <!-- ── BOT ACTIVITY PANEL ── -->
+  <div class="sep" style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;padding-right:14px;">
+    <span>📡 Bot Activity</span>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <div id="act-dot" style="width:8px;height:8px;border-radius:50%;background:#555;"></div>
+      <span id="act-status" style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--txt3);">connecting...</span>
+    </div>
+  </div>
+  <div style="padding:0 12px 10px;">
+    <!-- Last action ticker -->
+    <div style="background:var(--ink2);border:1px solid var(--line2);border-radius:12px 12px 0 0;padding:10px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line2);">
+      <div style="font-size:16px;" id="act-icon">⏳</div>
+      <div style="flex:1;min-width:0;">
+        <div id="act-last" style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--txt1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Waiting for activity...</div>
+        <div id="act-last-time" style="font-size:9px;color:var(--txt3);margin-top:2px;">—</div>
+      </div>
+    </div>
+    <!-- Feed -->
+    <div id="act-feed" style="background:var(--ink2);border:1px solid var(--line2);border-top:none;border-radius:0 0 12px 12px;overflow:hidden;max-height:380px;overflow-y:auto;-webkit-overflow-scrolling:touch;">
+      <div style="padding:20px;text-align:center;color:var(--txt3);font-size:11px;">Loading activity...</div>
+    </div>
+  </div>
+
+  <!-- Intelligence Panel -->
+  <div class="sep" style="margin-top:10px;">🧠 Bot Intelligence</div>
+  <div style="padding:0 12px 10px;">
+    <div style="background:var(--ink2);border:1px solid var(--line2);border-radius:12px;padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:32px;height:32px;border-radius:8px;background:rgba(0,212,170,0.12);border:1px solid rgba(0,212,170,0.2);display:flex;align-items:center;justify-content:center;font-size:14px;">🐋</div>
+        <div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--em)" id="intel-whales">—</div>
+          <div style="font-size:9px;color:var(--txt3)">Qualified Whales</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:32px;height:32px;border-radius:8px;background:rgba(255,71,87,0.12);border:1px solid rgba(255,71,87,0.2);display:flex;align-items:center;justify-content:center;font-size:14px;">🧬</div>
+        <div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--red)" id="intel-dna">—</div>
+          <div style="font-size:9px;color:var(--txt3)">Rug DNA Learned</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:32px;height:32px;border-radius:8px;background:rgba(255,190,0,0.12);border:1px solid rgba(255,190,0,0.2);display:flex;align-items:center;justify-content:center;font-size:14px;">🚫</div>
+        <div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:#ffbe00" id="intel-blacklist">—</div>
+          <div style="font-size:9px;color:var(--txt3)">Tokens Blocked 24h</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:32px;height:32px;border-radius:8px;background:rgba(100,180,255,0.12);border:1px solid rgba(100,180,255,0.2);display:flex;align-items:center;justify-content:center;font-size:14px;">📡</div>
+        <div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;" id="intel-wss" style="color:var(--em)">—</div>
+          <div style="font-size:9px;color:var(--txt3)">Price Stream</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;grid-column:span 2;">
+        <div style="width:32px;height:32px;border-radius:8px;background:rgba(150,100,255,0.12);border:1px solid rgba(150,100,255,0.2);display:flex;align-items:center;justify-content:center;font-size:14px;">🧠</div>
+        <div style="flex:1;">
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--em)">✅ <span id="intel-best">—</span> wins</span>
+            <span style="font-size:10px;color:var(--txt3)">·</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--red)">❌ <span id="intel-avoid">—</span> rugs</span>
+          </div>
+          <div style="font-size:9px;color:var(--txt3)">Brain Patterns Learned</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="sep">Bot Controls</div>
   <div class="ctrl-panel">
     <div class="ctrl-header">
@@ -444,42 +513,29 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
     </div>
   </div>
 
-  <!-- Daily Stats Card -->
-  <div id="daily-stats-card" style="background:var(--ink2);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-      <div style="font-size:11px;font-weight:800;color:var(--txt2);letter-spacing:0.5px;text-transform:uppercase;">📅 Today</div>
-      <div id="daily-date" style="font-size:10px;color:var(--txt3);font-family:JetBrains Mono,monospace;">—</div>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px;">
-      <div style="background:var(--ink3);border-radius:6px;padding:7px 4px;text-align:center;">
-        <div id="daily-trades" style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;color:var(--txt1);">0</div>
-        <div style="font-size:8px;color:var(--txt3);text-transform:uppercase;margin-top:1px;">Trades</div>
-      </div>
-      <div style="background:var(--ink3);border-radius:6px;padding:7px 4px;text-align:center;">
-        <div id="daily-wr" style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;color:var(--em);">—%</div>
-        <div style="font-size:8px;color:var(--txt3);text-transform:uppercase;margin-top:1px;">Win%</div>
-      </div>
-      <div style="background:var(--ink3);border-radius:6px;padding:7px 4px;text-align:center;">
-        <div id="daily-pnl" style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:800;color:var(--em);">+0.000</div>
-        <div style="font-size:8px;color:var(--txt3);text-transform:uppercase;margin-top:1px;">PnL BNB</div>
-      </div>
-      <div style="background:var(--ink3);border-radius:6px;padding:7px 4px;text-align:center;">
-        <div id="daily-loss-bar-lbl" style="font-family:JetBrains Mono,monospace;font-size:11px;font-weight:800;color:var(--gold);">0%</div>
-        <div style="font-size:8px;color:var(--txt3);text-transform:uppercase;margin-top:1px;">Loss Used</div>
-      </div>
-    </div>
-    <!-- Daily loss progress bar -->
-    <div style="background:var(--ink3);border-radius:4px;height:5px;overflow:hidden;">
-      <div id="daily-loss-bar" style="height:100%;background:var(--em);border-radius:4px;width:0%;transition:width 0.5s;"></div>
-    </div>
-    <div style="display:flex;justify-content:space-between;margin-top:3px;">
-      <div style="font-size:9px;color:var(--txt3);">Daily Loss: <span id="daily-loss-val" style="color:var(--red);">0.0000</span> BNB</div>
-      <div style="font-size:9px;color:var(--txt3);">Limit: <span id="daily-loss-limit" style="color:var(--gold);">—</span> BNB</div>
+
+
+  <div style="height:14px;"></div>
+  <div class="sep" style="display:flex;align-items:center;justify-content:space-between;padding-right:14px;">
+    <span>Trading History</span>
+    <div style="display:flex;gap:5px;">
+      <button onclick="confirmDownload(100)" style="background:linear-gradient(135deg,rgba(0,212,170,0.18),rgba(0,212,170,0.08));border:1px solid rgba(0,212,170,0.35);color:var(--em);font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;padding:5px 10px;border-radius:8px;cursor:pointer;letter-spacing:0.5px;">⬇ 100</button>
+      <button onclick="confirmDownload(200)" style="background:linear-gradient(135deg,rgba(0,212,170,0.18),rgba(0,212,170,0.08));border:1px solid rgba(0,212,170,0.35);color:var(--em);font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;padding:5px 10px;border-radius:8px;cursor:pointer;letter-spacing:0.5px;">⬇ 200</button>
+      <button onclick="confirmDownload('all')" style="background:linear-gradient(135deg,rgba(100,180,255,0.18),rgba(100,180,255,0.08));border:1px solid rgba(100,180,255,0.35);color:#64b4ff;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;padding:5px 10px;border-radius:8px;cursor:pointer;letter-spacing:0.5px;">⬇ ALL</button>
     </div>
   </div>
 
-  <div style="height:14px;"></div>
-  <div class="sep">Trading History</div>
+  <!-- Download Confirmation Modal -->
+  <div id="dl-modal-bg" onclick="closeDlModal()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:999;backdrop-filter:blur(4px);"></div>
+  <div id="dl-modal" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:1000;background:var(--ink2);border-top:1px solid var(--line2);border-radius:20px 20px 0 0;padding:24px 20px 36px;">
+    <div style="width:36px;height:4px;background:var(--line2);border-radius:2px;margin:0 auto 20px;"></div>
+    <div style="font-size:18px;font-weight:800;color:var(--txt1);margin-bottom:6px;" id="dl-modal-title">Download Trades</div>
+    <div style="font-size:12px;color:var(--txt3);font-family:'JetBrains Mono',monospace;margin-bottom:24px;" id="dl-modal-sub">CSV file will be saved to your device</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <button onclick="closeDlModal()" style="background:var(--ink3);border:1px solid var(--line2);color:var(--txt2);font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;padding:14px;border-radius:12px;cursor:pointer;">✕ Cancel</button>
+      <button id="dl-confirm-btn" onclick="doDownload()" style="background:linear-gradient(135deg,rgba(0,212,170,0.25),rgba(0,212,170,0.12));border:1px solid rgba(0,212,170,0.4);color:var(--em);font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;padding:14px;border-radius:12px;cursor:pointer;">⬇ Download</button>
+    </div>
+  </div>
   <div class="feed-card">
     <div style="padding:8px 10px 0;">
 
@@ -493,23 +549,23 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
         <button class="hf lon" onclick="setHF('loss',this)"  style="white-space:nowrap;padding:4px 10px;font-size:10px;color:var(--red);">▼ Loss</button>
       </div>
 
-      <!-- Stats bar — single row, very compact -->
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px;padding:0 2px;">
-        <div style="background:var(--ink3);border-radius:6px;padding:5px 4px;text-align:center;">
-          <div id="hs-total" style="font-family:JetBrains Mono,monospace;font-size:13px;font-weight:800;color:var(--txt1);">0</div>
-          <div style="font-size:8px;color:var(--txt3);text-transform:uppercase;">Trades</div>
+      <!-- Stats bar — improved layout -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;padding:0 2px;">
+        <div style="background:var(--ink3);border:1px solid var(--line2);border-radius:10px;padding:8px 4px;text-align:center;">
+          <div id="hs-total" style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:800;color:var(--txt1);">0</div>
+          <div style="font-size:9px;color:var(--txt3);text-transform:uppercase;margin-top:2px;letter-spacing:0.5px;">Trades</div>
         </div>
-        <div style="background:var(--ink3);border-radius:6px;padding:5px 4px;text-align:center;">
-          <div id="hs-wr" style="font-family:JetBrains Mono,monospace;font-size:13px;font-weight:800;color:var(--em);">0%</div>
-          <div style="font-size:8px;color:var(--txt3);text-transform:uppercase;">Win%</div>
+        <div style="background:var(--ink3);border:1px solid var(--line2);border-radius:10px;padding:8px 4px;text-align:center;">
+          <div id="hs-wr" style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:800;color:var(--em);">0%</div>
+          <div style="font-size:9px;color:var(--txt3);text-transform:uppercase;margin-top:2px;letter-spacing:0.5px;">Win%</div>
         </div>
-        <div style="background:var(--ink3);border-radius:6px;padding:5px 4px;text-align:center;">
-          <div id="hs-pnl" style="font-family:JetBrains Mono,monospace;font-size:11px;font-weight:800;color:var(--em);">+0.000</div>
-          <div style="font-size:8px;color:var(--txt3);text-transform:uppercase;">PnL</div>
+        <div style="background:var(--ink3);border:1px solid var(--line2);border-radius:10px;padding:8px 4px;text-align:center;">
+          <div id="hs-pnl" style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;color:var(--em);">+0.000</div>
+          <div style="font-size:9px;color:var(--txt3);text-transform:uppercase;margin-top:2px;letter-spacing:0.5px;">PnL BNB</div>
         </div>
-        <div style="background:var(--ink3);border-radius:6px;padding:5px 4px;text-align:center;">
-          <div id="hs-best" style="font-family:JetBrains Mono,monospace;font-size:11px;font-weight:800;color:var(--em);">—</div>
-          <div style="font-size:8px;color:var(--txt3);text-transform:uppercase;">Best</div>
+        <div style="background:var(--ink3);border:1px solid var(--line2);border-radius:10px;padding:8px 4px;text-align:center;">
+          <div id="hs-best" style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;color:var(--em);">—</div>
+          <div style="font-size:9px;color:var(--txt3);text-transform:uppercase;margin-top:2px;letter-spacing:0.5px;">Best</div>
         </div>
       </div>
 
@@ -665,6 +721,51 @@ function openTrade(t){
 }
 
 // ─── HISTORY ────────────────────────────────────────────────
+var _dlCount = null;
+function confirmDownload(count){
+  var hist = (window._lastStats&&window._lastStats.trade_history)||[];
+  if(!hist.length){alert('No trade history yet!');return;}
+  _dlCount = count;
+  var label = count==='all' ? 'All' : 'Last '+count;
+  var total = count==='all' ? hist.length : Math.min(count, hist.length);
+  document.getElementById('dl-modal-title').textContent = label + ' Trades';
+  document.getElementById('dl-modal-sub').textContent = total + ' records → CSV file on your device';
+  document.getElementById('dl-modal-bg').style.display = 'block';
+  document.getElementById('dl-modal').style.display = 'block';
+}
+function closeDlModal(){
+  document.getElementById('dl-modal-bg').style.display = 'none';
+  document.getElementById('dl-modal').style.display = 'none';
+  _dlCount = null;
+}
+function doDownload(){
+  closeDlModal();
+  downloadTrades(_dlCount);
+}
+function downloadTrades(count){
+  var hist = (window._lastStats&&window._lastStats.trade_history)||[];
+  if(!hist.length) return;
+  var rows = count==='all' ? hist : hist.slice(0,count);
+  var cols = ['token','address','result','pnl_pct','pnl_bnb','size_bnb','entry','sold_at','bought_at','reason'];
+  var csv  = cols.join(',') + '\n';
+  rows.forEach(function(t){
+    var line = cols.map(function(c){
+      var v = t[c]!=null ? String(t[c]) : '';
+      return '"'+v.replace(/"/g,'""')+'"';
+    }).join(',');
+    csv += line + '\n';
+  });
+  var blob = new Blob([csv],{type:'text/csv'});
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a');
+  a.href   = url;
+  var label= count==='all'?'all':count;
+  a.download = 'mrblack_trades_'+label+'_'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 function setHF(f,el){histFilter=f;document.querySelectorAll('.hf').forEach(b=>b.classList.remove('on'));el.classList.add('on');fetchHistory();}
 async function fetchHistory(){
   const d=await fetchJSON('/trade-history?filter='+histFilter,{},20000);if(!d)return;
@@ -705,8 +806,11 @@ async function fetchHistory(){
     const totalPnlUSD=(Math.abs(totalPnlB)*bnbP).toFixed(2);
     const pnlPctAvg=trades.reduce(function(s,t){return s+parseFloat(t.pnl_pct||t.pnl||0);},0)/trades.length;
     const totalSzBNB=trades.reduce(function(s,t){return s+parseFloat(t.size_bnb||0);},0);
-    const boughtUSD=(trades[0].bought_usd!=null?trades[0].bought_usd:(totalSzBNB*bnbP)).toFixed(0);
-    const soldUSD=(trades[0].sold_usd!=null?trades[0].sold_usd:Math.max(0,totalSzBNB+totalPnlB)*bnbP).toFixed(0);
+    const boughtUSD=(trades[0].bought_usd!=null&&trades[0].bought_usd>0?trades[0].bought_usd:(totalSzBNB*bnbP)).toFixed(2);
+    // soldUSD: backend se sold_usd lo, warna calculate karo
+    const _backendSold = trades.reduce(function(s,t){return s+parseFloat(t.sold_usd||0);},0);
+    const _calcSold = (totalSzBNB + totalPnlB) * bnbP;
+    const soldUSD = (_backendSold > 0 ? _backendSold : Math.max(0, _calcSold)).toFixed(2);
     const wins=trades.filter(function(t){return parseFloat(t.pnl_pct||t.pnl||0)>0;}).length;
     const losses=trades.length-wins;
     const clr=totalPnlB>=0?'var(--em)':'var(--red)';
@@ -908,6 +1012,26 @@ async function fetchStats(){
   document.getElementById('sg-watch').textContent=(_as&&_as.open_positions!=null?_as.open_positions:(_as&&_as.monitoring!=null?_as.monitoring:(_td&&_td.monitoring)||0));
   document.getElementById('sg-wins').textContent=(_as&&_as.wins)||0;
   document.getElementById('sg-losses').textContent=(_as&&_as.losses)||0;
+
+  // Intelligence Panel update
+  if(_as){
+    const _iw = document.getElementById('intel-whales');
+    if(_iw) _iw.textContent = (_as.qualified_whales||0) + ' / ' + (_as.total_wallets||0);
+    const _id = document.getElementById('intel-dna');
+    if(_id) _id.textContent = (_as.rug_dna_patterns||0);
+    const _ib = document.getElementById('intel-blacklist');
+    if(_ib) _ib.textContent = (_as.tokens_blacklisted||0);
+    const _ibest = document.getElementById('intel-best');
+    if(_ibest) _ibest.textContent = (_as.brain_best||0);
+    const _iavoid = document.getElementById('intel-avoid');
+    if(_iavoid) _iavoid.textContent = (_as.brain_avoid||0);
+    const _iwss = document.getElementById('intel-wss');
+    if(_iwss){
+      const ws = _as.wss_status||'unknown';
+      _iwss.textContent = ws;
+      _iwss.style.color = ws==='live' ? 'var(--em)' : ws.startsWith('retry') ? 'var(--gold)' : 'var(--red)';
+    }
+  }
   if(_as){
     // Daily stats update
     const _tw = _as.today_wins||0, _tl = _as.today_losses||0;
@@ -975,6 +1099,69 @@ init();
 setInterval(fetchStats,8000);
 setInterval(fetchHistory,30000);
 setInterval(loadSettings,30000);
+setInterval(fetchActivity, 5000);
+fetchActivity();
+
+// ── BOT ACTIVITY FEED ──
+const ACT_STYLES = {
+  discover: { icon:'🔍', color:'#888',     bg:'rgba(255,255,255,0.04)', label:'SCAN'    },
+  reject:   { icon:'❌', color:'#ff4757',  bg:'rgba(255,71,87,0.08)',   label:'REJECT'  },
+  pass:     { icon:'✅', color:'#00d4aa',  bg:'rgba(0,212,170,0.08)',   label:'PASS'    },
+  buy:      { icon:'🟢', color:'#00d4aa',  bg:'rgba(0,212,170,0.12)',   label:'BUY'     },
+  sell:     { icon:'💰', color:'#ffd32a',  bg:'rgba(255,211,42,0.10)',  label:'SELL'    },
+  whale:    { icon:'🐋', color:'#64b4ff',  bg:'rgba(100,180,255,0.10)', label:'WHALE'   },
+  rug:      { icon:'☠️', color:'#ff4757',  bg:'rgba(255,71,87,0.10)',   label:'RUG'     },
+};
+
+async function fetchActivity(){
+  try {
+    const r = await fetch('/activity'); if(!r.ok) return;
+    const d = await r.json();
+    const acts = d.activity || [];
+
+    // Status dot
+    const dot = document.getElementById('act-dot');
+    const sta = document.getElementById('act-status');
+    const now = Date.now();
+    dot.style.background = '#00d4aa';
+    dot.style.boxShadow  = '0 0 6px #00d4aa';
+    sta.textContent = acts.length + ' events';
+    sta.style.color = 'var(--em)';
+
+    // Last action ticker
+    if(acts.length > 0){
+      const la = acts[0];
+      const s  = ACT_STYLES[la.type] || ACT_STYLES.discover;
+      document.getElementById('act-icon').textContent = s.icon;
+      document.getElementById('act-last').textContent  = la.detail || la.token || '—';
+      document.getElementById('act-last').style.color  = s.color;
+      document.getElementById('act-last-time').textContent = la.ts || '—';
+    }
+
+    // Feed
+    const feed = document.getElementById('act-feed');
+    if(!acts.length){
+      feed.innerHTML = '<div style="padding:20px;text-align:center;color:var(--txt3);font-size:11px;">No activity yet — bot is scanning...</div>';
+      return;
+    }
+    feed.innerHTML = acts.map(function(a){
+      const s = ACT_STYLES[a.type] || ACT_STYLES.discover;
+      const addr = a.address ? a.address.slice(0,6)+'...'+a.address.slice(-4) : '';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line2);background:${s.bg};">
+        <div style="width:28px;height:28px;border-radius:8px;background:rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;">${s.icon}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:800;color:${s.color};background:${s.bg};border:1px solid ${s.color}33;padding:1px 5px;border-radius:4px;">${s.label}</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--txt1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;">${a.token||'—'}</span>
+          </div>
+          <div style="font-size:10px;color:var(--txt2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.detail||''}</div>
+          ${addr ? `<div style="font-size:9px;color:var(--txt3);font-family:'JetBrains Mono',monospace;margin-top:1px;">${addr}</div>` : ''}
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--txt3);flex-shrink:0;">${a.ts||''}</div>
+      </div>`;
+    }).join('');
+  } catch(e){ console.log('activity err',e); }
+}
 
 
 // ─── CONTROL PANEL ──────────────────────────────────────────
@@ -1902,22 +2089,6 @@ function openGroupTradeDetail(encoded){
     return (
       '<div style="display:grid;grid-template-columns:90px 1fr auto;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:8px;">'+
         '<div>'+
-          '<div style="font-size:11px;font-weight:800;color:#64C8FF;">Buy</div>'+
-          '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+buyIST+' IST</div>'+
-          '<div style="font-size:9px;color:var(--txt3);">'+gHoldTime(t.bought_at)+' ago</div>'+
-        '</div>'+
-        '<div>'+
-          '<div style="font-size:11px;font-weight:700;color:var(--txt1);font-family:JetBrains Mono,monospace;">$'+boughtUSDt+'</div>'+
-          '<div style="font-size:9px;color:var(--txt3);margin-top:1px;">~'+Number(tokensB).toLocaleString()+' '+sym+'</div>'+
-          '<div style="font-size:9px;color:var(--txt3);">⛽ $'+gasUSD+' ~</div>'+
-        '</div>'+
-        '<div style="text-align:right;">'+
-          '<div style="font-size:10px;color:var(--txt3);font-family:JetBrains Mono,monospace;">'+(entry>0?fmtBNBPrice(entry):'—')+'</div>'+
-          '<div style="font-size:9px;color:var(--txt3);">entry</div>'+
-        '</div>'+
-      '</div>'+
-      '<div style="display:grid;grid-template-columns:90px 1fr auto;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.08);gap:8px;">'+
-        '<div>'+
           '<div style="font-size:11px;font-weight:800;color:'+(pnlB>=0?'var(--em)':'var(--red)')+';">'+(t.reason||'Sell')+'</div>'+
           '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+sellIST+' IST</div>'+
           '<div style="font-size:9px;color:var(--txt3);">'+holdBetween(t.bought_at,t.sold_at)+' hold</div>'+
@@ -1925,12 +2096,28 @@ function openGroupTradeDetail(encoded){
         '<div>'+
           '<div style="font-size:11px;font-weight:700;color:var(--txt1);font-family:JetBrains Mono,monospace;">$'+soldUSDt+'</div>'+
           '<div style="font-size:9px;color:var(--txt3);margin-top:1px;">~'+Number(tokensS).toLocaleString()+' '+sym+'</div>'+
-          '<div style="font-size:9px;color:var(--txt3);">⛽ $'+gasUSD+' ~</div>'+
+          '<div style="font-size:9px;color:var(--txt3);">1 TX</div>'+
         '</div>'+
         '<div style="text-align:right;">'+
-          '<div style="font-size:10px;color:var(--txt3);font-family:JetBrains Mono,monospace;">'+(exit>0?fmtBNBPrice(exit):'—')+'</div>'+
+          '<div style="font-size:10px;color:var(--txt3);font-family:JetBrains Mono,monospace;">'+(exit>0?'$'+(exit*bnbP).toFixed(8):'—')+'</div>'+
           '<div style="font-size:11px;font-weight:800;color:'+(pnlB>=0?'var(--em)':'var(--red)')+';">'+(pnlB>=0?'+':'-')+'$'+pnlUSDt+'</div>'+
           '<div style="font-size:9px;color:'+(pnlB>=0?'var(--em)':'var(--red)')+';">'+(pnlPctT>=0?'+':'')+pnlPctT.toFixed(1)+'%</div>'+
+        '</div>'+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:90px 1fr auto;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.08);gap:8px;">'+
+        '<div>'+
+          '<div style="font-size:11px;font-weight:800;color:#64C8FF;">Buy</div>'+
+          '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+buyIST+' IST</div>'+
+          '<div style="font-size:9px;color:var(--txt3);">'+gHoldTime(t.bought_at)+' ago</div>'+
+        '</div>'+
+        '<div>'+
+          '<div style="font-size:11px;font-weight:700;color:var(--txt1);font-family:JetBrains Mono,monospace;">$'+boughtUSDt+'</div>'+
+          '<div style="font-size:9px;color:var(--txt3);margin-top:1px;">~'+Number(tokensB).toLocaleString()+' '+sym+'</div>'+
+          '<div style="font-size:9px;color:var(--txt3);">1 TX</div>'+
+        '</div>'+
+        '<div style="text-align:right;">'+
+          '<div style="font-size:10px;color:var(--txt3);font-family:JetBrains Mono,monospace;">'+(entry>0?'$'+(entry*bnbP).toFixed(8):'—')+'</div>'+
+          '<div style="font-size:9px;color:var(--txt3);">entry</div>'+
         '</div>'+
       '</div>'
     );
@@ -1947,12 +2134,12 @@ function openGroupTradeDetail(encoded){
       // Holding card removed — completed trades mein nahi chahiye
       '<div style="background:var(--ink3);border-radius:10px;padding:11px;">'+
         '<div style="font-size:9px;color:var(--txt3);margin-bottom:3px;">Bought</div>'+
-        '<div style="font-size:14px;font-weight:900;color:#64C8FF;font-family:JetBrains Mono,monospace;">$'+totalBoughtUSD.toFixed(0)+'</div>'+
-        '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+buyTrades.length+' TXs · '+g.totalSz.toFixed(4)+' BNB</div>'+
+        '<div style="font-size:14px;font-weight:900;color:#64C8FF;font-family:JetBrains Mono,monospace;">$'+totalBoughtUSD.toFixed(2)+'</div>'+
+        '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+Math.max(1,buyTrades.length)+' TXs · '+g.totalSz.toFixed(4)+' BNB</div>'+
       '</div>'+
       '<div style="background:var(--ink3);border-radius:10px;padding:11px;">'+
         '<div style="font-size:9px;color:var(--txt3);margin-bottom:3px;">Sold</div>'+
-        '<div style="font-size:14px;font-weight:900;color:var(--em);font-family:JetBrains Mono,monospace;">$'+totalSoldUSD.toFixed(0)+'</div>'+
+        '<div style="font-size:14px;font-weight:900;color:var(--em);font-family:JetBrains Mono,monospace;">$'+totalSoldUSD.toFixed(2)+'</div>'+
         '<div style="font-size:10px;color:var(--txt3);margin-top:1px;">'+sellTrades.length+' TXs · '+totalSoldBNB.toFixed(4)+' BNB</div>'+
       '</div>'+
       (avgBuy>0?'<div style="background:var(--ink3);border-radius:10px;padding:11px;grid-column:1/-1;">'+

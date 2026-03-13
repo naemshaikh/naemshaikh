@@ -4,26 +4,8 @@ import gc
 from flask import Flask, render_template, request, jsonify
 from supabase import create_client
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import requests
-
-# IST = UTC + 5:30
-_IST = timezone(timedelta(hours=5, minutes=30))
-
-def _to_ist(dt_str: str) -> str:
-    """ISO UTC string → IST HH:MM AM/PM"""
-    try:
-        if len(dt_str) >= 16:
-            d = datetime.fromisoformat(dt_str.replace("Z",""))
-            d_ist = d.replace(tzinfo=timezone.utc).astimezone(_IST)
-            return d_ist.strftime("%I:%M %p")
-    except:
-        pass
-    return dt_str[11:16] if len(dt_str) >= 16 else "—"
-
-def _now_ist() -> str:
-    """Current time in IST HH:MM AM/PM"""
-    return datetime.now(_IST).strftime("%I:%M %p")
 import time
 import threading
 import json
@@ -85,6 +67,63 @@ ROUTER_ABI_PRICE = [
 ]
 TOKEN_DEC_ABI = [{"name":"decimals","type":"function","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"uint8"}]}]
 _dec_cache = {}
+
+# GoPlus cache — 5 min TTL, max 100 tokens
+# Contract security nahi badalti 5 min mein — API calls bachao
+_goplus_cache: dict = {}  # {addr_lower: {"data": {...}, "ts": float}}
+_GOPLUS_TTL = 300  # 5 minutes
+
+def _get_goplus(token_address: str) -> dict:
+    """GoPlus security data — cached 5 min"""
+    key = token_address.lower()
+    now = time.time()
+    cached = _goplus_cache.get(key)
+    if cached and (now - cached["ts"]) < _GOPLUS_TTL:
+        return cached["data"]
+    try:
+        r = requests.get(
+            "https://api.gopluslabs.io/api/v1/token_security/56",
+            params={"contract_addresses": token_address}, timeout=12
+        )
+        if r.status_code == 200:
+            data = r.json().get("result", {}).get(key, {})
+            _goplus_cache[key] = {"data": data, "ts": now}
+            if len(_goplus_cache) > 100:
+                oldest = sorted(_goplus_cache.items(), key=lambda x: x[1]["ts"])[:20]
+                for k, _ in oldest:
+                    _goplus_cache.pop(k, None)
+            return data
+    except Exception as e:
+        print(f"⚠️ GoPlus error: {e}")
+    return {}
+
+# Honeypot.is cache — 5 min TTL, max 100 tokens
+_honeypot_cache: dict = {}  # {addr_lower: {"data": {...}, "ts": float}}
+_HONEYPOT_TTL = 300  # 5 minutes
+
+def _get_honeypot(token_address: str) -> dict:
+    """Honeypot.is on-chain simulation — cached 5 min"""
+    key = token_address.lower()
+    now = time.time()
+    cached = _honeypot_cache.get(key)
+    if cached and (now - cached["ts"]) < _HONEYPOT_TTL:
+        return cached["data"]
+    try:
+        r = requests.get(
+            "https://api.honeypot.is/v2/IsHoneypot",
+            params={"address": token_address, "chainID": "56"}, timeout=8
+        )
+        if r.status_code == 200:
+            data = r.json()
+            _honeypot_cache[key] = {"data": data, "ts": now}
+            if len(_honeypot_cache) > 100:
+                oldest = sorted(_honeypot_cache.items(), key=lambda x: x[1]["ts"])[:20]
+                for k, _ in oldest:
+                    _honeypot_cache.pop(k, None)
+            return data
+    except Exception as e:
+        print(f"⚠️ Honeypot.is error: {e}")
+    return {}
 
 def _get_dec(addr):
     if addr.lower() in _dec_cache: return _dec_cache[addr.lower()]
@@ -1196,13 +1235,9 @@ def _fetch_early_buyers(token_address: str, entry_ts: float, max_buyers: int = 2
     """
     buyers = set()
     try:
-        # Source 1: GoPlus holders (already in memory se)
-        gp_res = requests.get(
-            "https://api.gopluslabs.io/api/v1/token_security/56",
-            params={"contract_addresses": token_address}, timeout=8
-        )
-        if gp_res.status_code == 200:
-            gp = gp_res.json().get("result", {}).get(token_address.lower(), {})
+        # Source 1: GoPlus holders (cached)
+        gp = _get_goplus(token_address)
+        if gp:
             holders = gp.get("holders", [])
             for h in (holders or [])[:max_buyers]:
                 addr = h.get("address", "")
@@ -1249,10 +1284,130 @@ def _learn_from_trade(token_address: str, win: bool, pnl_pct: float, entry_ts: f
 
 
 # ══════════════════════════════════════════════
-# GREEN SIGNAL DETECTOR
-# Token ke liye multiple positive signals check karo
-# Score jitna zyada = stronger conviction = zyada size buy
+# WHALE FOLLOW SYSTEM
+# Qualified whale wallets ki recent activity monitor karo
+# Agar whale ne koi naya token kharida → bot bhi us token ko scan kare
 # ══════════════════════════════════════════════
+_whale_last_checked: dict = {}  # {wallet_lower: last_check_timestamp}
+_whale_follow_seen:  set  = set()  # tokens already queued via whale follow (dedup)
+_WHALE_CHECK_INTERVAL = 300  # har 5 min ek whale check karo (BSCScan rate limit safe)
+
+def _get_whale_recent_tokens(wallet: str) -> list:
+    """
+    BSCScan se wallet ki last 10 BEP20 transfers fetch karo.
+    Returns: [token_address, ...] — unique token addresses
+    """
+    if not BSC_SCAN_KEY:
+        return []
+    try:
+        r = requests.get(BSC_SCAN_API, params={
+            "module":     "account",
+            "action":     "tokentx",
+            "address":    wallet,
+            "page":       1,
+            "offset":     20,
+            "sort":       "desc",
+            "apikey":     BSC_SCAN_KEY,
+        }, timeout=8)
+        if r.status_code != 200:
+            return []
+        txns = r.json().get("result", [])
+        if not isinstance(txns, list):
+            return []
+        # Sirf BSC pe, sirf BUY (wallet = to), last 30 min mein
+        cutoff = time.time() - 1800
+        tokens = []
+        seen   = set()
+        for tx in txns:
+            if str(tx.get("to", "")).lower() != wallet.lower(): continue
+            ts = int(tx.get("timeStamp", 0) or 0)
+            if ts < cutoff: continue
+            ca = tx.get("contractAddress", "")
+            if ca and ca not in seen:
+                seen.add(ca)
+                tokens.append(ca)
+        return tokens[:5]  # max 5 naye tokens per whale
+    except Exception as e:
+        print(f"⚠️ whale_recent_tokens {wallet[:10]}: {e}")
+        return []
+
+def _whale_follow_loop():
+    """
+    Background: qualified whales ki recent buys check karo.
+    Agar whale ne koi naya token kharida → auto-check queue mein dalo.
+    """
+    time.sleep(120)  # startup delay
+    while True:
+        try:
+            now = time.time()
+            with _smart_wallets_lock:
+                qualified = [
+                    (w, d) for w, d in _smart_wallets.items()
+                    if d.get("qualified", False)
+                ]
+
+            if not qualified:
+                time.sleep(60)
+                continue
+
+            # Sabse zyada wins wale whales pehle check karo
+            qualified.sort(key=lambda x: x[1].get("wins", 0), reverse=True)
+            checked = 0
+
+            for wallet, wdata in qualified[:20]:  # max 20 qualified whales monitor
+                # Rate limit — har whale ko sirf har 5 min check karo
+                if now - _whale_last_checked.get(wallet, 0) < _WHALE_CHECK_INTERVAL:
+                    continue
+
+                _whale_last_checked[wallet] = now
+                tokens = _get_whale_recent_tokens(wallet)
+                checked += 1
+
+                for token_addr in tokens:
+                    ta = token_addr.lower()
+                    if ta in _whale_follow_seen:
+                        continue
+                    if ta in discovered_addresses:
+                        continue  # already processed
+                    _whale_follow_seen.add(ta)
+                    if len(_whale_follow_seen) > 500:
+                        # cleanup old entries
+                        _whale_follow_seen.clear()
+
+                    w_label = get_smart_wallet_label(wallet)
+                    print(f"🐋 Whale Follow: {wallet[:10]} ({w_label}) bought {token_addr[:10]} → auto-scan")
+                    # Directly auto_check queue mein dalo
+                    threading.Thread(
+                        target=_auto_check_new_pair,
+                        args=(token_addr,),
+                        kwargs={"whale_triggered": True, "whale_wallet": wallet},
+                        daemon=True
+                    ).start()
+
+                time.sleep(1)  # BSCScan rate limit
+
+            if checked > 0:
+                print(f"🐋 Whale monitor: checked {checked} wallets, {len(qualified)} qualified total")
+
+        except Exception as e:
+            print(f"⚠️ whale_follow_loop: {e}")
+        time.sleep(60)  # har 60s ek cycle
+
+
+def _count_whales_in_token(token_address: str, goplus_data: dict) -> int:
+    """
+    Token ke holders mein kitne qualified whales hain — score ke liye.
+    """
+    holders = goplus_data.get("holders", []) or []
+    count   = 0
+    for h in holders[:30]:
+        addr = h.get("address", "")
+        if addr and is_smart_wallet(addr):
+            count += 1
+    return count
+
+
+
 def detect_green_signals(token_address: str, goplus_data: dict, dex_data: dict) -> dict:
     """
     Multiple green signals detect karo — har signal pe bot confidence badhata hai.
@@ -1286,12 +1441,12 @@ def detect_green_signals(token_address: str, goplus_data: dict, dex_data: dict) 
             signals.append({"type": "BUY_PRESSURE", "detail": f"BuyVol {vol_ratio:.1f}x SellVol", "weight": 1})
             score += 1
 
-    # ── SIGNAL 3: Smart Money Wallet Detected ──
-    # GoPlus holders mein koi known profitable wallet hai?
+    # ── SIGNAL 3: Smart Money / Whale Wallet Detected ──
+    # GoPlus holders mein koi known profitable whale hai?
     holders = goplus_data.get("holders", [])
     creator = goplus_data.get("creator_address", "")
     sm_found = []
-    for h in (holders or [])[:20]:
+    for h in (holders or [])[:30]:
         addr_h = h.get("address", "")
         if is_smart_wallet(addr_h):
             sm_found.append(get_smart_wallet_label(addr_h))
@@ -1299,15 +1454,24 @@ def detect_green_signals(token_address: str, goplus_data: dict, dex_data: dict) 
         sm_found.append(f"creator:{get_smart_wallet_label(creator)}")
         score += 2  # Creator khud profitable hai = extra conviction
     if sm_found:
-        # Kitne qualified wallets hain aur unka combined win rate
         _sm_details = []
-        for h in (holders or [])[:20]:
+        for h in (holders or [])[:30]:
             a = h.get("address","")
             if is_smart_wallet(a):
                 _sm_details.append(get_smart_wallet_label(a))
-        detail_str = " | ".join(_sm_details[:2]) if _sm_details else f"{len(sm_found)} wallets"
-        signals.append({"type": "SMART_MONEY", "detail": f"🧠 {detail_str}", "weight": 3})
-        score += min(3 * len(sm_found), 6)  # multiple smart wallets = more points (max 6)
+        detail_str = " | ".join(_sm_details[:3]) if _sm_details else f"{len(sm_found)} wallets"
+        whale_count = len(sm_found)
+
+        # Whale count ke hisaab se signal strength
+        if whale_count >= 3:
+            signals.append({"type": "MULTI_WHALE", "detail": f"🐋🐋🐋 {whale_count} whales in: {detail_str}", "weight": 5})
+            score += 5  # 3+ whales = very strong conviction
+        elif whale_count == 2:
+            signals.append({"type": "DOUBLE_WHALE", "detail": f"🐋🐋 2 whales: {detail_str}", "weight": 4})
+            score += 4
+        else:
+            signals.append({"type": "SMART_MONEY", "detail": f"🧠 {detail_str}", "weight": 3})
+            score += 3
 
     # ── SIGNAL 4: Liquidity Growing Fast ──
     # four.meme graduation approaching = maximum momentum window
@@ -1321,20 +1485,31 @@ def detect_green_signals(token_address: str, goplus_data: dict, dex_data: dict) 
         score += 1
 
     # ── SIGNAL 5: Fresh Token Sweet Spot ──
-    # 5-30 min old = best entry window (snipers nikal chuke, organic buyers aa rahe hain)
+    # dex_data mein pairCreatedAt already hai — no extra API call
     try:
-        r = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{token_address}", timeout=6)
-        if r.status_code == 200:
-            bsc_p = [p for p in (r.json() or {}).get("pairs", []) or [] if p and p.get("chainId") == "bsc"]
-            if bsc_p:
-                age_min = (time.time() - (bsc_p[0].get("pairCreatedAt", 0) or 0) / 1000) / 60
-                if 5 <= age_min <= 30:
-                    signals.append({"type": "SWEET_SPOT_AGE", "detail": f"{age_min:.0f} min old (5-30 optimal)", "weight": 2})
-                    score += 2
-                elif 30 < age_min <= 60:
-                    signals.append({"type": "GOOD_AGE", "detail": f"{age_min:.0f} min old", "weight": 1})
-                    score += 1
+        _pair_created = dex_data.get("pair_created_at", 0) or 0
+        if not _pair_created:
+            # DexScreener raw data se try karo
+            _raw = dex_data.get("_raw_pair_created", 0) or 0
+            _pair_created = _raw
+        if _pair_created:
+            age_min = (time.time() - _pair_created / 1000) / 60
+            if 5 <= age_min <= 30:
+                signals.append({"type": "SWEET_SPOT_AGE", "detail": f"{age_min:.0f} min old (5-30 optimal)", "weight": 2})
+                score += 2
+            elif 30 < age_min <= 60:
+                signals.append({"type": "GOOD_AGE", "detail": f"{age_min:.0f} min old", "weight": 1})
+                score += 1
     except Exception: pass
+
+    # ── SIGNAL 8: Price Momentum ──
+    change_1h = dex_data.get("change_1h", 0) or 0
+    if change_1h >= 50:
+        signals.append({"type": "STRONG_MOMENTUM", "detail": f"+{change_1h:.0f}% in 1h", "weight": 2})
+        score += 2
+    elif change_1h >= 20:
+        signals.append({"type": "MOMENTUM", "detail": f"+{change_1h:.0f}% in 1h", "weight": 1})
+        score += 1
 
     # ── SIGNAL 6: MCap Sweet Spot ──
     # $10k-$100k mcap = early but real (not zero liquidity rug)
@@ -1398,6 +1573,108 @@ def blacklist_dev(wallet: str, reason: str = "rug"):
 def is_dev_blacklisted(wallet: str) -> bool:
     if not wallet or len(wallet) != 42: return False
     return wallet.lower() in _dev_blacklist
+
+# ══════════════════════════════════════════════
+# TOKEN BLACKLIST — rug/SL tokens 24h block
+# ══════════════════════════════════════════════
+_token_blacklist: dict = {}  # {addr_lower: {"reason": str, "ts": float}}
+_TOKEN_BL_TTL = 86400  # 24 hours
+
+def blacklist_token(token_address: str, reason: str = "rug"):
+    """Token ko 24h ke liye blacklist karo — dobara check nahi hoga"""
+    if not token_address: return
+    _token_blacklist[token_address.lower()] = {
+        "reason": reason,
+        "ts":     time.time()
+    }
+    # Max 500 entries — purane hatao
+    if len(_token_blacklist) > 500:
+        cutoff = time.time() - _TOKEN_BL_TTL
+        stale = [k for k, v in _token_blacklist.items() if v["ts"] < cutoff]
+        for k in stale:
+            _token_blacklist.pop(k, None)
+    print(f"🚫 Token blacklisted 24h: {token_address[:10]}... reason={reason}")
+
+def is_token_blacklisted(token_address: str) -> bool:
+    if not token_address: return False
+    entry = _token_blacklist.get(token_address.lower())
+    if not entry: return False
+    # TTL check — expired toh remove
+    if time.time() - entry["ts"] > _TOKEN_BL_TTL:
+        _token_blacklist.pop(token_address.lower(), None)
+        return False
+    return True
+
+# ══════════════════════════════════════════════
+# RUG DNA SYSTEM — rug fingerprint learn karo
+# Creator + tax pattern + liq = unique rug signature
+# Same DNA wala naya token → auto reject
+# ══════════════════════════════════════════════
+_rug_dna: list = []   # [{"creator": str, "buy_tax": float, "sell_tax": float, "liq_usd": float, "ts": float}]
+_RUG_DNA_MAX = 200    # max fingerprints store
+
+def _record_rug_dna(token_address: str, creator: str, buy_tax: float, sell_tax: float, liq_usd: float):
+    """Rug token ka DNA fingerprint save karo"""
+    if not creator or len(creator) != 42: return
+    dna = {
+        "token":    token_address.lower(),
+        "creator":  creator.lower(),
+        "buy_tax":  round(buy_tax,  1),
+        "sell_tax": round(sell_tax, 1),
+        "liq_band": _liq_band(liq_usd),  # band mein group karo — exact match nahi chahiye
+        "ts":       time.time()
+    }
+    _rug_dna.append(dna)
+    if len(_rug_dna) > _RUG_DNA_MAX:
+        _rug_dna.pop(0)  # oldest remove
+    print(f"🧬 Rug DNA recorded: creator={creator[:10]} tax={buy_tax:.0f}/{sell_tax:.0f}% liq_band={dna['liq_band']}")
+
+def _liq_band(liq_usd: float) -> str:
+    """Liquidity ko band mein group karo — rough match ke liye"""
+    if liq_usd < 1_000:    return "micro"
+    if liq_usd < 5_000:    return "tiny"
+    if liq_usd < 15_000:   return "small"
+    if liq_usd < 50_000:   return "medium"
+    return "large"
+
+def _check_rug_dna(creator: str, buy_tax: float, sell_tax: float, liq_usd: float) -> dict:
+    """
+    Naye token ka DNA existing rug fingerprints se match karo.
+    Returns: {"match": bool, "confidence": int, "reason": str}
+    """
+    if not creator or not _rug_dna:
+        return {"match": False}
+
+    creator_l  = creator.lower()
+    liq_b      = _liq_band(liq_usd)
+    bt         = round(buy_tax,  1)
+    st         = round(sell_tax, 1)
+
+    creator_rugs = [d for d in _rug_dna if d["creator"] == creator_l]
+    tax_matches  = [d for d in _rug_dna
+                    if abs(d["buy_tax"] - bt) <= 2.0          # ±2% tax tolerance
+                    and abs(d["sell_tax"] - st) <= 2.0
+                    and d["liq_band"] == liq_b]
+
+    # Creator ne pehle rug kiya — sabse strong signal
+    if creator_rugs:
+        return {
+            "match":      True,
+            "confidence": 95,
+            "reason":     f"Creator ne {len(creator_rugs)}x pehle rug kiya ({creator[:10]})"
+        }
+
+    # Same tax + same liq band = suspicious pattern
+    if len(tax_matches) >= 2:
+        return {
+            "match":      True,
+            "confidence": 70,
+            "reason":     f"Rug DNA match: {len(tax_matches)} tokens same tax={bt}/{st}% liq={liq_b}"
+        }
+
+    return {"match": False}
+
+
 
 # _perf_tracker and _relationship removed — RAM optimization
 
@@ -1567,7 +1844,7 @@ def _save_session_to_db(session_id: str):
                 "total_sells":   auto_trade_stats.get("total_auto_sells", 0),
                 "pnl_total":     auto_trade_stats.get("auto_pnl_total", 0.0),
                 "last_action":   auto_trade_stats.get("last_action", ""),
-                "trade_history": list(auto_trade_stats.get("trade_history", []))[-100:],
+                "trade_history": list(auto_trade_stats.get("trade_history", []))[-500:],
                 "total_scanned": max(len(discovered_addresses), brain.get("total_tokens_discovered_ever", 0)),
                 "wins":          auto_trade_stats.get("wins", 0),
                 "losses":        auto_trade_stats.get("losses", 0),
@@ -1628,10 +1905,24 @@ def _persist_positions():
 
 # ========== NEW PAIRS ==========
 new_pairs_queue: deque = deque(maxlen=30)
+
+# ── Real-time Bot Event Log ──
+# Har action yahan log hoga — UI pe live dikhega
+_bot_log: deque = deque(maxlen=100)  # last 100 events
+
+def _log(event_type: str, token: str, detail: str, address: str = ""):
+    """Bot event log mein entry add karo"""
+    _bot_log.appendleft({
+        "type":    event_type,   # discover|reject|pass|buy|sell|whale|rug
+        "token":   token,
+        "detail":  detail,
+        "address": address,
+        "ts":      datetime.utcnow().strftime("%H:%M:%S"),
+    })
 discovered_addresses: dict = {}
 _discovered_lock  = threading.Lock()          # RACE FIX: protect discovered_addresses
-_token_semaphore  = threading.Semaphore(2)   # MEM FIX: was 4
-_check_semaphore  = threading.Semaphore(3)   # MEM FIX: was 10
+_token_semaphore  = threading.Semaphore(3)   # was 2 — more discovery throughput
+_check_semaphore  = threading.Semaphore(5)   # was 3 — more concurrent checks
 DISCOVERY_TTL = 7200
 PAIR_CREATED_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
 
@@ -1938,6 +2229,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     }
     auto_trade_stats["total_auto_buys"] += 1
     auto_trade_stats["last_action"] = f"BUY {token_name or address[:10]}"
+    _log("buy", token_name or address[:10], f"🟢 BUY {size_bnb:.4f} BNB @ ${entry_price:.8f}", address)
     # ✅ Pair register karo — known pair pass karo taaki BSC call na ho (instant!)
     _known_pair = (checklist_result.get("dex_data") or {}).get("pair_address", "")
     _register_position_pair(address, known_pair=_known_pair if _known_pair else None)
@@ -1969,14 +2261,19 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         return
 
     if current <= 0:
-        print(f"⚠️ Sell SKIP: price=0 for {address[:10]}")
-        return
-
-    current = current * 0.995  # 0.5% sell slippage
-    pnl_pct   = ((current - entry) / entry) * 100
-    sell_size = size * (sell_pct / 100.0)
-    pnl_bnb   = sell_size * (pnl_pct / 100.0)  # FIX: was undefined
-    return_bnb = sell_size * (1 + pnl_pct / 100.0)
+        # Rug pull — price = 0, 100% loss force karo
+        # Skip mat karo — position close karni hai
+        current = 0
+        pnl_pct    = -100.0
+        sell_size  = size * (sell_pct / 100.0)
+        pnl_bnb    = -sell_size   # full loss
+        return_bnb = 0.0
+    else:
+        current = current * 0.995  # 0.5% sell slippage
+        pnl_pct    = ((current - entry) / entry) * 100
+        sell_size  = size * (sell_pct / 100.0)
+        pnl_bnb    = sell_size * (pnl_pct / 100.0)
+        return_bnb = sell_size * (1 + pnl_pct / 100.0)
 
     sess = get_or_create_session(AUTO_SESSION_ID)
     sess["paper_balance"] = round(sess.get("paper_balance", 5.0) + return_bnb, 6)
@@ -2008,28 +2305,34 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         "pnl_bnb":    _total_pnl_bnb_trade,
         "size_bnb":   _orig_sz,
         "bought_usd": _saved_bought_usd if _saved_bought_usd else round(_orig_sz * _bnb_at_sell, 2),
-        "sold_usd":   round(max(0, return_bnb) * _bnb_at_sell, 2),
+        "sold_usd":   round(max(0.0, return_bnb) * _bnb_at_sell, 2),  # 0 = rug, positive = proceeds
         "bought_at":  bought_at_str,
         "sold_at":    datetime.utcnow().isoformat(),
         "result":     "win" if _total_pnl_pct_trade > 0 else "loss",
         "reason":     reason,
     })
-    if len(auto_trade_stats["trade_history"]) > 50:
-        auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-50:]
+    if len(auto_trade_stats["trade_history"]) > 500:
+        auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-500:]
 
-    # ── Auto-blacklist dev if SL hit or rug dump ──
-    if "SL" in reason or "Dump" in reason:
+    # ── Auto-blacklist dev + token + record rug DNA if SL hit or rug dump ──
+    if "SL" in reason or "Dump" in reason or "Rug" in reason:
         try:
-            _gp = requests.get(
-                "https://api.gopluslabs.io/api/v1/token_security/56",
-                params={"contract_addresses": address}, timeout=6
-            ).json().get("result", {}).get(address.lower(), {})
-            _creator = _gp.get("creator_address", "")
+            _gp       = _get_goplus(address)
+            _creator  = _gp.get("creator_address", "")
+            _buy_tax  = float(_gp.get("buy_tax",  0) or 0)
+            _sell_tax = float(_gp.get("sell_tax", 0) or 0)
+            _liq_usd  = float(auto_trade_stats["running_positions"].get(address, pos).get("bought_usd", 0) or 0)
             if _creator and len(_creator) == 42:
                 blacklist_dev(_creator, f"SL/Rug on {token} {reason}")
+            # Token blacklist — 24h
+            blacklist_token(address, f"{reason} pnl={pnl_pct:.0f}%")
+            # Rug DNA record
+            _record_rug_dna(address, _creator or "unknown", _buy_tax, _sell_tax, _liq_usd)
         except Exception: pass
 
     auto_trade_stats["last_action"] = f"SELL {sell_pct:.0f}% {token} PnL:{pnl_pct:+.1f}%"
+    _emoji = "🟢" if pnl_pct >= 0 else "🔴"
+    _log("sell", token, f"{_emoji} SELL {sell_pct:.0f}% · PnL {pnl_pct:+.1f}% · {reason}", address)
 
     if sell_pct >= 100.0:
         auto_trade_stats["running_positions"].pop(address, None)
@@ -2142,9 +2445,23 @@ def auto_position_manager():
                 high    = mon.get("high", entry)
                 tp_sold = _pos_data.get("tp_sold", 0.0)  # FIX4
                 sl_pct  = _pos_data.get("sl_pct", 15.0)  # FIX4
-                if current <= 0 or entry <= 0:  # FIX v4: skip, never sell on price=0
-                    print(f"⚠️ Skipping {addr[:10]}: current={current:.8f} entry={entry:.8f}")
+                if entry <= 0:
                     continue
+
+                # ── RUG DETECTION: price = 0 → liquidity removed ──
+                # current=0 matlab liquidity pull ho gayi — rug confirmed
+                # Counter track karo — 3 consecutive zeros = force close
+                if current <= 0:
+                    _zero_count = _pos_data.get("_zero_price_count", 0) + 1
+                    _pos_data["_zero_price_count"] = _zero_count
+                    print(f"⚠️ Price=0: {addr[:10]} count={_zero_count}/3")
+                    if _zero_count >= 3:
+                        # 3 baar price 0 aaya = rug confirmed = force close
+                        print(f"🚨 RUG: {addr[:10]} price=0 x3 → force close")
+                        _auto_paper_sell(addr, "🚨 RUG price=0", 100.0)
+                    continue
+                else:
+                    _pos_data["_zero_price_count"] = 0  # reset on valid price
                 pnl     = ((current - entry) / entry) * 100
                 drop_hi = ((current - high) / high) * 100 if high > 0 else 0
                 _cs   = CHECKLIST_SETTINGS
@@ -2328,7 +2645,9 @@ def auto_position_manager():
                         _pos_data["tp_sold"] = 1
             except Exception as e:
                 print(f"Auto manager err {addr[:10]}: {e}")
-        time.sleep(10)
+        # No positions? slow down — save CPU
+        _sleep = 10 if auto_trade_stats["running_positions"] else 60
+        time.sleep(_sleep)
 
 # ========== PRICE MONITOR ==========
 def price_monitor_loop():
@@ -2380,10 +2699,12 @@ def price_monitor_loop():
                     pass
             except Exception as e:
                 print(f"⚠️ Price monitor error ({addr}): {e}")
-        time.sleep(5)  # MEM FIX: 1s→5s saves 80% RAM
+        # No positions? slow down — save CPU
+        _sleep = 5 if monitored_positions else 30
+        time.sleep(_sleep)
 
 # ========== DEXSCREENER ==========
-def get_dexscreener_token_data(token_address: str) -> Dict:
+def get_dexscreener_token_data(token_address: str, prefetched_raw: dict = None) -> Dict:
     result = {
         "price_usd": 0.0, "price_bnb": 0.0, "volume_24h": 0.0,
         "liquidity_usd": 0.0, "change_1h": 0.0, "change_6h": 0.0, "change_24h": 0.0,
@@ -2391,40 +2712,87 @@ def get_dexscreener_token_data(token_address: str) -> Dict:
         "fdv": 0.0, "pair_address": "", "dex_url": "", "source": "dexscreener"
     }
     try:
-        r = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{token_address}", timeout=10)
-        if r.status_code == 200:
-            pairs = (r.json() or {}).get("pairs") or []
-            if not isinstance(pairs, list): pairs = []
-            bsc   = [p for p in pairs if p and p.get("chainId") == "bsc"]
-            if bsc:
-                bsc.sort(key=lambda x: float(x.get("liquidity", {}).get("usd", 0) or 0), reverse=True)
-                p = bsc[0]
-                txns = p.get("txns", {})
-                result.update({
-                    "price_usd":     float(p.get("priceUsd", 0) or 0),
-                    "volume_24h":    float(p.get("volume", {}).get("h24", 0) or 0),
-                    "liquidity_usd": float(p.get("liquidity", {}).get("usd", 0) or 0),
-                    "change_1h":     float(p.get("priceChange", {}).get("h1", 0) or 0),
-                    "change_6h":     float(p.get("priceChange", {}).get("h6", 0) or 0),
-                    "change_24h":    float(p.get("priceChange", {}).get("h24", 0) or 0),
-                    "buys_5m":       int(txns.get("m5", {}).get("buys", 0) or 0),
-                    "sells_5m":      int(txns.get("m5", {}).get("sells", 0) or 0),
-                    "buys_1h":       int(txns.get("h1", {}).get("buys", 0) or 0),
-                    "sells_1h":      int(txns.get("h1", {}).get("sells", 0) or 0),
-                    "fdv":           float(p.get("fdv", 0) or 0),
-                    "pair_address":  p.get("pairAddress", ""),
-                    "dex_url":       p.get("url", ""),
-                })
-                bnb_price = market_cache.get("bnb_price", 0)
-                result["price_bnb"]    = result["price_usd"] / bnb_price if result["price_usd"] else 0
-                _bt = p.get("baseToken") or {}
-                result["symbol"]       = _bt.get("symbol", "")
-                result["name"]         = _bt.get("name",   "")
-                result["token_symbol"] = _bt.get("symbol", "")
-                result["token_name"]   = _bt.get("name",   "")
-                result["_raw_pairs"]   = True  # flag: symbol already fetched
+        if prefetched_raw is not None:
+            raw_json = prefetched_raw
+        else:
+            r = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{token_address}", timeout=10)
+            raw_json = r.json() if r.status_code == 200 else {}
+        pairs = (raw_json or {}).get("pairs") or []
+        if not isinstance(pairs, list): pairs = []
+        bsc   = [p for p in pairs if p and p.get("chainId") == "bsc"]
+        if bsc:
+            bsc.sort(key=lambda x: float(x.get("liquidity", {}).get("usd", 0) or 0), reverse=True)
+            p = bsc[0]
+            txns = p.get("txns", {})
+            result.update({
+                "price_usd":     float(p.get("priceUsd", 0) or 0),
+                "volume_24h":    float(p.get("volume", {}).get("h24", 0) or 0),
+                "liquidity_usd": float(p.get("liquidity", {}).get("usd", 0) or 0),
+                "change_1h":     float(p.get("priceChange", {}).get("h1", 0) or 0),
+                "change_6h":     float(p.get("priceChange", {}).get("h6", 0) or 0),
+                "change_24h":    float(p.get("priceChange", {}).get("h24", 0) or 0),
+                "buys_5m":       int(txns.get("m5", {}).get("buys", 0) or 0),
+                "sells_5m":      int(txns.get("m5", {}).get("sells", 0) or 0),
+                "buys_1h":       int(txns.get("h1", {}).get("buys", 0) or 0),
+                "sells_1h":      int(txns.get("h1", {}).get("sells", 0) or 0),
+                "fdv":             float(p.get("fdv", 0) or 0),
+                "pair_address":    p.get("pairAddress", ""),
+                "dex_url":         p.get("url", ""),
+                "pair_created_at": p.get("pairCreatedAt", 0) or 0,
+            })
+            bnb_price = market_cache.get("bnb_price", 0)
+            result["price_bnb"]    = result["price_usd"] / bnb_price if result["price_usd"] else 0
+            _bt = p.get("baseToken") or {}
+            result["symbol"]       = _bt.get("symbol", "")
+            result["name"]         = _bt.get("name",   "")
+            result["token_symbol"] = _bt.get("symbol", "")
+            result["token_name"]   = _bt.get("name",   "")
+            result["_raw_pairs"]   = True
+            return result
     except Exception as e:
         print(f"⚠️ DexScreener error: {e}")
+
+    # ── FALLBACK: GeckoTerminal ──
+    try:
+        print(f"⚠️ DexScreener failed — trying GeckoTerminal for {token_address[:10]}")
+        gt = requests.get(
+            f"https://api.geckoterminal.com/api/v2/networks/bsc/tokens/{token_address}/pools",
+            params={"page": 1},
+            headers={"Accept": "application/json;version=20230302"},
+            timeout=10
+        )
+        if gt.status_code == 200:
+            pools = gt.json().get("data", [])
+            bsc_pools = [p for p in pools if p]
+            if bsc_pools:
+                # Sort by liquidity (reserve_in_usd)
+                bsc_pools.sort(key=lambda x: float(x.get("attributes", {}).get("reserve_in_usd", 0) or 0), reverse=True)
+                attrs = bsc_pools[0].get("attributes", {})
+                price_usd = float(attrs.get("base_token_price_usd", 0) or 0)
+                bnb_price = market_cache.get("bnb_price", 0)
+                result.update({
+                    "price_usd":     price_usd,
+                    "price_bnb":     price_usd / bnb_price if price_usd and bnb_price else 0,
+                    "volume_24h":    float(attrs.get("volume_usd", {}).get("h24", 0) or 0),
+                    "liquidity_usd": float(attrs.get("reserve_in_usd", 0) or 0),
+                    "change_1h":     float(attrs.get("price_change_percentage", {}).get("h1", 0) or 0),
+                    "change_24h":    float(attrs.get("price_change_percentage", {}).get("h24", 0) or 0),
+                    "fdv":           float(attrs.get("fdv_usd", 0) or 0),
+                    "pair_address":  attrs.get("address", ""),
+                    "source":        "geckoterminal",
+                    "_raw_pairs":    True,
+                })
+                # Token name from relationships
+                try:
+                    rels  = bsc_pools[0].get("relationships", {})
+                    bt_id = rels.get("base_token", {}).get("data", {}).get("id", "")
+                    result["symbol"]       = bt_id.split("_")[-1][:10] if "_" in bt_id else ""
+                    result["token_symbol"] = result["symbol"]
+                except Exception: pass
+                print(f"✅ GeckoTerminal fallback OK: {token_address[:10]} price=${price_usd:.6f}")
+    except Exception as e:
+        print(f"⚠️ GeckoTerminal fallback error: {e}")
+
     return result
 
 # ========== MARKET DATA ==========
@@ -2450,22 +2818,10 @@ def fetch_market_data():
             "https://api.binance.com/api/v3/ticker/price",
             params={"symbol":"BNBUSDT"}, timeout=30
         ).json().get("price",0) or 0)),
-        ("CoinGecko",    lambda: float((requests.get(
-            "https://api.coingecko.com/api/v3/simple/price",
-            params={"ids":"binancecoin","vs_currencies":"usd"}, timeout=25
-        ).json() or {}).get("binancecoin",{}).get("usd",0) or 0)),
-        ("CryptoCompare",lambda: float(requests.get(
-            "https://min-api.cryptocompare.com/data/price",
-            params={"fsym":"BNB","tsyms":"USD"}, timeout=25
-        ).json().get("USD",0) or 0)),
         ("OKX",          lambda: float(((requests.get(
             "https://www.okx.com/api/v5/market/ticker",
             params={"instId":"BNB-USDT"}, timeout=20
         ).json() or {}).get("data") or [{}])[0].get("last",0) or 0)),
-        ("GeckoTerminal", lambda: float(((requests.get(
-            "https://api.geckoterminal.com/api/v2/networks/bsc/pools/0x58f876857a02d6762e0101bb5c46a8c1ed44dc16",
-            headers={"Accept":"application/json;version=20230302"}, timeout=20
-        ).json() or {}).get("data",{}).get("attributes",{}).get("token_price_usd") or 0) or 0)),
     ]
     for attempt in range(2):  # 2 attempts
         if bnb_fetched: break
@@ -2762,52 +3118,65 @@ def continuous_learning():
     _load_brain_from_db()
     time.sleep(3)
     cycle = brain.get("total_learning_cycles", 0)
-    last_fast = last_deep = last_hour = 0
+    last_fast = last_deep = last_hour = last_bnb_check = 0
     print(f"📚 Learning from cycle #{cycle}")
     while True:
         try:
             cycle += 1
             brain["total_learning_cycles"] = cycle
             now = time.time()
-            if now - last_fast >= 120:  # MEM FIX: was 60
+
+            # BNB price backup — har 30s check karo (dedicated loop se alag)
+            if now - last_bnb_check >= 30:
+                last_bnb_check = now
+                try:
+                    _bnb_age = 9999
+                    _ts = market_cache.get("last_updated")
+                    if _ts:
+                        try: _bnb_age = (datetime.utcnow() - datetime.fromisoformat(_ts.replace("Z",""))).total_seconds()
+                        except: pass
+                    if _bnb_age > 30:  # dedicated loop fail hua — backup se lo
+                        fetch_market_data()
+                except Exception as e:
+                    print(f"BNB backup fetch error: {e}")
+
+            # PancakeSwap trending — har 10 min (BNB fetch se alag)
+            if now - last_deep >= 600:
+                try:
+                    fetch_pancakeswap_data()
+                except Exception: pass
+
+            # Brain patterns learn — har 2 min
+            if now - last_fast >= 120:
                 last_fast = now
-            try:
-                # BNB price: WSS primary, HTTP backup every 60s agar WSS stale ho
-                _bnb_age = 9999
-                _ts = market_cache.get("last_updated")
-                if _ts:
-                    try: _bnb_age = (datetime.utcnow() - datetime.fromisoformat(_ts.replace("Z",""))).total_seconds()
-                    except: pass
-                if _bnb_age > 30:  # WSS 30s se update nahi hua = HTTP se lo
-                    fetch_market_data()
-                fetch_pancakeswap_data()
-            except Exception as e:
-                print(f"Market fetch error: {e}")
-            _learn_trading_patterns()
-            _learn_from_new_pairs()
-            try:
-                if supabase:
-                    supabase.table("memory").upsert({
-                        "session_id": "MRBLACK_CYCLE",
-                        "role":       "system",
-                        "content":    str(cycle),
-                        "updated_at": datetime.utcnow().isoformat()
-                    }).execute()
-            except Exception: pass
-            if now - last_deep >= 300:
+                _learn_trading_patterns()
+                _learn_from_new_pairs()
+                try:
+                    if supabase:
+                        supabase.table("memory").upsert({
+                            "session_id": "MRBLACK_CYCLE",
+                            "role":       "system",
+                            "content":    str(cycle),
+                            "updated_at": datetime.utcnow().isoformat()
+                        }).execute()
+                except Exception: pass
+
+            # Deep LLM + brain save — har 10 min
+            if now - last_deep >= 600:
                 last_deep = now
                 _deep_llm_learning()
                 update_self_awareness()
                 _save_brain_to_db()
                 print(f"📚 Cycle #{cycle} | W:{len(brain['trading']['best_patterns'])} L:{len(brain['trading']['avoid_patterns'])}")
+
             if now - last_hour >= 3600:
                 last_hour = now
                 _check_milestones()
 
         except Exception as e:
             print(f"Learning cycle error: {e}")
-        gc.collect()  # periodic RAM cleanup
-        time.sleep(60)
+        gc.collect()
+        time.sleep(30)  # har 30s — BNB backup check ke liye zaroori
 
 # ========== FEEDBACK LOOP ==========
 feedback_log = []
@@ -2860,29 +3229,72 @@ def feedback_validation_loop():
         gc.collect()
         time.sleep(1800)  # MEM FIX: 3600→1800
 
+def _memory_cleanup_loop():
+    """Periodic cleanup — _pair_to_token + _rt_swap_data orphan entries remove karo"""
+    time.sleep(60)
+    while True:
+        try:
+            now = time.time()
+            with _rt_swap_lock:
+                # Active position addresses
+                active = set(auto_trade_stats.get("running_positions", {}).keys())
+                active.update(monitored_positions.keys())
+
+                # _pair_to_token: sirf active positions ke entries rakhna
+                stale_pairs = [k for k, v in _pair_to_token.items()
+                               if v.get("token", "") not in active]
+                for k in stale_pairs:
+                    _pair_to_token.pop(k, None)
+
+                # _rt_swap_data: active + last 10 min mein updated entries rakhna
+                stale_rt = [k for k, v in _rt_swap_data.items()
+                            if k not in active and (now - v.get("ts", 0)) > 600]
+                for k in stale_rt:
+                    _rt_swap_data.pop(k, None)
+
+            if stale_pairs or stale_rt:
+                print(f"🧹 MemClean: removed {len(stale_pairs)} pairs, {len(stale_rt)} rt_swap entries")
+            gc.collect()
+        except Exception as e:
+            print(f"⚠️ MemCleanup error: {e}")
+        time.sleep(300)  # har 5 minute
+
 # ========== AUTO CHECK NEW PAIR ==========
-def _auto_check_new_pair(pair_address: str):
+def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale_wallet: str = ""):
+    # Sabse pehle — token blacklist check (zero cost, instant)
+    if is_token_blacklisted(pair_address):
+        _log("reject", pair_address[:8], "Blacklisted 24h — skip", pair_address)
+        print(f"🚫 Token blacklisted — skip: {pair_address[:10]}")
+        return
     if not _check_semaphore.acquire(blocking=False):
-        print(f"⏭️ Check skipped (10 already running): {pair_address[:10]}")
+        print(f"⏭️ Check skipped (semaphore full): {pair_address[:10]}")
         return
     try:
-        print(f"⏳ Waiting 60s: {pair_address[:10]}")
-        time.sleep(60)
+        if whale_triggered:
+            _log("whale", pair_address[:8], f"🐋 Whale follow — scanning ({whale_wallet[:8]})", pair_address)
+            print(f"🐋 WHALE FOLLOW scan (skip wait): {pair_address[:10]} ← {whale_wallet[:10]}")
+            time.sleep(10)
+        else:
+            _log("discover", pair_address[:8], "New pair — waiting 30s for liquidity", pair_address)
+            print(f"⏳ Waiting 30s: {pair_address[:10]}")
+            time.sleep(30)
+        _prefetched_dex = None
         try:
             _ar = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{pair_address}", timeout=8)
             if _ar.status_code == 200:
                 _ar_json = _ar.json() or {}
                 _bp = [p for p in (_ar_json.get("pairs") or []) if p and p.get("chainId") == "bsc"]
-                del _ar_json
                 if _bp:
                     _ct = _bp[0].get("pairCreatedAt", 0) or 0
-                    del _bp
                     if _ct and (time.time() - _ct / 1000) / 60 > 10080:
+                        _log("reject", pair_address[:8], "Token too old (7d+) — skip", pair_address)
+                        del _ar_json, _bp, _ar
                         return
-            del _ar
+                    _prefetched_dex = _ar_json
+                del _ar
         except Exception: pass
 
-        result  = run_full_sniper_checklist(pair_address)
+        result  = run_full_sniper_checklist(pair_address, prefetched_dex=_prefetched_dex)
         score   = result.get("score", 0)
         total   = result.get("total", 1)
         rec     = result.get("recommendation", "")
@@ -2891,13 +3303,9 @@ def _auto_check_new_pair(pair_address: str):
         _ss = CHECKLIST_SETTINGS.get("score_safe", 50.0)
         print(f"📊 Score: {score}/{total} = {round(score/max(total,1)*100)}% | SAFE needs:{int(total*_ss/100)} ({_ss:.0f}%) | overall={overall}")
 
-        if overall in ["SAFE", "CAUTION"]:
-            pass
-        # Token name — dex_data se lo, nahi mila toh address
         _dex_d    = result.get("dex_data", {})
         _tok_sym  = _dex_d.get("symbol") or _dex_d.get("token_symbol") or ""
         _tok_name = _dex_d.get("name")   or _dex_d.get("token_name")   or ""
-        # new_pairs_queue mein bhi check karo
         if not _tok_sym:
             for _qp in list(new_pairs_queue):
                 if str(_qp.get("address","")).lower() == pair_address.lower():
@@ -2906,14 +3314,29 @@ def _auto_check_new_pair(pair_address: str):
                     break
         _final_name = _tok_sym or _tok_name or pair_address[:8]
 
-        _safe_score = CHECKLIST_SETTINGS.get("score_safe", 50.0)  # raised: was 40%
+        _safe_score = CHECKLIST_SETTINGS.get("score_safe", 50.0)
 
-        # SAFETY: Sirf SAFE pe buy — CAUTION/RISK/DANGER pe NEVER buy
-        if overall == "SAFE" and score >= int(total * _safe_score / 100):
-            try: _auto_paper_buy(pair_address, _final_name, score, total, result)
-            except Exception as e: print(f"Auto buy error: {e}")
+        # ── GATE 1: Full Checklist — MUST be SAFE ──
+        if overall != "SAFE":
+            _log("reject", _final_name, f"Checklist {overall} ({score}/{total}) — {rec[:40]}", pair_address)
+            print(f"⏭️ SKIP {_final_name}: checklist={overall} — CAUTION/RISK/DANGER pe trade nahi")
+        elif score < int(total * _safe_score / 100):
+            _log("reject", _final_name, f"Score {score}/{total} ({round(score/max(total,1)*100)}%) below threshold", pair_address)
+            print(f"⏭️ SKIP {_final_name}: checklist score {score}/{total} ({round(score/max(total,1)*100)}%) < {_safe_score:.0f}% threshold")
         else:
-            print(f"⏭️ SKIP {pair_address[:10]}: overall={overall} score={score}/{total} ({round(score/max(total,1)*100)}%) — not buying")
+            # ── GATE 2: Opportunity Score ──
+            _gs = detect_green_signals(pair_address, result.get("_goplus_raw", {}), _dex_d)
+            _opp_score = _gs.get("score", 0)
+            _opp_sigs  = [s["type"] for s in _gs.get("signals", [])]
+
+            if _opp_score < 1:
+                _log("pass", _final_name, f"Checklist SAFE ✅ but no opp signals — skipped", pair_address)
+                print(f"⏭️ SKIP {_final_name}: checklist SAFE ✅ but zero opportunity signals — no edge detected")
+            else:
+                _log("pass", _final_name, f"✅ SAFE {score}/{total} · signals: {', '.join(_opp_sigs[:2])}", pair_address)
+                print(f"✅ BUY CONFIRMED {_final_name}: checklist={overall} ({score}/{total}) + opp={_opp_score}pt signals={_opp_sigs}")
+                try: _auto_paper_buy(pair_address, _final_name, score, total, result)
+                except Exception as e: print(f"Auto buy error: {e}")
 
         knowledge_base["bsc"]["new_tokens"] = knowledge_base["bsc"]["new_tokens"][-99:]
         knowledge_base["bsc"]["new_tokens"].append({
@@ -2979,37 +3402,6 @@ def _poll_four_meme_gecko() -> list:
         print(f"⚠️ four.meme gecko error: {e}")
     return found
 
-def _poll_four_meme_bscscan() -> list:
-    """BSCScan tx monitor — fallback if no API key missing"""
-    if not BSC_SCAN_KEY:
-        return []
-    found = []
-    try:
-        for contract in FOUR_MEME_CONTRACTS:
-            url = (
-                f"{BSC_SCAN_API}?module=account&action=txlist"
-                f"&address={contract}"
-                f"&startblock=0&endblock=99999999"
-                f"&page=1&offset=10&sort=desc"
-                f"&apikey={BSC_SCAN_KEY}"
-            )
-            r = requests.get(url, timeout=8)
-            if r.status_code != 200:
-                continue
-            txns = r.json().get("result", [])
-            if not isinstance(txns, list):
-                continue
-            for tx in txns[:5]:
-                token_addr = tx.get("contractAddress", "")
-                if not token_addr or token_addr == "0x":
-                    inp = tx.get("input", "")
-                    if len(inp) >= 74:
-                        token_addr = "0x" + inp[34:74]
-                if token_addr and len(token_addr) == 42:
-                    found.append(token_addr)
-    except Exception as e:
-        print(f"⚠️ four.meme bscscan error: {e}")
-    return found
 
 def poll_four_meme():
     """four.meme naye tokens — 3 sources: direct API + GeckoTerminal + BSCScan"""
@@ -3027,10 +3419,6 @@ def poll_four_meme():
             # Source 2: GeckoTerminal (har 3rd cycle — 60 sec)
             if _cycle % 3 == 0:
                 addrs += _poll_four_meme_gecko()
-
-            # Source 3: BSCScan all 3 contracts (har 6th cycle — 120 sec)
-            if _cycle % 6 == 0:
-                addrs += _poll_four_meme_bscscan()
 
             # Dedup + process
             new_count = 0
@@ -3271,11 +3659,8 @@ def poll_four_meme_wss():
 # keccak256("Swap(address,uint256,uint256,uint256,uint256,address)")
 SWAP_TOPIC = "0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822"
 
-# Real-time swap counters — position manager ye use karega DexScreener ki jagah
-# {token_addr_lower: {"buys": N, "sells": N, "ts": float, "pair": str, "token0_is_wbnb": bool}}
-_rt_swap_data: dict = {}
-_rt_swap_lock = threading.Lock()
-_swap_monitor_resubscribe = threading.Event()  # ✅ fix: was missing
+# _rt_swap_data + _rt_swap_lock already declared at line ~820 — DO NOT redeclare (memory leak fix)
+_swap_monitor_resubscribe = threading.Event()  # ✅ WSS resubscribe trigger
 
 # Pair → token mapping (taaki Swap event decode kar sakein)
 _pair_to_token: dict = {}   # {pair_lower: {"token": addr, "token0_is_wbnb": bool}}
@@ -3452,58 +3837,45 @@ def _start_swap_monitor_wss():
     threading.Thread(target=_run, daemon=True).start()
     print("📊 Real-time SwapMonitor started")
 
-def _fallback_token_poller():
-    """DexScreener fallback — har 5 min mein naye tokens dhundta hai"""
-    _cycle = 0
-    while True:
-        try:
-            _cycle += 1
-            _nc = time.time()
-            # Cleanup old entries — BUG FIX: use lock to prevent race condition
-            with _discovered_lock:
-                discovered_addresses_clean = {k: v for k, v in discovered_addresses.items() if _nc - v < DISCOVERY_TTL}
-                discovered_addresses.clear()
-                discovered_addresses.update(discovered_addresses_clean)
 
-            try:
-                rb = requests.get("https://api.dexscreener.com/token-boosts/latest/v1", timeout=10)
-                if rb.status_code == 200:
-                    _rb_json = rb.json(); boosts = _rb_json if isinstance(_rb_json, list) else []; del _rb_json
-                    for item in boosts[:5]:
-                        if item.get("chainId") == "bsc":
-                            addr = item.get("tokenAddress", "")
-                            if addr:
-                                threading.Thread(target=_process_new_token, args=(addr, addr, "DexBoost"), daemon=True).start()
-            except Exception: pass
 
-            queries = ["new","moon","pepe","meme","inu","doge","safe","baby","elon","based"]
-            q = queries[_cycle % len(queries)]
-            try:
-                rs = requests.get(f"https://api.dexscreener.com/latest/dex/search?q={q}", timeout=10)
-                if rs.status_code == 200:
-                    _dex_pairs = [p for p in (rs.json() or {}).get("pairs", []) if p and p.get("chainId") == "bsc"]
-                    for p in _dex_pairs[:5]:
-                        addr = (p.get("baseToken") or {}).get("address", "")
-                        if addr:
-                            threading.Thread(target=_process_new_token, args=(addr, p.get("pairAddress", ""), "DexSearch"), daemon=True).start()
-            except Exception: pass
-        except Exception as e:
-            print(f"Warning: Fallback error: {e}")
-        time.sleep(300)
-def run_full_sniper_checklist(address: str) -> Dict:
+def run_full_sniper_checklist(address: str, prefetched_dex: dict = None) -> Dict:
     result = {
         "address": address, "checklist": [],
         "overall": "UNKNOWN", "score": 0, "total": 0,
         "recommendation": "", "dex_data": {}
     }
+
+    # ── STEP 1: Honeypot.is — on-chain buy/sell simulation (fastest reject) ──
+    hp_is_honeypot = False
+    hp_buy_tax     = 0.0
+    hp_sell_tax    = 0.0
+    hp_label       = "Unknown"
+    try:
+        hp_json        = _get_honeypot(address)
+        if hp_json:
+            hp_is_honeypot = hp_json.get("isHoneypot", False)
+            hp_sim         = hp_json.get("simulationResult", {}) or {}
+            hp_buy_tax     = float(hp_sim.get("buyTax",  0) or 0)
+            hp_sell_tax    = float(hp_sim.get("sellTax", 0) or 0)
+            hp_label       = hp_json.get("honeypotResult", {}).get("name", "Unknown") if hp_is_honeypot else "Safe"
+            print(f"🍯 Honeypot.is: {address[:10]}... → {'HONEYPOT ❌' if hp_is_honeypot else 'SAFE ✅'} buy={hp_buy_tax:.1f}% sell={hp_sell_tax:.1f}%")
+    except Exception as e:
+        print(f"⚠️ Honeypot.is error: {e}")
+
+    # Honeypot detected — immediate reject, skip GoPlus + DexScreener
+    if hp_is_honeypot:
+        result["checklist"].append({"label": "Honeypot Check", "status": "fail", "value": f"HONEYPOT ({hp_label})", "stage": 1})
+        result["overall"]        = "DANGER"
+        result["score"]          = 0
+        result["total"]          = 1
+        result["recommendation"] = f"❌ HONEYPOT — sell blocked on-chain ({hp_label})"
+        return result
+
+    # ── STEP 2: GoPlus — deep static analysis (cached 5 min) ──
     goplus_data = {}
     try:
-        gp_res = requests.get(
-            "https://api.gopluslabs.io/api/v1/token_security/56",
-            params={"contract_addresses": address}, timeout=12
-        )
-        if gp_res.status_code == 200:
-            goplus_data = gp_res.json().get("result", {}).get(address.lower(), {})
+        goplus_data = _get_goplus(address)
     except Exception as e:
         print(f"⚠️ GoPlus error: {e}")
 
@@ -3511,7 +3883,12 @@ def run_full_sniper_checklist(address: str) -> Dict:
     result["_goplus_raw"] = goplus_data  # green signals ke liye
     bscscan_source = "verified" if _gp_str(goplus_data, "is_open_source", "0") == "1" else ""
 
-    dex_data = get_dexscreener_token_data(address)
+    # ── STEP 3: DexScreener — use prefetched data if available (avoid double call) ──
+    if prefetched_dex is not None:
+        # Data already fetched in _auto_check_new_pair — parse it directly
+        dex_data = get_dexscreener_token_data(address, prefetched_raw=prefetched_dex)
+    else:
+        dex_data = get_dexscreener_token_data(address)
     # Token name/symbol — get_dexscreener_token_data ke result se hi lo, duplicate call nahi
     try:
         _nd_raw = dex_data.get("_raw_pairs")
@@ -3540,6 +3917,8 @@ def run_full_sniper_checklist(address: str) -> Dict:
         "0x0000000000000000000000000000000000000000",
         "0x000000000000000000000000000000000000dead", ""]
 
+    # Honeypot.is result — safe tokens ke liye bhi show karo
+    add("Honeypot Check", "pass", f"SAFE (buy={hp_buy_tax:.1f}% sell={hp_sell_tax:.1f}%)", 1)
     add("Contract Verified",       "pass" if verified  else "fail", "YES" if verified  else "NO",    1)
     add("Mint Authority Disabled", "pass" if mint_ok   else "fail", "SAFE" if mint_ok  else "RISK",  1)
     add("Ownership Renounced",     "pass" if renounced else "warn", "YES" if renounced else "MAYBE", 1)
@@ -3608,40 +3987,35 @@ def run_full_sniper_checklist(address: str) -> Dict:
     add(f"Sniper Wait {cs['sniper_wait']} Min",   "pass" if token_age_min >= cs['sniper_wait']   else "warn", "OK" if token_age_min >= cs['sniper_wait'] else "WAIT", 3)
 
     # ── SNIPER DETECTION ──
-    # Launch ke first 3 blocks = sniper window
-    # GoPlus holders mein check karo — kitne wallets pehle 60 sec mein the?
-    # Zyada snipers = insiders/bots ne pre-buy kiya = rug risk high
-    _sniper_count   = 0
-    _sniper_wallets = []
+    # ── Sniper Detection — pct>=5% AND amount>=$300 dono saath hona chahiye ──
+    # Retail snipers (<$300) = ignore, dump power nahi
+    # Whale snipers (5%+ hold, $300+) = real danger = FAIL
+    _sniper_count = 0
+    _sniper_bnb   = 0.0
     try:
         _holders_list = goplus_data.get("holders", []) or []
-        # Real-time swap data se bhi check karo — pehle 60 sec mein buys
-        with _rt_swap_lock:
-            _rt_d = _rt_swap_data.get(address.lower(), {})
-        _early_buys = _rt_d.get("buys5", 0) if _rt_d else 0
+        _bnb_price    = max(market_cache.get("bnb_price", 600), 1)
+        _liq_usd      = dex_data.get("liquidity_usd", 0) or 0
 
-        # GoPlus: top holders jo bahut jaldi aaye
-        # Heuristic: agar token 5 min se kam purana hai aur top 10 mein 
-        # koi ek wallet 5%+ hold kar raha hai = sniper
         if token_age_min < 10:
             for h in _holders_list[:10]:
-                pct = float(h.get("percent", 0) or 0) * 100
+                pct          = float(h.get("percent", 0) or 0) * 100
                 _is_contract = h.get("is_contract", 0)
-                if pct >= 3.0 and not _is_contract:
-                    _sniper_wallets.append(h.get("address","")[:12])
-                    _sniper_count += 1
+                if pct >= 5.0 and not _is_contract:
+                    holder_usd = (_liq_usd * pct / 100) if _liq_usd > 0 else 0
+                    if holder_usd >= 300:  # $300+ = real dump power
+                        _sniper_count += 1
+                        _sniper_bnb   += holder_usd / _bnb_price
 
-        # DexScreener: first 5 min mein buys_5m > 20 + token < 5 min = bot activity
-        _dex_buys5 = dex_data.get("buys_5m", 0)
-        if token_age_min < 5 and _dex_buys5 > 20:
-            _sniper_count = max(_sniper_count, 3)  # suspicious activity
+        # Bot activity — first 5 min mein 20+ buys = suspicious
+        if token_age_min < 5 and dex_data.get("buys_5m", 0) > 20:
+            _sniper_count = max(_sniper_count, 3)
 
         if _sniper_count == 0:
-            add("Sniper Detection", "pass", "No snipers detected ✅", 3)
-        elif _sniper_count <= 2:
-            add("Sniper Detection", "warn", f"{_sniper_count} possible snipers", 3)
+            add("Sniper Detection", "pass", "No dangerous snipers ✅", 3)
         else:
-            add("Sniper Detection", "fail", f"🚨 {_sniper_count} snipers detected — pre-sniped!", 3)
+            add("Sniper Detection", "fail",
+                f"🚨 {_sniper_count} whale snipers ~{_sniper_bnb:.1f} BNB (5%+ hold + $300+) — SKIP", 3)
 
     except Exception as _se:
         add("Sniper Detection", "warn", "Check failed", 3)
@@ -3762,6 +4136,18 @@ def run_full_sniper_checklist(address: str) -> Dict:
     add("Dev Not Blacklisted",
         "fail" if dev_blocked else "pass",
         "BLACKLISTED" if dev_blocked else "CLEAN", 5)
+
+    # ── FEATURE 5b: Rug DNA Check ──
+    # Pehle ke rug tokens se creator/tax/liq pattern match karo
+    _buy_tax_gp  = float(goplus_data.get("buy_tax",  0) or 0)
+    _sell_tax_gp = float(goplus_data.get("sell_tax", 0) or 0)
+    _dna_result  = _check_rug_dna(creator_addr, _buy_tax_gp, _sell_tax_gp, liq_usd_dex)
+    if _dna_result.get("match"):
+        add("Rug DNA Clean",
+            "fail",
+            f"🧬 {_dna_result['reason']} (conf={_dna_result['confidence']}%)", 5)
+    else:
+        add("Rug DNA Clean", "pass", "No rug pattern match", 3)
 
     # ── four.meme Graduation Signal ──
     # $69k liquidity = four.meme graduation = PancakeSwap listing imminent
@@ -4098,9 +4484,6 @@ def _startup_once():
             _sources = [
                 ("Binance",      "https://api.binance.com/api/v3/ticker/price",        {"symbol":"BNBUSDT"},                    lambda r: float(r.json().get("price",0) or 0)),
                 ("OKX",          "https://www.okx.com/api/v5/market/ticker",           {"instId":"BNB-USDT"},                   lambda r: float(((r.json() or {}).get("data") or [{}])[0].get("last",0) or 0)),
-                ("CryptoCompare","https://min-api.cryptocompare.com/data/price",       {"fsym":"BNB","tsyms":"USD"},             lambda r: float(r.json().get("USD",0) or 0)),
-                ("CoinGecko",    "https://api.coingecko.com/api/v3/simple/price",      {"ids":"binancecoin","vs_currencies":"usd"}, lambda r: float((r.json() or {}).get("binancecoin",{}).get("usd",0) or 0)),
-                ("GeckoTerminal","https://api.geckoterminal.com/api/v2/networks/bsc/pools/0x58f876857a02d6762e0101bb5c46a8c1ed44dc16", {}, lambda r: float(((r.json() or {}).get("data",{}).get("attributes",{}).get("token_price_usd")) or 0)),
             ]
             while True:
                 fetched = False
@@ -4163,6 +4546,7 @@ def _startup_once():
                             }))
                             ack = await asyncio.wait_for(ws.recv(), timeout=10)
                             print(f"✅ NodeReal BNB price stream live | sub={_j.loads(ack).get('result','?')}")
+                            market_cache["wss_status"] = "live"
                             fail = 0
                             while True:
                                 msg  = await asyncio.wait_for(ws.recv(), timeout=60)
@@ -4173,10 +4557,12 @@ def _startup_once():
                                     if price > 10:
                                         market_cache["bnb_price"]    = round(price, 4)
                                         market_cache["last_updated"] = datetime.utcnow().isoformat()
+                                        market_cache["wss_status"]   = "live"
                                 del msg, data
                     except Exception as e:
                         fail += 1
                         wait = min(5 * fail, 60)
+                        market_cache["wss_status"] = f"retry({fail})"
                         print(f"⚠️ NodeReal BNB WS: {str(e)[:80]} — retry in {wait}s")
                         gc.collect()
                         # WSS fail → HTTP fallback (Render pe WSS block ho toh bhi price milega)
@@ -4208,6 +4594,8 @@ def _startup_once():
         threading.Thread(target=_delayed(price_monitor_loop,    15),  daemon=True).start()
         threading.Thread(target=_delayed(continuous_learning,   25),  daemon=True).start()
         threading.Thread(target=_delayed(auto_position_manager, 30),  daemon=True).start()
+        threading.Thread(target=_delayed(_memory_cleanup_loop,  60),  daemon=True).start()  # MEM FIX
+        threading.Thread(target=_delayed(_whale_follow_loop,   120),  daemon=True).start()  # WHALE FOLLOW
 
 
         def _startup_restore():
@@ -4502,61 +4890,7 @@ def readiness():
 
 @app.route("/activity", methods=["GET"])
 def activity_route():
-    from datetime import datetime as _dt
-    acts = []
-    for addr, pos in list(auto_trade_stats.get("running_positions",{}).items()):
-        e   = pos.get("entry", 0)
-        c   = monitored_positions.get(addr, {}).get("current", e)
-        pnl = ((c - e) / e * 100) if e > 0 else 0
-        b   = pos.get("bought_at", "")
-        tok = pos.get("token","")
-        td  = tok if (tok and not tok.startswith("0x") and len(tok) < 20) else addr[:8]
-        acts.append({
-            "type": "buy",
-            "token": td,
-            "address": addr,
-            "main": f"BUY {td} — {pos.get('size_bnb',0):.4f} BNB @ ${e:.8f}",
-            "meta": f"{addr[:8]}...{addr[-4:]} · PnL:{pnl:+.1f}%",
-            "t": _to_ist(b) if len(b) >= 16 else _now_ist(),
-            "entry": f"${e:.10f}",
-            "bought_at": b,
-            "pnl": round(pnl, 2),
-            "size": f"{pos.get('size_bnb',0):.4f} BNB",
-        })
-    for h in list(reversed(auto_trade_stats.get("trade_history",[]) ))[:5]:
-        sold = h.get("sold_at","")
-        acts.insert(0, {
-            "type": "sell",
-            "token": h.get("token","?"),
-            "address": h.get("address",""),
-            "main": f"SELL {h.get('token','?')} — {h.get('pnl_pct',0):+.2f}% | {h.get('size_bnb',0):.4f} BNB",
-            "meta": f"Entry:{h.get('entry',0):.8f} → Exit:{h.get('exit',0):.8f}",
-            "t": _to_ist(sold) if len(sold) >= 16 else "—",
-            "entry": f"${h.get('entry',0):.10f}",
-            "exit":  f"${h.get('exit',0):.10f}",
-            "bought_at": h.get("bought_at",""),
-            "sold_at":   sold,
-            "pnl": h.get("pnl_pct",0),
-            "pnl_bnb": h.get("pnl_bnb",0),
-            "size": f"{h.get('size_bnb',0):.4f} BNB",
-            "result": h.get("result",""),
-        })
-    acts.append({
-        "type": "scan",
-        "main": f"SCAN: {len(discovered_addresses):,} checked · {len(new_pairs_queue)} queued · {len(monitored_positions)} monitoring",
-        "meta": "BSC Mainnet · WebSocket + DexScreener",
-        "t": _now_ist()
-    })
-    fg = market_cache.get("fear_greed", 50)
-    bnb = market_cache.get("bnb_price", 0)
-    if bnb > 0:
-        acts.append({
-            "type": "scan",
-            "main": f"MARKET: BNB ${bnb:.2f} · F&G {fg}/100",
-            "meta": "CoinGecko + Alternative.me",
-            "t": _now_ist()
-        })
-    return jsonify({"activity": acts[:30]})
+    return jsonify({"activity": list(_bot_log)})
 
 @app.route("/trade-history", methods=["GET"])
 def trade_history_route():
@@ -4761,7 +5095,7 @@ def auto_stats_route():
         "last_action":     auto_trade_stats.get("last_action", ""),
         "open_trades":     open_trades,
         "positions":       {t["address"]: t for t in open_trades},
-        "trade_history":   list(reversed(auto_trade_stats.get("trade_history", [])[-20:])),
+        "trade_history":   list(reversed(auto_trade_stats.get("trade_history", [])[-5000:])),
         "learning_cycles": brain.get("total_learning_cycles", 0),
         "new_pairs_found": len(new_pairs_queue),
         "daily_loss":      round(sess.get("daily_loss", 0), 4),
@@ -4774,6 +5108,15 @@ def auto_stats_route():
         "today_wins":      auto_trade_stats.get("today_wins",   0),
         "today_losses":    auto_trade_stats.get("today_losses", 0),
         "today_pnl":       round(auto_trade_stats.get("today_pnl", 0.0), 4),
+        # Intelligence stats
+        "qualified_whales":   sum(1 for d in _smart_wallets.values() if d.get("qualified")),
+        "total_wallets":      len(_smart_wallets),
+        "rug_dna_patterns":   len(_rug_dna),
+        "tokens_blacklisted": sum(1 for v in _token_blacklist.values() if time.time() - v["ts"] < _TOKEN_BL_TTL),
+        "devs_blacklisted":   len(_dev_blacklist),
+        "brain_best":         len(brain["trading"].get("best_patterns", [])),
+        "brain_avoid":        len(brain["trading"].get("avoid_patterns", [])),
+        "wss_status":         market_cache.get("wss_status", "unknown"),
     })
   except Exception as e:
     print(f"❌ auto_stats_route error: {e}")
