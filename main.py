@@ -2260,7 +2260,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         "size_bnb":       size_bnb,
         "orig_size_bnb":  size_bnb,
         "bought_usd":     round(size_bnb * _bnb_at_buy, 2),
-        "sl_pct":         CHECKLIST_SETTINGS.get("sl_new", 15.0),
+        "sl_pct":         CHECKLIST_SETTINGS.get("sl_new", 12.0),
         "trail_pct":      20.0,   # ✅ immediate 20% trailing from entry
         "tp_sold":        0.0,
         "banked_pnl_bnb": 0.0,
@@ -2593,7 +2593,7 @@ def auto_position_manager():
                         _auto_paper_sell(addr, f"TrailSL locked +{_sl_floor:.0f}% {'(vol fallback)' if not _has_vol else ''}", 100.0)
                         _trail_triggered = True
                         print(f"🔒 TrailSL: {addr[:10]} pnl={pnl:.1f}% floor={_sl_floor:.0f}% peak={_pnl_high:.0f}%")
-                    elif drop_hi <= -20.0:
+                    elif drop_hi <= -12.0:
                         # Entry protection — below 40% peak, 20% drop from high
                         _auto_paper_sell(addr, f"TrailSL -20% entry {'(vol fallback)' if not _has_vol else ''}", 100.0)
                         _trail_triggered = True
