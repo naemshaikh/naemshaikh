@@ -4659,7 +4659,11 @@ def auto_stats_route():
             "gas_bnb":        DataGuard.get_real_gas_bnb(),  # real BSC gas
         })
 
-    total_pnl = round(auto_trade_stats.get("auto_pnl_total", 0.0) / max(trade_count, 1), 2) if trade_count > 0 else 0.0
+    # PNL: trade_history se actual BNB pnl calculate karo
+    _hist = auto_trade_stats.get("trade_history", [])
+    _total_pnl_bnb = sum(float(t.get("pnl_bnb", 0) or 0) for t in _hist)
+    _total_invested = sum(float(t.get("size_bnb", AUTO_BUY_SIZE_BNB) or AUTO_BUY_SIZE_BNB) for t in _hist)
+    total_pnl = round((_total_pnl_bnb / _total_invested * 100), 2) if _total_invested > 0 else 0.0
 
     return jsonify({
         "paper_balance":   paper_bal,
