@@ -345,6 +345,52 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
     <div class="sg-item"><div class="sg-val" id="sg-losses" style="color:var(--red)">—</div><div class="sg-lbl">Loss Trades</div></div>
   </div>
 
+  <!-- Intelligence Panel -->
+  <div class="sep" style="margin-top:10px;">🧠 Bot Intelligence</div>
+  <div style="padding:0 12px 10px;">
+    <div style="background:var(--ink2);border:1px solid var(--line2);border-radius:12px;padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:32px;height:32px;border-radius:8px;background:rgba(0,212,170,0.12);border:1px solid rgba(0,212,170,0.2);display:flex;align-items:center;justify-content:center;font-size:14px;">🐋</div>
+        <div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--em)" id="intel-whales">—</div>
+          <div style="font-size:9px;color:var(--txt3)">Qualified Whales</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:32px;height:32px;border-radius:8px;background:rgba(255,71,87,0.12);border:1px solid rgba(255,71,87,0.2);display:flex;align-items:center;justify-content:center;font-size:14px;">🧬</div>
+        <div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--red)" id="intel-dna">—</div>
+          <div style="font-size:9px;color:var(--txt3)">Rug DNA Learned</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:32px;height:32px;border-radius:8px;background:rgba(255,190,0,0.12);border:1px solid rgba(255,190,0,0.2);display:flex;align-items:center;justify-content:center;font-size:14px;">🚫</div>
+        <div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:#ffbe00" id="intel-blacklist">—</div>
+          <div style="font-size:9px;color:var(--txt3)">Tokens Blocked 24h</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:32px;height:32px;border-radius:8px;background:rgba(100,180,255,0.12);border:1px solid rgba(100,180,255,0.2);display:flex;align-items:center;justify-content:center;font-size:14px;">📡</div>
+        <div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;" id="intel-wss" style="color:var(--em)">—</div>
+          <div style="font-size:9px;color:var(--txt3)">Price Stream</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;grid-column:span 2;">
+        <div style="width:32px;height:32px;border-radius:8px;background:rgba(150,100,255,0.12);border:1px solid rgba(150,100,255,0.2);display:flex;align-items:center;justify-content:center;font-size:14px;">🧠</div>
+        <div style="flex:1;">
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--em)">✅ <span id="intel-best">—</span> wins</span>
+            <span style="font-size:10px;color:var(--txt3)">·</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--red)">❌ <span id="intel-avoid">—</span> rugs</span>
+          </div>
+          <div style="font-size:9px;color:var(--txt3)">Brain Patterns Learned</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="sep">Bot Controls</div>
   <div class="ctrl-panel">
     <div class="ctrl-header">
@@ -876,6 +922,26 @@ async function fetchStats(){
   document.getElementById('sg-watch').textContent=(_as&&_as.open_positions!=null?_as.open_positions:(_as&&_as.monitoring!=null?_as.monitoring:(_td&&_td.monitoring)||0));
   document.getElementById('sg-wins').textContent=(_as&&_as.wins)||0;
   document.getElementById('sg-losses').textContent=(_as&&_as.losses)||0;
+
+  // Intelligence Panel update
+  if(_as){
+    const _iw = document.getElementById('intel-whales');
+    if(_iw) _iw.textContent = (_as.qualified_whales||0) + ' / ' + (_as.total_wallets||0);
+    const _id = document.getElementById('intel-dna');
+    if(_id) _id.textContent = (_as.rug_dna_patterns||0);
+    const _ib = document.getElementById('intel-blacklist');
+    if(_ib) _ib.textContent = (_as.tokens_blacklisted||0);
+    const _ibest = document.getElementById('intel-best');
+    if(_ibest) _ibest.textContent = (_as.brain_best||0);
+    const _iavoid = document.getElementById('intel-avoid');
+    if(_iavoid) _iavoid.textContent = (_as.brain_avoid||0);
+    const _iwss = document.getElementById('intel-wss');
+    if(_iwss){
+      const ws = _as.wss_status||'unknown';
+      _iwss.textContent = ws;
+      _iwss.style.color = ws==='live' ? 'var(--em)' : ws.startsWith('retry') ? 'var(--gold)' : 'var(--red)';
+    }
+  }
   if(_as){
     // Daily stats update
     const _tw = _as.today_wins||0, _tl = _as.today_losses||0;

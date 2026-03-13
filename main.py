@@ -4512,6 +4512,7 @@ def _startup_once():
                             }))
                             ack = await asyncio.wait_for(ws.recv(), timeout=10)
                             print(f"✅ NodeReal BNB price stream live | sub={_j.loads(ack).get('result','?')}")
+                            market_cache["wss_status"] = "live"
                             fail = 0
                             while True:
                                 msg  = await asyncio.wait_for(ws.recv(), timeout=60)
@@ -4522,10 +4523,12 @@ def _startup_once():
                                     if price > 10:
                                         market_cache["bnb_price"]    = round(price, 4)
                                         market_cache["last_updated"] = datetime.utcnow().isoformat()
+                                        market_cache["wss_status"]   = "live"
                                 del msg, data
                     except Exception as e:
                         fail += 1
                         wait = min(5 * fail, 60)
+                        market_cache["wss_status"] = f"retry({fail})"
                         print(f"⚠️ NodeReal BNB WS: {str(e)[:80]} — retry in {wait}s")
                         gc.collect()
                         # WSS fail → HTTP fallback (Render pe WSS block ho toh bhi price milega)
@@ -5125,6 +5128,15 @@ def auto_stats_route():
         "today_wins":      auto_trade_stats.get("today_wins",   0),
         "today_losses":    auto_trade_stats.get("today_losses", 0),
         "today_pnl":       round(auto_trade_stats.get("today_pnl", 0.0), 4),
+        # Intelligence stats
+        "qualified_whales":   sum(1 for d in _smart_wallets.values() if d.get("qualified")),
+        "total_wallets":      len(_smart_wallets),
+        "rug_dna_patterns":   len(_rug_dna),
+        "tokens_blacklisted": sum(1 for v in _token_blacklist.values() if time.time() - v["ts"] < _TOKEN_BL_TTL),
+        "devs_blacklisted":   len(_dev_blacklist),
+        "brain_best":         len(brain["trading"].get("best_patterns", [])),
+        "brain_avoid":        len(brain["trading"].get("avoid_patterns", [])),
+        "wss_status":         market_cache.get("wss_status", "unknown"),
     })
   except Exception as e:
     print(f"❌ auto_stats_route error: {e}")
