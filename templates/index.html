@@ -1496,27 +1496,34 @@ function openHoldDetail(json){
   );
 
   // TP Sell rows — newest TP on top, oldest at bottom
+  // Each TP sells incremental chunk: TP1=25%, TP2=25%, TP3=25%, TP4=15%
   let tpRows='';
   if(tpSold>0){
-    const tpLevels=[{pct:90,label:'TP4'},{pct:75,label:'TP3'},{pct:50,label:'TP2'},{pct:25,label:'TP1'}];
-    tpLevels.forEach(function(lv){
-      if(tpSold>=lv.pct){
-        // Each TP sells 25% of origSz
-        const lvBNB   = origSz*0.25;
-        const lvUSD   = (lvBNB*bnbP).toFixed(0);
-        // Estimate sell price: origSz came at entry, partial sells happened at higher prices
-        // Use banked pnl to estimate avg sell price
-        const avgSellEntry = entry*(1+(pnl/100)*0.8); // rough estimate
-        const sellPriceUSD = avgSellEntry>0?'$'+(avgSellEntry*bnbP).toFixed(8).replace(/\.?0+$/,''):'—';
-        const tokensPerTP  = tokensBought>0?Math.round(tokensBought*0.25):0;
+    const tpDefs=[
+      {cumul:90, prev:75, label:'TP4'},
+      {cumul:75, prev:50, label:'TP3'},
+      {cumul:50, prev:25, label:'TP2'},
+      {cumul:25, prev:0,  label:'TP1'},
+    ];
+    const soldBNBTotal = origSz - sz;
+    const avgExitPrice = soldBNBTotal>0 && banked!==0
+      ? entry * (1 + (banked / soldBNBTotal))
+      : entry * (1 + pnl/100);
+    tpDefs.forEach(function(lv){
+      if(tpSold>=lv.cumul){
+        const chunkPct    = lv.cumul - lv.prev;
+        const lvBNB       = origSz * (chunkPct / 100);
+        const lvUSD       = (lvBNB * bnbP).toFixed(0);
+        const tokensTP    = tokensBought>0 ? Math.round(tokensBought*(chunkPct/100)) : 0;
+        const sellPriceUSD= avgExitPrice>0 ? '$'+(avgExitPrice*bnbP).toFixed(8).replace(/\.?0+$/,'') : '—';
         tpRows+=actRow(
           lv.label+' Sell','var(--gold)',
           '—','partial exit',
           '$'+lvUSD,
-          tokensPerTP>0?'~'+Number(tokensPerTP).toLocaleString()+' '+sym:'',
+          tokensTP>0?'~'+Number(tokensTP).toLocaleString()+' '+sym:'',
           '$'+gasUSD+' ~',
           sellPriceUSD,
-          '','sold '+lv.pct+'%', true
+          '','sold '+chunkPct+'%', true
         );
       }
     });
