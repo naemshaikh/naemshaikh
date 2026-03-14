@@ -396,7 +396,8 @@ class DataGuard:
                     return gas_bnb
         except Exception as e:
             print(f"⚠️ Gas fetch error: {e}")
-        return 0.0
+        # BSC standard fallback — 5 gwei x 150k gas = 0.00075 BNB (~$0.49)
+        return 0.00075
 
     @staticmethod
     def trade_allowed(address, token_price_bnb):
