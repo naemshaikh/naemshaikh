@@ -5691,6 +5691,14 @@ def health():
         "learning_cycles": brain.get("total_learning_cycles", 0),
     })
 
+@app.route("/client-config")
+def client_config():
+    """Frontend ke liye safe config — Moralis key expose karo"""
+    return jsonify({
+        "moralis_key": MORALIS_API_KEY or "",
+        "bsc_wallet":  BSC_WALLET or REAL_WALLET or "",
+    })
+
 @app.route("/wallet-info")
 def wallet_info():
     """Real wallet balance — Chainstack primary"""

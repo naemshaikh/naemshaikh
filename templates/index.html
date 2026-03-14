@@ -1397,22 +1397,42 @@ function _applyModeUI(){
 // Fetch real BNB balance from backend (BSC_WALLET env se auto)
 async function fetchRealBalance(){
   try{
-    const r = await fetchJSON('/wallet-info',{},10000);
-    if(r && r.bnb > 0){
-      document.getElementById('b-real-bal').textContent = r.bnb.toFixed(4)+' BNB';
-      document.getElementById('b-real-usd').textContent = 'approx $'+r.usd.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+    // Step 1: Backend se wallet address lo (BSC_WALLET env variable)
+    const info = await fetchJSON('/wallet-info',{},8000);
+    const addr = (info && info.wallet) ? info.wallet : _walletAddr || '';
+    if(addr){
       const ws = document.getElementById('wallet-short');
-      if(ws && r.wallet) ws.textContent = r.wallet.slice(0,6)+'...'+r.wallet.slice(-4);
-      _walletAddr = r.wallet || _walletAddr;
-    } else if(r && r.bnb === 0 && !r.error){
-      // Wallet genuinely empty
-      document.getElementById('b-real-bal').textContent = '0.0000 BNB';
-      document.getElementById('b-real-usd').textContent = 'Wallet empty';
-    } else if(r && r.error){
-      document.getElementById('b-real-bal').textContent = '— BNB';
-      document.getElementById('b-real-usd').textContent = r.error.includes('MORALIS') ? 'Add MORALIS_API_KEY' : 'Balance unavailable';
+      if(ws) ws.textContent = addr.slice(0,6)+'...'+addr.slice(-4);
+      _walletAddr = addr;
+    }
+    if(!addr) return;
+
+    // Step 2: Browser se directly Moralis call karo — no Render proxy issue
+    const bnbPrice = window._bnbReal || 0;
+
+    // Moralis via browser — CORS allowed hai
+    try {
+      const mr = await fetch(
+        `https://deep-index.moralis.io/api/v2.2/${addr}/balance?chain=bsc`,
+        { headers: { 'accept': 'application/json', 'X-API-Key': window._moralisKey || '' }, signal: AbortSignal.timeout(8000) }
+      );
+      if(mr.ok){
+        const md = await mr.json();
+        const bnb = parseFloat(md.balance || '0') / 1e18;
+        const bnbP = window._bnbReal || 0;
+        document.getElementById('b-real-bal').textContent = bnb.toFixed(4)+' BNB';
+        document.getElementById('b-real-usd').textContent = bnbP > 0 ? 'approx $'+(bnb*bnbP).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : 'approx $—';
+        return;
+      }
+    } catch(me){}
+
+    // Fallback: backend response use karo
+    if(info && info.bnb > 0){
+      document.getElementById('b-real-bal').textContent = info.bnb.toFixed(4)+' BNB';
+      document.getElementById('b-real-usd').textContent = 'approx $'+info.usd.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
     } else {
-      document.getElementById('b-real-usd').textContent = 'Tap to add wallet';
+      document.getElementById('b-real-bal').textContent = '— BNB';
+      document.getElementById('b-real-usd').textContent = 'Add MORALIS_API_KEY in Render';
     }
   }catch(e){}
 }
@@ -1889,6 +1909,19 @@ async function _doModeSwitch(){
 }
 
 // Init wallet on load
+// Startup pe config fetch — Moralis key + wallet address
+(async function _loadClientConfig(){
+  try {
+    const cfg = await fetchJSON('/client-config',{},5000);
+    if(cfg && cfg.moralis_key) window._moralisKey = cfg.moralis_key;
+    if(cfg && cfg.bsc_wallet && !_walletAddr) {
+      _walletAddr = cfg.bsc_wallet;
+      const ws = document.getElementById('wallet-short');
+      if(ws) ws.textContent = cfg.bsc_wallet.slice(0,6)+'...'+cfg.bsc_wallet.slice(-4);
+    }
+  } catch(e){}
+})();
+
 fetchRealBalance();
 _applyModeUI();
 setInterval(fetchRealBalance, 68000);
