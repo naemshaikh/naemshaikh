@@ -1685,6 +1685,43 @@ def is_token_blacklisted(token_address: str) -> bool:
 # RUG DNA SYSTEM — rug fingerprint learn karo
 # Creator + tax pattern + liq = unique rug signature
 # Same DNA wala naya token → auto reject
+# ========== TRADE HISTORY — SUPABASE PERMANENT STORAGE ==========
+_TRADES_SESSION_ID = "MRBLACK_TRADE_HISTORY"
+
+def _save_trade_history_to_db():
+    """Har trade ke baad Supabase mein permanently save karo"""
+    if not supabase: return
+    try:
+        hist = auto_trade_stats.get("trade_history", [])
+        supabase.table("memory").upsert({
+            "session_id":    _TRADES_SESSION_ID,
+            "trade_history": json.dumps(hist[-5000:]),
+            "updated_at":    datetime.utcnow().isoformat(),
+        }).execute()
+        print(f"💾 Trade history saved: {len(hist)} trades")
+    except Exception as e:
+        print(f"⚠️ Trade history save error: {e}")
+
+def _load_trade_history_from_db():
+    """Startup pe Supabase se history load karo"""
+    if not supabase: return
+    try:
+        res = supabase.table("memory").select("trade_history").eq("session_id", _TRADES_SESSION_ID).execute()
+        if res.data:
+            raw = res.data[0].get("trade_history")
+            if raw:
+                hist = json.loads(raw) if isinstance(raw, str) else raw
+                if isinstance(hist, list) and hist:
+                    auto_trade_stats["trade_history"] = hist
+                    wins   = sum(1 for t in hist if t.get("result") == "win")
+                    losses = sum(1 for t in hist if t.get("result") == "loss")
+                    auto_trade_stats["trade_count"] = len(hist)
+                    auto_trade_stats["win_count"]   = wins
+                    auto_trade_stats["loss_count"]  = losses
+                    print(f"✅ Trade history loaded: {len(hist)} trades ({wins}W/{losses}L)")
+    except Exception as e:
+        print(f"⚠️ Trade history load error: {e}")
+
 # ══════════════════════════════════════════════
 _rug_dna: list = []   # [{"creator": str, "buy_tax": float, "sell_tax": float, "liq_usd": float, "ts": float}]
 _RUG_DNA_MAX = 200    # max fingerprints store
@@ -2400,8 +2437,10 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         "result":     "win" if _total_pnl_pct_trade > 0 else "loss",
         "reason":     reason,
     })
-    if len(auto_trade_stats["trade_history"]) > 500:
-        auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-500:]
+    if len(auto_trade_stats["trade_history"]) > 5000:
+        auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-5000:]
+    # Supabase mein permanently save karo — background thread mein
+    threading.Thread(target=_save_trade_history_to_db, daemon=True).start()
 
     # ── Auto-blacklist dev + token + record rug DNA if SL hit or rug dump ──
     if "SL" in reason or "Dump" in reason or "Rug" in reason:
@@ -4741,6 +4780,10 @@ def _startup_once():
             return _wrap
 
         def _bg_init():
+            try:
+                _load_trade_history_from_db()
+            except Exception as e:
+                print(f"Trade history load error: {e}")
             try:
                 _load_all_settings_from_db()
             except Exception as e:
