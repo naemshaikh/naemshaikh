@@ -3963,10 +3963,12 @@ def _start_swap_monitor_wss():
         print("⚠️ websockets not installed — SwapMonitor disabled")
         return
 
-    WSS_ENDPOINTS = [
+    _cs5 = os.getenv("BSC_WSS", "")
+    WSS_ENDPOINTS = []
+    if _cs5: WSS_ENDPOINTS.append(_cs5)
+    WSS_ENDPOINTS += [
         "wss://bsc-rpc.publicnode.com",
         "wss://bsc.publicnode.com",
-        "wss://bsc-ws-node.nariox.org:443",
         "wss://bsc.drpc.org",
     ]
 
