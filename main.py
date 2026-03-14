@@ -4726,6 +4726,9 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
 # ========== FLASK ROUTES ==========
 def _persist_settings():
     """Sari current settings ek saath DB mein save karo"""
+    if not supabase:
+        print("⚠️ _persist_settings: supabase not connected — settings not saved!")
+        return
     try:
         supabase.table("memory").upsert({
             "session_id": "MRBLACK_SETTINGS",
@@ -4744,6 +4747,9 @@ def _persist_settings():
 def _load_all_settings_from_db():
     """Startup pe Supabase se sari settings load karo — restart ke baad bhi persist rahe"""
     global AUTO_BUY_SIZE_BNB, AUTO_MAX_POSITIONS, CHECKLIST_SETTINGS, TRADE_MODE, REAL_WALLET
+    if not supabase:
+        print("⚠️ _load_all_settings_from_db: supabase not connected")
+        return
     try:
         res = supabase.table("memory").select("*").eq("session_id", "MRBLACK_SETTINGS").execute()
         rows = res.data if res and res.data else []
@@ -5661,8 +5667,8 @@ def set_buy_amount():
         if amount > 1.0:
             return jsonify({"status": "error", "message": "Maximum 1.0 BNB allowed!"}), 400
         AUTO_BUY_SIZE_BNB = round(amount, 4)
-        print(f"💰 Auto buy amount changed: {AUTO_BUY_SIZE_BNB} BNB")
-        threading.Thread(target=_persist_settings, daemon=True).start()
+        print(f"💰 Auto buy amount changed: {AUTO_BUY_SIZE_BNB} BNB | supabase={'OK' if supabase else 'NOT CONNECTED'}")
+        _persist_settings()  # Sync call — background thread pe race condition tha
         return jsonify({"status": "ok", "amount": AUTO_BUY_SIZE_BNB, "message": f"Buy amount set: {AUTO_BUY_SIZE_BNB} BNB"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
