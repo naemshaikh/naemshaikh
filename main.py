@@ -4285,16 +4285,34 @@ def run_full_sniper_checklist(address: str, prefetched_dex: dict = None) -> Dict
     add("Buy > Sell (1hr)",  "pass" if buys_1h > sells_1h else ("warn" if _no_txns or buys_1h==0 else "warn"), f"B:{buys_1h} S:{sells_1h}" + (" (no txn data)" if _no_txns else ""), 4)
     add(f"Volume 24h > ${cs['min_volume_24h']:,.0f}", "pass" if dex_data.get("volume_24h",0) > cs['min_volume_24h'] else "warn", f"${dex_data.get('volume_24h',0):,.0f}", 4)
 
-    in_dex     = _gp_bool_flag(goplus_data, "is_in_dex")
-    pool_count = len(dex_list) if isinstance(dex_list, list) else 0
-    change_1h  = dex_data.get("change_1h", 0)
+    # Stage 6 — DEX checks: GoPlus + DexScreener/GeckoTerminal dono se verify
+    # Naye tokens GoPlus mein late index hote hain — isliye dex_data bhi check karo
     price_usd  = dex_data.get("price_usd", 0)
+    change_1h  = dex_data.get("change_1h", 0)
+    _dex_has_data = dex_data.get("_raw_pairs", False)  # DexScreener/GeckoTerminal se data aaya
 
-    # Stage 6 — DEX real checks only (hardcoded rules removed from scoring)
-    add("Listed on DEX",    "pass" if in_dex     else "fail", "YES" if in_dex else "NO", 6)
-    add("DEX Pools",        "pass" if pool_count > 0 else "fail", f"{pool_count} pools", 6)
-    add("1h Price Change",  "pass" if change_1h > 0  else "warn", f"{change_1h:+.1f}%",  6)
-    add("Price Exists",     "pass" if price_usd > 0  else "fail", f"${price_usd:.8f}" if price_usd > 0 else "NO PRICE", 6)
+    # GoPlus is_in_dex — naye tokens pe False aa sakta hai, dex_data se cross-verify karo
+    in_dex_gp  = _gp_bool_flag(goplus_data, "is_in_dex")
+    pool_count = len(dex_list) if isinstance(dex_list, list) else 0
+    # Cross-verify: price_usd > 0 ZARURI hai — bina price ke koi trade nahi
+    in_dex     = (in_dex_gp or _dex_has_data) and (price_usd > 0)
+    # Pool: GoPlus pool list ya DexScreener data
+    pool_ok    = (pool_count > 0 or _dex_has_data) and (price_usd > 0)
+
+    add("Listed on DEX",
+        "pass" if in_dex else "fail",
+        ("GoPlus+DEX ✅" if in_dex_gp and _dex_has_data else
+         "DEX only ✅"   if _dex_has_data else
+         "GoPlus only ✅" if in_dex_gp else "NO ❌"), 6)
+
+    add("DEX Pools",
+        "pass" if pool_ok else "fail",
+        f"{pool_count} pools (GoPlus)" if pool_count > 0 else
+        ("1 pool (DEX data)" if _dex_has_data else "NO POOLS ❌"), 6)
+
+    add("1h Price Change",  "pass" if change_1h > 0  else "warn", f"{change_1h:+.1f}%", 6)
+    add("Price Exists",     "pass" if price_usd > 0  else "fail",
+        f"${price_usd:.8f}" if price_usd > 0 else "NO PRICE", 6)
 
     owner_pct = _gp_float(goplus_data, "owner_percent") * 100
 
