@@ -5755,13 +5755,14 @@ def client_config():
 
 @app.route("/wallet-info")
 def wallet_info():
-    """Real wallet balance — Chainstack primary"""
+    """Real wallet balance — multiple sources try karo"""
     try:
         addr = BSC_WALLET or REAL_WALLET or ""
         if not addr:
             return jsonify({"wallet": "", "bnb": 0, "usd": 0, "error": "BSC_WALLET not set"})
         bnb_price = market_cache.get("bnb_price", 0)
-        # Try BSCScan API first
+
+        # 1. BSCScan API — free, reliable
         if BSC_SCAN_KEY:
             try:
                 r = requests.get(BSC_SCAN_API, params={
@@ -5770,31 +5771,29 @@ def wallet_info():
                 }, timeout=10)
                 if r.status_code == 200 and r.json().get("status") == "1":
                     bnb = float(r.json()["result"]) / 1e18
-                    if bnb > 0:
-                        return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2)})
-            except Exception:
-                pass
-        # 1. Moralis API — free tier, no RPC needed
-        if MORALIS_API_KEY:
-            try:
-                _r = requests.get(
-                    f"https://deep-index.moralis.io/api/v2.2/{addr}/balance",
-                    params={"chain": "bsc"},
-                    headers={"X-API-Key": MORALIS_API_KEY},
-                    timeout=8
-                )
-                if _r.status_code == 200:
-                    _bal = _r.json().get("balance", "0")
-                    bnb = float(_bal) / 1e18
-                    return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2), "src": "moralis"})
+                    return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2), "src": "bscscan"})
             except Exception:
                 pass
 
-        # 2. Web3 RPC fallback
+        # 2. BSCScan free (no key) — public endpoint
+        try:
+            r2 = requests.get(
+                f"https://api.bscscan.com/api?module=account&action=balance&address={addr}&tag=latest",
+                timeout=8
+            )
+            if r2.status_code == 200 and r2.json().get("status") == "1":
+                bnb = float(r2.json()["result"]) / 1e18
+                return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2), "src": "bscscan_free"})
+        except Exception:
+            pass
+
+        # 3. Web3 RPC — multiple fallbacks
         _rpcs = [
             "https://bsc-dataseed.bnbchain.org",
+            "https://bsc-dataseed1.binance.org",
             "https://bsc.drpc.org",
             "https://rpc.ankr.com/bsc",
+            "https://1rpc.io/bnb",
         ]
         for _rpc in _rpcs:
             try:
@@ -5804,7 +5803,23 @@ def wallet_info():
                 return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2), "src": "rpc"})
             except Exception:
                 continue
-        return jsonify({"wallet": addr, "bnb": 0, "usd": 0, "error": "Add MORALIS_API_KEY in Render env"})
+
+        # 4. Moralis — agar key hai
+        if MORALIS_API_KEY:
+            try:
+                _r = requests.get(
+                    f"https://deep-index.moralis.io/api/v2.2/{addr}/balance",
+                    params={"chain": "bsc"},
+                    headers={"X-API-Key": MORALIS_API_KEY},
+                    timeout=8
+                )
+                if _r.status_code == 200:
+                    bnb = float(_r.json().get("balance", "0")) / 1e18
+                    return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2), "src": "moralis"})
+            except Exception:
+                pass
+
+        return jsonify({"wallet": addr, "bnb": 0, "usd": 0, "error": "All balance sources failed"})
     except Exception as e:
         return jsonify({"wallet": "", "bnb": 0, "usd": 0, "error": str(e)[:60]})
 

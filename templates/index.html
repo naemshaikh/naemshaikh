@@ -1426,28 +1426,17 @@ async function fetchRealBalance(){
     }
     if(!addr) return;
 
-    // Step 2: Browser se directly Moralis call karo — no Render proxy issue
-    const bnbPrice = window._bnbReal || 0;
-
-    // Moralis via browser — CORS allowed hai
-    try {
-      const mr = await fetch(
-        `https://deep-index.moralis.io/api/v2.2/${addr}/balance?chain=bsc`,
-        { headers: { 'accept': 'application/json', 'X-API-Key': window._moralisKey || '' }, signal: AbortSignal.timeout(8000) }
-      );
-      if(mr.ok){
-        const md = await mr.json();
-        const bnb = parseFloat(md.balance || '0') / 1e18;
-        const bnbP = window._bnbReal || 0;
-        document.getElementById('b-real-bal').textContent = bnb.toFixed(4)+' BNB';
-        document.getElementById('b-real-usd').textContent = bnbP > 0 ? 'approx $'+(bnb*bnbP).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : 'approx $—';
-        return;
-      }
-    } catch(me){}
-
-    // Fallback: backend response use karo
+    // Step 2: Backend se balance lo — RPC/BSCScan se already fetch ho gaya
+    const bnbP = window._bnbReal || 0;
     if(info && info.bnb > 0){
       document.getElementById('b-real-bal').textContent = info.bnb.toFixed(4)+' BNB';
+      document.getElementById('b-real-usd').textContent = bnbP > 0 ? 'approx $'+(info.bnb*bnbP).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : 'approx $'+info.usd.toFixed(2);
+      return;
+    }
+
+    // Fallback agar bnb=0 (wallet empty hai ya RPC fail)
+    if(info && info.wallet){
+      document.getElementById('b-real-bal').textContent = '0.0000 BNB';
       document.getElementById('b-real-usd').textContent = 'approx $'+info.usd.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
     } else {
       document.getElementById('b-real-bal').textContent = '— BNB';
