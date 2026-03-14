@@ -818,6 +818,7 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
             result["success"]      = True
             result["tx_hash"]      = tx_hash.hex()
             result["gas_used"]     = receipt["gasUsed"]
+            result["gas_price"]    = txn.get("gasPrice", 0)  # actual gas price wei
             bnb_received           = min_bnb / 1e18
             result["bnb_received"] = bnb_received
             print(f"✅ REAL SELL confirmed: {tx_hash.hex()[:20]}...")
@@ -2529,6 +2530,18 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
             print(f"⚠️ REAL SELL failed: {_real_sell.get('error','?')} — continuing paper tracking")
         else:
             print(f"✅ REAL SELL: tx={_real_sell.get('tx_hash','')[:20]} BNB={_real_sell.get('bnb_received',0):.4f}")
+            # ── Actual gas receipt se tp_events update karo ──
+            _actual_gas_used = _real_sell.get("gas_used", 0)
+            _gas_price_wei   = _real_sell.get("gas_price", 0)
+            if _actual_gas_used and _gas_price_wei:
+                _actual_gas_bnb = (_actual_gas_used * _gas_price_wei) / 1e18
+                _actual_gas_usd = round(_actual_gas_bnb * market_cache.get("bnb_price", 0), 4)
+                # Last tp_event update karo actual gas se
+                if pos.get("tp_events"):
+                    pos["tp_events"][-1]["gas_bnb"] = round(_actual_gas_bnb, 8)
+                    pos["tp_events"][-1]["gas_usd"]  = _actual_gas_usd
+                    pos["tp_events"][-1]["tx_hash"]  = _real_sell.get("tx_hash", "")[:20]
+                    _persist_positions()
 
     print(f"AUTO SELL {sell_pct:.0f}%: {address[:10]} PnL:{pnl_pct:+.1f}% [{reason}]")
     # ✅ Full sell → swap monitor se unregister + learn from trade
