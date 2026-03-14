@@ -2595,18 +2595,43 @@ def auto_position_manager():
                         _lp_burn_alerts.discard(addr.lower())
                     continue
 
-                # ── BACKUP: PRICE STALENESS — 30s same price = rug ──
-                # RPC stale price return karta hai after LP pull
-                # 0.3s loop mein check hoga — near-instant detection
-                _last_pval = _pos_data.get("_last_price_val", 0)
-                _last_ptim = _pos_data.get("_last_price_time", time.time())
-                if current != _last_pval:
-                    _pos_data["_last_price_val"]  = current
-                    _pos_data["_last_price_time"] = time.time()
-                elif pnl > 5 and (time.time() - _last_ptim) >= 30:
-                    print(f"🚨 STALE PRICE: {addr[:10]} 30s unchanged → SELL")
-                    _auto_paper_sell(addr, "Stale Price 🚨 Possible Rug", 100.0)
-                    continue
+                # ── BACKUP: RESERVES SUDDEN DROP ──
+                # Har 3s mein pair ka WBNB reserve check karo
+                # 50%+ sudden drop = LP pull = instant sell
+                # Yeh price movement se independent hai — genuine tokens safe
+                _now_t = time.time()
+                _last_res_t = _pos_data.get("_last_res_t", 0)
+                if _now_t - _last_res_t >= 3:
+                    _pos_data["_last_res_t"] = _now_t
+                    try:
+                        _pair_addr = _get_pair_for_token(addr)
+                        if _pair_addr:
+                            _pc = w3.eth.contract(
+                                address=Web3.to_checksum_address(_pair_addr),
+                                abi=PAIR_ABI_PRICE
+                            )
+                            _res = _pc.functions.getReserves().call()
+                            _t0  = _pc.functions.token0().call().lower()
+                            # WBNB reserve nikalo
+                            _wbnb_res = _res[0] if _t0 == WBNB.lower() else _res[1]
+                            _wbnb_bnb = _wbnb_res / 1e18
+                            # Pehli reading save karo
+                            _prev_wbnb = _pos_data.get("_wbnb_reserve", 0)
+                            if _prev_wbnb <= 0:
+                                _pos_data["_wbnb_reserve"] = _wbnb_bnb
+                            else:
+                                # Drop calculate karo
+                                _drop_pct = ((_wbnb_bnb - _prev_wbnb) / _prev_wbnb) * 100
+                                if _drop_pct <= -50:
+                                    # 50%+ WBNB reserve drop = LP pull = SELL NOW
+                                    print(f"🚨 RESERVES DROP: {addr[:10]} WBNB {_prev_wbnb:.3f}→{_wbnb_bnb:.3f} ({_drop_pct:.0f}%) → SELL!")
+                                    _auto_paper_sell(addr, f"LiqDrop {abs(_drop_pct):.0f}% 🚨 Rug", 100.0)
+                                    continue
+                                elif _wbnb_bnb > _prev_wbnb:
+                                    # Reserve badha = LP add = update baseline
+                                    _pos_data["_wbnb_reserve"] = _wbnb_bnb
+                    except Exception as _re:
+                        pass  # RPC fail = skip, next cycle mein retry
 
                 # ── PRIMARY: Volume SL ──
                 if _has_vol:
