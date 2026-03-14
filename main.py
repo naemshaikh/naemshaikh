@@ -897,6 +897,15 @@ _rt_swap_lock = threading.Lock()
 # keccak256("Swap(address,uint256,uint256,uint256,uint256,address)")
 SWAP_TOPIC = "0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822"
 
+# PancakeSwap v2 Burn event topic — LP remove hone pe fire hota hai
+# keccak256("Burn(address,uint256,uint256,address)")
+# Yeh dev ke removeLiquidity() call pe turant fire hota hai — PEHLE price drop se
+BURN_TOPIC = "0xdccd412f0b1252819cb1fd330b93224ca42612892bb3f4f789976e6d81936496"
+
+# LP Burn alert set — kaunse tokens ke liye burn detect hua
+_lp_burn_alerts: set = set()
+_lp_burn_lock = threading.Lock()
+
 def _get_pair_for_token(token_address: str) -> str:
     """Token ka v2 pair address lo — cached"""
     tl = token_address.lower()
@@ -1043,13 +1052,13 @@ def start_swap_monitor():
                         sub_msg = _json.dumps({
                             "id": 10, "method": "eth_subscribe",
                             "params": ["logs", {
-                                "topics": [[SWAP_TOPIC]]
+                                "topics": [[SWAP_TOPIC, BURN_TOPIC]]
                             }],
                             "jsonrpc": "2.0"
                         })
                         await ws.send(sub_msg)
                         await asyncio.wait_for(ws.recv(), timeout=10)
-                        print(f"⚡ Swap Monitor: subscribed (watching all pairs)")
+                        print(f"⚡ Swap Monitor: subscribed (Swap + LP Burn detection 🔥)")
 
                     await _subscribe_current()
 
@@ -1063,10 +1072,45 @@ def start_swap_monitor():
                         if not log: continue
 
                         topics   = log.get("topics") or []
-                        if not topics or topics[0].lower() != SWAP_TOPIC.lower():
-                            continue
+                        if not topics: continue
+                        event_topic = topics[0].lower()
 
                         pair_addr = log.get("address", "").lower()
+
+                        # ══════════════════════════════════════════════
+                        # LP BURN DETECTION — Rug se PEHLE exit!
+                        # Dev removeLiquidity() → Burn event fire hota hai
+                        # Yeh price drop se pehle aata hai — milliseconds mein sell
+                        # ══════════════════════════════════════════════
+                        if event_topic == BURN_TOPIC.lower():
+                            # Refresh map first
+                            with monitor_lock:
+                                tokens_now = list(monitored_positions.keys())
+                            for tok in tokens_now:
+                                pair = _get_pair_for_token(tok)
+                                if pair:
+                                    pair_to_token[pair.lower()] = tok.lower()
+
+                            token_addr = pair_to_token.get(pair_addr)
+                            if token_addr:
+                                # Ye hamare position ka pair hai — LP burn detected!
+                                already_alerted = False
+                                with _lp_burn_lock:
+                                    if token_addr in _lp_burn_alerts:
+                                        already_alerted = True
+                                    else:
+                                        _lp_burn_alerts.add(token_addr)
+
+                                if not already_alerted:
+                                    print(f"🚨 LP BURN DETECTED: {token_addr[:10]} — INSTANT SELL!")
+                                    _log("sell", token_addr[:10], "LP Burn — Rug Incoming 🚨", token_addr)
+                                    # Turant sell — price drop se pehle
+                                    _auto_paper_sell(token_addr, "LP Burn 🚨 Rug Detected", 100.0)
+                            continue  # Burn event process ho gaya
+
+                        # Normal swap event processing
+                        if event_topic != SWAP_TOPIC.lower():
+                            continue
 
                         # Refresh pair→token map every 30s
                         now_t = time.time()
@@ -2540,6 +2584,17 @@ def auto_position_manager():
                 _vol_src  = _vol.get("source", "?")
 
                 _trail_triggered = False
+
+                # ── LP BURN CHECK — Highest priority ──
+                # Agar swap monitor ne burn detect kiya → turant sell
+                with _lp_burn_lock:
+                    _burn_detected = addr.lower() in _lp_burn_alerts
+                if _burn_detected:
+                    print(f"🚨 LP Burn confirmed sell: {addr[:10]}")
+                    _auto_paper_sell(addr, "LP Burn 🚨 Rug Confirmed", 100.0)
+                    with _lp_burn_lock:
+                        _lp_burn_alerts.discard(addr.lower())
+                    continue
 
                 # ── PRIMARY: Volume SL ──
                 if _has_vol:
