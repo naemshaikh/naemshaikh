@@ -1243,8 +1243,8 @@ async function fetchRamStats(){
     const pi = d.paper_items || {};
     const ppEl = document.getElementById('paper-positions');
     const ptEl = document.getElementById('paper-trades');
-    if(ppEl) ppEl.textContent = (pi.trade_history||0);
-    if(ptEl) ptEl.textContent = (pi.brain_patterns||0) + ' Brain';
+    if(ppEl) ppEl.textContent = (pi.open_positions||0);
+    if(ptEl) ptEl.textContent = (pi.trade_history||0) + ' Trades';
 
     // Real detail + idle/active badge
     const ri = d.real_items || {};
