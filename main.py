@@ -51,7 +51,9 @@ MODEL_DEEP  = "llama-3.3-70b-versatile"
 
 # ========== ENV CONFIG ==========
 _NR_KEY          = os.getenv("NODEREAL_API_KEY", "")
-BSC_RPC          = f"https://bsc-mainnet.nodereal.io/v1/{_NR_KEY}" if _NR_KEY else "https://rpc.ankr.com/bsc"
+_CS_RPC          = os.getenv("BSC_RPC", "")   # Chainstack ya custom RPC
+_CS_WSS          = os.getenv("BSC_WSS", "")   # Chainstack WSS
+BSC_RPC          = _CS_RPC if _CS_RPC else (f"https://bsc-mainnet.nodereal.io/v1/{_NR_KEY}" if _NR_KEY else "https://rpc.ankr.com/bsc")
 BSC_SCAN_API     = "https://api.bscscan.com/api"
 BSC_SCAN_KEY     = os.getenv("BSC_SCAN_KEY") or os.getenv("BSCSCAN_API_KEY") or os.getenv("BSC_API_KEY", "") or os.getenv("BSCSCAN_API_KEY", "")
 BSC_WALLET       = os.getenv("BSC_WALLET", "")   # Real wallet address for balance display
@@ -1008,10 +1010,14 @@ def start_swap_monitor():
         print("⚠️ websockets nahi — swap monitor disabled")
         return
 
-    WSS_ENDPOINTS = [
+    # Chainstack WSS primary — fastest, fallback to public
+    _cs_wss = os.getenv("BSC_WSS", "")
+    WSS_ENDPOINTS = []
+    if _cs_wss:
+        WSS_ENDPOINTS.append(_cs_wss)
+    WSS_ENDPOINTS += [
         "wss://bsc-rpc.publicnode.com",
         "wss://bsc.publicnode.com",
-        "wss://bsc-ws-node.nariox.org:443",
         "wss://bsc.drpc.org",
     ]
 
