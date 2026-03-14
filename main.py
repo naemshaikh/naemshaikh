@@ -5415,6 +5415,7 @@ def sys_stats():
             "paper_mb":  paper_mb,
             "real_mb":   real_mb,
             "paper_items": {
+                "open_positions": len(auto_trade_stats.get("running_positions", {})),
                 "trade_history": hist_count,
                 "brain_patterns": brain_pats,
                 "whale_wallets": whale_count,
