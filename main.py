@@ -5712,34 +5712,37 @@ def wallet_info():
                         return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2)})
             except Exception:
                 pass
-        # DexScreener wallet portfolio — Render pe allowed domain hai
-        try:
-            _r = requests.get(
-                f"https://api.dexscreener.com/latest/dex/tokens/bsc-token-v2/{addr}",
-                timeout=8
-            )
-            if _r.status_code == 200:
-                _data = _r.json() or {}
-                _bnb_raw = _data.get("nativeBalance", {}).get("balance", "")
-                if _bnb_raw:
-                    bnb = float(_bnb_raw) / 1e18
-                    return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2), "src": "dexscreener"})
-        except Exception:
-            pass
-        # Web3 RPC fallback
+        # 1. Moralis API — free tier, no RPC needed
+        if MORALIS_API_KEY:
+            try:
+                _r = requests.get(
+                    f"https://deep-index.moralis.io/api/v2.2/{addr}/balance",
+                    params={"chain": "bsc"},
+                    headers={"X-API-Key": MORALIS_API_KEY},
+                    timeout=8
+                )
+                if _r.status_code == 200:
+                    _bal = _r.json().get("balance", "0")
+                    bnb = float(_bal) / 1e18
+                    return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2), "src": "moralis"})
+            except Exception:
+                pass
+
+        # 2. Web3 RPC fallback
         _rpcs = [
             "https://bsc-dataseed.bnbchain.org",
             "https://bsc.drpc.org",
+            "https://rpc.ankr.com/bsc",
         ]
         for _rpc in _rpcs:
             try:
                 w3t = Web3(Web3.HTTPProvider(_rpc, request_kwargs={"timeout": 6}))
                 bal = w3t.eth.get_balance(Web3.to_checksum_address(addr))
                 bnb = float(bal) / 1e18
-                return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2), "src": _rpc[:20]})
+                return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2), "src": "rpc"})
             except Exception:
                 continue
-        return jsonify({"wallet": addr, "bnb": 0, "usd": 0, "error": "Balance fetch failed — RPC blocked on Render"})
+        return jsonify({"wallet": addr, "bnb": 0, "usd": 0, "error": "Add MORALIS_API_KEY in Render env"})
     except Exception as e:
         return jsonify({"wallet": "", "bnb": 0, "usd": 0, "error": str(e)[:60]})
 

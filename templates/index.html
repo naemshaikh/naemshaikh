@@ -1398,14 +1398,20 @@ function _applyModeUI(){
 async function fetchRealBalance(){
   try{
     const r = await fetchJSON('/wallet-info',{},10000);
-    if(r && !r.error && r.bnb >= 0){
-      const bnbP = window._bnbReal || 0;
+    if(r && r.bnb > 0){
       document.getElementById('b-real-bal').textContent = r.bnb.toFixed(4)+' BNB';
-      document.getElementById('b-real-usd').textContent = r.usd > 0 ? 'approx $'+r.usd.toLocaleString() : 'tap to view';
+      document.getElementById('b-real-usd').textContent = 'approx $'+r.usd.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
       const ws = document.getElementById('wallet-short');
       if(ws && r.wallet) ws.textContent = r.wallet.slice(0,6)+'...'+r.wallet.slice(-4);
       _walletAddr = r.wallet || _walletAddr;
-    } else if(r && r.error === 'BSC_WALLET not set in env'){
+    } else if(r && r.bnb === 0 && !r.error){
+      // Wallet genuinely empty
+      document.getElementById('b-real-bal').textContent = '0.0000 BNB';
+      document.getElementById('b-real-usd').textContent = 'Wallet empty';
+    } else if(r && r.error){
+      document.getElementById('b-real-bal').textContent = '— BNB';
+      document.getElementById('b-real-usd').textContent = r.error.includes('MORALIS') ? 'Add MORALIS_API_KEY' : 'Balance unavailable';
+    } else {
       document.getElementById('b-real-usd').textContent = 'Tap to add wallet';
     }
   }catch(e){}
