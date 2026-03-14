@@ -5384,18 +5384,11 @@ def sys_stats():
         rss_mb  = round(mem.rss  / 1024 / 1024, 1)  # actual RAM used
         vms_mb  = round(mem.vms  / 1024 / 1024, 1)  # virtual memory
 
-        # System total — container limit env se lo, fallback rss*4
+        # System total — psutil Render container mein accurate hai
         sys_mem  = psutil.virtual_memory()
-        _limit_mb = os.getenv("MEMORY_LIMIT_MB", "")
-        if _limit_mb:
-            total_mb = int(_limit_mb)
-        else:
-            # Render free = 512, Starter = 2048 etc — psutil host machine deta hai
-            # rss se estimate karo: used / 0.7 (assume 70% used at peak)
-            host_total = round(sys_mem.total / 1024 / 1024, 1)
-            total_mb = min(host_total, 512) if host_total > 512 else host_total
-        avail_mb = max(0, round(total_mb - rss_mb, 1))
-        used_pct = round((rss_mb / max(total_mb, 1)) * 100, 1)
+        total_mb = round(sys_mem.total    / 1024 / 1024, 1)
+        avail_mb = round(sys_mem.available / 1024 / 1024, 1)
+        used_pct = round(sys_mem.percent, 1)
 
         # Estimate paper vs real breakdown
         # Paper: running_positions, trade_history, brain, smart_wallets
