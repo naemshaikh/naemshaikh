@@ -2408,7 +2408,8 @@ function openHoldDetail(json){
       tpEvents.forEach(function(ev){
         const evUSD     = ev.sell_usd>0 ? '$'+ev.sell_usd.toFixed(0) : '—';
         const evTokens  = ev.tokens_sold>0 ? '~'+Number(Math.round(ev.tokens_sold)).toLocaleString()+' '+sym : '';
-        const evGas     = ev.gas_usd>0 ? '$'+ev.gas_usd.toFixed(3)+' ~' : '';
+        const _evGasUSD = ev.gas_usd>0 ? ev.gas_usd : (parseFloat(ev.gas_bnb||0)*bnbP) || (0.00075*bnbP);
+        const evGas     = '$'+_evGasUSD.toFixed(3)+' ~';
         const evPrice   = ev.exit_usd>0 ? '$'+ev.exit_usd.toFixed(8).replace(/\.?0+$/,'') : '—';
         const evPnl     = ev.pnl_pct>=0?'+'+ev.pnl_pct.toFixed(1)+'%':ev.pnl_pct.toFixed(1)+'%';
         tpRows+=actRow(
