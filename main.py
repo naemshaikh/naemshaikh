@@ -5398,11 +5398,18 @@ def sys_stats():
         rss_mb  = round(mem.rss  / 1024 / 1024, 1)  # actual RAM used
         vms_mb  = round(mem.vms  / 1024 / 1024, 1)  # virtual memory
 
-        # System total — psutil Render container mein accurate hai
-        sys_mem  = psutil.virtual_memory()
-        total_mb = round(sys_mem.total    / 1024 / 1024, 1)
-        avail_mb = round(sys_mem.available / 1024 / 1024, 1)
-        used_pct = round(sys_mem.percent, 1)
+        # Render plan auto-detect — sys_mem.total se actual container limit milti hai
+        sys_mem   = psutil.virtual_memory()
+        sys_total = round(sys_mem.total / 1024 / 1024, 1)
+        # Render plans: Free=512MB, Starter=512MB, Standard=2048MB, Pro=4096MB
+        if   sys_total <= 600:   plan_limit = 512.0;  plan_name = "Free/Starter"
+        elif sys_total <= 1100:  plan_limit = 1024.0; plan_name = "Basic"
+        elif sys_total <= 2200:  plan_limit = 2048.0; plan_name = "Standard"
+        elif sys_total <= 4200:  plan_limit = 4096.0; plan_name = "Pro"
+        else:                    plan_limit = sys_total; plan_name = "Custom"
+        avail_mb = round(max(0, plan_limit - rss_mb), 1)
+        used_pct = round((rss_mb / plan_limit) * 100, 1)
+        total_mb = plan_limit
 
         # Estimate paper vs real breakdown
         # Paper: running_positions, trade_history, brain, smart_wallets
@@ -5440,6 +5447,8 @@ def sys_stats():
                 "open_positions": pos_count,
             },
             "trade_mode": TRADE_MODE,
+            "plan_name":  plan_name,
+            "total_mb":   total_mb,
         })
     except Exception as e:
         return jsonify({"error": str(e), "rss_mb": 0, "used_pct": 0})
@@ -5685,34 +5694,34 @@ def wallet_info():
                         return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2)})
             except Exception:
                 pass
-        # RPC fallback chain — Chainstack first
+        # DexScreener wallet portfolio — Render pe allowed domain hai
+        try:
+            _r = requests.get(
+                f"https://api.dexscreener.com/latest/dex/tokens/bsc-token-v2/{addr}",
+                timeout=8
+            )
+            if _r.status_code == 200:
+                _data = _r.json() or {}
+                _bnb_raw = _data.get("nativeBalance", {}).get("balance", "")
+                if _bnb_raw:
+                    bnb = float(_bnb_raw) / 1e18
+                    return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2), "src": "dexscreener"})
+        except Exception:
+            pass
+        # Web3 RPC fallback
         _rpcs = [
-            BSC_RPC,
             "https://bsc-dataseed.bnbchain.org",
-            "https://bsc-dataseed1.binance.org",
-            "https://rpc.ankr.com/bsc",
-            "https://bsc.publicnode.com",
             "https://bsc.drpc.org",
         ]
         for _rpc in _rpcs:
             try:
-                w3t = Web3(Web3.HTTPProvider(_rpc, request_kwargs={"timeout": 8}))
-                _cs = Web3.to_checksum_address(addr)
-                bal = w3t.eth.get_balance(_cs)
+                w3t = Web3(Web3.HTTPProvider(_rpc, request_kwargs={"timeout": 6}))
+                bal = w3t.eth.get_balance(Web3.to_checksum_address(addr))
                 bnb = float(bal) / 1e18
-                if bnb > 0:  # 0 aaya toh next RPC try karo
-                    return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2), "rpc": _rpc[:40]})
+                return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2), "src": _rpc[:20]})
             except Exception:
                 continue
-        # Sab RPCs ne 0 diya — wallet genuinely empty ho sakta hai, last try
-        try:
-            w3t = Web3(Web3.HTTPProvider("https://rpc.ankr.com/bsc", request_kwargs={"timeout": 10}))
-            bal = w3t.eth.get_balance(Web3.to_checksum_address(addr))
-            bnb = float(bal) / 1e18
-            return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2)})
-        except Exception:
-            pass
-        return jsonify({"wallet": addr, "bnb": 0, "usd": 0, "error": "All RPCs failed"})
+        return jsonify({"wallet": addr, "bnb": 0, "usd": 0, "error": "Balance fetch failed — RPC blocked on Render"})
     except Exception as e:
         return jsonify({"wallet": "", "bnb": 0, "usd": 0, "error": str(e)[:60]})
 

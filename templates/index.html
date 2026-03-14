@@ -1229,7 +1229,7 @@ async function fetchRamStats(){
       pctEl.textContent = d.used_pct + '%';
       pctEl.style.color = d.used_pct > 80 ? 'var(--red)' : d.used_pct > 60 ? '#ffbe00' : 'var(--txt3)';
     }
-    if(availEl && d.avail_mb) availEl.textContent = d.avail_mb + ' MB free';
+    if(availEl) availEl.textContent = d.avail_mb + ' MB free · ' + (d.plan_name||'') + ' (' + (d.total_mb||512) + 'MB)';
     if(barEl){
       barEl.style.width = Math.min(d.used_pct, 100) + '%';
       if(d.used_pct > 80)      barEl.style.background = 'linear-gradient(90deg,#ff4757,#c0392b)';
