@@ -3511,20 +3511,31 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
             print(f"⏳ Waiting 30s: {pair_address[:10]}")
             time.sleep(30)
         _prefetched_dex = None
-        try:
-            _ar = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{pair_address}", timeout=8)
-            if _ar.status_code == 200:
-                _ar_json = _ar.json() or {}
-                _bp = [p for p in (_ar_json.get("pairs") or []) if p and p.get("chainId") == "bsc"]
-                if _bp:
-                    _ct = _bp[0].get("pairCreatedAt", 0) or 0
-                    if _ct and (time.time() - _ct / 1000) / 60 > 10080:
-                        _log("reject", pair_address[:8], "Token too old (7d+) — skip", pair_address)
-                        del _ar_json, _bp, _ar
-                        return
-                    _prefetched_dex = _ar_json
+        for _dex_try in range(3):  # 3 tries — naye token index hone mein time lagta hai
+            try:
+                _ar = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{pair_address}", timeout=8)
+                if _ar.status_code == 200:
+                    _ar_json = _ar.json() or {}
+                    _bp = [p for p in (_ar_json.get("pairs") or []) if p and p.get("chainId") == "bsc"]
+                    if _bp:
+                        _ct = _bp[0].get("pairCreatedAt", 0) or 0
+                        if _ct and (time.time() - _ct / 1000) / 60 > 10080:
+                            _log("reject", pair_address[:8], "Token too old (7d+) — skip", pair_address)
+                            del _ar_json, _bp, _ar
+                            return
+                        _prefetched_dex = _ar_json
+                        print(f"✅ DexScreener OK (try {_dex_try+1}): {pair_address[:10]}")
+                        del _ar
+                        break
+                    else:
+                        # pairs empty — token abhi index nahi hua
+                        if _dex_try < 2:
+                            print(f"⏳ DexScreener empty (try {_dex_try+1}) — waiting 15s: {pair_address[:10]}")
+                            time.sleep(15)
                 del _ar
-        except Exception: pass
+            except Exception:
+                if _dex_try < 2:
+                    time.sleep(5)
 
         result  = run_full_sniper_checklist(pair_address, prefetched_dex=_prefetched_dex)
         score   = result.get("score", 0)
@@ -4268,8 +4279,10 @@ def run_full_sniper_checklist(address: str, prefetched_dex: dict = None) -> Dict
     buys_5m = dex_data.get("buys_5m", 0); sells_5m = dex_data.get("sells_5m", 0)
     buys_1h = dex_data.get("buys_1h", 0); sells_1h = dex_data.get("sells_1h", 0)
 
-    add("Buy > Sell (5min)", "pass" if buys_5m > sells_5m else "warn", f"B:{buys_5m} S:{sells_5m}", 4)
-    add("Buy > Sell (1hr)",  "pass" if buys_1h > sells_1h else "warn", f"B:{buys_1h} S:{sells_1h}", 4)
+    _dex_src = dex_data.get("source", "dexscreener")
+    _no_txns = _dex_src == "geckoterminal"  # GeckoTerminal txn data nahi deta
+    add("Buy > Sell (5min)", "pass" if buys_5m > sells_5m else ("warn" if _no_txns or buys_5m==0 else "warn"), f"B:{buys_5m} S:{sells_5m}" + (" (no txn data)" if _no_txns else ""), 4)
+    add("Buy > Sell (1hr)",  "pass" if buys_1h > sells_1h else ("warn" if _no_txns or buys_1h==0 else "warn"), f"B:{buys_1h} S:{sells_1h}" + (" (no txn data)" if _no_txns else ""), 4)
     add(f"Volume 24h > ${cs['min_volume_24h']:,.0f}", "pass" if dex_data.get("volume_24h",0) > cs['min_volume_24h'] else "warn", f"${dex_data.get('volume_24h',0):,.0f}", 4)
 
     in_dex     = _gp_bool_flag(goplus_data, "is_in_dex")
@@ -4369,10 +4382,11 @@ def run_full_sniper_checklist(address: str, prefetched_dex: dict = None) -> Dict
     sells_5m_v = dex_data.get("sells_5m", 0)
     vol_5m     = dex_data.get("volume_5m", buys_5m_v + sells_5m_v)
     vol_ratio  = (buys_5m_v / max(sells_5m_v, 1))
-    momentum   = buys_5m_v >= 5 and vol_ratio >= 1.5   # 5+ buys, 1.5x more buys than sells
+    momentum   = buys_5m_v >= 5 and vol_ratio >= 1.5
+    _no_txns_v = dex_data.get("source", "dexscreener") == "geckoterminal"
     add("Buy Momentum (5m)",
-        "pass" if momentum else ("warn" if buys_5m_v >= 2 else "fail"),
-        f"B:{buys_5m_v} S:{sells_5m_v} ratio:{vol_ratio:.1f}x", 5)
+        "pass" if momentum else ("warn" if (_no_txns_v or buys_5m_v >= 2) else "fail"),
+        f"B:{buys_5m_v} S:{sells_5m_v} ratio:{vol_ratio:.1f}x" + (" (gecko-no txns)" if _no_txns_v else ""), 5)
 
     # ── FEATURE 5: Dev Wallet Blacklist ──
     creator_addr = goplus_data.get("creator_address", "")
