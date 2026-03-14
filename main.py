@@ -57,6 +57,7 @@ BSC_RPC          = _CS_RPC if _CS_RPC else (f"https://bsc-mainnet.nodereal.io/v1
 BSC_SCAN_API     = "https://api.bscscan.com/api"
 BSC_SCAN_KEY     = os.getenv("BSC_SCAN_KEY") or os.getenv("BSCSCAN_API_KEY") or os.getenv("BSC_API_KEY", "") or os.getenv("BSCSCAN_API_KEY", "")
 BSC_WALLET       = os.getenv("BSC_WALLET", "")   # Real wallet address for balance display
+SITE_PASSWORD    = os.getenv("SITE_PASSWORD", "mrblack2024")  # Site lock password
 PANCAKE_ROUTER   = "0x10ED43C718714eb63d5aA57B78B54704E256024E"
 PANCAKE_FACTORY  = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
 WBNB             = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"  # FIX 1: WBNB defined
@@ -5103,6 +5104,14 @@ def admin_reset_positions():
         return jsonify({"status": "ok", "closed": count, "addresses": closed})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/verify-password", methods=["POST"])
+def verify_password():
+    data = request.get_json() or {}
+    pwd  = data.get("password", "").strip()
+    if pwd == SITE_PASSWORD:
+        return jsonify({"status": "ok"})
+    return jsonify({"status": "error", "message": "Wrong password"}), 401
 
 @app.route("/")
 def home():
