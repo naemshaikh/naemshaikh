@@ -5685,10 +5685,18 @@ def wallet_info():
                 _cs = Web3.to_checksum_address(addr)
                 bal = w3t.eth.get_balance(_cs)
                 bnb = float(bal) / 1e18
-                if bnb >= 0:  # 0 bhi valid hai
+                if bnb > 0:  # 0 aaya toh next RPC try karo
                     return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2), "rpc": _rpc[:40]})
-            except Exception as _re:
+            except Exception:
                 continue
+        # Sab RPCs ne 0 diya — wallet genuinely empty ho sakta hai, last try
+        try:
+            w3t = Web3(Web3.HTTPProvider("https://rpc.ankr.com/bsc", request_kwargs={"timeout": 10}))
+            bal = w3t.eth.get_balance(Web3.to_checksum_address(addr))
+            bnb = float(bal) / 1e18
+            return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2)})
+        except Exception:
+            pass
         return jsonify({"wallet": addr, "bnb": 0, "usd": 0, "error": "All RPCs failed"})
     except Exception as e:
         return jsonify({"wallet": "", "bnb": 0, "usd": 0, "error": str(e)[:60]})
