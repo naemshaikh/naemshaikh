@@ -1968,7 +1968,7 @@ def _persist_positions():
                 "orig_size_bnb":  v.get("orig_size_bnb", v.get("size_bnb", AUTO_BUY_SIZE_BNB)),
                 "bought_usd":     v.get("bought_usd", 0.0),
                 "bought_at":      v.get("bought_at", ""),
-                "sl_pct":         v.get("sl_pct", 15.0),
+                "sl_pct":         v.get("sl_pct", 12.0),
                 "tp_sold":        v.get("tp_sold", 0.0),
                 "banked_pnl_bnb": v.get("banked_pnl_bnb", 0.0),  # ✅ partial sell profits
             }
@@ -2028,7 +2028,7 @@ CHECKLIST_SETTINGS = {
     "min_token_age":     3.0,    # Stage 3: Min token age (min)
     "sniper_wait":       5.0,    # Stage 3: Sniper pump over (min)
     "min_volume_24h":  1000.0,   # Stage 4: Min 24h volume USD
-    "sl_new":           15.0,    # Stage 10: SL % for new tokens
+    "sl_new":           12.0,    # Stage 10: SL % for new tokens
     "sl_hyped":         20.0,    # Stage 10: SL % for hyped tokens
     "sl_mature":        10.0,    # Stage 10: SL % for mature tokens
     "score_safe":       50.0,    # Auto buy: SAFE min score % (raised from 40)
@@ -2130,7 +2130,7 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
     threading.Thread(target=_run_check, daemon=True).start()
 
 # ========== POSITION MONITOR ==========
-def add_position_to_monitor(session_id, token_address, token_name, entry_price, size_bnb, stop_loss_pct=15.0):
+def add_position_to_monitor(session_id, token_address, token_name, entry_price, size_bnb, stop_loss_pct=12.0):
     with monitor_lock:
         if entry_price <= 0:
             print(f"❌ Monitoring BLOCKED: price=0 for {token_address[:10]}")
@@ -2301,7 +2301,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     # Paper mode: balance simulate karo (real mode mein skip)
     if TRADE_MODE != "real":
         sess["paper_balance"] = round(paper_balance - size_bnb, 6)
-    _sl = CHECKLIST_SETTINGS.get("sl_new", 15.0)
+    _sl = CHECKLIST_SETTINGS.get("sl_new", 12.0)
     add_position_to_monitor(AUTO_SESSION_ID, address, token_name or address[:10], entry_price, size_bnb, stop_loss_pct=_sl)
     _bnb_at_buy = market_cache.get("bnb_price", 0)  # real only — DataGuard already verified
     auto_trade_stats["running_positions"][address] = {
@@ -2533,7 +2533,7 @@ def auto_position_manager():
                 entry   = _pos_data.get("entry", 0)
                 high    = mon.get("high", entry)
                 tp_sold = _pos_data.get("tp_sold", 0.0)  # FIX4
-                sl_pct  = _pos_data.get("sl_pct", 15.0)  # FIX4
+                sl_pct  = _pos_data.get("sl_pct", 12.0)  # FIX4
                 if entry <= 0:
                     continue
 
@@ -3687,11 +3687,13 @@ def poll_new_pairs():
     FACTORY    = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
     PAIR_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
     WBNB_LOWER = WBNB.lower()
-    # P2 UPDATED: WSS Stabilise + 1013 Fix + MEMORY SAFE
-    WSS_ENDPOINTS = [
+    # Chainstack primary — fallback to public
+    _cs = os.getenv("BSC_WSS", "")
+    WSS_ENDPOINTS = []
+    if _cs: WSS_ENDPOINTS.append(_cs)
+    WSS_ENDPOINTS += [
         "wss://bsc-rpc.publicnode.com",
         "wss://bsc.publicnode.com",
-        "wss://bsc-ws-node.nariox.org:443",
         "wss://bsc.drpc.org",
         "wss://bsc-ws-rpc.publicnode.com",
     ]
@@ -3787,10 +3789,12 @@ def poll_four_meme_wss():
     FOUR_TOPIC_PAIR     = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
     FOUR_TOPIC_LAUNCH   = "0xb9ed0243fdf00f0545c63a0af8850c090d86bb46673f2a9a30adece5df78e34e"
 
-    WSS_ENDPOINTS = [
+    _cs4 = os.getenv("BSC_WSS", "")
+    WSS_ENDPOINTS = []
+    if _cs4: WSS_ENDPOINTS.append(_cs4)
+    WSS_ENDPOINTS += [
         "wss://bsc-rpc.publicnode.com",
         "wss://bsc.publicnode.com",
-        "wss://bsc-ws-node.nariox.org:443",
         "wss://bsc.drpc.org",
     ]
 
@@ -4897,7 +4901,7 @@ def _startup_once():
                                         continue
                                     # ✅ FIX: Full position data restore — tp_sold, sl_pct, bought_usd sab wapas
                                     _tp_sold   = float(_pd.get("tp_sold",    0.0))
-                                    _sl_pct    = float(_pd.get("sl_pct",    15.0))
+                                    _sl_pct    = float(_pd.get("sl_pct",    12.0))
                                     _size_bnb  = float(_pd.get("size_bnb",  AUTO_BUY_SIZE_BNB))
                                     _bought_usd= float(_pd.get("bought_usd", 0.0))
                                     # orig_size_bnb: DB se lo, warna tp_sold se back-calculate karo
@@ -5096,7 +5100,7 @@ def monitor_position():
         token_name    = data.get("token_name",  "Unknown"),
         entry_price   = float(data.get("entry_price",  0)),
         size_bnb      = float(data.get("size_bnb",      0)),
-        stop_loss_pct = float(data.get("stop_loss_pct", 15.0))
+        stop_loss_pct = float(data.get("stop_loss_pct", 12.0))
     )
     return jsonify({"status": "monitoring", "address": data.get("address","")})
 
@@ -5287,7 +5291,7 @@ def auto_stats_route():
             "size":           f"{sz_rem:.4f} BNB",
             "bought_usd":     pos.get("bought_usd") or round(pos.get("size_bnb", AUTO_BUY_SIZE_BNB) * bnb_price, 2),
             "bought_at":      pos.get("bought_at", ""),
-            "sl_pct":         pos.get("sl_pct", 15.0),
+            "sl_pct":         pos.get("sl_pct", 12.0),
             "tp_sold":        pos.get("tp_sold", 0.0),
             "banked_pnl_bnb": banked,
             "tp_events":      pos.get("tp_events", []),
