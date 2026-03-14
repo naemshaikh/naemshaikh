@@ -5645,39 +5645,45 @@ def health():
 
 @app.route("/wallet-info")
 def wallet_info():
-    """Real wallet balance from BSCScan"""
+    """Real wallet balance — Chainstack primary"""
     try:
-        # BSC_WALLET env var pehle — nahi toh REAL_WALLET (UI se set)
         addr = BSC_WALLET or REAL_WALLET or ""
         if not addr:
-            return jsonify({"wallet": "", "bnb": 0, "usd": 0, "error": "BSC_WALLET not set in env"})
+            return jsonify({"wallet": "", "bnb": 0, "usd": 0, "error": "BSC_WALLET not set"})
         bnb_price = market_cache.get("bnb_price", 0)
+        # Try BSCScan API first
         if BSC_SCAN_KEY:
-            r = requests.get(BSC_SCAN_API, params={
-                "module": "account", "action": "balance",
-                "address": addr, "tag": "latest", "apikey": BSC_SCAN_KEY
-            }, timeout=10)
-            if r.status_code == 200 and r.json().get("status") == "1":
-                bnb = float(r.json()["result"]) / 1e18
-                return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2)})
-        # Fallback — try multiple public RPCs (same jo bot use karta hai)
+            try:
+                r = requests.get(BSC_SCAN_API, params={
+                    "module": "account", "action": "balance",
+                    "address": addr, "tag": "latest", "apikey": BSC_SCAN_KEY
+                }, timeout=10)
+                if r.status_code == 200 and r.json().get("status") == "1":
+                    bnb = float(r.json()["result"]) / 1e18
+                    if bnb > 0:
+                        return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2)})
+            except Exception:
+                pass
+        # RPC fallback chain — Chainstack first
         _rpcs = [
-            BSC_RPC,                              # Main bot RPC (already working)
-            "https://bsc-dataseed.bnbchain.org",  # Official BNB Chain
-            "https://bsc-dataseed1.binance.org",  # Binance backup
-            "https://bsc.drpc.org",               # dRPC backup
-            "https://bsc.publicnode.com",         # PublicNode backup
+            BSC_RPC,
+            "https://bsc-dataseed.bnbchain.org",
+            "https://bsc-dataseed1.binance.org",
+            "https://rpc.ankr.com/bsc",
+            "https://bsc.publicnode.com",
+            "https://bsc.drpc.org",
         ]
         for _rpc in _rpcs:
             try:
-                from web3 import Web3
-                w3t = Web3(Web3.HTTPProvider(_rpc, request_kwargs={"timeout": 6}))
-                bal = w3t.eth.get_balance(Web3.to_checksum_address(addr))
+                w3t = Web3(Web3.HTTPProvider(_rpc, request_kwargs={"timeout": 8}))
+                _cs = Web3.to_checksum_address(addr)
+                bal = w3t.eth.get_balance(_cs)
                 bnb = float(bal) / 1e18
-                return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2)})
-            except Exception:
+                if bnb >= 0:  # 0 bhi valid hai
+                    return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2), "rpc": _rpc[:40]})
+            except Exception as _re:
                 continue
-        return jsonify({"wallet": addr, "bnb": 0, "usd": 0, "error": "RPC blocked — add api.bscscan.com in Render outbound domains"})
+        return jsonify({"wallet": addr, "bnb": 0, "usd": 0, "error": "All RPCs failed"})
     except Exception as e:
         return jsonify({"wallet": "", "bnb": 0, "usd": 0, "error": str(e)[:60]})
 
