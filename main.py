@@ -1654,22 +1654,22 @@ def is_dev_blacklisted(wallet: str) -> bool:
 # TOKEN BLACKLIST — rug/SL tokens 24h block
 # ══════════════════════════════════════════════
 _token_blacklist: dict = {}  # {addr_lower: {"reason": str, "ts": float}}
-_TOKEN_BL_TTL = 86400  # 24 hours
+_TOKEN_BL_TTL = 691200  # 8 days (bot 7d+ token skip karta hai)
 
 def blacklist_token(token_address: str, reason: str = "rug"):
-    """Token ko 24h ke liye blacklist karo — dobara check nahi hoga"""
+    """Token ko 8 days ke liye blacklist karo — 7d+ tokens bot skip karta hai"""
     if not token_address: return
     _token_blacklist[token_address.lower()] = {
         "reason": reason,
         "ts":     time.time()
     }
-    # Max 500 entries — purane hatao
-    if len(_token_blacklist) > 500:
+    # Max 8000 entries — 8 day TTL ke saath cleanup
+    if len(_token_blacklist) > 8000:
         cutoff = time.time() - _TOKEN_BL_TTL
         stale = [k for k, v in _token_blacklist.items() if v["ts"] < cutoff]
         for k in stale:
             _token_blacklist.pop(k, None)
-    print(f"🚫 Token blacklisted 24h: {token_address[:10]}... reason={reason}")
+    print(f"🚫 Token blacklisted 8d: {token_address[:10]}... reason={reason}")
 
 def is_token_blacklisted(token_address: str) -> bool:
     if not token_address: return False
@@ -3049,6 +3049,7 @@ def _save_brain_to_db():
                 "total_tokens_discovered_ever": brain.get("total_tokens_discovered_ever", 0),
                 "smart_wallets":  _sw_snapshot,
                 "rug_dna":        _rug_dna[-100:],
+                "dev_blacklist":  dict(_dev_blacklist),
             })
         }).execute()
         print(f"🧠 Brain saved (cycle #{brain['total_learning_cycles']})")
@@ -3115,6 +3116,12 @@ def _load_brain_from_db():
             if isinstance(_rd, list) and _rd:
                 _rug_dna.extend(_rd)
                 print(f"☠️ Rug DNA loaded: {len(_rd)}")
+            # Load dev blacklist — permanent
+            _db = stored.get("dev_blacklist", {})
+            if isinstance(_db, dict) and _db:
+                with _dev_blacklist_lock:
+                    _dev_blacklist.update(_db)
+                print(f"🚫 Dev blacklist loaded: {len(_db)} devs")
             print(f"🧠 Brain loaded! Cycles: {brain['total_learning_cycles']}")
     except Exception as e:
         print(f"⚠️ Brain load error: {e}")
