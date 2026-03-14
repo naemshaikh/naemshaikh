@@ -271,7 +271,7 @@ body.day .hdr{background:rgba(240,237,230,0.96);}
 <script>
 // Lock screen logic — sessionStorage pe based (tab close = lock)
 (function(){
-  var _unlocked = sessionStorage.getItem('mrblack_auth') === '1';
+  var _unlocked = localStorage.getItem('mrblack_auth') === '1';
   if(!_unlocked){
     document.getElementById('lock-screen').style.display = 'flex';
     document.body.style.overflow = 'hidden';
@@ -290,7 +290,7 @@ function _checkLock(){
     body: JSON.stringify({password: pwd})
   }).then(function(r){ return r.json(); }).then(function(d){
     if(d.status === 'ok'){
-      sessionStorage.setItem('mrblack_auth','1');
+      localStorage.setItem('mrblack_auth','1');
       document.getElementById('lock-screen').style.display = 'none';
       document.body.style.overflow = '';
     } else {
