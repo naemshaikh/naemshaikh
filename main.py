@@ -2585,13 +2585,15 @@ def auto_position_manager():
                         _pos_data["pnl_high"] = pnl
                         _pnl_high = pnl
 
+                    # SL floor calculate karo pehle
+                    _sl_floor = (_pnl_high * 0.7) if _pnl_high >= 30 else -12.0
+
                     # ══════════════════════════════════════════════════════
-                    # PRO LADDER — Pehle partial sells, THEN TrailSL
-                    # ──────────────────────────────────────────────────────
-                    # +40%  → 50% sell → capital ~71% recover, risk halved
-                    # +80%  → 25% sell → total 75% out, deep profit locked
-                    # +150% → 15% sell → total 90% out, 2.5x confirmed
-                    # Remaining 10% → free ride on TrailSL → moonshot
+                    # PRO LADDER pehle → THEN TrailSL — ek hi chain mein
+                    # +40%  → 50% sell → capital ~71% recover
+                    # +80%  → 25% sell → total 75% out
+                    # +150% → 15% sell → total 90% out
+                    # TrailSL → sirf tab fire hoga jab ProTP nahi hua
                     # ══════════════════════════════════════════════════════
                     if pnl >= 150 and tp_sold < 90:
                         _auto_paper_sell(addr, f"ProTP +150% [90% banked] 🌙", 15.0)
@@ -2602,18 +2604,12 @@ def auto_position_manager():
                     elif pnl >= 40 and tp_sold < 50:
                         _auto_paper_sell(addr, f"ProTP +40% [50% banked] 🔒", 50.0)
                         print(f"🔒 ProTP40: {addr[:10]} pnl={pnl:.1f}%")
-
-                    # SL floor — ProTP ke baad check karo
-                    _sl_floor = (_pnl_high * 0.7) if _pnl_high >= 30 else -12.0
-
-                    # Trail trigger: current pnl ne floor tod diya?
-                    if pnl <= _sl_floor and _pnl_high >= 40:
+                    elif pnl <= _sl_floor and _pnl_high >= 40:
                         _auto_paper_sell(addr, f"TrailSL locked +{_sl_floor:.0f}% {'(vol fallback)' if not _has_vol else ''}", 100.0)
                         _trail_triggered = True
                         print(f"🔒 TrailSL: {addr[:10]} pnl={pnl:.1f}% floor={_sl_floor:.0f}% peak={_pnl_high:.0f}%")
                     elif drop_hi <= -12.0:
-                        # Entry protection — below 40% peak, 20% drop from high
-                        _auto_paper_sell(addr, f"TrailSL -20% entry {'(vol fallback)' if not _has_vol else ''}", 100.0)
+                        _auto_paper_sell(addr, f"TrailSL -12% entry {'(vol fallback)' if not _has_vol else ''}", 100.0)
                         _trail_triggered = True
                         print(f"🔒 TrailSL entry: {addr[:10]} drop={drop_hi:.1f}%")
 
