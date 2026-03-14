@@ -2585,8 +2585,7 @@ def auto_position_manager():
 
                 _trail_triggered = False
 
-                # ── LP BURN CHECK — Highest priority ──
-                # Agar swap monitor ne burn detect kiya → turant sell
+                # ── LP BURN CHECK — Highest priority (WSS millisecond) ──
                 with _lp_burn_lock:
                     _burn_detected = addr.lower() in _lp_burn_alerts
                 if _burn_detected:
@@ -2594,6 +2593,19 @@ def auto_position_manager():
                     _auto_paper_sell(addr, "LP Burn 🚨 Rug Confirmed", 100.0)
                     with _lp_burn_lock:
                         _lp_burn_alerts.discard(addr.lower())
+                    continue
+
+                # ── BACKUP: PRICE STALENESS — 30s same price = rug ──
+                # RPC stale price return karta hai after LP pull
+                # 0.3s loop mein check hoga — near-instant detection
+                _last_pval = _pos_data.get("_last_price_val", 0)
+                _last_ptim = _pos_data.get("_last_price_time", time.time())
+                if current != _last_pval:
+                    _pos_data["_last_price_val"]  = current
+                    _pos_data["_last_price_time"] = time.time()
+                elif pnl > 5 and (time.time() - _last_ptim) >= 30:
+                    print(f"🚨 STALE PRICE: {addr[:10]} 30s unchanged → SELL")
+                    _auto_paper_sell(addr, "Stale Price 🚨 Possible Rug", 100.0)
                     continue
 
                 # ── PRIMARY: Volume SL ──
