@@ -477,7 +477,7 @@ body.day .hdr{background:rgba(240,237,230,0.96);}
       <div style="display:flex;align-items:center;gap:8px;">
         <div style="width:32px;height:32px;border-radius:8px;background:rgba(0,212,170,0.12);border:1px solid rgba(0,212,170,0.2);display:flex;align-items:center;justify-content:center;font-size:14px;">🐋</div>
         <div>
-          <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--em)" id="intel-whales">—</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--em)" id="intel-whales">⏳</div>
           <div style="font-size:9px;color:var(--txt3)">Qualified Whales</div>
         </div>
       </div>
@@ -487,7 +487,7 @@ body.day .hdr{background:rgba(240,237,230,0.96);}
       <div style="display:flex;align-items:center;gap:8px;">
         <div style="width:32px;height:32px;border-radius:8px;background:rgba(255,71,87,0.12);border:1px solid rgba(255,71,87,0.2);display:flex;align-items:center;justify-content:center;font-size:14px;">🧬</div>
         <div>
-          <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--red)" id="intel-dna">—</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--red)" id="intel-dna">⏳</div>
           <div style="font-size:9px;color:var(--txt3)">Rug DNA Learned</div>
         </div>
       </div>
@@ -497,7 +497,7 @@ body.day .hdr{background:rgba(240,237,230,0.96);}
       <div style="display:flex;align-items:center;gap:8px;">
         <div style="width:32px;height:32px;border-radius:8px;background:rgba(255,190,0,0.12);border:1px solid rgba(255,190,0,0.2);display:flex;align-items:center;justify-content:center;font-size:14px;">🚫</div>
         <div>
-          <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:#ffbe00" id="intel-blacklist">—</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:#ffbe00" id="intel-blacklist">⏳</div>
           <div style="font-size:9px;color:var(--txt3)">Tokens Blocked 24h</div>
         </div>
       </div>
@@ -512,9 +512,9 @@ body.day .hdr{background:rgba(240,237,230,0.96);}
         <div style="width:32px;height:32px;border-radius:8px;background:rgba(150,100,255,0.12);border:1px solid rgba(150,100,255,0.2);display:flex;align-items:center;justify-content:center;font-size:14px;">🧠</div>
         <div style="flex:1;">
           <div style="display:flex;gap:8px;align-items:center;">
-            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--em)">✅ <span id="intel-best">—</span> wins</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--em)">✅ <span id="intel-best">⏳</span> wins</span>
             <span style="font-size:10px;color:var(--txt3)">·</span>
-            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--red)">❌ <span id="intel-avoid">—</span> rugs</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--red)">❌ <span id="intel-avoid">⏳</span> rugs</span>
           </div>
           <div style="font-size:9px;color:var(--txt3)">Brain Patterns Learned</div>
         </div>
@@ -1130,15 +1130,35 @@ async function fetchStats(){
   // Intelligence Panel update
   if(_as){
     const _iw = document.getElementById('intel-whales');
-    if(_iw) _iw.textContent = (_as.qualified_whales||0) + ' / ' + (_as.total_wallets||0);
+    if(_iw){
+      const qw = _as.qualified_whales||0, tw = _as.total_wallets||0;
+      _iw.textContent = qw + ' / ' + tw;
+      // Loading complete hone pe color change karo
+      _iw.style.color = tw > 0 ? 'var(--em)' : 'var(--txt3)';
+    }
     const _id = document.getElementById('intel-dna');
-    if(_id) _id.textContent = (_as.rug_dna_patterns||0);
+    if(_id){
+      const dna = _as.rug_dna_patterns||0;
+      _id.textContent = dna;
+      _id.style.color = dna > 0 ? 'var(--red)' : 'var(--txt3)';
+    }
     const _ib = document.getElementById('intel-blacklist');
-    if(_ib) _ib.textContent = (_as.tokens_blacklisted||0);
+    if(_ib){
+      const tb = _as.tokens_blacklisted||0, db = _as.devs_blacklisted||0;
+      _ib.textContent = tb + ' tokens · ' + db + ' devs';
+      _ib.style.color = (tb+db) > 0 ? '#ffbe00' : 'var(--txt3)';
+    }
     const _ibest = document.getElementById('intel-best');
-    if(_ibest) _ibest.textContent = (_as.brain_best||0);
     const _iavoid = document.getElementById('intel-avoid');
-    if(_iavoid) _iavoid.textContent = (_as.brain_avoid||0);
+    const _loaded = _as.brain_loaded;
+    if(_ibest){
+      _ibest.textContent = _loaded ? (_as.brain_best||0) : '⏳';
+      _ibest.style.color = (_as.brain_best||0) > 0 ? 'var(--em)' : 'var(--txt3)';
+    }
+    if(_iavoid){
+      _iavoid.textContent = _loaded ? (_as.brain_avoid||0) : '⏳';
+      _iavoid.style.color = (_as.brain_avoid||0) > 0 ? 'var(--red)' : 'var(--txt3)';
+    }
     const _iwss = document.getElementById('intel-wss');
     if(_iwss){
       const ws = _as.wss_status||'unknown';

@@ -5401,6 +5401,7 @@ def auto_stats_route():
         "brain_best":         len(brain["trading"].get("best_patterns", [])),
         "brain_avoid":        len(brain["trading"].get("avoid_patterns", [])),
         "wss_status":         market_cache.get("wss_status", "unknown"),
+        "brain_loaded":       brain.get("total_learning_cycles", 0) > 0 or len(_smart_wallets) > 0 or len(_rug_dna) > 0,
     })
   except Exception as e:
     print(f"❌ auto_stats_route error: {e}")
