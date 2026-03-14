@@ -853,9 +853,12 @@ function doDownload(){
   closeDlModal();
   downloadTrades(_dlCount);
 }
-function downloadTrades(count){
-  var hist = (window._lastStats&&window._lastStats.trade_history)||[];
-  if(!hist.length) return;
+async function downloadTrades(count){
+  // Always fetch fresh from API — memory pe depend nahi
+  const d = await fetchJSON('/trade-history?filter=all',{},20000);
+  if(!d) return;
+  var hist = d.history || [];
+  if(!hist.length){ alert('No trades to download!'); return; }
   var rows = count==='all' ? hist : hist.slice(0,count);
   var cols = ['token','address','result','pnl_pct','pnl_bnb','size_bnb','entry','sold_at','bought_at','reason'];
   var csv  = cols.join(',') + '\n';

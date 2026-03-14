@@ -2585,8 +2585,26 @@ def auto_position_manager():
                         _pos_data["pnl_high"] = pnl
                         _pnl_high = pnl
 
-                    # SL floor — agar pnl high 40%+ hai toh lock karo
-                    _sl_floor = (_pnl_high * 0.7) if _pnl_high >= 30 else -20.0  # tighter lock: 70% of peak, triggers at +30%
+                    # ══════════════════════════════════════════════════════
+                    # PRO LADDER — Pehle partial sells, THEN TrailSL
+                    # ──────────────────────────────────────────────────────
+                    # +40%  → 50% sell → capital ~71% recover, risk halved
+                    # +80%  → 25% sell → total 75% out, deep profit locked
+                    # +150% → 15% sell → total 90% out, 2.5x confirmed
+                    # Remaining 10% → free ride on TrailSL → moonshot
+                    # ══════════════════════════════════════════════════════
+                    if pnl >= 150 and tp_sold < 90:
+                        _auto_paper_sell(addr, f"ProTP +150% [90% banked] 🌙", 15.0)
+                        print(f"🌙 ProTP150: {addr[:10]} pnl={pnl:.1f}% tp_sold={tp_sold:.0f}%")
+                    elif pnl >= 80 and tp_sold < 75:
+                        _auto_paper_sell(addr, f"ProTP +80% [75% banked] 💰", 25.0)
+                        print(f"💰 ProTP80: {addr[:10]} pnl={pnl:.1f}% tp_sold={tp_sold:.0f}%")
+                    elif pnl >= 40 and tp_sold < 50:
+                        _auto_paper_sell(addr, f"ProTP +40% [50% banked] 🔒", 50.0)
+                        print(f"🔒 ProTP40: {addr[:10]} pnl={pnl:.1f}%")
+
+                    # SL floor — ProTP ke baad check karo
+                    _sl_floor = (_pnl_high * 0.7) if _pnl_high >= 30 else -12.0
 
                     # Trail trigger: current pnl ne floor tod diya?
                     if pnl <= _sl_floor and _pnl_high >= 40:
@@ -2673,23 +2691,7 @@ def auto_position_manager():
                         _auto_paper_sell(addr, f"Ladder 2x ✅", 10.0)
                         print(f"✅ 2x LADDER: {addr[:10]} @ +{pnl:.0f}%")
 
-                    # ══════════════════════════════════════════════════════
-                    # PRO LADDER — Balanced: Rug protection + Moonshot chance
-                    # ──────────────────────────────────────────────────────
-                    # +40%  → 50% sell → capital ~71% recover, risk halved
-                    # +80%  → 25% sell → total 75% out, deep profit locked
-                    # +150% → 15% sell → total 90% out, 2.5x confirmed
-                    # Remaining 10% → free ride on TrailSL → moonshot
-                    # ══════════════════════════════════════════════════════
-                    elif pnl >= 150 and tp_sold < 90:        # +150% → 15% sell (total 90%)
-                        _auto_paper_sell(addr, f"ProTP +150% [90% banked] 🌙", 15.0)
-                        print(f"🌙 ProTP150: {addr[:10]} pnl={pnl:.1f}% tp_sold={tp_sold:.0f}%")
-                    elif pnl >= 80 and tp_sold < 75:         # +80% → 25% sell (total 75%)
-                        _auto_paper_sell(addr, f"ProTP +80% [75% banked] 💰", 25.0)
-                        print(f"💰 ProTP80: {addr[:10]} pnl={pnl:.1f}% tp_sold={tp_sold:.0f}%")
-                    elif pnl >= 40 and tp_sold < 50:         # +40% → 50% sell (capital 71% back)
-                        _auto_paper_sell(addr, f"ProTP +40% [50% banked] 🔒", 50.0)
-                        print(f"🔒 ProTP40: {addr[:10]} pnl={pnl:.1f}%")
+                    # TrailSL + Ladder sells are above
             except Exception as e:
                 print(f"Auto manager err {addr[:10]}: {e}")
         # No positions → 30s sleep. Any position in profit → 0.3s ultra fast. Else → 1s
