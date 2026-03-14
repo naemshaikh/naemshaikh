@@ -1150,13 +1150,12 @@ async function fetchStats(){
     }
     const _ibest = document.getElementById('intel-best');
     const _iavoid = document.getElementById('intel-avoid');
-    const _loaded = _as.brain_loaded;
     if(_ibest){
-      _ibest.textContent = _loaded ? (_as.brain_best||0) : '⏳';
+      _ibest.textContent = (_as.brain_best||0);
       _ibest.style.color = (_as.brain_best||0) > 0 ? 'var(--em)' : 'var(--txt3)';
     }
     if(_iavoid){
-      _iavoid.textContent = _loaded ? (_as.brain_avoid||0) : '⏳';
+      _iavoid.textContent = (_as.brain_avoid||0);
       _iavoid.style.color = (_as.brain_avoid||0) > 0 ? 'var(--red)' : 'var(--txt3)';
     }
     const _iwss = document.getElementById('intel-wss');

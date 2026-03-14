@@ -3025,6 +3025,7 @@ def _gp_bool_flag(data, key):
 
 # ========== BRAIN SAVE/LOAD ==========
 _brain_save_cache = {"last_save": 0}
+_brain_loaded_from_db = False  # startup pe Supabase se load hua?
 
 def _save_brain_to_db():
     import time as _t
@@ -3122,6 +3123,8 @@ def _load_brain_from_db():
                 with _dev_blacklist_lock:
                     _dev_blacklist.update(_db)
                 print(f"🚫 Dev blacklist loaded: {len(_db)} devs")
+            global _brain_loaded_from_db
+            _brain_loaded_from_db = True
             print(f"🧠 Brain loaded! Cycles: {brain['total_learning_cycles']}")
     except Exception as e:
         print(f"⚠️ Brain load error: {e}")
@@ -5401,7 +5404,7 @@ def auto_stats_route():
         "brain_best":         len(brain["trading"].get("best_patterns", [])),
         "brain_avoid":        len(brain["trading"].get("avoid_patterns", [])),
         "wss_status":         market_cache.get("wss_status", "unknown"),
-        "brain_loaded":       brain.get("total_learning_cycles", 0) > 0 or len(_smart_wallets) > 0 or len(_rug_dna) > 0,
+        "brain_loaded":       _brain_loaded_from_db or brain.get("total_learning_cycles", 0) > 0 or len(_smart_wallets) > 0 or len(_rug_dna) > 0,
     })
   except Exception as e:
     print(f"❌ auto_stats_route error: {e}")
