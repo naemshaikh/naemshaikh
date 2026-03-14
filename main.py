@@ -5384,11 +5384,14 @@ def sys_stats():
         rss_mb  = round(mem.rss  / 1024 / 1024, 1)  # actual RAM used
         vms_mb  = round(mem.vms  / 1024 / 1024, 1)  # virtual memory
 
-        # System total
+        # System total — Render free tier = 512MB
+        # psutil.virtual_memory().total = host machine RAM (misleading)
         sys_mem  = psutil.virtual_memory()
-        total_mb = round(sys_mem.total   / 1024 / 1024, 1)
+        RENDER_MAX_MB = 512  # free tier limit
+        total_mb = RENDER_MAX_MB
         avail_mb = round(sys_mem.available / 1024 / 1024, 1)
-        used_pct = round(sys_mem.percent, 1)
+        avail_mb = min(avail_mb, RENDER_MAX_MB - rss_mb)  # cap to container limit
+        used_pct = round((rss_mb / RENDER_MAX_MB) * 100, 1)
 
         # Estimate paper vs real breakdown
         # Paper: running_positions, trade_history, brain, smart_wallets
