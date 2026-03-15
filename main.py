@@ -284,8 +284,46 @@ def get_token_price_bnb_full(token_address: str) -> float:
     except: pass
     return 0.0
 
-w3 = Web3(Web3.HTTPProvider(BSC_RPC))
+# ── BSC RPC with multiple fallbacks ──
+_BSC_RPC_LIST = [
+    BSC_RPC,  # primary (Chainstack/NodeReal/Ankr from env)
+    "https://bsc-dataseed.bnbchain.org",
+    "https://bsc-dataseed1.binance.org",
+    "https://rpc.ankr.com/bsc",
+    "https://bsc.drpc.org",
+    "https://1rpc.io/bnb",
+    "https://bsc-rpc.publicnode.com",
+]
+
+def _connect_w3():
+    for _rpc in _BSC_RPC_LIST:
+        if not _rpc: continue
+        try:
+            _w3 = Web3(Web3.HTTPProvider(_rpc, request_kwargs={"timeout": 10}))
+            if _w3.is_connected():
+                print(f"✅ BSC connected: {_rpc[:40]}")
+                return _w3
+        except Exception as _e:
+            print(f"⚠️ RPC fail: {_rpc[:40]} — {_e}")
+    print("❌ All RPCs failed — using ankr as last resort")
+    return Web3(Web3.HTTPProvider("https://rpc.ankr.com/bsc"))
+
+w3 = _connect_w3()
 threading.Thread(target=lambda: print(f"✅ BSC: {w3.is_connected()}"), daemon=True).start()
+
+# ── Auto-reconnect w3 if connection drops ──
+def _w3_health_loop():
+    import time as _t
+    while True:
+        _t.sleep(60)
+        try:
+            if not w3.is_connected():
+                print("⚠️ BSC RPC disconnected — reconnecting...")
+                global w3
+                w3 = _connect_w3()
+        except Exception as _e:
+            print(f"⚠️ w3 health check error: {_e}")
+threading.Thread(target=_w3_health_loop, daemon=True).start()
 
 # ========== SUPABASE ==========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
