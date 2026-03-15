@@ -332,11 +332,7 @@ function _checkLock(){
       <div class="hdr-c-val" id="h-fg">—</div>
       <div class="hdr-c-lbl">F&amp;G</div>
     </div>
-    <!-- 🔔 Notification Bell -->
-    <div style="position:relative;cursor:pointer;" onclick="openNotifPanel()" id="notif-bell-wrap">
-      <div style="width:36px;height:36px;border-radius:50%;border:1.5px solid var(--line2);background:var(--ink3);display:flex;align-items:center;justify-content:center;font-size:16px;transition:all 0.2s;" id="notif-bell">🔔</div>
-      <div id="notif-badge" style="display:none;position:absolute;top:-2px;right:-2px;min-width:16px;height:16px;border-radius:8px;background:#ff4757;border:2px solid var(--ink);display:none;align-items:center;justify-content:center;font-size:8px;font-weight:900;color:#fff;padding:0 3px;font-family:'JetBrains Mono',monospace;"></div>
-    </div>
+
     <button id="theme-btn" onclick="toggleTheme()" style="width:32px;height:32px;border-radius:50%;border:1.5px solid var(--line2);background:var(--ink3);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;-webkit-tap-highlight-color:transparent;">🌙</button>
     <div class="live-dot" id="live-dot"></div>
   </div>
@@ -367,16 +363,18 @@ function _checkLock(){
     </button>
   </div>
 
-  <!-- GMGN Style PNL Card -->
-  <div style="margin:8px 0 4px;">
-    <div style="background:var(--ink2);border-radius:14px;padding:14px 16px;border:1px solid rgba(0,0,0,0.06);box-shadow:0 1px 4px rgba(0,0,0,0.05);">
+  <!-- PNL + Live Notifications Split Card -->
+  <div style="margin:8px 0 4px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+
+    <!-- LEFT: PNL Card -->
+    <div style="background:var(--ink2);border-radius:14px;padding:14px 12px;border:1px solid rgba(0,0,0,0.06);box-shadow:0 1px 4px rgba(0,0,0,0.05);">
 
       <!-- Period Tabs -->
       <div style="display:flex;gap:0;background:var(--ink);border-radius:8px;padding:3px;margin-bottom:12px;width:fit-content;">
-        <button onclick="setPnlPeriod('1D')" id="pnl-tab-1D" style="font-size:11px;padding:4px 12px;border-radius:6px;border:none;background:transparent;color:var(--txt3);cursor:pointer;font-weight:600;transition:all 0.15s;">1D</button>
-        <button onclick="setPnlPeriod('7D')" id="pnl-tab-7D" style="font-size:11px;padding:4px 12px;border-radius:6px;border:none;background:transparent;color:var(--txt3);cursor:pointer;font-weight:600;transition:all 0.15s;">7D</button>
-        <button onclick="setPnlPeriod('1M')" id="pnl-tab-1M" style="font-size:11px;padding:4px 12px;border-radius:6px;border:none;background:transparent;color:var(--txt3);cursor:pointer;font-weight:600;transition:all 0.15s;">1M</button>
-        <button onclick="setPnlPeriod('ALL')" id="pnl-tab-ALL" style="font-size:11px;padding:4px 12px;border-radius:6px;border:none;background:var(--ink2);color:var(--txt);cursor:pointer;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,0.1);transition:all 0.15s;">ALL</button>
+        <button onclick="setPnlPeriod('1D')" id="pnl-tab-1D" style="font-size:10px;padding:3px 8px;border-radius:6px;border:none;background:transparent;color:var(--txt3);cursor:pointer;font-weight:600;transition:all 0.15s;">1D</button>
+        <button onclick="setPnlPeriod('7D')" id="pnl-tab-7D" style="font-size:10px;padding:3px 8px;border-radius:6px;border:none;background:transparent;color:var(--txt3);cursor:pointer;font-weight:600;transition:all 0.15s;">7D</button>
+        <button onclick="setPnlPeriod('1M')" id="pnl-tab-1M" style="font-size:10px;padding:3px 8px;border-radius:6px;border:none;background:transparent;color:var(--txt3);cursor:pointer;font-weight:600;transition:all 0.15s;">1M</button>
+        <button onclick="setPnlPeriod('ALL')" id="pnl-tab-ALL" style="font-size:10px;padding:3px 8px;border-radius:6px;border:none;background:var(--ink2);color:var(--txt);cursor:pointer;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,0.1);transition:all 0.15s;">ALL</button>
       </div>
 
       <!-- Main PNL Row -->
@@ -421,6 +419,20 @@ function _checkLock(){
 
       <div class="bal-sub" id="b-wr" style="display:none;"></div>
     </div>
+
+    <!-- RIGHT: Live Notifications Box -->
+    <div style="background:var(--ink2);border-radius:14px;border:1px solid rgba(0,0,0,0.06);box-shadow:0 1px 4px rgba(0,0,0,0.05);display:flex;flex-direction:column;overflow:hidden;">
+      <!-- Header -->
+      <div style="padding:10px 12px 6px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+        <div style="font-size:10px;font-weight:700;color:var(--txt3);letter-spacing:0.5px;">🔔 LIVE</div>
+        <div id="inline-notif-count" style="font-size:9px;color:var(--txt3);font-family:'JetBrains Mono',monospace;"></div>
+      </div>
+      <!-- Notifications List -->
+      <div id="inline-notif-list" style="flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:4px 0;max-height:180px;">
+        <div style="text-align:center;padding:20px 8px;color:var(--txt3);font-size:10px;">No alerts yet</div>
+      </div>
+    </div>
+
   </div>
 
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 12px 0;">
@@ -3382,6 +3394,7 @@ async function fetchNotifications(){
     _notifUnread = d.unread || 0;
     _renderNotifBadge();
     _renderNotifList();
+    _renderInlineNotifs();
     _updateBellBlink();
   } catch(e) {}
 }
@@ -3410,6 +3423,31 @@ function _updateBellBlink(){
   if(hasCritical)      bell.classList.add('blink-red');
   else if(hasWarning)  bell.classList.add('blink-yellow');
   else if(hasSuccess)  bell.classList.add('blink-green');
+}
+
+function _renderInlineNotifs(){
+  const list = document.getElementById('inline-notif-list');
+  const cnt  = document.getElementById('inline-notif-count');
+  if(!list) return;
+  const recent = _notifData.slice(0, 5); // latest 5
+  if(!recent.length){
+    list.innerHTML = '<div style="text-align:center;padding:20px 8px;color:var(--txt3);font-size:10px;">No alerts yet</div>';
+    if(cnt) cnt.textContent = '';
+    return;
+  }
+  if(cnt) cnt.textContent = _notifData.length + ' total';
+  list.innerHTML = recent.map(function(n){
+    const sev = n.severity || 'info';
+    const dotClr = sev==='critical'?'#ff4757':sev==='warning'?'#ffc800':sev==='success'?'#00d4aa':'#64b4ff';
+    const isUnread = !n.read;
+    return '<div style="display:flex;gap:6px;padding:7px 10px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;' + (isUnread?'background:rgba(255,255,255,0.03);':'') + '" onclick="readNotif(\'' + n.id + '\')">'+
+      '<div style="width:6px;height:6px;border-radius:50%;background:'+dotClr+';flex-shrink:0;margin-top:4px;"></div>'+
+      '<div style="flex:1;min-width:0;">'+
+        '<div style="font-size:10px;font-weight:'+(isUnread?'700':'500')+';color:var(--txt1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+n.title+'</div>'+
+        '<div style="font-size:9px;color:var(--txt3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+n.detail+'</div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
 }
 
 function _renderNotifList(){
