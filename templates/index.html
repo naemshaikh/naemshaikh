@@ -1839,11 +1839,18 @@ async function openWhaleDetail(){
     wallets.forEach(w => {
       const qBadge = w.qualified ? '<span style="background:rgba(0,212,170,0.2);color:var(--em);font-size:8px;padding:1px 5px;border-radius:4px;margin-left:4px;">⭐ QUALIFIED</span>' : '';
       const pnlClr = w.total_pnl >= 0 ? 'var(--em)' : 'var(--red)';
-      html += `<div style="background:var(--ink2);border:1px solid var(--line2);border-radius:10px;padding:10px 12px;margin-bottom:8px;">
+      // Copy button — sirf qualified whales ke liye
+      const copyBtn = w.qualified ? `<button onclick="_copyWallet('${w.address}')" style="background:rgba(0,212,170,0.12);border:1px solid rgba(0,212,170,0.3);border-radius:6px;padding:3px 8px;font-size:9px;color:var(--em);cursor:pointer;font-weight:700;" title="Copy wallet address">📋 COPY</button>` : '';
+      html += `<div style="background:var(--ink2);border:1px solid ${w.qualified ? 'rgba(0,212,170,0.3)' : 'var(--line2)'};border-radius:10px;padding:10px 12px;margin-bottom:8px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--txt1);">${w.short}</span>
-          ${qBadge}
-          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:${pnlClr};">${w.total_pnl >= 0 ? '+' : ''}${w.total_pnl} BNB</span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--txt1);">${w.short}</span>
+            ${qBadge}
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            ${copyBtn}
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:${pnlClr};">${w.total_pnl >= 0 ? '+' : ''}${w.total_pnl} BNB</span>
+          </div>
         </div>
         <div style="display:flex;gap:12px;">
           <span style="font-size:10px;color:var(--em);">✅ ${w.wins}W</span>
