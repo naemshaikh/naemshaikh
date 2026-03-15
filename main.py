@@ -1705,26 +1705,18 @@ _TRADES_SESSION_ID      = "MRBLACK_TRADE_HISTORY"       # paper trades — memor
 _REAL_TRADES_TABLE      = "real_trade_history"           # real trades — alag table
 
 def _save_trade_history_to_db():
-    """Har trade ke baad Supabase mein permanently save karo — paper aur real alag tables"""
+    """Har trade ke baad Supabase mein permanently save karo"""
     if not supabase: return
     try:
-        all_hist   = auto_trade_stats.get("trade_history", [])
-        paper_hist = [t for t in all_hist if t.get("mode", "paper") == "paper"]
-        real_hist  = [t for t in all_hist if t.get("mode", "paper") == "real"]
-
-        # Paper — memory table mein
+        all_hist = auto_trade_stats.get("trade_history", [])
         supabase.table("memory").upsert({
             "session_id":    _TRADES_SESSION_ID,
-            "trade_history": json.dumps(paper_hist[-5000:]),
-            "updated_at":    datetime.utcnow().isoformat(),
-        }).execute()
-
-        # Real — alag table mein
-        supabase.table(_REAL_TRADES_TABLE).upsert({
-            "session_id":    "MRBLACK_REAL_TRADES",
-            "trade_history": json.dumps(real_hist[-5000:]),
+            "role":          "user",
+            "content":       "",
+            "trade_history": json.dumps(all_hist[-5000:]),
             "updated_at":    datetime.utcnow().isoformat(),
         }, on_conflict="session_id").execute()
+        print(f"💾 Trade history saved: {len(all_hist)} trades")
 
         print(f"💾 Trade history saved: {len(paper_hist)} paper | {len(real_hist)} real")
     except Exception as e:
