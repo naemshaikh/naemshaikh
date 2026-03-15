@@ -3324,9 +3324,10 @@ def _load_brain_from_db():
                 with _smart_wallets_lock:
                     _smart_wallets.update(_sw)
                 print(f"🐋 Smart wallets loaded: {len(_sw)}")
-            # Load rug DNA
+            # Load rug DNA — clear first to avoid duplicates on reload
             _rd = stored.get("rug_dna", [])
             if isinstance(_rd, list) and _rd:
+                _rug_dna.clear()
                 _rug_dna.extend(_rd)
                 print(f"☠️ Rug DNA loaded: {len(_rd)}")
             # Load dev blacklist — permanent
