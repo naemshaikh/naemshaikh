@@ -2560,7 +2560,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     threading.Thread(target=_save_trade_history_to_db, daemon=True).start()
 
     # ── Auto-blacklist dev + token + record rug DNA if SL hit or rug dump ──
-    if "SL" in reason or "Dump" in reason or "Rug" in reason:
+    if "VolRug" in reason or "LP Burn" in reason or "LiqDrop" in reason or "Dump" in reason:
         try:
             _gp       = _get_goplus(address)
             _creator  = _gp.get("creator_address", "")
