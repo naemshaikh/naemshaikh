@@ -2439,6 +2439,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         "sold_at":    datetime.utcnow().isoformat(),
         "result":     "win" if _total_pnl_pct_trade > 0 else "loss",
         "reason":     reason,
+        "mode":       TRADE_MODE,
     })
     if len(auto_trade_stats["trade_history"]) > 5000:
         auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-5000:]
@@ -5253,7 +5254,7 @@ def activity_route():
 
 @app.route("/trade-history", methods=["GET"])
 def trade_history_route():
-    hist   = auto_trade_stats.get("trade_history", [])
+    hist   = [t for t in auto_trade_stats.get("trade_history", []) if t.get("mode", "paper") == TRADE_MODE]
     filt   = request.args.get("filter", "all")
     search = request.args.get("q", "").lower()
     from datetime import datetime as _dt
@@ -5418,7 +5419,9 @@ def auto_stats_route():
     # Total PNL = Realized (closed trades) + Unrealized (open positions)
     # % = Total PNL BNB / Total Invested BNB × 100
 
-    _hist = auto_trade_stats.get("trade_history", [])
+    _hist_all = auto_trade_stats.get("trade_history", [])
+    # Sirf current mode ki trades use karo PNL ke liye
+    _hist = [t for t in _hist_all if t.get("mode", "paper") == TRADE_MODE]
 
     # Realized — closed trades
     _realized_pnl_bnb  = sum(float(t.get("pnl_bnb", 0) or 0) for t in _hist)
@@ -5816,7 +5819,14 @@ def wallet_info():
         except Exception:
             pass
 
-        # 3. Web3 RPC — multiple fallbacks
+        # 3. Web3 RPC — main w3 instance pehle try karo (already connected hai)
+        try:
+            bal = w3.eth.get_balance(Web3.to_checksum_address(addr))
+            bnb = float(bal) / 1e18
+            return jsonify({"wallet": addr, "bnb": round(bnb, 6), "usd": round(bnb * bnb_price, 2), "src": "w3_main"})
+        except Exception:
+            pass
+
         _rpcs = [
             "https://bsc-dataseed.bnbchain.org",
             "https://bsc-dataseed1.binance.org",
