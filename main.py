@@ -5026,8 +5026,12 @@ def _startup_once():
                                 auto_trade_stats["total_auto_sells"] = _pdb.get("total_sells", 0)
                                 auto_trade_stats["auto_pnl_total"]   = _pdb.get("pnl_total", 0.0)
                                 auto_trade_stats["last_action"]      = _pdb.get("last_action", "")
+                                # trade_history overwrite mat karo — _load_trade_history_from_db
+                                # pehle se sahi data load kar chuka hai alag tables se
+                                # Sirf agar RAM mein kuch nahi hai tab fallback karo
                                 _th = _pdb.get("trade_history", [])
-                                auto_trade_stats["trade_history"] = list(_th) if isinstance(_th, list) else []
+                                if not auto_trade_stats.get("trade_history") and isinstance(_th, list) and _th:
+                                    auto_trade_stats["trade_history"] = list(_th)
                                 auto_trade_stats["wins"]         = _pdb.get("wins", 0)
                                 auto_trade_stats["losses"]       = _pdb.get("losses", 0)
                                 _saved_td = _pdb.get("today_date", "")
