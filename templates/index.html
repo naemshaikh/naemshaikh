@@ -887,8 +887,6 @@ function openTrade(t){
 // ─── HISTORY ────────────────────────────────────────────────
 var _dlCount = null;
 function confirmDownload(count){
-  var hist = (window._lastStats&&window._lastStats.trade_history)||[];
-  if(!hist.length){alert('No trade history yet!');return;}
   _dlCount = count;
   var label = count==='all' ? 'All' : 'Last '+count;
   var total = count==='all' ? hist.length : Math.min(count, hist.length);
