@@ -2355,6 +2355,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         "tp_sold":        0.0,
         "banked_pnl_bnb": 0.0,
         "bought_at":      datetime.utcnow().isoformat(),
+        "mode":           TRADE_MODE,
     }
     auto_trade_stats["total_auto_buys"] += 1
     auto_trade_stats["last_action"] = f"BUY {token_name or address[:10]}"
@@ -5381,9 +5382,11 @@ def auto_stats_route():
     bnb_price   = market_cache.get("bnb_price", 0)
     paper_bal   = float(sess.get("paper_balance") or 5.0)
 
-    # Build open_trades array for UI
+    # Build open_trades array for UI — sirf current mode ki positions
     open_trades = []
     for addr, pos in auto_trade_stats.get("running_positions", {}).items():
+        if pos.get("mode", TRADE_MODE) != TRADE_MODE:
+            continue
         mon     = monitored_positions.get(addr, {})
         entry   = pos.get("entry", 0)
         current = mon.get("current", entry)
