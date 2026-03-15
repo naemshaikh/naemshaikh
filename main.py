@@ -1264,7 +1264,7 @@ _smart_wallets_lock = threading.Lock()
 WHALE_MIN_WINS      = 2       # kam se kam 2 profitable trades
 WHALE_MIN_WIN_RATE  = 0.60    # 60%+ win rate
 WHALE_MIN_BNB_TXN   = 0.05    # minimum 0.05 BNB per transaction (noise filter)
-WHALE_MAX_WALLETS   = 200     # memory cap
+WHALE_MAX_WALLETS   = 10000   # memory cap
 
 def _update_whale_stats(wallet: str, win: bool, pnl_pct: float):
     """Wallet ka track record update karo"""
@@ -1744,7 +1744,7 @@ def _load_trade_history_from_db():
 
 # ══════════════════════════════════════════════
 _rug_dna: list = []   # [{"creator": str, "buy_tax": float, "sell_tax": float, "liq_usd": float, "ts": float}]
-_RUG_DNA_MAX = 200    # max fingerprints store
+_RUG_DNA_MAX = 10000  # max fingerprints store
 
 def _record_rug_dna(token_address: str, creator: str, buy_tax: float, sell_tax: float, liq_usd: float, reason: str = "", pnl_pct: float = 0.0):
     """Rug token ka DNA fingerprint save karo"""
@@ -3128,7 +3128,7 @@ def _save_brain_to_db():
                 "cycles":         brain["total_learning_cycles"],
                 "total_tokens_discovered_ever": brain.get("total_tokens_discovered_ever", 0),
                 "smart_wallets":  _sw_snapshot,
-                "rug_dna":        _rug_dna[-100:],
+                "rug_dna":        _rug_dna[-10000:],
                 "dev_blacklist":  dict(_dev_blacklist),
             })
         }, on_conflict="session_id").execute()
@@ -5614,7 +5614,7 @@ def sys_stats():
 def rug_dna_route():
     """Latest 100 rug DNA fingerprints"""
     try:
-        data = list(reversed(_rug_dna[-100:]))  # latest first
+        data = list(reversed(_rug_dna[-10000:]))  # latest first
         result = []
         for d in data:
             ts = d.get("ts", 0)
