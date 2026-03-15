@@ -1731,42 +1731,22 @@ def _save_trade_history_to_db():
         print(f"⚠️ Trade history save error: {e}")
 
 def _load_trade_history_from_db():
-    """Startup pe Supabase se history load karo — paper aur real alag tables"""
+    """Startup pe Supabase se history load karo"""
     if not supabase: return
     try:
-        # Paper history — memory table
-        paper_hist = []
-        res_p = supabase.table("memory").select("trade_history").eq("session_id", _TRADES_SESSION_ID).execute()
-        if res_p.data:
-            raw_p = res_p.data[0].get("trade_history")
-            if raw_p:
-                parsed = json.loads(raw_p) if isinstance(raw_p, str) else raw_p
-                if isinstance(parsed, list):
-                    paper_hist = parsed
-
-        # Real history — alag table
-        real_hist = []
-        try:
-            res_r = supabase.table(_REAL_TRADES_TABLE).select("trade_history").eq("session_id", "MRBLACK_REAL_TRADES").execute()
-            if res_r.data:
-                raw_r = res_r.data[0].get("trade_history")
-                if raw_r:
-                    parsed_r = json.loads(raw_r) if isinstance(raw_r, str) else raw_r
-                    if isinstance(parsed_r, list):
-                        real_hist = parsed_r
-        except Exception as _re:
-            print(f"⚠️ Real history load error: {_re}")
-
-        # Dono merge karo RAM mein (filtering UI pe hoti hai)
-        all_hist = paper_hist + real_hist
-        if all_hist:
-            auto_trade_stats["trade_history"] = all_hist
-            wins   = sum(1 for t in all_hist if t.get("result") == "win" and t.get("mode", "paper") == TRADE_MODE)
-            losses = sum(1 for t in all_hist if t.get("result") == "loss" and t.get("mode", "paper") == TRADE_MODE)
-            auto_trade_stats["trade_count"] = len(all_hist)
-            auto_trade_stats["win_count"]   = wins
-            auto_trade_stats["loss_count"]  = losses
-            print(f"✅ Trade history loaded: {len(paper_hist)} paper | {len(real_hist)} real | wins={wins} losses={losses}")
+        res = supabase.table("memory").select("trade_history").eq("session_id", _TRADES_SESSION_ID).execute()
+        if res.data:
+            raw = res.data[0].get("trade_history")
+            if raw:
+                hist = json.loads(raw) if isinstance(raw, str) else raw
+                if isinstance(hist, list) and hist:
+                    auto_trade_stats["trade_history"] = hist
+                    wins   = sum(1 for t in hist if t.get("result") == "win" and t.get("mode", "paper") == TRADE_MODE)
+                    losses = sum(1 for t in hist if t.get("result") == "loss" and t.get("mode", "paper") == TRADE_MODE)
+                    auto_trade_stats["trade_count"] = len(hist)
+                    auto_trade_stats["win_count"]   = wins
+                    auto_trade_stats["loss_count"]  = losses
+                    print(f"✅ Trade history loaded: {len(hist)} trades (wins={wins} losses={losses})")
     except Exception as e:
         print(f"⚠️ Trade history load error: {e}")
 
