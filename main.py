@@ -5227,7 +5227,6 @@ def admin_reset_positions():
         auto_trade_stats["total_auto_buys"]  = 0
         auto_trade_stats["total_auto_sells"] = 0
         auto_trade_stats["auto_pnl_total"]   = 0.0
-        auto_trade_stats["trade_history"]    = []
         auto_trade_stats["wins"]             = 0
         auto_trade_stats["losses"]           = 0
         auto_trade_stats["last_action"]      = "Manual reset"
