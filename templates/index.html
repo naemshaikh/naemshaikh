@@ -1469,7 +1469,7 @@ function _applyModeUI(){
 // Fetch real BNB balance from backend (BSC_WALLET env se auto)
 async function fetchRealBalance(){
   try{
-    // Step 1: Backend se wallet address lo (BSC_WALLET env variable)
+    // Step 1: Backend se wallet address lo
     const info = await fetchJSON('/wallet-info',{},8000);
     const addr = (info && info.wallet) ? info.wallet : _walletAddr || '';
     if(addr){
@@ -1477,36 +1477,69 @@ async function fetchRealBalance(){
       if(ws) ws.textContent = addr.slice(0,6)+'...'+addr.slice(-4);
       _walletAddr = addr;
     }
-    if(!addr) return;
-
-    // Step 2: Backend se balance lo — RPC/BSCScan se already fetch ho gaya
-    const bnbP = window._bnbReal || 0;
-    if(info && info.bnb > 0){
-      document.getElementById('b-real-bal').textContent = info.bnb.toFixed(4)+' BNB';
-      document.getElementById('b-real-usd').textContent = bnbP > 0 ? 'approx $'+(info.bnb*bnbP).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : 'approx $'+info.usd.toFixed(2);
-      return;
-    }
-
-    // Fallback agar bnb=0
-    if(info && info.wallet){
-      document.getElementById('b-real-bal').textContent = '0.0000 BNB';
-      if(info.error && info.error.includes('failed')){
-        document.getElementById('b-real-usd').textContent = '⚠️ RPC fetch failed';
-      } else {
-        document.getElementById('b-real-usd').textContent = 'approx $0.00 (empty wallet)';
-      }
-    } else {
+    if(!addr){
       document.getElementById('b-real-bal').textContent = '— BNB';
       document.getElementById('b-real-usd').textContent = 'BSC_WALLET env set karo';
+      return;
     }
+    const bnbP = window._bnbReal || 0;
+    // Step 2: Backend se balance try karo
+    if(info && info.bnb > 0){
+      document.getElementById('b-real-bal').textContent = info.bnb.toFixed(4)+' BNB';
+      document.getElementById('b-real-usd').textContent = bnbP > 0
+        ? 'approx $'+(info.bnb*bnbP).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})
+        : 'approx $'+info.usd.toFixed(2);
+      return;
+    }
+    // Step 3: Backend fail — browser se directly BSCScan call karo
+    try{
+      const bscR = await fetch('https://api.bscscan.com/api?module=account&action=balance&address='+addr+'&tag=latest');
+      if(bscR.ok){
+        const bscD = await bscR.json();
+        if(bscD.status === '1'){
+          const bnb = parseFloat(bscD.result) / 1e18;
+          document.getElementById('b-real-bal').textContent = bnb.toFixed(4)+' BNB';
+          document.getElementById('b-real-usd').textContent = bnbP > 0
+            ? 'approx $'+(bnb*bnbP).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})
+            : 'approx $0.00';
+          return;
+        }
+      }
+    }catch(e2){}
+    // Step 4: Sab fail
+    document.getElementById('b-real-bal').textContent = '0.0000 BNB';
+    document.getElementById('b-real-usd').textContent = 'approx $0.00';
   }catch(e){}
 }
 
 // ── PNL Period Filter ──
-window._pnlPeriod = 'ALL';
+// PNL tab selection — localStorage se restore karo taaki page reload pe reset na ho
+window._pnlPeriod = (function(){
+  try{ return localStorage.getItem('mb_pnl_period') || 'ALL'; }catch(e){ return 'ALL'; }
+})();
+// Startup pe saved tab highlight karo
+(function(){
+  var saved = window._pnlPeriod;
+  ['1D','7D','1M','ALL'].forEach(function(t){
+    var el = document.getElementById('pnl-tab-'+t);
+    if(!el) return;
+    if(t === saved){
+      el.style.background = 'var(--ink2)';
+      el.style.color = 'var(--txt)';
+      el.style.fontWeight = '700';
+      el.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+    } else {
+      el.style.background = 'transparent';
+      el.style.color = 'var(--txt3)';
+      el.style.fontWeight = '600';
+      el.style.boxShadow = 'none';
+    }
+  });
+})();
 
 function setPnlPeriod(p){
   window._pnlPeriod = p;
+  try{ localStorage.setItem('mb_pnl_period', p); }catch(e){}
   ['1D','7D','1M','ALL'].forEach(function(t){
     var el = document.getElementById('pnl-tab-'+t);
     if(!el) return;

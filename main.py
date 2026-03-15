@@ -5370,8 +5370,9 @@ def auto_stats_route():
         wins   = sum(1 for v in _pos_pnl.values() if v > 0)
         losses = sum(1 for v in _pos_pnl.values() if v <= 0)
     else:
-        wins   = auto_trade_stats.get("wins", 0)
-        losses = auto_trade_stats.get("losses", 0)
+        # Real mode mein 0 — paper counter use nahi karna
+        wins   = 0
+        losses = 0
     trade_count = wins + losses
     win_rate    = round(wins / trade_count * 100, 1) if trade_count > 0 else 0.0
 
