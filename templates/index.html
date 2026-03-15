@@ -2517,7 +2517,7 @@ function openHoldDetail(json){
   // TP Sell rows — real data from tp_events if available, else estimate
   let tpRows='';
   if(tpSold>0){
-    const tpEvents = (t.tp_events||[]).slice().reverse(); // newest first
+    const tpEvents = (t.tp_events||[]).slice(); // oldest first — chronological order
     if(tpEvents.length>0){
       // ✅ Real data from backend
       tpEvents.forEach(function(ev){
@@ -2559,7 +2559,7 @@ function openHoldDetail(json){
     '</div>':'')+
     pnlSummary+
     actHeader+
-    '<div>'+holdRow+tpRows+buyRow+'</div>';
+    '<div>'+buyRow+tpRows+holdRow+'</div>'; // Buy oldest → TPs → current Holding
 
   document.getElementById('modal-actions').innerHTML=addr?
     '<button class="mbtn dark" onclick="copyAddr(\''+addr+'\');closeModal()" style="flex:1;">📋 Copy</button>'+

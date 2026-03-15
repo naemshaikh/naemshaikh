@@ -2548,7 +2548,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         pos["tp_sold"]        = pos.get("tp_sold", 0) + sell_pct
         pos["banked_pnl_bnb"] = round(pos.get("banked_pnl_bnb", 0.0) + pnl_bnb, 6)  # ✅ accumulate
         # ✅ Store real TP sell events for frontend display
-        _bnb_at_tp = market_cache.get("bnb_price", 0)  # real only
+        _bnb_at_tp = market_cache.get("bnb_price", 0) or market_cache.get("last_bnb_price", 660)  # fallback 660 if cache empty
         _gas_bnb   = DataGuard.get_real_gas_bnb()  # real BSC gas price
         if not isinstance(pos.get("tp_events"), list):
             pos["tp_events"] = []
