@@ -2667,8 +2667,24 @@ function openGroupTradeDetail(encoded){
   document.getElementById('modal-pnl').className='pnl-big '+(g.totalPnlB>=0?'p':'n');
   document.getElementById('modal-pnl').textContent=(g.totalPnlB>=0?'+':'-')+'$'+totalPnlUSD.toFixed(2)+' ('+(pnlPct>=0?'+':'')+pnlPct.toFixed(1)+'%)';
 
-  // Activity rows — GMGN style: har trade ke Buy + Sell dono row
+  // Activity rows — GMGN style: Buy + TP events + final Sell
   const actRows=trades.map(function(t){
+    // TP events rows — pehle render karo (newest first)
+    const _tpEvs=(t.tp_events||[]).slice().reverse();
+    const _tpRows=_tpEvs.map(function(ev){
+      const evUSD=ev.sell_usd>0?'$'+parseFloat(ev.sell_usd).toFixed(2):'—';
+      const evPnlClr=(ev.pnl_pct||0)>=0?'var(--em)':'var(--red)';
+      const evPnl=((ev.pnl_pct||0)>=0?'+':'')+parseFloat(ev.pnl_pct||0).toFixed(1)+'%';
+      return '<div style="display:grid;grid-template-columns:90px 1fr auto;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:8px;">'+
+        '<div>'+
+          '<div style="font-size:11px;font-weight:800;color:var(--gold);">'+(ev.label||'TP Sell')+'</div>'+
+          '<div style="font-size:9px;color:var(--txt3);">partial exit</div>'+
+          '<div style="font-size:9px;color:var(--txt3);">sold '+(ev.sell_pct||0).toFixed(0)+'%</div>'+
+        '</div>'+
+        '<div><div style="font-size:11px;font-weight:700;color:var(--txt1);font-family:JetBrains Mono,monospace;">'+evUSD+'</div></div>'+
+        '<div style="text-align:right;"><div style="font-size:11px;font-weight:800;color:'+evPnlClr+';">'+evPnl+'</div></div>'+
+      '</div>';
+    }).join('');
     const sz=parseFloat(t.size_bnb||0);
     const pnlB=parseFloat(t.pnl_bnb||0);
     const pnlPctT=parseFloat(t.pnl_pct||t.pnl||0);
@@ -2685,6 +2701,7 @@ function openGroupTradeDetail(encoded){
     const gasBNB=parseFloat(t.gas_bnb||t.gas_fee||0)||0.0005;
     const gasUSD=(gasBNB*bnbP).toFixed(3);
     return (
+      _tpRows+
       '<div style="display:grid;grid-template-columns:90px 1fr auto;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:8px;">'+
         '<div>'+
           '<div style="font-size:11px;font-weight:800;color:'+(pnlB>=0?'var(--em)':'var(--red)')+';">'+(t.reason||'Sell')+'</div>'+
