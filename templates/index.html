@@ -920,16 +920,28 @@ async function downloadTrades(count){
     }).join(',');
     csv += line + '\n';
   });
-  var blob = new Blob([csv],{type:'text/csv'});
-  var url  = URL.createObjectURL(blob);
-  var a    = document.createElement('a');
-  a.href   = url;
-  var label= (!count||count==='all')?'all':count;
-  a.download = 'mrblack_trades_'+label+'_'+new Date().toISOString().slice(0,10)+'.csv';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  var label = (!count||count==='all')?'all':count;
+  var filename = 'mrblack_trades_'+label+'_'+new Date().toISOString().slice(0,10)+'.csv';
+  // Android Chrome fix: data URI use karo — blob URL pe click silent fail hota hai
+  try {
+    var blob = new Blob([csv],{type:'text/csv'});
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement('a');
+    a.href   = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+  } catch(e) {
+    // Fallback: data URI (Android safe)
+    var uri = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+    var a2  = document.createElement('a');
+    a2.href = uri;
+    a2.download = filename;
+    document.body.appendChild(a2);
+    a2.click();
+    document.body.removeChild(a2);
+  }
 }
 function setHF(f,el){histFilter=f;document.querySelectorAll('.hf').forEach(b=>b.classList.remove('on'));el.classList.add('on');fetchHistory();}
 async function fetchHistory(){
