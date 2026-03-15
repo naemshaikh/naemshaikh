@@ -2031,7 +2031,7 @@ def _save_session_to_db(session_id: str):
             "win_count":        sess.get("win_count",         0),
             **extra,
             "updated_at":       datetime.utcnow().isoformat()
-        }).execute()
+        }, on_conflict="session_id").execute()
     except Exception as e:
         print(f"⚠️ Session save error: {e}")
 
