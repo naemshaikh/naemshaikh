@@ -2568,6 +2568,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                     _persist_positions()
 
     print(f"AUTO SELL {sell_pct:.0f}%: {address[:10]} PnL:{pnl_pct:+.1f}% [{reason}]")
+    # ✅ Paper balance Supabase mein save karo — restart pe balance reset na ho
+    threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
     # ✅ Full sell → swap monitor se unregister + learn from trade
     if sell_pct >= 100:
         _unregister_position_pair(address)
