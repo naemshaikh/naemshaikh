@@ -2727,7 +2727,6 @@ function openGroupTradeDetail(encoded){
     const gasBNB=parseFloat(t.gas_bnb||t.gas_fee||0)||0.0005;
     const gasUSD=(gasBNB*bnbP).toFixed(3);
     return (
-      _tpRows+
       '<div style="display:grid;grid-template-columns:90px 1fr auto;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:8px;">'+
         '<div>'+
           '<div style="font-size:11px;font-weight:800;color:'+(pnlB>=0?'var(--em)':'var(--red)')+';">'+(t.reason||'Sell')+'</div>'+
@@ -2745,6 +2744,7 @@ function openGroupTradeDetail(encoded){
           '<div style="font-size:9px;color:'+(pnlB>=0?'var(--em)':'var(--red)')+';">'+(pnlPctT>=0?'+':'')+pnlPctT.toFixed(1)+'%</div>'+
         '</div>'+
       '</div>'+
+      _tpRows+
       '<div style="display:grid;grid-template-columns:90px 1fr auto;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.08);gap:8px;">'+
         '<div>'+
           '<div style="font-size:11px;font-weight:800;color:#64C8FF;">Buy</div>'+
