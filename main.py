@@ -690,6 +690,18 @@ def real_buy_token(token_address: str, bnb_amount: float,
         result["error"] = "WALLET_PRIVATE_KEY env nahi set — real trading disabled"
         return result
 
+    # Real wallet balance check — buy se pehle
+    try:
+        _wallet_addr = w3.eth.account.from_key(REAL_PRIVATE_KEY).address
+        _wallet_bal  = float(w3.eth.get_balance(_wallet_addr)) / 1e18
+        _gas_est     = 0.002  # ~0.002 BNB gas reserve
+        if _wallet_bal < bnb_amount + _gas_est:
+            result["error"] = f"Insufficient balance: {_wallet_bal:.4f} BNB < {bnb_amount + _gas_est:.4f} BNB needed"
+            print(f"🛑 REAL BUY BLOCKED: low balance {_wallet_bal:.4f} BNB")
+            return result
+    except Exception as _be:
+        print(f"⚠️ Balance check error: {_be}")
+
     try:
         account  = w3.eth.account.from_key(REAL_PRIVATE_KEY)
         wallet   = account.address
@@ -2235,6 +2247,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     paper_balance = sess.get("paper_balance", 5.0)
     if paper_balance < AUTO_BUY_SIZE_BNB:
         print(f"🛑 Auto-buy BLOCKED: balance={paper_balance:.4f} too low")
+        _log("reject", token_name or address[:8], f"⚠️ Low balance: {paper_balance:.4f} BNB — trade skipped", address)
         return
 
     # ── 80% Capital Cap — 20% gas reserve ──
