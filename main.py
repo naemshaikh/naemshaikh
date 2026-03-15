@@ -4891,9 +4891,10 @@ def _startup_once():
             except Exception as e:
                 print(f"Brain error: {e}")
             try:
-                # AUTO session pre-warm — pehli HTTP request block na ho
+                # AUTO session pre-warm — DB se load karo turant (race condition fix)
                 get_or_create_session(AUTO_SESSION_ID)
-                print("✅ AUTO session ready")
+                _load_session_from_db(AUTO_SESSION_ID)  # paper_balance DB se lo — 5.0 default nahi
+                print(f"✅ AUTO session ready | balance={sessions.get(AUTO_SESSION_ID, {}).get('paper_balance', 5.0):.4f} BNB")
             except Exception as e:
                 print(f"Session error: {e}")
 
