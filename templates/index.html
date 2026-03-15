@@ -838,6 +838,7 @@ function showToast(m){const t=document.getElementById('toast');t.textContent=m;t
 function copyAddr(addr){
   if(navigator.clipboard){navigator.clipboard.writeText(addr).then(()=>showToast('✅ Copied!')).catch(()=>_cf(addr));}else{_cf(addr);}
 }
+function _copyWallet(addr){ copyAddr(addr); }
 function _cf(addr){const t=document.createElement('textarea');t.value=addr;document.body.appendChild(t);t.select();document.execCommand('copy');document.body.removeChild(t);showToast('✅ Copied!');}
 
 // ─── CONNECTION STATUS ───────────────────────────────────────
