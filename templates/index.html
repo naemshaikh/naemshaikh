@@ -332,6 +332,11 @@ function _checkLock(){
       <div class="hdr-c-val" id="h-fg">—</div>
       <div class="hdr-c-lbl">F&amp;G</div>
     </div>
+    <!-- 🔔 Notification Bell -->
+    <div style="position:relative;cursor:pointer;" onclick="openNotifPanel()" id="notif-bell-wrap">
+      <div style="width:36px;height:36px;border-radius:50%;border:1.5px solid var(--line2);background:var(--ink3);display:flex;align-items:center;justify-content:center;font-size:16px;transition:all 0.2s;" id="notif-bell">🔔</div>
+      <div id="notif-badge" style="display:none;position:absolute;top:-2px;right:-2px;min-width:16px;height:16px;border-radius:8px;background:#ff4757;border:2px solid var(--ink);display:none;align-items:center;justify-content:center;font-size:8px;font-weight:900;color:#fff;padding:0 3px;font-family:'JetBrains Mono',monospace;"></div>
+    </div>
     <button id="theme-btn" onclick="toggleTheme()" style="width:32px;height:32px;border-radius:50%;border:1.5px solid var(--line2);background:var(--ink3);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;-webkit-tap-highlight-color:transparent;">🌙</button>
     <div class="live-dot" id="live-dot"></div>
   </div>
@@ -3309,6 +3314,191 @@ async function viewTokenData(){
 
 </script>
 {% endraw %}
+
+
+<!-- ================================================================ -->
+<!-- NOTIFICATION PANEL -->
+<!-- ================================================================ -->
+<style>
+@keyframes blink-red    { 0%,100%{box-shadow:0 0 0 0 rgba(255,71,87,0);} 50%{box-shadow:0 0 0 8px rgba(255,71,87,0.4);} }
+@keyframes blink-yellow { 0%,100%{box-shadow:0 0 0 0 rgba(255,200,0,0);} 50%{box-shadow:0 0 0 8px rgba(255,200,0,0.4);} }
+@keyframes blink-green  { 0%,100%{box-shadow:0 0 0 0 rgba(0,212,170,0);} 50%{box-shadow:0 0 0 8px rgba(0,212,170,0.3);} }
+#notif-bell.blink-red    { animation: blink-red    1s ease-in-out infinite; background:rgba(255,71,87,0.15)!important; border-color:rgba(255,71,87,0.5)!important; }
+#notif-bell.blink-yellow { animation: blink-yellow 1.2s ease-in-out infinite; background:rgba(255,200,0,0.12)!important; border-color:rgba(255,200,0,0.5)!important; }
+#notif-bell.blink-green  { animation: blink-green  1.5s ease-in-out infinite; background:rgba(0,212,170,0.10)!important; border-color:rgba(0,212,170,0.4)!important; }
+.notif-panel-bg  { position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1800;display:none;backdrop-filter:blur(4px); }
+.notif-panel     { position:fixed;top:0;right:0;bottom:0;width:min(360px,100vw);background:var(--ink2);z-index:1900;display:flex;flex-direction:column;transform:translateX(100%);transition:transform 0.35s cubic-bezier(0.32,0.72,0,1);box-shadow:-4px 0 24px rgba(0,0,0,0.4); }
+.notif-panel.open { transform:translateX(0); }
+.notif-hdr       { padding:16px 16px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;flex-shrink:0; }
+.notif-list      { flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:8px 0; }
+.notif-item      { display:flex;gap:10px;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:background 0.15s;position:relative; }
+.notif-item:hover { background:rgba(255,255,255,0.03); }
+.notif-item.unread { background:rgba(255,255,255,0.04); }
+.notif-item.unread::before { content:'';position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:0 2px 2px 0; }
+.notif-item.unread.critical::before { background:#ff4757; }
+.notif-item.unread.warning::before  { background:#ffc800; }
+.notif-item.unread.success::before  { background:#00d4aa; }
+.notif-item.unread.info::before     { background:#64b4ff; }
+.notif-dot { width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:5px; }
+.notif-dot.critical { background:#ff4757; }
+.notif-dot.warning  { background:#ffc800; }
+.notif-dot.success  { background:#00d4aa; }
+.notif-dot.info     { background:#64b4ff; }
+.notif-del-btn { opacity:0;transition:opacity 0.15s;background:rgba(255,71,87,0.15);border:none;border-radius:6px;color:#ff4757;font-size:11px;padding:3px 7px;cursor:pointer;flex-shrink:0; }
+.notif-item:hover .notif-del-btn { opacity:1; }
+</style>
+
+<div class="notif-panel-bg" id="notif-panel-bg" onclick="closeNotifPanel()"></div>
+<div class="notif-panel" id="notif-panel">
+  <div class="notif-hdr">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="font-size:16px;">🔔</span>
+      <span style="font-size:15px;font-weight:800;color:var(--txt1);">Notifications</span>
+      <span id="notif-count-lbl" style="font-size:10px;color:var(--txt3);font-family:'JetBrains Mono',monospace;"></span>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button onclick="markAllRead()" style="font-size:10px;padding:5px 10px;border-radius:8px;background:var(--ink3);border:1px solid var(--line2);color:var(--txt2);cursor:pointer;font-weight:700;">✓ All Read</button>
+      <button onclick="clearAllNotifs()" style="font-size:10px;padding:5px 10px;border-radius:8px;background:rgba(255,71,87,0.1);border:1px solid rgba(255,71,87,0.3);color:#ff4757;cursor:pointer;font-weight:700;">🗑 Clear</button>
+      <button onclick="closeNotifPanel()" style="font-size:14px;padding:5px 10px;border-radius:8px;background:var(--ink3);border:1px solid var(--line2);color:var(--txt2);cursor:pointer;">✕</button>
+    </div>
+  </div>
+  <div class="notif-list" id="notif-list">
+    <div style="text-align:center;padding:40px 20px;color:var(--txt3);font-size:12px;">No notifications yet</div>
+  </div>
+</div>
+
+<script>
+var _notifData = [];
+var _notifUnread = 0;
+
+async function fetchNotifications(){
+  try {
+    const d = await fetchJSON('/notifications', {}, 5000);
+    if(!d) return;
+    _notifData   = d.notifications || [];
+    _notifUnread = d.unread || 0;
+    _renderNotifBadge();
+    _renderNotifList();
+    _updateBellBlink();
+  } catch(e) {}
+}
+
+function _renderNotifBadge(){
+  const badge = document.getElementById('notif-badge');
+  if(!badge) return;
+  if(_notifUnread > 0){
+    badge.textContent = _notifUnread > 99 ? '99+' : _notifUnread;
+    badge.style.display = 'flex';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function _updateBellBlink(){
+  const bell = document.getElementById('notif-bell');
+  if(!bell) return;
+  bell.classList.remove('blink-red','blink-yellow','blink-green');
+  // Check unread notifications severity
+  const unreadNotifs = _notifData.filter(function(n){ return !n.read; });
+  if(!unreadNotifs.length) return;
+  const hasCritical = unreadNotifs.some(function(n){ return n.severity === 'critical'; });
+  const hasWarning  = unreadNotifs.some(function(n){ return n.severity === 'warning'; });
+  const hasSuccess  = unreadNotifs.some(function(n){ return n.severity === 'success'; });
+  if(hasCritical)      bell.classList.add('blink-red');
+  else if(hasWarning)  bell.classList.add('blink-yellow');
+  else if(hasSuccess)  bell.classList.add('blink-green');
+}
+
+function _renderNotifList(){
+  const list = document.getElementById('notif-list');
+  if(!list) return;
+  if(!_notifData.length){
+    list.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--txt3);font-size:12px;">No notifications yet</div>';
+    return;
+  }
+  var html = '';
+  _notifData.forEach(function(n){
+    const isUnread = !n.read;
+    const sev = n.severity || 'info';
+    const dotCls = 'notif-dot '+sev;
+    const itemCls = 'notif-item' + (isUnread ? ' unread '+sev : '');
+    html += '<div class="'+itemCls+'" onclick="readNotif(''+n.id+'')" data-id="'+n.id+'">'+
+      '<div class="'+dotCls+'" style="margin-top:6px;"></div>'+
+      '<div style="flex:1;min-width:0;">'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:3px;">'+
+          '<span style="font-size:12px;font-weight:'+(isUnread?'800':'600')+';color:var(--txt1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+n.title+'</span>'+
+          '<span style="font-size:9px;color:var(--txt3);font-family:'JetBrains Mono',monospace;flex-shrink:0;">'+n.ts+'</span>'+
+        '</div>'+
+        '<div style="font-size:11px;color:var(--txt2);line-height:1.4;word-break:break-word;">'+n.detail+'</div>'+
+        (n.token ? '<div style="font-size:9px;color:var(--txt3);margin-top:3px;font-family:'JetBrains Mono',monospace;">'+n.token+'</div>' : '')+
+      '</div>'+
+      '<button class="notif-del-btn" onclick="deleteNotif(event,''+n.id+'')">✕</button>'+
+    '</div>';
+  });
+  list.innerHTML = html;
+  const countLbl = document.getElementById('notif-count-lbl');
+  if(countLbl) countLbl.textContent = _notifData.length + ' total';
+}
+
+function openNotifPanel(){
+  document.getElementById('notif-panel').classList.add('open');
+  document.getElementById('notif-panel-bg').style.display = 'block';
+}
+
+function closeNotifPanel(){
+  document.getElementById('notif-panel').classList.remove('open');
+  document.getElementById('notif-panel-bg').style.display = 'none';
+}
+
+async function readNotif(id){
+  try {
+    await fetch('/notifications/read', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id: id})});
+    const n = _notifData.find(function(x){ return x.id === id; });
+    if(n){ n.read = true; _notifUnread = Math.max(0, _notifUnread-1); }
+    _renderNotifBadge();
+    _renderNotifList();
+    _updateBellBlink();
+  } catch(e) {}
+}
+
+async function markAllRead(){
+  try {
+    await fetch('/notifications/read', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id:'all'})});
+    _notifData.forEach(function(n){ n.read = true; });
+    _notifUnread = 0;
+    _renderNotifBadge();
+    _renderNotifList();
+    _updateBellBlink();
+  } catch(e) {}
+}
+
+async function deleteNotif(e, id){
+  e.stopPropagation();
+  try {
+    await fetch('/notifications/delete', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id: id})});
+    _notifData = _notifData.filter(function(n){ return n.id !== id; });
+    _notifUnread = _notifData.filter(function(n){ return !n.read; }).length;
+    _renderNotifBadge();
+    _renderNotifList();
+    _updateBellBlink();
+  } catch(e2) {}
+}
+
+async function clearAllNotifs(){
+  if(!confirm('Saari notifications delete karein?')) return;
+  try {
+    await fetch('/notifications/delete', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id:'all'})});
+    _notifData = []; _notifUnread = 0;
+    _renderNotifBadge();
+    _renderNotifList();
+    _updateBellBlink();
+  } catch(e) {}
+}
+
+// Fetch notifications every 10 seconds
+fetchNotifications();
+setInterval(fetchNotifications, 10000);
+</script>
 
 </body>
 </html>

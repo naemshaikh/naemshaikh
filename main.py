@@ -698,6 +698,7 @@ def real_buy_token(token_address: str, bnb_amount: float,
         if _wallet_bal < bnb_amount + _gas_est:
             result["error"] = f"Insufficient balance: {_wallet_bal:.4f} BNB < {bnb_amount + _gas_est:.4f} BNB needed"
             print(f"🛑 REAL BUY BLOCKED: low balance {_wallet_bal:.4f} BNB")
+            _push_notif("critical", "🔴 Insufficient Balance", f"Balance: {_wallet_bal:.4f} BNB | Needed: {bnb_amount + _gas_est:.4f} BNB — Top up wallet!", token_address[:10], token_address)
             return result
     except Exception as _be:
         print(f"⚠️ Balance check error: {_be}")
@@ -752,10 +753,22 @@ def real_buy_token(token_address: str, bnb_amount: float,
         else:
             result["error"] = "Transaction reverted"
             print(f"❌ REAL BUY reverted: {tx_hash.hex()[:20]}")
+            _push_notif("critical", "🔴 Buy Reverted", f"Transaction reverted on-chain | TX: {tx_hash.hex()[:16]}...", token_address[:10], token_address)
 
     except Exception as e:
         result["error"] = str(e)[:200]
         print(f"❌ REAL BUY error: {e}")
+        _err_str = str(e)[:100]
+        if "timeout" in _err_str.lower() or "timed out" in _err_str.lower():
+            _push_notif("critical", "🔴 Buy Timeout", f"Transaction stuck — not confirmed in 30s | {_err_str}", token_address[:10], token_address)
+        elif "nonce" in _err_str.lower():
+            _push_notif("critical", "🔴 Nonce Error", f"Nonce conflict — pending transaction stuck | {_err_str}", token_address[:10], token_address)
+        elif "gas" in _err_str.lower() or "fee" in _err_str.lower():
+            _push_notif("warning", "🟡 Gas Error", f"Gas fee issue on buy | {_err_str}", token_address[:10], token_address)
+        elif "slippage" in _err_str.lower() or "INSUFFICIENT_OUTPUT" in _err_str:
+            _push_notif("warning", "🟡 Slippage Too High", f"Price moved too fast — buy failed | {_err_str}", token_address[:10], token_address)
+        else:
+            _push_notif("critical", "🔴 Buy Failed", f"{_err_str}", token_address[:10], token_address)
 
     return result
 
@@ -837,10 +850,16 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
             print(f"✅ REAL SELL confirmed: {tx_hash.hex()[:20]}...")
         else:
             result["error"] = "Sell reverted"
+            _push_notif("critical", "🔴 Sell Reverted", f"Sell transaction reverted — position still open!", token_address[:10], token_address)
 
     except Exception as e:
         result["error"] = str(e)[:200]
         print(f"❌ REAL SELL error: {e}")
+        _sell_err = str(e)[:100]
+        if "timeout" in _sell_err.lower():
+            _push_notif("critical", "🔴 Sell Timeout", f"Sell stuck — position may still be open! | {_sell_err}", token_address[:10], token_address)
+        else:
+            _push_notif("critical", "🔴 Sell Failed", f"{_sell_err}", token_address[:10], token_address)
 
     return result
 
@@ -2072,6 +2091,59 @@ new_pairs_queue: deque = deque(maxlen=30)
 # Har action yahan log hoga — UI pe live dikhega
 _bot_log: deque = deque(maxlen=100)  # last 100 events
 
+# ── NOTIFICATION SYSTEM ──
+import uuid as _uuid
+_notifications: list = []  # [{id, type, severity, title, detail, token, address, ts, read}]
+_NOTIF_MAX = 10000
+
+def _push_notif(severity: str, title: str, detail: str, token: str = "", address: str = ""):
+    """
+    severity: "critical" (red blink) | "warning" (yellow blink) | "success" (green) | "info" (blue)
+    """
+    notif = {
+        "id":       str(_uuid.uuid4())[:8],
+        "severity": severity,
+        "title":    title,
+        "detail":   detail,
+        "token":    token,
+        "address":  address,
+        "ts":       _now_ist(),
+        "ts_epoch": __import__("time").time(),
+        "read":     False,
+    }
+    _notifications.insert(0, notif)
+    if len(_notifications) > _NOTIF_MAX:
+        _notifications.pop()
+    # Save to Supabase in background
+    threading.Thread(target=_save_notifs_to_db, daemon=True).start()
+
+def _save_notifs_to_db():
+    if not supabase: return
+    try:
+        supabase.table("memory").upsert({
+            "session_id": "MRBLACK_NOTIFICATIONS",
+            "role":       "system",
+            "content":    "",
+            "history":    __import__("json").dumps(_notifications[:_NOTIF_MAX]),
+            "updated_at": __import__("datetime").datetime.utcnow().isoformat(),
+        }, on_conflict="session_id").execute()
+    except Exception as _e:
+        pass  # Silent fail — notifications are best-effort
+
+def _load_notifs_from_db():
+    global _notifications
+    if not supabase: return
+    try:
+        res = supabase.table("memory").select("history").eq("session_id", "MRBLACK_NOTIFICATIONS").execute()
+        if res.data and res.data[0].get("history"):
+            raw = res.data[0]["history"]
+            loaded = __import__("json").loads(raw) if isinstance(raw, str) else raw
+            if isinstance(loaded, list):
+                _notifications = loaded[:_NOTIF_MAX]
+                print(f"🔔 Notifications loaded: {len(_notifications)}")
+    except Exception as _e:
+        pass
+
 def _log(event_type: str, token: str, detail: str, address: str = ""):
     """Bot event log mein entry add karo"""
     _bot_log.appendleft({
@@ -2265,6 +2337,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     _daily_limit = _balance * (CHECKLIST_SETTINGS.get("daily_loss_pct", 50.0) / 100)
     if sess.get("daily_loss", 0) >= _daily_limit:
         print(f"🛑 Auto-buy BLOCKED: daily_loss={sess.get('daily_loss',0):.4f} BNB >= {_daily_limit:.4f} BNB")
+        _push_notif("warning", "🟡 Daily Loss Limit", f"Daily loss limit reached: {sess.get('daily_loss',0):.4f} BNB — Trading paused till midnight UTC")
         return
     if len(auto_trade_stats["running_positions"]) >= AUTO_MAX_POSITIONS:
         print(f"🛑 Auto-buy BLOCKED: max {AUTO_MAX_POSITIONS} positions reached")
@@ -2404,6 +2477,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     }
     auto_trade_stats["total_auto_buys"] += 1
     auto_trade_stats["last_action"] = f"BUY {token_name or address[:10]}"
+    _push_notif("success", f"🟢 Buy Executed", f"{token_name or address[:10]} @ {entry_price:.2e} BNB | Size: {size_bnb:.4f} BNB", token_name or address[:10], address)
     _log("buy", token_name or address[:10], f"🟢 BUY {size_bnb:.4f} BNB @ ${entry_price:.8f}", address)
     # ✅ Pair register karo — known pair pass karo taaki BSC call na ho (instant!)
     _known_pair = (checklist_result.get("dex_data") or {}).get("pair_address", "")
@@ -2510,6 +2584,10 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         except Exception: pass
 
     auto_trade_stats["last_action"] = f"SELL {sell_pct:.0f}% {token} PnL:{pnl_pct:+.1f}%"
+    if "SL" in reason or "Rug" in reason or "Dump" in reason:
+        _push_notif("warning", f"🟡 Stop Loss Hit", f"{token} | PnL: {pnl_pct:+.1f}% | Reason: {reason}", token, address)
+    elif pnl_pct >= 0:
+        _push_notif("success", f"🟢 Take Profit", f"{token} sold {sell_pct:.0f}% | PnL: {pnl_pct:+.1f}% | {reason}", token, address)
     _emoji = "🟢" if pnl_pct >= 0 else "🔴"
     _log("sell", token, f"{_emoji} SELL {sell_pct:.0f}% · PnL {pnl_pct:+.1f}% · {reason}", address)
 
@@ -4891,6 +4969,10 @@ def _startup_once():
             except Exception as e:
                 print(f"Brain error: {e}")
             try:
+                _load_notifs_from_db()
+            except Exception as e:
+                print(f"Notif load error: {e}")
+            try:
                 # AUTO session pre-warm — DB se load karo turant (race condition fix)
                 get_or_create_session(AUTO_SESSION_ID)
                 _load_session_from_db(AUTO_SESSION_ID)  # paper_balance DB se lo — 5.0 default nahi
@@ -5326,6 +5408,41 @@ def readiness():
 @app.route("/activity", methods=["GET"])
 def activity_route():
     return jsonify({"activity": list(_bot_log)})
+
+@app.route("/notifications", methods=["GET"])
+def notifications_route():
+    return jsonify({
+        "notifications": _notifications[:1000],
+        "unread": sum(1 for n in _notifications if not n.get("read", False)),
+        "total":  len(_notifications),
+    })
+
+@app.route("/notifications/read", methods=["POST"])
+def notifications_read():
+    data = request.get_json() or {}
+    nid  = data.get("id")  # specific id ya "all"
+    if nid == "all":
+        for n in _notifications:
+            n["read"] = True
+    else:
+        for n in _notifications:
+            if n.get("id") == nid:
+                n["read"] = True
+                break
+    threading.Thread(target=_save_notifs_to_db, daemon=True).start()
+    return jsonify({"status": "ok"})
+
+@app.route("/notifications/delete", methods=["POST"])
+def notifications_delete():
+    global _notifications
+    data = request.get_json() or {}
+    nid  = data.get("id")
+    if nid == "all":
+        _notifications = []
+    else:
+        _notifications = [n for n in _notifications if n.get("id") != nid]
+    threading.Thread(target=_save_notifs_to_db, daemon=True).start()
+    return jsonify({"status": "ok", "remaining": len(_notifications)})
 
 @app.route("/trade-history", methods=["GET"])
 def trade_history_route():
