@@ -1724,7 +1724,7 @@ def _save_trade_history_to_db():
             "session_id":    "MRBLACK_REAL_TRADES",
             "trade_history": json.dumps(real_hist[-5000:]),
             "updated_at":    datetime.utcnow().isoformat(),
-        }).execute()
+        }, on_conflict="session_id").execute()
 
         print(f"💾 Trade history saved: {len(paper_hist)} paper | {len(real_hist)} real")
     except Exception as e:
