@@ -1636,9 +1636,10 @@ window._renderPnlCard = function(_as){
     pEl.textContent=_fmt(pnlPct); pEl.style.color=_col(pnlPct);
     if(pUsdEl){ pUsdEl.textContent=_bnbNow>0?(_usd(pnlBnb)+' realized'):''; }
     if(wrBadge){ wrBadge.textContent=wr+'% WR'; wrBadge.style.color=wr>=50?'var(--em)':'var(--red)'; }
+    var uBnbLive = parseFloat((_as&&_as.unrealized_pnl_bnb)||0);
     if(statT)  statT.textContent=filtered.length;
     if(statR){ statR.textContent=_usd(pnlBnb); statR.style.color=_col(pnlBnb); }
-    if(statU){ statU.textContent='—'; statU.style.color='var(--txt3)'; }
+    if(statU){ statU.textContent=uBnbLive!==0?_usd(uBnbLive):'—'; statU.style.color=_col(uBnbLive); }
     if(winsLbl) winsLbl.textContent='W: '+wins;
     if(lossLbl) lossLbl.textContent='L: '+losses;
     if(wrBar)  wrBar.style.width=wr+'%';
