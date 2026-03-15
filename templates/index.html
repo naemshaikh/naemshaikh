@@ -682,10 +682,10 @@ function _checkLock(){
   <div style="height:14px;"></div>
   <div class="sep" style="display:flex;align-items:center;justify-content:space-between;padding-right:14px;">
     <span>Trading History</span>
-    <div style="display:flex;gap:5px;">
-      <button onclick="confirmDownload(100)" style="background:linear-gradient(135deg,rgba(0,212,170,0.18),rgba(0,212,170,0.08));border:1px solid rgba(0,212,170,0.35);color:var(--em);font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;padding:5px 10px;border-radius:8px;cursor:pointer;letter-spacing:0.5px;">⬇ 100</button>
-      <button onclick="confirmDownload(200)" style="background:linear-gradient(135deg,rgba(0,212,170,0.18),rgba(0,212,170,0.08));border:1px solid rgba(0,212,170,0.35);color:var(--em);font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;padding:5px 10px;border-radius:8px;cursor:pointer;letter-spacing:0.5px;">⬇ 200</button>
-      <button onclick="confirmDownload('all')" style="background:linear-gradient(135deg,rgba(100,180,255,0.18),rgba(100,180,255,0.08));border:1px solid rgba(100,180,255,0.35);color:#64b4ff;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;padding:5px 10px;border-radius:8px;cursor:pointer;letter-spacing:0.5px;">⬇ ALL</button>
+    <div style="display:flex;gap:6px;">
+      <button onclick="confirmDownload(100)" style="background:linear-gradient(135deg,#00d4aa,#00b48a);border:none;color:#000;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:900;padding:7px 14px;border-radius:20px;cursor:pointer;letter-spacing:0.8px;box-shadow:0 2px 8px rgba(0,212,170,0.35);transition:all 0.15s;" onmousedown="this.style.transform='scale(0.95)'" onmouseup="this.style.transform=''">⬇ 100</button>
+      <button onclick="confirmDownload(200)" style="background:linear-gradient(135deg,#00d4aa,#00b48a);border:none;color:#000;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:900;padding:7px 14px;border-radius:20px;cursor:pointer;letter-spacing:0.8px;box-shadow:0 2px 8px rgba(0,212,170,0.35);transition:all 0.15s;" onmousedown="this.style.transform='scale(0.95)'" onmouseup="this.style.transform=''">⬇ 200</button>
+      <button onclick="confirmDownload('all')" style="background:linear-gradient(135deg,#64b4ff,#3d8fd4);border:none;color:#000;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:900;padding:7px 14px;border-radius:20px;cursor:pointer;letter-spacing:0.8px;box-shadow:0 2px 8px rgba(100,180,255,0.35);transition:all 0.15s;" onmousedown="this.style.transform='scale(0.95)'" onmouseup="this.style.transform=''">⬇ ALL</button>
     </div>
   </div>
 
@@ -696,8 +696,8 @@ function _checkLock(){
     <div style="font-size:18px;font-weight:800;color:var(--txt1);margin-bottom:6px;" id="dl-modal-title">Download Trades</div>
     <div style="font-size:12px;color:var(--txt3);font-family:'JetBrains Mono',monospace;margin-bottom:24px;" id="dl-modal-sub">CSV file will be saved to your device</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-      <button onclick="closeDlModal()" style="background:var(--ink3);border:1px solid var(--line2);color:var(--txt2);font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;padding:14px;border-radius:12px;cursor:pointer;">✕ Cancel</button>
-      <button id="dl-confirm-btn" onclick="doDownload()" style="background:linear-gradient(135deg,rgba(0,212,170,0.25),rgba(0,212,170,0.12));border:1px solid rgba(0,212,170,0.4);color:var(--em);font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;padding:14px;border-radius:12px;cursor:pointer;">⬇ Download</button>
+      <button onclick="closeDlModal()" style="background:var(--ink3);border:1.5px solid var(--line2);color:var(--txt2);font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;padding:16px;border-radius:14px;cursor:pointer;transition:all 0.15s;">✕ Cancel</button>
+      <button id="dl-confirm-btn" onclick="doDownload()" style="background:linear-gradient(135deg,#00d4aa,#00b48a);border:none;color:#000;font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:900;padding:16px;border-radius:14px;cursor:pointer;box-shadow:0 4px 15px rgba(0,212,170,0.4);letter-spacing:0.5px;transition:all 0.15s;" onmousedown="this.style.transform='scale(0.97)'" onmouseup="this.style.transform=''">⬇ DOWNLOAD CSV</button>
     </div>
   </div>
   <div class="feed-card">
