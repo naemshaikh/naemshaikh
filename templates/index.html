@@ -1484,23 +1484,34 @@ async function fetchRealBalance(){
       return;
     }
     const bnbP = window._bnbReal || 0;
-    // Step 2: Backend se balance try karo
-    // Step 3: Pehle BSCScan browser se try karo (Render RPC block hota hai)
-    try{
-      const bscR = await fetch('https://api.bscscan.com/api?module=account&action=balance&address='+addr+'&tag=latest');
-      if(bscR.ok){
-        const bscD = await bscR.json();
-        if(bscD.status === '1'){
-          const bnb = parseFloat(bscD.result) / 1e18;
-          document.getElementById('b-real-bal').textContent = bnb.toFixed(4)+' BNB';
-          document.getElementById('b-real-usd').textContent = bnbP > 0
-            ? 'approx $'+(bnb*bnbP).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})
-            : 'approx $0.00';
-          return;
+    // Step 2: Public BSC RPC se balance lo (browser se direct — BSCScan free nahi)
+    const _rpcs = [
+      'https://bsc-dataseed.bnbchain.org',
+      'https://bsc-dataseed1.binance.org',
+      'https://rpc.ankr.com/bsc',
+      'https://bsc.drpc.org',
+    ];
+    for(const _rpc of _rpcs){
+      try{
+        const _res = await fetch(_rpc, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({jsonrpc:'2.0',method:'eth_getBalance',params:[addr,'latest'],id:1})
+        });
+        if(_res.ok){
+          const _d = await _res.json();
+          if(_d.result){
+            const bnb = parseInt(_d.result, 16) / 1e18;
+            document.getElementById('b-real-bal').textContent = bnb.toFixed(4)+' BNB';
+            document.getElementById('b-real-usd').textContent = bnbP > 0
+              ? 'approx $'+(bnb*bnbP).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})
+              : 'approx $0.00';
+            return;
+          }
         }
-      }
-    }catch(e2){}
-    // Step 4: Backend se try karo
+      }catch(_re){}
+    }
+    // Step 3: RPC fail — backend try karo
     if(info && info.bnb > 0){
       document.getElementById('b-real-bal').textContent = info.bnb.toFixed(4)+' BNB';
       document.getElementById('b-real-usd').textContent = bnbP > 0
@@ -1508,7 +1519,7 @@ async function fetchRealBalance(){
         : 'approx $'+info.usd.toFixed(2);
       return;
     }
-    // Step 5: Sab fail
+    // Step 4: Sab fail
     document.getElementById('b-real-bal').textContent = '0.0000 BNB';
     document.getElementById('b-real-usd').textContent = 'approx $0.00';
   }catch(e){}
