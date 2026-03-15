@@ -313,13 +313,13 @@ threading.Thread(target=lambda: print(f"✅ BSC: {w3.is_connected()}"), daemon=T
 
 # ── Auto-reconnect w3 if connection drops ──
 def _w3_health_loop():
+    global w3
     import time as _t
     while True:
         _t.sleep(60)
         try:
             if not w3.is_connected():
                 print("⚠️ BSC RPC disconnected — reconnecting...")
-                global w3
                 w3 = _connect_w3()
         except Exception as _e:
             print(f"⚠️ w3 health check error: {_e}")
