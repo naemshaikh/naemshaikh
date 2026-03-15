@@ -3348,7 +3348,9 @@ async function viewTokenData(){
 .notif-item:hover .notif-del-btn { opacity:1; }
 </style>
 
-<div class="notif-panel-bg" id="notif-panel-bg" onclick="closeNotifPanel()"></div>
+
+
+<div class="notif-panel-bg" id="notif-panel-bg" onclick="closeNotifPanel()" style="display:none;"></div>
 <div class="notif-panel" id="notif-panel">
   <div class="notif-hdr">
     <div style="display:flex;align-items:center;gap:8px;">
@@ -3496,9 +3498,8 @@ async function clearAllNotifs(){
 }
 
 // Fetch notifications every 10 seconds
-fetchNotifications();
+setTimeout(fetchNotifications, 2000);
 setInterval(fetchNotifications, 10000);
 </script>
-
 </body>
 </html>
