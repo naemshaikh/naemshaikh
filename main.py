@@ -4930,8 +4930,15 @@ def _load_all_settings_from_db():
         print("⚠️ _load_all_settings_from_db: supabase not connected")
         return
     try:
-        res = supabase.table("memory").select("*").eq("session_id", "MRBLACK_SETTINGS").execute()
-        rows = res.data if res and res.data else []
+        import time as _t
+        rows = []
+        for _attempt in range(3):  # 3 retries
+            res = supabase.table("memory").select("*").eq("session_id", "MRBLACK_SETTINGS").execute()
+            rows = res.data if res and res.data else []
+            if rows:
+                break
+            print(f"⚙️ Settings not found (attempt {_attempt+1}/3) — retrying in 2s...")
+            _t.sleep(2)
         if not rows:
             print("⚙️ No saved settings found — using defaults")
             return
