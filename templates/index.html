@@ -1487,13 +1487,17 @@ async function fetchRealBalance(){
       return;
     }
 
-    // Fallback agar bnb=0 (wallet empty hai ya RPC fail)
+    // Fallback agar bnb=0
     if(info && info.wallet){
       document.getElementById('b-real-bal').textContent = '0.0000 BNB';
-      document.getElementById('b-real-usd').textContent = 'approx $'+info.usd.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+      if(info.error && info.error.includes('failed')){
+        document.getElementById('b-real-usd').textContent = '⚠️ RPC fetch failed';
+      } else {
+        document.getElementById('b-real-usd').textContent = 'approx $0.00 (empty wallet)';
+      }
     } else {
       document.getElementById('b-real-bal').textContent = '— BNB';
-      document.getElementById('b-real-usd').textContent = 'Add MORALIS_API_KEY in Render';
+      document.getElementById('b-real-usd').textContent = 'BSC_WALLET env set karo';
     }
   }catch(e){}
 }

@@ -5359,9 +5359,11 @@ def auto_stats_route():
     sess        = get_or_create_session(AUTO_SESSION_ID)
     # BUG FIX: wins/losses trade_history se calculate karo grouped by position
     # (partial TP ke baad SL pe counter galat tha — ab total pnl_bnb per position se)
-    _hist_all = auto_trade_stats.get("trade_history", [])
+    _all_hist = auto_trade_stats.get("trade_history", [])
+    # Sirf current mode ki trades
+    _mode_hist = [t for t in _all_hist if t.get("mode", "paper") == TRADE_MODE]
     _pos_pnl  = {}
-    for _t in _hist_all:
+    for _t in _mode_hist:
         _key = _t.get("address", "") + "|" + _t.get("bought_at", "")[:16]
         _pos_pnl[_key] = _pos_pnl.get(_key, 0) + float(_t.get("pnl_bnb", 0) or 0)
     if _pos_pnl:
@@ -5457,7 +5459,7 @@ def auto_stats_route():
         "last_action":     auto_trade_stats.get("last_action", ""),
         "open_trades":     open_trades,
         "positions":       {t["address"]: t for t in open_trades},
-        "trade_history":   list(reversed(auto_trade_stats.get("trade_history", [])[-5000:])),
+        "trade_history":   list(reversed([t for t in auto_trade_stats.get("trade_history", []) if t.get("mode", "paper") == TRADE_MODE][-5000:])),
         "learning_cycles": brain.get("total_learning_cycles", 0),
         "new_pairs_found": len(new_pairs_queue),
         "daily_loss":      round(sess.get("daily_loss", 0), 4),
