@@ -663,9 +663,9 @@ def _anti_mev_slippage(buy_tax: float = 0.0, sell_tax: float = 0.0) -> int:
     MEV sandwich profitable tabhi hota hai jab slippage tight ho.
     High random slippage = MEV bot ke liye unprofitable.
     """
-    base    = max(buy_tax + sell_tax + 5.0, 12.0)   # min 12%
-    noise   = _random.uniform(1.0, 5.0)              # 1-5% random noise
-    slippage = min(round(base + noise), 49)           # max 49%
+    base    = max(buy_tax + sell_tax + 3.0, 15.0)   # min 15%
+    noise   = _random.uniform(0.5, 2.0)              # 0.5-2% random noise (anti-MEV)
+    slippage = min(round(base + noise), 20)           # max 20%
     return int(slippage)
 
 def _get_gas_price_fast() -> int:
@@ -673,9 +673,9 @@ def _get_gas_price_fast() -> int:
     try:
         gp = w3.eth.gas_price
         # 10% above current = fast lane
-        return int(gp * 1.1)
+        return int(gp * 1.2)
     except Exception:
-        return w3.to_wei(5, "gwei")  # 5 gwei fallback
+        return w3.to_wei(5, "gwei")  # 5 gwei fallback (max speed)
 
 def real_buy_token(token_address: str, bnb_amount: float,
                    buy_tax: float = 0.0, sell_tax: float = 0.0) -> dict:
