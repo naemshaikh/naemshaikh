@@ -5125,29 +5125,16 @@ def _startup_once():
                             _pdb_raw = _row.get("pattern_database", "{}")
                             _pdb = json.loads(_pdb_raw) if isinstance(_pdb_raw, str) else (_pdb_raw or {})
                             if isinstance(_pdb, dict):
-                                auto_trade_stats["total_auto_buys"]  = _pdb.get("total_buys", 0)
-                                auto_trade_stats["total_auto_sells"] = _pdb.get("total_sells", 0)
-                                auto_trade_stats["auto_pnl_total"]   = _pdb.get("pnl_total", 0.0)
-                                auto_trade_stats["last_action"]      = _pdb.get("last_action", "")
-                                # trade_history overwrite mat karo — _load_trade_history_from_db
-                                # pehle se sahi data load kar chuka hai alag tables se
-                                # Sirf agar RAM mein kuch nahi hai tab fallback karo
+                                # ✅ FIX: Stats overwrite nahi karo — _load_session_from_db pehle se sahi load kar chuka hai
+                                # Sirf trade_history fallback karo agar RAM mein kuch nahi
                                 _th = _pdb.get("trade_history", [])
                                 if not auto_trade_stats.get("trade_history") and isinstance(_th, list) and _th:
                                     auto_trade_stats["trade_history"] = list(_th)
-                                auto_trade_stats["wins"]         = _pdb.get("wins", 0)
-                                auto_trade_stats["losses"]       = _pdb.get("losses", 0)
-                                _saved_td = _pdb.get("today_date", "")
-                                _cur_td   = datetime.utcnow().strftime("%Y-%m-%d")
-                                if _saved_td == _cur_td:
-                                    auto_trade_stats["today_wins"]   = _pdb.get("today_wins",   0)
-                                    auto_trade_stats["today_losses"] = _pdb.get("today_losses", 0)
-                                    auto_trade_stats["today_pnl"]    = _pdb.get("today_pnl",    0.0)
-                                    auto_trade_stats["today_date"]   = _cur_td
+                                # Sirf total_scanned update karo agar zyada hai
                                 _sc = _pdb.get("total_scanned", 0)
-                                if _sc > 0:
+                                if _sc > 0 and _sc > brain.get("total_tokens_discovered_ever", 0):
                                     brain["total_tokens_discovered_ever"] = _sc
-                                print(f"✅ Auto stats restored: buys={auto_trade_stats['total_auto_buys']} sells={auto_trade_stats['total_auto_sells']} wins={auto_trade_stats['wins']} losses={auto_trade_stats['losses']} history={len(auto_trade_stats['trade_history'])}")
+                                print(f"✅ Positions restore done | history={len(auto_trade_stats['trade_history'])} wins={auto_trade_stats['wins']} losses={auto_trade_stats['losses']}")
                         except Exception as _pdb_err:
                             print(f"⚠️ Auto stats restore error: {_pdb_err}")
                         if _saved:
