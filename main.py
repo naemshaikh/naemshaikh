@@ -4802,6 +4802,7 @@ def _persist_settings():
     try:
         supabase.table("memory").upsert({
             "session_id": "MRBLACK_SETTINGS",
+            "role":       "system",
             "content": json.dumps({
                 "buy_amount":    AUTO_BUY_SIZE_BNB,
                 "max_positions": AUTO_MAX_POSITIONS,
