@@ -2545,6 +2545,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
      _orig_sz = pos.get("orig_size_bnb", size)
      _total_pnl_bnb_trade = round(pos.get("banked_pnl_bnb", 0.0), 6)
      _total_pnl_pct_trade = round((_total_pnl_bnb_trade / _orig_sz * 100), 2) if _orig_sz > 0 else pnl_pct
+     _gas_bnb_sell = DataGuard.get_real_gas_bnb()
      auto_trade_stats["trade_history"].append({
         "token":      token,
         "address":    address,
@@ -2553,6 +2554,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         "pnl_pct":    _total_pnl_pct_trade,
         "pnl_bnb":    _total_pnl_bnb_trade,
         "size_bnb":   _orig_sz,
+        "gas_bnb":    _gas_bnb_sell,
         "bought_usd": _saved_bought_usd if _saved_bought_usd else round(_orig_sz * _bnb_at_sell, 2),
         "sold_usd":   round(max(0.0, (_saved_bought_usd / _bnb_at_sell if _bnb_at_sell > 0 else _orig_sz) + _total_pnl_bnb_trade) * _bnb_at_sell, 2) if _bnb_at_sell > 0 else 0,
         "bought_at":  bought_at_str,
