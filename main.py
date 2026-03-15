@@ -494,7 +494,7 @@ def _save_user_profile():
                 "user_rules":     user_profile.get("user_rules", [])[-30:],
             }),
             "updated_at": datetime.utcnow().isoformat()
-        }).execute()
+        }, on_conflict="session_id").execute()
     except Exception as e:
         print(f"User profile save error: {e}")
 
@@ -3128,7 +3128,7 @@ def _save_brain_to_db():
                 "rug_dna":        _rug_dna[-100:],
                 "dev_blacklist":  dict(_dev_blacklist),
             })
-        }).execute()
+        }, on_conflict="session_id").execute()
         print(f"🧠 Brain saved (cycle #{brain['total_learning_cycles']})")
     except Exception as e:
         print(f"⚠️ Brain save error: {e}")
@@ -3476,7 +3476,7 @@ def continuous_learning():
                             "role":       "system",
                             "content":    str(cycle),
                             "updated_at": datetime.utcnow().isoformat()
-                        }).execute()
+                        }, on_conflict="session_id").execute()
                 except Exception: pass
 
             # Deep LLM + brain save — har 10 min
