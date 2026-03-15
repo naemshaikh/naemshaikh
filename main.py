@@ -1701,42 +1701,72 @@ def is_token_blacklisted(token_address: str) -> bool:
 # Creator + tax pattern + liq = unique rug signature
 # Same DNA wala naya token → auto reject
 # ========== TRADE HISTORY — SUPABASE PERMANENT STORAGE ==========
-_TRADES_SESSION_ID = "MRBLACK_TRADE_HISTORY"
+_TRADES_SESSION_ID      = "MRBLACK_TRADE_HISTORY"       # paper trades — memory table
+_REAL_TRADES_TABLE      = "real_trade_history"           # real trades — alag table
 
 def _save_trade_history_to_db():
-    """Har trade ke baad Supabase mein permanently save karo"""
+    """Har trade ke baad Supabase mein permanently save karo — paper aur real alag tables"""
     if not supabase: return
     try:
-        hist = auto_trade_stats.get("trade_history", [])
+        all_hist   = auto_trade_stats.get("trade_history", [])
+        paper_hist = [t for t in all_hist if t.get("mode", "paper") == "paper"]
+        real_hist  = [t for t in all_hist if t.get("mode", "paper") == "real"]
+
+        # Paper — memory table mein
         supabase.table("memory").upsert({
             "session_id":    _TRADES_SESSION_ID,
-            "trade_history": json.dumps(hist[-5000:]),
+            "trade_history": json.dumps(paper_hist[-5000:]),
             "updated_at":    datetime.utcnow().isoformat(),
         }).execute()
-        print(f"💾 Trade history saved: {len(hist)} trades")
+
+        # Real — alag table mein
+        supabase.table(_REAL_TRADES_TABLE).upsert({
+            "session_id":    "MRBLACK_REAL_TRADES",
+            "trade_history": json.dumps(real_hist[-5000:]),
+            "updated_at":    datetime.utcnow().isoformat(),
+        }).execute()
+
+        print(f"💾 Trade history saved: {len(paper_hist)} paper | {len(real_hist)} real")
     except Exception as e:
         print(f"⚠️ Trade history save error: {e}")
 
 def _load_trade_history_from_db():
-    """Startup pe Supabase se history load karo"""
+    """Startup pe Supabase se history load karo — paper aur real alag tables"""
     if not supabase: return
     try:
-        res = supabase.table("memory").select("trade_history").eq("session_id", _TRADES_SESSION_ID).execute()
-        if res.data:
-            raw = res.data[0].get("trade_history")
-            if raw:
-                hist = json.loads(raw) if isinstance(raw, str) else raw
-                if isinstance(hist, list) and hist:
-                    auto_trade_stats["trade_history"] = hist
-                    # mode filter — purani trades default "paper" hain
-                    _cur_mode = TRADE_MODE
-                    _mhist = [t for t in hist if t.get("mode", "paper") == _cur_mode]
-                    wins   = sum(1 for t in _mhist if t.get("result") == "win")
-                    losses = sum(1 for t in _mhist if t.get("result") == "loss")
-                    auto_trade_stats["trade_count"] = len(hist)
-                    auto_trade_stats["win_count"]   = wins
-                    auto_trade_stats["loss_count"]  = losses
-                    print(f"✅ Trade history loaded: {len(hist)} trades ({wins}W/{losses}L)")
+        # Paper history — memory table
+        paper_hist = []
+        res_p = supabase.table("memory").select("trade_history").eq("session_id", _TRADES_SESSION_ID).execute()
+        if res_p.data:
+            raw_p = res_p.data[0].get("trade_history")
+            if raw_p:
+                parsed = json.loads(raw_p) if isinstance(raw_p, str) else raw_p
+                if isinstance(parsed, list):
+                    paper_hist = parsed
+
+        # Real history — alag table
+        real_hist = []
+        try:
+            res_r = supabase.table(_REAL_TRADES_TABLE).select("trade_history").eq("session_id", "MRBLACK_REAL_TRADES").execute()
+            if res_r.data:
+                raw_r = res_r.data[0].get("trade_history")
+                if raw_r:
+                    parsed_r = json.loads(raw_r) if isinstance(raw_r, str) else raw_r
+                    if isinstance(parsed_r, list):
+                        real_hist = parsed_r
+        except Exception as _re:
+            print(f"⚠️ Real history load error: {_re}")
+
+        # Dono merge karo RAM mein (filtering UI pe hoti hai)
+        all_hist = paper_hist + real_hist
+        if all_hist:
+            auto_trade_stats["trade_history"] = all_hist
+            wins   = sum(1 for t in all_hist if t.get("result") == "win" and t.get("mode", "paper") == TRADE_MODE)
+            losses = sum(1 for t in all_hist if t.get("result") == "loss" and t.get("mode", "paper") == TRADE_MODE)
+            auto_trade_stats["trade_count"] = len(all_hist)
+            auto_trade_stats["win_count"]   = wins
+            auto_trade_stats["loss_count"]  = losses
+            print(f"✅ Trade history loaded: {len(paper_hist)} paper | {len(real_hist)} real | wins={wins} losses={losses}")
     except Exception as e:
         print(f"⚠️ Trade history load error: {e}")
 
@@ -4822,13 +4852,13 @@ def _startup_once():
 
         def _bg_init():
             try:
-                _load_trade_history_from_db()
-            except Exception as e:
-                print(f"Trade history load error: {e}")
-            try:
-                _load_all_settings_from_db()
+                _load_all_settings_from_db()  # pehle — TRADE_MODE set hoga
             except Exception as e:
                 print(f"Settings load error: {e}")
+            try:
+                _load_trade_history_from_db()  # baad mein — sahi TRADE_MODE pe
+            except Exception as e:
+                print(f"Trade history load error: {e}")
             try:
                 _load_user_profile()
                 print("Profile loaded")
