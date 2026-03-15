@@ -1747,21 +1747,46 @@ _rug_dna: list = []   # [{"creator": str, "buy_tax": float, "sell_tax": float, "
 _RUG_DNA_MAX = 10000  # max fingerprints store
 
 def _record_rug_dna(token_address: str, creator: str, buy_tax: float, sell_tax: float, liq_usd: float, reason: str = "", pnl_pct: float = 0.0):
-    """Rug token ka DNA fingerprint save karo"""
+    """Rug token ka DNA fingerprint save karo — smart dedup + smart cleanup"""
     if not creator or len(creator) != 42: return
+    creator_l = creator.lower()
+    token_l   = token_address.lower()
+
+    # Agar same creator + same token already hai → update karo, duplicate mat banao
+    for existing in _rug_dna:
+        if existing.get("creator") == creator_l and existing.get("token") == token_l:
+            existing["rug_count"] = existing.get("rug_count", 1) + 1
+            existing["last_pnl"]  = round(pnl_pct, 1)
+            existing["ts"]        = time.time()
+            existing["reason"]    = reason or existing.get("reason", "SL/Rug")
+            print(f"🧬 Rug DNA updated: creator={creator[:10]} rugs={existing['rug_count']}")
+            return
+
     dna = {
-        "token":    token_address.lower(),
-        "creator":  creator.lower(),
-        "buy_tax":  round(buy_tax,  1),
-        "sell_tax": round(sell_tax, 1),
-        "liq_band": _liq_band(liq_usd),
-        "reason":   reason or "SL/Rug",
-        "pnl_pct":  round(pnl_pct, 1),
-        "ts":       time.time()
+        "token":     token_l,
+        "creator":   creator_l,
+        "buy_tax":   round(buy_tax,  1),
+        "sell_tax":  round(sell_tax, 1),
+        "liq_band":  _liq_band(liq_usd),
+        "reason":    reason or "SL/Rug",
+        "pnl_pct":   round(pnl_pct, 1),
+        "rug_count": 1,
+        "ts":        time.time()
     }
     _rug_dna.append(dna)
+
+    # Smart cleanup — sirf 1-rug wale creators ki oldest entry hatao
+    # Serial ruggers (2+ rugs) ke records hamesha safe rahenge
     if len(_rug_dna) > _RUG_DNA_MAX:
-        _rug_dna.pop(0)  # oldest remove
+        # Sirf 1 rug wale entries sort by oldest
+        single_rug = [(i, d) for i, d in enumerate(_rug_dna) if d.get("rug_count", 1) == 1]
+        if single_rug:
+            # Sabse purana single-rug entry hatao
+            oldest_idx = min(single_rug, key=lambda x: x[1].get("ts", 0))[0]
+            _rug_dna.pop(oldest_idx)
+        else:
+            # Sab serial ruggers hain — sabse purana hatao (last resort)
+            _rug_dna.pop(0)
     print(f"🧬 Rug DNA recorded: creator={creator[:10]} tax={buy_tax:.0f}/{sell_tax:.0f}% liq_band={dna['liq_band']}")
 
 def _liq_band(liq_usd: float) -> str:
