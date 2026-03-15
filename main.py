@@ -2427,18 +2427,8 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     if not _ok:
         print(f"🛑 Auto-buy BLOCKED: {_msg}")
         return
-    # ── GREEN SIGNALS: size multiplier decide karo ──
-    _gs = detect_green_signals(address,
-        checklist_result.get("_goplus_raw", {}),
-        checklist_result.get("dex_data", {}))
-    _gs_mult  = _gs.get("size_multiplier", 1.0)
-    _gs_score = _gs.get("score", 0)
-    _gs_sigs  = [s["type"] for s in _gs.get("signals", [])]
-
-    base_size = max(min(AUTO_BUY_SIZE_BNB, paper_balance * 0.025), 0.001)
-    size_bnb  = round(min(base_size * _gs_mult, paper_balance * 0.05), 4)
-    if _gs_mult > 1.0:
-        print(f"🟢 Size boost {_gs_mult}x → {size_bnb:.4f} BNB (signals: {_gs_score}pt)")
+    # ── BUY SIZE: seedha AUTO_BUY_SIZE_BNB use karo ──
+    size_bnb = round(AUTO_BUY_SIZE_BNB, 4)
 
     # ── ANTI-MEV: amount randomize (both modes) ──
     size_bnb = _anti_mev_amount(size_bnb)  # ±3% noise
