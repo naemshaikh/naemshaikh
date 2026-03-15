@@ -889,7 +889,8 @@ var _dlCount = null;
 function confirmDownload(count){
   _dlCount = count;
   var label = count==='all' ? 'All' : 'Last '+count;
-  var total = count==='all' ? hist.length : Math.min(count, hist.length);
+  var _h = window._lastHistData || [];
+  var total = count==='all' ? _h.length : Math.min(count, _h.length);
   document.getElementById('dl-modal-title').textContent = label + ' Trades';
   document.getElementById('dl-modal-sub').textContent = total + ' records → CSV file on your device';
   document.getElementById('dl-modal-bg').style.display = 'block';
@@ -909,6 +910,7 @@ async function downloadTrades(count){
   const d = await fetchJSON('/trade-history?filter=all',{},20000);
   if(!d){ alert('Server error — try again'); return; }
   var hist = d.history || [];
+  window._lastHistData = hist;  // global mein save karo confirmDownload ke liye
   if(!hist.length){ alert('Koi trade nahi mila!'); return; }
   var rows = (!count || count==='all') ? hist : hist.slice(0, parseInt(count));
   var cols = ['token','address','result','pnl_pct','pnl_bnb','size_bnb','entry','sold_at','bought_at','reason'];
