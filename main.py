@@ -5742,9 +5742,28 @@ def set_trade_mode():
     wallet = data.get("wallet", "")
     if mode not in ("paper", "real"):
         return jsonify({"status": "error", "message": "Invalid mode"}), 400
+    prev_mode = TRADE_MODE
     TRADE_MODE   = mode
     REAL_WALLET  = wallet
     print(f"🔄 Trade mode switched to: {mode.upper()} | wallet={wallet[:12] if wallet else 'none'}")
+
+    # Paper → Real switch: saare paper open positions close karo
+    if prev_mode == "paper" and mode == "real":
+        def _close_all_paper():
+            try:
+                open_addrs = list(auto_trade_stats["running_positions"].keys())
+                if open_addrs:
+                    print(f"🔴 Closing {len(open_addrs)} paper positions before real mode...")
+                    for addr in open_addrs:
+                        try:
+                            _auto_paper_sell(addr, "Mode switch → Real trading", 100.0)
+                        except Exception as _ce:
+                            print(f"⚠️ Close paper position error {addr[:10]}: {_ce}")
+                    print(f"✅ All paper positions closed — Real mode ready!")
+            except Exception as e:
+                print(f"⚠️ _close_all_paper error: {e}")
+        threading.Thread(target=_close_all_paper, daemon=True).start()
+
     threading.Thread(target=_persist_settings, daemon=True).start()
     return jsonify({"status": "ok", "mode": TRADE_MODE, "wallet": REAL_WALLET[:12] if REAL_WALLET else ""})
 
