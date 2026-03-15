@@ -3429,10 +3429,10 @@ function _renderNotifList(){
       '<div style="flex:1;min-width:0;">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:3px;">'+
           '<span style="font-size:12px;font-weight:'+(isUnread?'800':'600')+';color:var(--txt1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+n.title+'</span>'+
-          '<span style="font-size:9px;color:var(--txt3);font-family:'JetBrains Mono',monospace;flex-shrink:0;">'+n.ts+'</span>'+
+          '<span style="font-size:9px;color:var(--txt3);font-family:monospace;flex-shrink:0;">'+n.ts+'</span>'+
         '</div>'+
         '<div style="font-size:11px;color:var(--txt2);line-height:1.4;word-break:break-word;">'+n.detail+'</div>'+
-        (n.token ? '<div style="font-size:9px;color:var(--txt3);margin-top:3px;font-family:'JetBrains Mono',monospace;">'+n.token+'</div>' : '')+
+        (n.token ? '<div style="font-size:9px;color:var(--txt3);margin-top:3px;font-family:monospace;">'+n.token+'</div>' : '')+
       '</div>'+
       '<button class="notif-del-btn" onclick="deleteNotif(event,''+n.id+'')">✕</button>'+
     '</div>';
