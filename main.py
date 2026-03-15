@@ -1876,6 +1876,7 @@ brain: Dict = {
         "general_chat":      0,
     },
     "user_pain_points": [],
+    "milestones": [],
 }
 
 # ========== SESSIONS ==========
@@ -3280,7 +3281,7 @@ def _deep_llm_learning():
     """Deep learning cycle — trade history se patterns analyze karo"""
     try:
         _ensure_brain_structure()
-        history = auto_trade_stats.get("trade_history", [])
+        history = [t for t in auto_trade_stats.get("trade_history", []) if isinstance(t, dict)]
         if len(history) < 3:
             return  # not enough data yet
 
