@@ -2452,12 +2452,13 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         "pnl_bnb":    _total_pnl_bnb_trade,
         "size_bnb":   _orig_sz,
         "bought_usd": _saved_bought_usd if _saved_bought_usd else round(_orig_sz * _bnb_at_sell, 2),
-        "sold_usd":   round(max(0.0, return_bnb) * _bnb_at_sell, 2),  # 0 = rug, positive = proceeds
+        "sold_usd":   round(max(0.0, (_saved_bought_usd / _bnb_at_sell if _bnb_at_sell > 0 else _orig_sz) + _total_pnl_bnb_trade) * _bnb_at_sell, 2) if _bnb_at_sell > 0 else 0,
         "bought_at":  bought_at_str,
         "sold_at":    datetime.utcnow().isoformat(),
         "result":     "win" if _total_pnl_pct_trade > 0 else "loss",
         "reason":     reason,
         "mode":       TRADE_MODE,
+        "tp_events":  pos.get("tp_events", []),
     })
     if len(auto_trade_stats["trade_history"]) > 5000:
         auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-5000:]

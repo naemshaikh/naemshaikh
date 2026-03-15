@@ -907,11 +907,11 @@ function doDownload(){
   downloadTrades(_dlCount);
 }
 async function downloadTrades(count){
-  // Always fetch fresh from API — memory pe depend nahi
+  // Fresh fetch from API — mode ke hisaab se filter hoga
   const d = await fetchJSON('/trade-history?filter=all',{},20000);
-  if(!d) return;
+  if(!d){ alert('Server error — try again'); return; }
   var hist = d.history || [];
-  if(!hist.length){ alert('No trades to download!'); return; }
+  if(!hist.length){ alert('Koi trade nahi mila!'); return; }
   var rows = count==='all' ? hist : hist.slice(0,count);
   var cols = ['token','address','result','pnl_pct','pnl_bnb','size_bnb','entry','sold_at','bought_at','reason'];
   var csv  = cols.join(',') + '\n';
@@ -926,7 +926,7 @@ async function downloadTrades(count){
   var url  = URL.createObjectURL(blob);
   var a    = document.createElement('a');
   a.href   = url;
-  var label= count==='all'?'all':count;
+  var label= (!count||count==='all')?'all':count;
   a.download = 'mrblack_trades_'+label+'_'+new Date().toISOString().slice(0,10)+'.csv';
   document.body.appendChild(a);
   a.click();
