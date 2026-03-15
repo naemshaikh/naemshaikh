@@ -5308,7 +5308,7 @@ def trade_history_route():
     best   = max(filtered, key=lambda x: x.get("pnl_pct", 0), default={})
     worst  = min(filtered, key=lambda x: x.get("pnl_pct", 0), default={})
     return jsonify({
-        "history":       filtered[:200],
+        "history":       filtered,
         "total":         len(filtered),
         "wins":          len(wins),
         "losses":        len(losses),
