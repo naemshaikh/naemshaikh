@@ -1716,8 +1716,11 @@ def _load_trade_history_from_db():
                 hist = json.loads(raw) if isinstance(raw, str) else raw
                 if isinstance(hist, list) and hist:
                     auto_trade_stats["trade_history"] = hist
-                    wins   = sum(1 for t in hist if t.get("result") == "win")
-                    losses = sum(1 for t in hist if t.get("result") == "loss")
+                    # mode filter — purani trades default "paper" hain
+                    _cur_mode = TRADE_MODE
+                    _mhist = [t for t in hist if t.get("mode", "paper") == _cur_mode]
+                    wins   = sum(1 for t in _mhist if t.get("result") == "win")
+                    losses = sum(1 for t in _mhist if t.get("result") == "loss")
                     auto_trade_stats["trade_count"] = len(hist)
                     auto_trade_stats["win_count"]   = wins
                     auto_trade_stats["loss_count"]  = losses
@@ -2011,6 +2014,7 @@ def _persist_positions():
                 "sl_pct":         v.get("sl_pct", 12.0),
                 "tp_sold":        v.get("tp_sold", 0.0),
                 "banked_pnl_bnb": v.get("banked_pnl_bnb", 0.0),  # ✅ partial sell profits
+                "mode":           v.get("mode", "paper"),
             }
             for k, v in auto_trade_stats["running_positions"].items()
         }
@@ -5030,6 +5034,7 @@ def _startup_once():
                                         "sl_pct":         _sl_pct,
                                         "tp_sold":        _tp_sold,
                                         "banked_pnl_bnb": _banked,
+                                        "mode":           _pd.get("mode", TRADE_MODE),
                                     }
                                     add_position_to_monitor(AUTO_SESSION_ID, _addr, _pd.get("token", _addr[:10]), _entry, _size_bnb, _sl_pct)
                                     _restored += 1

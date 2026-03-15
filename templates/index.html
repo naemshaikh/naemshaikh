@@ -1484,14 +1484,7 @@ async function fetchRealBalance(){
     }
     const bnbP = window._bnbReal || 0;
     // Step 2: Backend se balance try karo
-    if(info && info.bnb > 0){
-      document.getElementById('b-real-bal').textContent = info.bnb.toFixed(4)+' BNB';
-      document.getElementById('b-real-usd').textContent = bnbP > 0
-        ? 'approx $'+(info.bnb*bnbP).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})
-        : 'approx $'+info.usd.toFixed(2);
-      return;
-    }
-    // Step 3: Backend fail — browser se directly BSCScan call karo
+    // Step 3: Pehle BSCScan browser se try karo (Render RPC block hota hai)
     try{
       const bscR = await fetch('https://api.bscscan.com/api?module=account&action=balance&address='+addr+'&tag=latest');
       if(bscR.ok){
@@ -1506,7 +1499,15 @@ async function fetchRealBalance(){
         }
       }
     }catch(e2){}
-    // Step 4: Sab fail
+    // Step 4: Backend se try karo
+    if(info && info.bnb > 0){
+      document.getElementById('b-real-bal').textContent = info.bnb.toFixed(4)+' BNB';
+      document.getElementById('b-real-usd').textContent = bnbP > 0
+        ? 'approx $'+(info.bnb*bnbP).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})
+        : 'approx $'+info.usd.toFixed(2);
+      return;
+    }
+    // Step 5: Sab fail
     document.getElementById('b-real-bal').textContent = '0.0000 BNB';
     document.getElementById('b-real-usd').textContent = 'approx $0.00';
   }catch(e){}
