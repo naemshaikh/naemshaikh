@@ -5232,7 +5232,6 @@ def admin_reset_positions():
         auto_trade_stats["last_action"]      = "Manual reset"
         sess = get_or_create_session(AUTO_SESSION_ID)
         sess["open_positions"] = {}
-        sess["paper_balance"]  = 5.0
         sess["trade_count"]    = 0
         sess["win_count"]      = 0
         threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
