@@ -3109,7 +3109,7 @@ _brain_loaded_from_db = False  # startup pe Supabase se load hua?
 def _save_brain_to_db():
     import time as _t
     if not supabase: return
-    if _t.time() - _brain_save_cache["last_save"] < 60: return
+    if _t.time() - _brain_save_cache["last_save"] < 20: return
     _brain_save_cache["last_save"] = _t.time()
     try:
         with _smart_wallets_lock:
@@ -3263,18 +3263,37 @@ def _learn_trading_patterns():
             pnl    = t.get("pnl_pct", 0)
             reason = t.get("reason", "?")
             result = t.get("result", "")
+            token  = t.get("token", "")
+            ts     = t.get("sold_at", "")[:10]
             if result == "win" and pnl > 10:
-                pat = f"WIN: {reason} | PnL:{pnl:.1f}%"
-                if pat not in brain["trading"]["best_patterns"]:
+                pat = {
+                    "token":    token,
+                    "pnl_pct":  pnl,
+                    "hold_min": t.get("hold_minutes", 0),
+                    "reason":   reason,
+                    "ts":       ts,
+                }
+                best = brain["trading"]["best_patterns"]
+                # String entries clean karo + duplicate check
+                brain["trading"]["best_patterns"] = [p for p in best if isinstance(p, dict)]
+                if not any(p.get("token") == token and p.get("ts") == ts for p in brain["trading"]["best_patterns"]):
                     brain["trading"]["best_patterns"].append(pat)
                     brain["trading"]["best_patterns"] = brain["trading"]["best_patterns"][-500:]
             elif result == "loss":
-                pat = f"LOSS: {reason} | PnL:{pnl:.1f}%"
-                if pat not in brain["trading"]["avoid_patterns"]:
+                pat = {
+                    "token":    token,
+                    "pnl_pct":  pnl,
+                    "hold_min": t.get("hold_minutes", 0),
+                    "reason":   reason,
+                    "ts":       ts,
+                }
+                avoid = brain["trading"]["avoid_patterns"]
+                # String entries clean karo + duplicate check
+                brain["trading"]["avoid_patterns"] = [p for p in avoid if isinstance(p, dict)]
+                if not any(p.get("token") == token and p.get("ts") == ts for p in brain["trading"]["avoid_patterns"]):
                     brain["trading"]["avoid_patterns"].append(pat)
                     brain["trading"]["avoid_patterns"] = brain["trading"]["avoid_patterns"][-500:]
-        # patterns[-100:] already enforced above on each append — no additional trim needed
-        brain["trading"]["last_updated"]   = datetime.utcnow().isoformat()
+        brain["trading"]["last_updated"] = datetime.utcnow().isoformat()
     except Exception as e:
         print(f"_learn_trading_patterns error: {e}")
 
