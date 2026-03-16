@@ -2220,11 +2220,11 @@ CHECKLIST_SETTINGS = {
     "min_liq_locked":   80.0,    # Stage 1: Min liquidity locked %
     "max_buy_tax":       8.0,    # Stage 1: Max buy tax %
     "max_sell_tax":      8.0,    # Stage 1: Max sell tax %
-    "max_top_holder":    5.0,    # Stage 1: Max top holder %
-    "max_top10":        10.0,    # Stage 1: Max top10 holders %
-    "max_creator_pct":   5.0,    # Stage 7: Max dev/creator wallet %
-    "max_owner_pct":     5.0,    # Stage 7: Max owner wallet %
-    "max_whale_top10":  10.0,    # Stage 7: Max whale concentration %
+    "max_top_holder":   20.0,    # Stage 1: Max top holder % (loosened for new tokens)
+    "max_top10":        45.0,    # Stage 1: Max top10 holders % (loosened for new tokens)
+    "max_creator_pct":  10.0,    # Stage 7: Max dev/creator wallet %
+    "max_owner_pct":    10.0,    # Stage 7: Max owner wallet %
+    "max_whale_top10":  45.0,    # Stage 7: Max whale concentration %
     "min_lp_lock":      80.0,    # Stage 8: Min LP lock %
     "min_token_age":     3.0,    # Stage 3: Min token age (min)
     "sniper_wait":       5.0,    # Stage 3: Sniper pump over (min)
@@ -4621,6 +4621,13 @@ def run_full_sniper_checklist(address: str, prefetched_dex: dict = None) -> Dict
             pct = float(h.get("percent", 0) or 0) * 100
             if i == 0: top_holder = pct
             top10_pct += pct
+
+    # ── Minimum holder count check ──
+    _holder_count = int(goplus_data.get("holder_count", 0) or len(holders_list) or 0)
+    _min_holders  = 50
+    add("Min Holders ≥ 50",
+        "pass" if _holder_count >= _min_holders else "fail",
+        f"{_holder_count} holders", 1)
 
     suspicious  = _gp_bool_flag(goplus_data, "is_airdrop_scam")
     creator_pct = _gp_float(goplus_data, "creator_percent") * 100
