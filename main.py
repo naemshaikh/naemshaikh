@@ -3892,6 +3892,12 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
             },), daemon=True).start()
             return
 
+        # ── Liquidity ok → PC Fast Sniper queue mein daal do ──
+        # Whale triggered tokens pe full checklist use karo (more trust)
+        if not whale_triggered:
+            _pc_add_to_snipe_queue(pair_address, pair_address, _liq_bnb_now)
+            return  # Sniper handle karega
+
         # Liquidity ok — DexScreener se token data fetch karo (checklist ke liye)
         for _dex_try in range(2):  # 2 tries only
             try:
@@ -4049,6 +4055,235 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
 
 
 # ========== FOUR.MEME NEW TOKEN POLLER ==========
+# ══════════════════════════════════════════════════════════════
+# PANCAKESWAP FAST SNIPER — DEDICATED SYSTEM
+# Direct PancakeSwap listings ke liye
+# Checklist lite — sirf critical checks, max speed
+# ══════════════════════════════════════════════════════════════
+
+# PancakeSwap sniper queue
+# {addr_lower: {"address": str, "pair": str, "added_at": float, "liq_bnb": float}}
+_pc_snipe_queue:      dict            = {}
+_pc_snipe_queue_lock: threading.Lock  = threading.Lock()
+_PC_QUEUE_MAX     = 50
+_PC_QUEUE_TIMEOUT = 300   # 5 min
+
+# Dedicated semaphore — 6 simultaneous snipes
+_pc_snipe_sem = threading.Semaphore(6)
+
+# Already sniped
+_pc_sniped: set = set()
+
+def _pc_add_to_snipe_queue(token_address: str, pair_address: str, liq_bnb: float):
+    """Liquidity ok — snipe queue mein daal do"""
+    addr_lower = token_address.lower()
+    if addr_lower in _pc_sniped:
+        return
+    # Already traded check
+    if any(t.get("address","").lower() == addr_lower
+           for t in auto_trade_stats.get("trade_history", [])):
+        return
+    with _pc_snipe_queue_lock:
+        if addr_lower in _pc_snipe_queue:
+            return
+        if len(_pc_snipe_queue) >= _PC_QUEUE_MAX:
+            return
+        _pc_snipe_queue[addr_lower] = {
+            "address":  token_address,
+            "pair":     pair_address,
+            "added_at": time.time(),
+            "liq_bnb":  liq_bnb,
+        }
+    print(f"⚡ [PC Sniper] Queue: {token_address[:10]} liq={liq_bnb:.2f} BNB")
+    # Background mein turant snipe karo
+    threading.Thread(
+        target=_pc_do_snipe,
+        args=(token_address, pair_address, liq_bnb),
+        daemon=True
+    ).start()
+
+def _pc_do_snipe(token_address: str, pair_address: str, liq_bnb: float):
+    """
+    PancakeSwap fast snipe — parallel checks
+    Honeypot + GoPlus critical PARALLEL mein
+    """
+    addr_lower = token_address.lower()
+    if not _pc_snipe_sem.acquire(blocking=False):
+        print(f"⏭️ [PC Sniper] Semaphore full — skip: {token_address[:10]}")
+        with _pc_snipe_queue_lock:
+            _pc_snipe_queue.pop(addr_lower, None)
+        return
+    try:
+        print(f"🎯 [PC Sniper] Checking: {token_address[:10]}")
+
+        # ── Parallel checks — Honeypot + GoPlus saath mein ──
+        _hp_result  = {}
+        _gp_result  = {}
+        _hp_done    = threading.Event()
+        _gp_done    = threading.Event()
+
+        def _check_hp():
+            try:
+                _hp_result.update(_get_honeypot(token_address))
+            except Exception:
+                pass
+            finally:
+                _hp_done.set()
+
+        def _check_gp():
+            try:
+                _gp_result.update(_get_goplus(token_address))
+            except Exception:
+                pass
+            finally:
+                _gp_done.set()
+
+        threading.Thread(target=_check_hp, daemon=True).start()
+        threading.Thread(target=_check_gp, daemon=True).start()
+
+        # Max 5 sec wait for both
+        _hp_done.wait(timeout=5)
+        _gp_done.wait(timeout=5)
+
+        # ── Critical checks ──
+        # 1. Honeypot
+        if _hp_result.get("isHoneypot", False):
+            print(f"🍯 [PC Sniper] Honeypot — skip: {token_address[:10]}")
+            return
+
+        # 2. GoPlus critical — mint, hidden owner, blacklist
+        if _gp_result:
+            _mint    = _gp_result.get("is_mintable", "0") == "1"
+            _hidden  = (_gp_result.get("can_take_back_ownership", "0") == "1" or
+                        _gp_result.get("hidden_owner", "0") == "1")
+            _hp_gp   = _gp_result.get("is_honeypot", "0") == "1"
+            _no_sell = _gp_result.get("cannot_sell_all", "0") == "1"
+            _tax_b   = float(_gp_result.get("buy_tax",  0) or 0) * 100
+            _tax_s   = float(_gp_result.get("sell_tax", 0) or 0) * 100
+
+            if _mint:
+                print(f"🚫 [PC Sniper] Mintable — skip: {token_address[:10]}")
+                return
+            if _hidden:
+                print(f"🚫 [PC Sniper] Hidden owner — skip: {token_address[:10]}")
+                return
+            if _hp_gp or _no_sell:
+                print(f"🚫 [PC Sniper] GoPlus honeypot — skip: {token_address[:10]}")
+                return
+            if _tax_b > 10 or _tax_s > 10:
+                print(f"🚫 [PC Sniper] High tax B:{_tax_b:.0f}% S:{_tax_s:.0f}% — skip: {token_address[:10]}")
+                return
+
+        # 3. Dev blacklist check
+        _creator = (_gp_result.get("creator_address") or "")
+        if _creator and is_dev_blacklisted(_creator):
+            print(f"🚫 [PC Sniper] Dev blacklisted — skip: {token_address[:10]}")
+            return
+
+        # ── Auto trade checks ──
+        if not AUTO_TRADE_ENABLED:
+            return
+        if len(auto_trade_stats.get("running_positions", {})) >= AUTO_MAX_POSITIONS:
+            print(f"🛑 [PC Sniper] Max positions — skip")
+            return
+
+        sess = get_or_create_session(AUTO_SESSION_ID)
+        bal  = sess.get("paper_balance", 5.0)
+        if bal < AUTO_BUY_SIZE_BNB:
+            print(f"🛑 [PC Sniper] Low balance — skip")
+            return
+
+        _ok, _msg = DataGuard.bnb_price_ok()
+        if not _ok:
+            print(f"🛑 [PC Sniper] DataGuard: {_msg}")
+            return
+
+        # ── Price fetch ──
+        entry_price = get_token_price_bnb(token_address)
+        if entry_price <= 0:
+            time.sleep(1)
+            entry_price = get_token_price_bnb(token_address)
+        if entry_price <= 0 or entry_price > 1.0:
+            print(f"❌ [PC Sniper] Bad price — skip: {token_address[:10]}")
+            return
+
+        entry_price = entry_price * 1.005
+        size_bnb    = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
+        token_name  = token_address[:8]
+
+        # Real mode
+        if TRADE_MODE == "real":
+            _real = real_buy_token(token_address, size_bnb,
+                                   _tax_b if _gp_result else 0,
+                                   _tax_s if _gp_result else 0)
+            if not _real.get("success"):
+                print(f"❌ [PC Sniper] Real buy failed: {_real.get('error')}")
+                return
+            if _real.get("entry_price", 0) > 0:
+                entry_price = _real["entry_price"]
+
+        # Paper mode
+        if TRADE_MODE != "real":
+            sess["paper_balance"] = round(bal - size_bnb, 6)
+
+        add_position_to_monitor(
+            AUTO_SESSION_ID, token_address, token_name,
+            entry_price, size_bnb,
+            stop_loss_pct=CHECKLIST_SETTINGS.get("sl_new", 12.0)
+        )
+        auto_trade_stats["running_positions"][token_address] = {
+            "token":          token_name,
+            "entry":          entry_price,
+            "size_bnb":       size_bnb,
+            "orig_size_bnb":  size_bnb,
+            "bought_usd":     round(size_bnb * market_cache.get("bnb_price", 0), 2),
+            "sl_pct":         CHECKLIST_SETTINGS.get("sl_new", 12.0),
+            "trail_pct":      20.0,
+            "tp_sold":        0.0,
+            "banked_pnl_bnb": 0.0,
+            "bought_at":      datetime.utcnow().isoformat(),
+            "mode":           TRADE_MODE,
+            "buy_reasoning":  {
+                "source":          "PC_Fast_Sniper",
+                "strategy":        "PancakeSwap_Direct_Listing",
+                "assumption":      f"Direct PancakeSwap listing. Liq={liq_bnb:.2f} BNB. Fast snipe.",
+                "checklist_used":  False,
+                "honeypot_passed": True,
+                "goplus_critical": True,
+                "liq_bnb":         liq_bnb,
+                "bnb_at_buy":      market_cache.get("bnb_price", 0),
+            },
+        }
+        auto_trade_stats["total_auto_buys"] += 1
+        _pc_sniped.add(addr_lower)
+        _persist_positions()
+
+        _push_notif("success", "⚡ PC Fast Snipe!",
+                    f"{token_name} @ {entry_price:.2e} BNB | Liq:{liq_bnb:.1f} BNB",
+                    token_name, token_address)
+        _log("buy", token_name, f"⚡ PC SNIPE @ {entry_price:.2e} BNB liq={liq_bnb:.1f}", token_address)
+
+        threading.Thread(target=_save_bot_decision, args=({
+            "token_address":      token_address,
+            "token_name":         token_name,
+            "decision":           "BUY",
+            "reason":             f"PancakeSwap fast snipe. Liq={liq_bnb:.2f} BNB",
+            "thought":            f"PC direct listing. Liq={liq_bnb:.2f} BNB. Honeypot ok. GoPlus critical ok. Entry={entry_price:.2e}. BNB=${market_cache.get('bnb_price',0):.2f}. Mode={TRADE_MODE}.",
+            "discovery_source":   "pancakeswap_direct",
+            "bnb_price_at_entry": market_cache.get("bnb_price", 0),
+            "entry_price":        entry_price,
+            "token_type":         "meme",
+        },), daemon=True).start()
+
+        print(f"✅ [PC Sniper] SNIPED: {token_name} @ {entry_price:.2e} liq={liq_bnb:.1f}")
+
+    except Exception as e:
+        print(f"⚠️ [PC Sniper] error: {e}")
+    finally:
+        _pc_snipe_sem.release()
+        with _pc_snipe_queue_lock:
+            _pc_snipe_queue.pop(addr_lower, None)
+
 FOUR_MEME_CONTRACTS = [
     "0x5c952063c7fc8610ffdb798152d69f0b9550762b",  # v1
     "0x8b8cF6D0C2B5F4CB61Da5E7dc94E52f4F1dD8D64",  # v2
@@ -5709,6 +5944,7 @@ def _startup_once():
         threading.Thread(target=_delayed(poll_four_meme,         20), daemon=True).start()
         threading.Thread(target=_delayed(poll_four_meme_wss,     15), daemon=True).start()  # ✅ real-time WSS
         threading.Thread(target=_delayed(_fm_graduation_sniper,  20), daemon=True).start()  # 🎓 FM graduation sniper
+        # ⚡ PC Fast Sniper — background mein chalta hai, _pc_add_to_snipe_queue se trigger hota hai
         threading.Thread(target=_delayed(start_swap_monitor,    20), daemon=True).start()  # ✅ real-time swap vol
 
         threading.Thread(target=_delayed(price_monitor_loop,    15),  daemon=True).start()
