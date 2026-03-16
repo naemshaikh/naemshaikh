@@ -2831,7 +2831,7 @@ def auto_position_manager():
                         _ratio = _s5 / max(_b5, 1)
 
                     # Confirmed rug — instant exit
-                    if _ratio >= 5.0 and _s5 >= 3:
+                    if _ratio >= 5.0 and _s5 >= 5 and pnl <= -8:
                         _auto_paper_sell(addr, f"VolRug {_ratio:.1f}x 🚨", 100.0)
                         print(f"🚨 VolRug: {addr[:10]} ratio={_ratio:.1f}x sv={_sv5:.3f} bv={_bv5:.3f}")
                         _trail_triggered = True
