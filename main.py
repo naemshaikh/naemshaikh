@@ -5630,8 +5630,27 @@ def chat():
         print(f"🛑 Auto-buy BLOCKED: daily_loss={sess.get('daily_loss',0):.4f} BNB >= {_daily_limit:.4f} BNB (15% of {_balance:.3f})")
         return jsonify({"reply": "🛑 Daily loss limit (8%) reach ho gaya. Kal fresh start karo!", "session_id": session_id})
     _extract_user_info_from_message(user_msg)
-    sess["history"].append({"role": "user", "content": user_msg})
-    reply = get_llm_reply(user_msg, sess["history"], sess)
+    # bot_decisions recent context LLM ko do
+    _bd_ctx = ""
+    try:
+        if supabase:
+            _bd_recent = supabase.table("bot_decisions").select(
+                "decision,token_name,reason,thought,pnl_pct,exit_type,failed_check,created_at"
+            ).order("created_at", desc=True).limit(5).execute()
+            if _bd_recent.data:
+                _bd_lines = []
+                for _r in _bd_recent.data:
+                    _d   = _r.get("decision","?")
+                    _t   = _r.get("token_name","?")
+                    _rs  = _r.get("reason","")[:50]
+                    _pnl = _r.get("pnl_pct")
+                    _pnl_str = f" PnL:{_pnl:+.1f}%" if _pnl is not None else ""
+                    _bd_lines.append(f"{_d} {_t}: {_rs}{_pnl_str}")
+                _bd_ctx = "\n[RECENT_DECISIONS]\n" + "\n".join(_bd_lines) + "\n[/RECENT_DECISIONS]"
+    except Exception:
+        pass
+    sess["history"].append({"role": "user", "content": user_msg + _bd_ctx})
+    reply = get_llm_reply(user_msg + _bd_ctx, sess["history"], sess)
     sess["history"].append({"role": "assistant", "content": reply})
     if len(sess["history"]) > 20:
         sess["history"] = sess["history"][-20:]  # ✅ trim after both appends
