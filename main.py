@@ -3857,10 +3857,13 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
         _liq_interval   = 0.5   # 500ms check
         _liq_ok         = False
         _prefetched_dex = None
+        # Dedicated Publicnode — main w3 busy rehta hai, alag rakho
+        # FM Sniper = Ankr, PC Liq = Publicnode, Normal = DexScreener
+        _pc_liq_w3 = Web3(Web3.HTTPProvider("https://bsc-rpc.publicnode.com", request_kwargs={"timeout": 3}))
 
         while time.time() - _liq_start < _liq_timeout:
             try:
-                _pc = w3.eth.contract(
+                _pc = _pc_liq_w3.eth.contract(
                     address=Web3.to_checksum_address(pair_address),
                     abi=PAIR_ABI_PRICE
                 )
@@ -4738,7 +4741,7 @@ def poll_new_pairs():
                 fail_count = 0
             except Exception as e:
                 fail_count += 1
-                wait = min(8 * fail_count, 120) if "1013" in str(e).lower() else min(5 * fail_count, 60)
+                wait = min(3 * fail_count, 30) if "1013" in str(e).lower() else min(2 * fail_count, 20)
                 print(f"Warning: WSS loop fail #{fail_count} — retry in {wait}s")
                 await asyncio.sleep(wait)
                 if fail_count % 10 == 0:
