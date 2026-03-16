@@ -3929,7 +3929,7 @@ def poll_new_pairs():
 
     async def _listen(wss_url):
         try:
-            async with _ws.connect(wss_url, ping_interval=10, ping_timeout=8, close_timeout=5, max_size=2**20) as ws:
+            async with _ws.connect(wss_url, ping_interval=25, ping_timeout=18, close_timeout=8, max_size=2**20) as ws:
                 await ws.send(_json.dumps({
                     "id": 1, "method": "eth_subscribe",
                     "params": ["logs", {"address": [FACTORY, PANCAKE_V3_FACTORY], "topics": [[PAIR_TOPIC]]}],
@@ -4032,7 +4032,7 @@ def poll_four_meme_wss():
         try:
             async with _ws.connect(
                 wss_url,
-                ping_interval=10, ping_timeout=8, close_timeout=5, max_size=2**20
+                ping_interval=25, ping_timeout=18, close_timeout=8, max_size=2**20
             ) as ws:
                 # Subscribe to all three four.meme factory contracts + all known topics
                 await ws.send(_json.dumps({
