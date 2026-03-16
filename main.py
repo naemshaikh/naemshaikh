@@ -1059,15 +1059,10 @@ def start_swap_monitor():
         return
 
     # Chainstack WSS primary — fastest, fallback to public
-    _nr_wss = os.getenv("BSC_WSS2", "")  # NodeReal primary
-    WSS_ENDPOINTS = []
-    if _nr_wss: WSS_ENDPOINTS.append(_nr_wss)
-    WSS_ENDPOINTS += [
+    WSS_ENDPOINTS = [
         "wss://bsc-rpc.publicnode.com",
         "wss://bsc.publicnode.com",
         "wss://bsc.drpc.org",
-        "wss://bsc.meowrpc.com",
-        "wss://bsc-dataseed.bnbchain.org",
     ]
 
     async def _swap_loop():
@@ -3919,15 +3914,10 @@ def poll_new_pairs():
     PAIR_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
     WBNB_LOWER = WBNB.lower()
     # Chainstack primary — fallback to public
-    _nr = os.getenv("BSC_WSS2", "")  # NodeReal primary
-    WSS_ENDPOINTS = []
-    if _nr: WSS_ENDPOINTS.append(_nr)
-    WSS_ENDPOINTS += [
+    WSS_ENDPOINTS = [
         "wss://bsc-rpc.publicnode.com",
         "wss://bsc.publicnode.com",
         "wss://bsc.drpc.org",
-        "wss://bsc.meowrpc.com",
-        "wss://bsc-dataseed.bnbchain.org",
     ]
 
     async def _listen(wss_url):
@@ -4021,15 +4011,10 @@ def poll_four_meme_wss():
     FOUR_TOPIC_PAIR     = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
     FOUR_TOPIC_LAUNCH   = "0xb9ed0243fdf00f0545c63a0af8850c090d86bb46673f2a9a30adece5df78e34e"
 
-    _nr4 = os.getenv("BSC_WSS2", "")  # NodeReal primary
-    WSS_ENDPOINTS = []
-    if _nr4: WSS_ENDPOINTS.append(_nr4)
-    WSS_ENDPOINTS += [
+    WSS_ENDPOINTS = [
         "wss://bsc-rpc.publicnode.com",
         "wss://bsc.publicnode.com",
         "wss://bsc.drpc.org",
-        "wss://bsc.meowrpc.com",
-        "wss://bsc-dataseed.bnbchain.org",
     ]
 
     async def _listen_four(wss_url):
@@ -5054,6 +5039,8 @@ def _startup_once():
                 return 0
 
             async def _stream():
+                print("⚠️ NodeReal BNB WS stream disabled — using OKX price feed")
+                return
                 _api_key = os.environ.get("NODEREAL_API_KEY", "")
                 if not _api_key:
                     print("⚠️ NODEREAL_API_KEY not set — BNB WS stream skipped")
