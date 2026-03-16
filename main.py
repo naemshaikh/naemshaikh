@@ -2169,7 +2169,7 @@ def _log(event_type: str, token: str, detail: str, address: str = ""):
     })
 discovered_addresses: dict = {}
 _discovered_lock  = threading.Lock()          # RACE FIX: protect discovered_addresses
-_token_semaphore  = threading.Semaphore(3)   # was 2 — more discovery throughput
+_token_semaphore  = threading.Semaphore(6)   # was 2 — more discovery throughput
 _check_semaphore  = threading.Semaphore(5)   # was 3 — more concurrent checks
 DISCOVERY_TTL = 7200
 PAIR_CREATED_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
@@ -2292,7 +2292,7 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
     _token_semaphore.release()
     # MEM FIX: max 3 concurrent checkers
     if not hasattr(_process_new_token, "_sem"):
-        _process_new_token._sem = threading.Semaphore(3)
+        _process_new_token._sem = threading.Semaphore(6)
     def _run_check():
         if not _process_new_token._sem.acquire(blocking=False): return
         try: _auto_check_new_pair(token_address)
