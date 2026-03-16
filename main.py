@@ -5631,7 +5631,8 @@ def chat():
         return jsonify({"reply": "🛑 Daily loss limit (8%) reach ho gaya. Kal fresh start karo!", "session_id": session_id})
     _extract_user_info_from_message(user_msg)
     sess["history"].append({"role": "user", "content": user_msg})
-    sess["history"].append({"role": "assistant", "content": get_llm_reply(user_msg, sess["history"], sess)})
+    reply = get_llm_reply(user_msg, sess["history"], sess)
+    sess["history"].append({"role": "assistant", "content": reply})
     if len(sess["history"]) > 20:
         sess["history"] = sess["history"][-20:]  # ✅ trim after both appends
     threading.Thread(target=learn_from_message, args=(user_msg, reply, session_id), daemon=True).start()
