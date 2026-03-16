@@ -3851,57 +3851,15 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
         # ── On-chain liquidity check — 30s wait hataya ──
         # getReserves() direct RPC se — DexScreener nahi
         # pair_address already WSS event mein aata hai
-        _min_liq_bnb    = CHECKLIST_SETTINGS.get("min_liq_bnb", 3.0)
-        _liq_start      = time.time()
-        _liq_timeout    = 300   # 5 min max wait
-        _liq_interval   = 0.5   # 500ms check
-        _liq_ok         = False
+        # ── Event-driven liquidity detection ──
+        # Polling loop hataya — Mint event se liquidity detect karo
+        # Semaphore free rehega — naaye tokens block nahi honge
         _prefetched_dex = None
-        # Dedicated Publicnode — main w3 busy rehta hai, alag rakho
-        # FM Sniper = Ankr, PC Liq = Publicnode, Normal = DexScreener
-        _pc_liq_w3 = Web3(Web3.HTTPProvider("https://bsc-rpc.publicnode.com", request_kwargs={"timeout": 3}))
 
-        while time.time() - _liq_start < _liq_timeout:
-            try:
-                _pc = _pc_liq_w3.eth.contract(
-                    address=Web3.to_checksum_address(pair_address),
-                    abi=PAIR_ABI_PRICE
-                )
-                _reserves = _pc.functions.getReserves().call()
-                _r0 = _reserves[0] / 1e18
-                _r1 = _reserves[1] / 1e18
-                _liq_bnb_now = max(_r0, _r1)  # WBNB side
-                _elapsed = round(time.time() - _liq_start, 1)
-                if _liq_bnb_now >= _min_liq_bnb:
-                    print(f"✅ Liquidity ok ({_liq_bnb_now:.2f} BNB) in {_elapsed}s: {pair_address[:10]}")
-                    _liq_ok = True
-                    break
-                else:
-                    if _elapsed % 10 < _liq_interval:
-                        print(f"⏳ Liq {_liq_bnb_now:.3f}/{_min_liq_bnb} BNB ({_elapsed:.0f}s): {pair_address[:10]}")
-            except Exception as _le:
-                pass
-            time.sleep(_liq_interval)
-
-        if not _liq_ok:
-            print(f"⏰ Liq timeout — skip: {pair_address[:10]}")
-            _log("reject", pair_address[:8], "Liquidity timeout — skip", pair_address)
-            threading.Thread(target=_save_bot_decision, args=({
-                "token_address":    pair_address,
-                "token_name":       pair_address[:8],
-                "decision":         "SKIP",
-                "prefilter_skip":   True,
-                "prefilter_reason": "Liquidity nahi aayi 5 min mein",
-                "reason":           "Liquidity timeout 300s",
-                "discovery_source": "whale" if whale_triggered else "wss",
-            },), daemon=True).start()
-            return
-
-        # ── Liquidity ok → PC Fast Sniper queue mein daal do ──
-        # Whale triggered tokens pe full checklist use karo (more trust)
         if not whale_triggered:
-            _pc_add_to_snipe_queue(pair_address, pair_address, _liq_bnb_now)
-            return  # Sniper handle karega
+            # PC Fast Sniper ke liye — Mint event monitor mein register karo
+            _pc_register_for_mint(pair_address)
+            return  # Mint event aane pe sniper handle karega
 
         # Liquidity ok — DexScreener se token data fetch karo (checklist ke liye)
         for _dex_try in range(2):  # 2 tries only
@@ -4061,6 +4019,131 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
 
 # ========== FOUR.MEME NEW TOKEN POLLER ==========
 # ══════════════════════════════════════════════════════════════
+# PANCAKESWAP MINT EVENT MONITOR
+# PairCreated → Mint event subscribe → turant snipe
+# Semaphore free — polling nahi, pure event driven
+# ══════════════════════════════════════════════════════════════
+
+# keccak256("Mint(address,uint256,uint256)") — PancakeSwap V2 AddLiquidity
+_PC_MINT_TOPIC = "0x4c209b5fc8ad50758f13e2e1088ba56a560dff690a1c6fef26394f4c03821c4f"
+
+# Pairs waiting for mint event
+# {pair_lower: {"token": addr, "registered_at": float}}
+_pc_mint_pending:      dict           = {}
+_pc_mint_pending_lock: threading.Lock = threading.Lock()
+_PC_MINT_TIMEOUT = 300  # 5 min
+
+def _pc_register_for_mint(pair_address: str, token_address: str = ""):
+    """Pair ko Mint event ke liye register karo"""
+    pair_lower = pair_address.lower()
+    token = token_address or pair_address  # token address nahi tha toh pair use karo
+    with _pc_mint_pending_lock:
+        if pair_lower not in _pc_mint_pending:
+            _pc_mint_pending[pair_lower] = {
+                "token":         token,
+                "registered_at": time.time(),
+            }
+    print(f"📝 [PC Mint] Registered: {pair_address[:10]}")
+
+def _pc_mint_monitor():
+    """
+    Dedicated Mint event monitor — publicnode WSS
+    Registered pairs ka Mint event sunna
+    Mint aaya → turant PC sniper queue mein daal do
+    """
+    import asyncio, json as _j
+    try:
+        import websockets as _ws
+    except ImportError:
+        return
+
+    async def _listen():
+        WSS = "wss://bsc-rpc.publicnode.com"
+        fail = 0
+        while True:
+            try:
+                async with _ws.connect(WSS, ping_interval=20, ping_timeout=15,
+                                        close_timeout=5, max_size=2**20) as ws:
+                    # Subscribe to Mint events
+                    await ws.send(_j.dumps({
+                        "id": 99, "method": "eth_subscribe",
+                        "params": ["logs", {"topics": [[_PC_MINT_TOPIC]]}],
+                        "jsonrpc": "2.0"
+                    }))
+                    await asyncio.wait_for(ws.recv(), timeout=10)
+                    print("✅ [PC Mint] Mint monitor connected!")
+                    fail = 0
+                    while True:
+                        msg  = await asyncio.wait_for(ws.recv(), timeout=60)
+                        data = _j.loads(msg)
+                        log  = (data.get("params") or {}).get("result") or {}
+                        if not log:
+                            continue
+                        pair_addr = log.get("address", "").lower()
+                        # Is pair registered hai?
+                        with _pc_mint_pending_lock:
+                            info = _pc_mint_pending.get(pair_addr)
+                        if not info:
+                            continue
+                        # Mint event aaya! — snipe karo
+                        token_addr = info["token"]
+                        print(f"🔥 [PC Mint] Mint detected: {pair_addr[:10]} → snipe!")
+                        with _pc_mint_pending_lock:
+                            _pc_mint_pending.pop(pair_addr, None)
+                        # Liq estimate — reserves se
+                        _liq_est = 5.0  # default estimate
+                        try:
+                            _w3t = Web3(Web3.HTTPProvider(
+                                "https://bsc-rpc.publicnode.com",
+                                request_kwargs={"timeout": 3}
+                            ))
+                            _pc_c = _w3t.eth.contract(
+                                address=Web3.to_checksum_address(pair_addr),
+                                abi=PAIR_ABI_PRICE
+                            )
+                            _res = _pc_c.functions.getReserves().call()
+                            _liq_est = max(_res[0], _res[1]) / 1e18
+                        except Exception:
+                            pass
+                        threading.Thread(
+                            target=_pc_add_to_snipe_queue,
+                            args=(token_addr, pair_addr, _liq_est),
+                            daemon=True
+                        ).start()
+            except Exception as e:
+                fail += 1
+                wait = min(2 * fail, 15)
+                print(f"⚠️ [PC Mint] reconnecting in {wait}s")
+                await asyncio.sleep(wait)
+
+    def _run():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(_listen())
+        except Exception as ex:
+            print(f"⚠️ [PC Mint] thread crashed: {ex}")
+        finally:
+            loop.close()
+
+    threading.Thread(target=_run, daemon=True).start()
+
+# Cleanup thread — expired pending pairs remove karo
+def _pc_mint_cleanup():
+    while True:
+        try:
+            now = time.time()
+            with _pc_mint_pending_lock:
+                expired = [k for k, v in _pc_mint_pending.items()
+                           if now - v["registered_at"] > _PC_MINT_TIMEOUT]
+                for k in expired:
+                    _pc_mint_pending.pop(k, None)
+                    print(f"⏰ [PC Mint] Expired: {k[:10]}")
+        except Exception:
+            pass
+        time.sleep(30)
+
+# ══════════════════════════════════════════════════════════════
 # PANCAKESWAP FAST SNIPER — DEDICATED SYSTEM
 # Direct PancakeSwap listings ke liye
 # Checklist lite — sirf critical checks, max speed
@@ -4183,6 +4266,31 @@ def _pc_do_snipe(token_address: str, pair_address: str, liq_bnb: float):
         _creator = (_gp_result.get("creator_address") or "")
         if _creator and is_dev_blacklisted(_creator):
             print(f"🚫 [PC Sniper] Dev blacklisted — skip: {token_address[:10]}")
+            return
+
+        # 4. Full checklist run karo — quality ensure karo
+        try:
+            _cl_result = run_full_sniper_checklist(token_address)
+            _cl_overall = _cl_result.get("overall", "UNKNOWN")
+            _cl_score   = _cl_result.get("score", 0)
+            _cl_total   = _cl_result.get("total", 1)
+            _cl_safe    = CHECKLIST_SETTINGS.get("score_safe", 50.0)
+            if _cl_overall != "SAFE" or _cl_score < int(_cl_total * _cl_safe / 100):
+                print(f"🚫 [PC Sniper] Checklist {_cl_overall} {_cl_score}/{_cl_total} — skip: {token_address[:10]}")
+                threading.Thread(target=_save_bot_decision, args=({
+                    "token_address": token_address,
+                    "token_name":    token_address[:8],
+                    "decision":      "SKIP",
+                    "reason":        f"PC Sniper checklist {_cl_overall} {_cl_score}/{_cl_total}",
+                    "score":         _cl_score,
+                    "total":         _cl_total,
+                    "checklist":     _cl_result.get("checklist"),
+                    "discovery_source": "pancakeswap_direct",
+                },), daemon=True).start()
+                return
+            print(f"✅ [PC Sniper] Checklist SAFE {_cl_score}/{_cl_total}: {token_address[:10]}")
+        except Exception as _cle:
+            print(f"⚠️ [PC Sniper] Checklist error: {_cle} — skip")
             return
 
         # ── Auto trade checks ──
@@ -5949,6 +6057,8 @@ def _startup_once():
         threading.Thread(target=_delayed(poll_four_meme,         20), daemon=True).start()
         threading.Thread(target=_delayed(poll_four_meme_wss,     15), daemon=True).start()  # ✅ real-time WSS
         threading.Thread(target=_delayed(_fm_graduation_sniper,  20), daemon=True).start()  # 🎓 FM graduation sniper
+        threading.Thread(target=_delayed(_pc_mint_monitor,        15), daemon=True).start()  # 🔥 PC Mint event monitor
+        threading.Thread(target=_pc_mint_cleanup,                     daemon=True).start()   # 🧹 PC Mint cleanup
         # ⚡ PC Fast Sniper — background mein chalta hai, _pc_add_to_snipe_queue se trigger hota hai
         threading.Thread(target=_delayed(start_swap_monitor,    20), daemon=True).start()  # ✅ real-time swap vol
 
