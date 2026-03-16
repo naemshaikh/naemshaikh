@@ -2266,6 +2266,18 @@ auto_trade_stats = {
 def _process_new_token(token_address: str, pair_address: str, source: str = "websocket"):
     global discovered_addresses
     _now = time.time()
+    # ── Already traded token — dobara buy mat karo ──
+    try:
+        _addr_lower = token_address.lower()
+        _already_traded = any(
+            t.get("address", "").lower() == _addr_lower
+            for t in auto_trade_stats.get("trade_history", [])
+        )
+        if _already_traded:
+            print(f"⏭️ Already traded — skip: {token_address[:10]}")
+            return
+    except Exception:
+        pass
     with _discovered_lock:
         if _now - discovered_addresses.get(token_address, 0) <= DISCOVERY_TTL:
             return
