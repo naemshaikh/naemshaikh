@@ -4405,9 +4405,7 @@ def poll_four_meme():
             # Source 1: four.meme direct API (fastest, no key)
             addrs += _poll_four_meme_api()
 
-            # Source 2: GeckoTerminal (har 3rd cycle — 60 sec)
-            if _cycle % 3 == 0:
-                addrs += _poll_four_meme_gecko()
+            # Source 2: GeckoTerminal removed — WSS real-time hai, backup nahi chahiye
 
             # Dedup + process
             new_count = 0
