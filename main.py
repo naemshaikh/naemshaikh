@@ -2189,11 +2189,11 @@ CHECKLIST_SETTINGS = {
     "min_liq_locked":   80.0,    # Stage 1: Min liquidity locked %
     "max_buy_tax":       8.0,    # Stage 1: Max buy tax %
     "max_sell_tax":      8.0,    # Stage 1: Max sell tax %
-    "max_top_holder":    7.0,    # Stage 1: Max top holder %
-    "max_top10":        40.0,    # Stage 1: Max top10 holders %
+    "max_top_holder":    5.0,    # Stage 1: Max top holder %
+    "max_top10":        10.0,    # Stage 1: Max top10 holders %
     "max_creator_pct":   5.0,    # Stage 7: Max dev/creator wallet %
     "max_owner_pct":     5.0,    # Stage 7: Max owner wallet %
-    "max_whale_top10":  45.0,    # Stage 7: Max whale concentration %
+    "max_whale_top10":  10.0,    # Stage 7: Max whale concentration %
     "min_lp_lock":      80.0,    # Stage 8: Min LP lock %
     "min_token_age":     3.0,    # Stage 3: Min token age (min)
     "sniper_wait":       5.0,    # Stage 3: Sniper pump over (min)
@@ -4667,7 +4667,8 @@ def run_full_sniper_checklist(address: str, prefetched_dex: dict = None) -> Dict
                               "Mint Authority Disabled", "Listed on DEX", "DEX Pools", "Price Exists",
                               "Dev Not Blacklisted",    # ✅ blacklisted dev = instant DANGER
                               "Creator Launch History",  # ✅ serial launcher = instant DANGER
-                              "Sniper Detection"}        # ✅ pre-sniped = instant DANGER
+                              "Sniper Detection",        # ✅ pre-sniped = instant DANGER
+                              "Contract Verified"}       # ✅ unverified contract = instant DANGER
     critical_fails = [c for c in result["checklist"] if c["status"] == "fail" and (
         c["label"] in critical_labels_fixed or
         c["label"].startswith("Buy Tax") or
