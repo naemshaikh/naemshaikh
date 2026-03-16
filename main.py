@@ -1059,11 +1059,11 @@ def start_swap_monitor():
         return
 
     # Chainstack WSS primary — fastest, fallback to public
-    _cs_wss = os.getenv("BSC_WSS", "")
+    _nr_wss = os.getenv("BSC_WSS2", "")  # NodeReal primary
     WSS_ENDPOINTS = []
-    if _cs_wss:
-        WSS_ENDPOINTS.append(_cs_wss)
+    if _nr_wss: WSS_ENDPOINTS.append(_nr_wss)
     WSS_ENDPOINTS += [
+        "wss://rpc.ankr.com/bsc/ws",
         "wss://bsc-rpc.publicnode.com",
         "wss://bsc.publicnode.com",
         "wss://bsc.drpc.org",
@@ -3917,14 +3917,14 @@ def poll_new_pairs():
     PAIR_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
     WBNB_LOWER = WBNB.lower()
     # Chainstack primary — fallback to public
-    _cs = os.getenv("BSC_WSS", "")
+    _nr = os.getenv("BSC_WSS2", "")  # NodeReal primary
     WSS_ENDPOINTS = []
-    if _cs: WSS_ENDPOINTS.append(_cs)
+    if _nr: WSS_ENDPOINTS.append(_nr)
     WSS_ENDPOINTS += [
+        "wss://rpc.ankr.com/bsc/ws",
         "wss://bsc-rpc.publicnode.com",
         "wss://bsc.publicnode.com",
         "wss://bsc.drpc.org",
-        "wss://bsc-ws-rpc.publicnode.com",
     ]
 
     async def _listen(wss_url):
@@ -4018,10 +4018,11 @@ def poll_four_meme_wss():
     FOUR_TOPIC_PAIR     = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
     FOUR_TOPIC_LAUNCH   = "0xb9ed0243fdf00f0545c63a0af8850c090d86bb46673f2a9a30adece5df78e34e"
 
-    _cs4 = os.getenv("BSC_WSS", "")
+    _nr4 = os.getenv("BSC_WSS2", "")  # NodeReal primary
     WSS_ENDPOINTS = []
-    if _cs4: WSS_ENDPOINTS.append(_cs4)
+    if _nr4: WSS_ENDPOINTS.append(_nr4)
     WSS_ENDPOINTS += [
+        "wss://rpc.ankr.com/bsc/ws",
         "wss://bsc-rpc.publicnode.com",
         "wss://bsc.publicnode.com",
         "wss://bsc.drpc.org",
