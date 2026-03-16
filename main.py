@@ -4472,18 +4472,18 @@ def run_full_sniper_checklist(address: str, prefetched_dex: dict = None) -> Dict
         _bnb_price    = max(market_cache.get("bnb_price", 600), 1)
         _liq_usd      = dex_data.get("liquidity_usd", 0) or 0
 
-        if token_age_min < 10:
+        if token_age_min < 15:
             for h in _holders_list[:10]:
                 pct          = float(h.get("percent", 0) or 0) * 100
                 _is_contract = h.get("is_contract", 0)
-                if pct >= 5.0 and not _is_contract:
+                if pct >= 3.0 and not _is_contract:
                     holder_usd = (_liq_usd * pct / 100) if _liq_usd > 0 else 0
-                    if holder_usd >= 300:  # $300+ = real dump power
+                    if holder_usd >= 600:  # $600+ = real dump power
                         _sniper_count += 1
                         _sniper_bnb   += holder_usd / _bnb_price
 
         # Bot activity — first 5 min mein 20+ buys = suspicious
-        if token_age_min < 5 and dex_data.get("buys_5m", 0) > 20:
+        if token_age_min < 5 and dex_data.get("buys_5m", 0) > 15:
             _sniper_count = max(_sniper_count, 3)
 
         if _sniper_count == 0:
