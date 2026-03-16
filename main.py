@@ -3841,16 +3841,61 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
     try:
         if whale_triggered:
             _log("whale", pair_address[:8], f"🐋 Whale follow — scanning ({whale_wallet[:8]})", pair_address)
-            print(f"🐋 WHALE FOLLOW scan (skip wait): {pair_address[:10]} ← {whale_wallet[:10]}")
-            time.sleep(10)
+            print(f"🐋 WHALE FOLLOW scan: {pair_address[:10]} ← {whale_wallet[:10]}")
         else:
-            _log("discover", pair_address[:8], "New pair — waiting 30s for liquidity", pair_address)
-            print(f"⏳ Waiting 30s: {pair_address[:10]}")
-            time.sleep(30)
+            _log("discover", pair_address[:8], "New pair — liquidity monitor start", pair_address)
+            print(f"👀 Liquidity monitor: {pair_address[:10]}")
+
+        # ── On-chain liquidity check — 30s wait hataya ──
+        # getReserves() direct RPC se — DexScreener nahi
+        # pair_address already WSS event mein aata hai
+        _min_liq_bnb    = CHECKLIST_SETTINGS.get("min_liq_bnb", 3.0)
+        _liq_start      = time.time()
+        _liq_timeout    = 300   # 5 min max wait
+        _liq_interval   = 0.5   # 500ms check
+        _liq_ok         = False
         _prefetched_dex = None
-        for _dex_try in range(3):  # 3 tries — naye token index hone mein time lagta hai
+
+        while time.time() - _liq_start < _liq_timeout:
             try:
-                _ar = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{pair_address}", timeout=8)
+                _pc = w3.eth.contract(
+                    address=Web3.to_checksum_address(pair_address),
+                    abi=PAIR_ABI_PRICE
+                )
+                _reserves = _pc.functions.getReserves().call()
+                _r0 = _reserves[0] / 1e18
+                _r1 = _reserves[1] / 1e18
+                _liq_bnb_now = max(_r0, _r1)  # WBNB side
+                _elapsed = round(time.time() - _liq_start, 1)
+                if _liq_bnb_now >= _min_liq_bnb:
+                    print(f"✅ Liquidity ok ({_liq_bnb_now:.2f} BNB) in {_elapsed}s: {pair_address[:10]}")
+                    _liq_ok = True
+                    break
+                else:
+                    if _elapsed % 10 < _liq_interval:
+                        print(f"⏳ Liq {_liq_bnb_now:.3f}/{_min_liq_bnb} BNB ({_elapsed:.0f}s): {pair_address[:10]}")
+            except Exception as _le:
+                pass
+            time.sleep(_liq_interval)
+
+        if not _liq_ok:
+            print(f"⏰ Liq timeout — skip: {pair_address[:10]}")
+            _log("reject", pair_address[:8], "Liquidity timeout — skip", pair_address)
+            threading.Thread(target=_save_bot_decision, args=({
+                "token_address":    pair_address,
+                "token_name":       pair_address[:8],
+                "decision":         "SKIP",
+                "prefilter_skip":   True,
+                "prefilter_reason": "Liquidity nahi aayi 5 min mein",
+                "reason":           "Liquidity timeout 300s",
+                "discovery_source": "whale" if whale_triggered else "wss",
+            },), daemon=True).start()
+            return
+
+        # Liquidity ok — DexScreener se token data fetch karo (checklist ke liye)
+        for _dex_try in range(2):  # 2 tries only
+            try:
+                _ar = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{pair_address}", timeout=6)
                 if _ar.status_code == 200:
                     _ar_json = _ar.json() or {}
                     _bp = [p for p in (_ar_json.get("pairs") or []) if p and p.get("chainId") == "bsc"]
@@ -3861,18 +3906,12 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
                             del _ar_json, _bp, _ar
                             return
                         _prefetched_dex = _ar_json
-                        print(f"✅ DexScreener OK (try {_dex_try+1}): {pair_address[:10]}")
                         del _ar
                         break
-                    else:
-                        # pairs empty — token abhi index nahi hua
-                        if _dex_try < 2:
-                            print(f"⏳ DexScreener empty (try {_dex_try+1}) — waiting 15s: {pair_address[:10]}")
-                            time.sleep(15)
                 del _ar
             except Exception:
-                if _dex_try < 2:
-                    time.sleep(5)
+                if _dex_try < 1:
+                    time.sleep(3)
 
         result  = run_full_sniper_checklist(pair_address, prefetched_dex=_prefetched_dex)
         score   = result.get("score", 0)
