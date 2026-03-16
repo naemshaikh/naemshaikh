@@ -2593,6 +2593,39 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     })
     if len(auto_trade_stats["trade_history"]) > 10000:
         auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-10000:]
+    # ── Bot Decision — SELL log ──
+    if sell_pct >= 100.0:
+        try:
+            _hold_min  = round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds() / 60, 1) if bought_at_str else 0
+            _peak      = monitored_positions.get(address, {}).get("peak_price", current)
+            _left_pct  = round((_peak - current) / _peak * 100, 1) if _peak and _peak > 0 and current > 0 else 0
+            _exit_type = ("tp_hit" if ("TP" in reason or "Profit" in reason)
+                          else "sl_hit" if "SL" in reason
+                          else "rug"    if ("Rug" in reason or "Dump" in reason)
+                          else "manual")
+            _fg_sell   = market_cache.get("fear_greed", 50)
+            _mkt_sell  = "bullish" if _fg_sell >= 60 else ("bearish" if _fg_sell <= 35 else "neutral")
+            threading.Thread(target=_save_bot_decision, args=({
+                "token_address":      address,
+                "token_name":         token,
+                "decision":           "SELL",
+                "reason":             reason,
+                "thought":            _post_mortem,
+                "pnl_pct":            _total_pnl_pct_trade,
+                "exit_reason":        reason,
+                "exit_type":          _exit_type,
+                "hold_time_min":      _hold_min,
+                "peak_price":         _peak,
+                "left_on_table_pct":  _left_pct,
+                "entry_price":        entry,
+                "exit_price":         current,
+                "bnb_price_at_entry": market_cache.get("bnb_price", 0),
+                "fear_greed_at_entry":_fg_sell,
+                "market_condition":   _mkt_sell,
+                "token_type":         "meme",
+            },), daemon=True).start()
+        except Exception as _de:
+            print(f"⚠️ sell decision log error: {_de}")
     # Supabase mein permanently save karo — background thread mein
     threading.Thread(target=_save_trade_history_to_db, daemon=True).start()
 
@@ -3743,6 +3776,17 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
     if is_token_blacklisted(pair_address):
         _log("reject", pair_address[:8], "Blacklisted 24h — skip", pair_address)
         print(f"🚫 Token blacklisted — skip: {pair_address[:10]}")
+        threading.Thread(target=_save_bot_decision, args=({
+            "token_address":       pair_address,
+            "token_name":          pair_address[:8],
+            "decision":            "PREFILTER_SKIP",
+            "prefilter_skip":      True,
+            "prefilter_reason":    "Token blacklisted 24h",
+            "reason":              "Blacklisted — auto skip",
+            "discovery_source":    "whale" if whale_triggered else "wss",
+            "bnb_price_at_entry":  market_cache.get("bnb_price", 0),
+            "fear_greed_at_entry": market_cache.get("fear_greed", 50),
+        },), daemon=True).start()
         return
     if not _check_semaphore.acquire(blocking=False):
         print(f"⏭️ Check skipped (semaphore full): {pair_address[:10]}")
@@ -3806,17 +3850,75 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
         _safe_score = CHECKLIST_SETTINGS.get("score_safe", 50.0)
 
         # ── GATE 1: Full Checklist — MUST be SAFE ──
+        # ── Common decision context ──
+        _decision_ts   = datetime.utcnow().isoformat()
+        _failed_chk    = next((c["label"] for c in result.get("checklist", []) if c["status"] == "fail"), None)
+        _creator_addr  = (result.get("_goplus_raw") or {}).get("creator_address", "")
+        _whale_cnt     = _count_whales_in_token(pair_address, result.get("_goplus_raw") or {})
+        _fg            = market_cache.get("fear_greed", 50)
+        _market_cond   = "bullish" if _fg >= 60 else ("bearish" if _fg <= 35 else "neutral")
+        _dex_age       = (_dex_d.get("pair_created_at") or 0)
+        _token_age_min = round((time.time() - _dex_age / 1000) / 60, 1) if _dex_age else 0
+        _dex_safe      = {k: v for k, v in (_dex_d or {}).items() if k != "_raw_pairs"}
+
         if overall != "SAFE":
             _log("reject", _final_name, f"Checklist {overall} ({score}/{total}) — {rec[:40]}", pair_address)
             print(f"⏭️ SKIP {_final_name}: checklist={overall} — CAUTION/RISK/DANGER pe trade nahi")
+            threading.Thread(target=_save_bot_decision, args=({
+                "token_address":      pair_address,
+                "token_name":         _final_name,
+                "decision":           "SKIP",
+                "reason":             f"Checklist {overall} — {rec[:80]}",
+                "thought":            f"Token scan kiya. Overall={overall}. Score={score}/{total}. Fail: {_failed_chk}. Skip kiya.",
+                "score":              score,
+                "total":              total,
+                "checklist":          result.get("checklist"),
+                "signals":            result.get("green_signals"),
+                "dex_data":           _dex_safe,
+                "discovery_source":   "whale" if whale_triggered else "wss",
+                "discovery_ts":       _decision_ts,
+                "bnb_price_at_entry": market_cache.get("bnb_price", 0),
+                "fear_greed_at_entry":_fg,
+                "market_condition":   _market_cond,
+                "token_age_min":      _token_age_min,
+                "failed_check":       _failed_chk,
+                "creator_address":    _creator_addr,
+                "whale_count":        _whale_cnt,
+                "token_type":         "meme",
+            },), daemon=True).start()
+
         elif score < int(total * _safe_score / 100):
             _log("reject", _final_name, f"Score {score}/{total} ({round(score/max(total,1)*100)}%) below threshold", pair_address)
             print(f"⏭️ SKIP {_final_name}: checklist score {score}/{total} ({round(score/max(total,1)*100)}%) < {_safe_score:.0f}% threshold")
+            threading.Thread(target=_save_bot_decision, args=({
+                "token_address":      pair_address,
+                "token_name":         _final_name,
+                "decision":           "SKIP",
+                "reason":             f"Score {score}/{total} ({round(score/max(total,1)*100)}%) threshold se kam",
+                "thought":            f"Checklist SAFE tha lekin score {score}/{total} threshold {_safe_score:.0f}% se kam. Skip.",
+                "score":              score,
+                "total":              total,
+                "checklist":          result.get("checklist"),
+                "signals":            result.get("green_signals"),
+                "dex_data":           _dex_safe,
+                "discovery_source":   "whale" if whale_triggered else "wss",
+                "discovery_ts":       _decision_ts,
+                "bnb_price_at_entry": market_cache.get("bnb_price", 0),
+                "fear_greed_at_entry":_fg,
+                "market_condition":   _market_cond,
+                "token_age_min":      _token_age_min,
+                "failed_check":       _failed_chk,
+                "creator_address":    _creator_addr,
+                "whale_count":        _whale_cnt,
+                "token_type":         "meme",
+            },), daemon=True).start()
+
         else:
             # ── GATE 2: Opportunity Score ──
             _gs = detect_green_signals(pair_address, result.get("_goplus_raw", {}), _dex_d)
             _opp_score = _gs.get("score", 0)
             _opp_sigs  = [s["type"] for s in _gs.get("signals", [])]
+            _buy_ts    = time.time()
 
             if _opp_score < 1:
                 _log("pass", _final_name, f"Checklist SAFE ✅ but no opp signals — buying anyway", pair_address)
@@ -3824,6 +3926,29 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
             # Buy karo — checklist SAFE ho toh opportunity score optional
             _log("pass", _final_name, f"✅ SAFE {score}/{total} · signals: {', '.join(_opp_sigs[:2])}", pair_address)
             print(f"✅ BUY CONFIRMED {_final_name}: checklist={overall} ({score}/{total}) + opp={_opp_score}pt signals={_opp_sigs}")
+            threading.Thread(target=_save_bot_decision, args=({
+                "token_address":        pair_address,
+                "token_name":           _final_name,
+                "decision":             "BUY",
+                "reason":               f"Checklist SAFE {score}/{total} + signals: {', '.join(_opp_sigs[:3])}",
+                "thought":              f"Token safe laga. Score={score}/{total}. Signals={_opp_score}pt: {', '.join(_opp_sigs)}. BNB={market_cache.get('bnb_price',0):.2f}. Buy kiya.",
+                "score":                score,
+                "total":                total,
+                "checklist":            result.get("checklist"),
+                "signals":              result.get("green_signals"),
+                "dex_data":             _dex_safe,
+                "discovery_source":     "whale" if whale_triggered else "wss",
+                "discovery_ts":         _decision_ts,
+                "bnb_price_at_entry":   market_cache.get("bnb_price", 0),
+                "fear_greed_at_entry":  _fg,
+                "market_condition":     _market_cond,
+                "token_age_min":        _token_age_min,
+                "discovery_to_buy_sec": round(_buy_ts - time.time() + (30 if not whale_triggered else 10), 1),
+                "creator_address":      _creator_addr,
+                "whale_count":          _whale_cnt,
+                "token_type":           "meme",
+                "entry_price":          float((_dex_d or {}).get("price_bnb", 0) or 0),
+            },), daemon=True).start()
             try: _auto_paper_buy(pair_address, _final_name, score, total, result)
             except Exception as e: print(f"Auto buy error: {e}")
 
@@ -4737,6 +4862,52 @@ def run_full_sniper_checklist(address: str, prefetched_dex: dict = None) -> Dict
     return result
 
 def scan_bsc_token(address): return run_full_sniper_checklist(address)
+
+# ========== BOT DECISION LOGGER ==========
+def _save_bot_decision(data: dict):
+    """Har decision Supabase bot_decisions table mein save karo — background thread"""
+    if not supabase:
+        return
+    try:
+        row = {
+            "token_address":        data.get("token_address", ""),
+            "token_name":           data.get("token_name", ""),
+            "decision":             data.get("decision", ""),
+            "reason":               data.get("reason", ""),
+            "thought":              data.get("thought", ""),
+            "score":                data.get("score", 0),
+            "total":                data.get("total", 0),
+            "checklist":            data.get("checklist"),
+            "signals":              data.get("signals"),
+            "dex_data":             data.get("dex_data"),
+            "pnl_pct":              data.get("pnl_pct"),
+            "exit_reason":          data.get("exit_reason"),
+            "discovery_source":     data.get("discovery_source", "unknown"),
+            "discovery_ts":         data.get("discovery_ts", datetime.utcnow().isoformat()),
+            "queue_wait_sec":       data.get("queue_wait_sec", 0),
+            "prefilter_skip":       data.get("prefilter_skip", False),
+            "prefilter_reason":     data.get("prefilter_reason"),
+            "bnb_price_at_entry":   data.get("bnb_price_at_entry", market_cache.get("bnb_price", 0)),
+            "fear_greed_at_entry":  data.get("fear_greed_at_entry", market_cache.get("fear_greed", 50)),
+            "market_trend":         data.get("market_trend", "unknown"),
+            "token_age_min":        data.get("token_age_min", 0),
+            "discovery_to_buy_sec": data.get("discovery_to_buy_sec", 0),
+            "hold_time_min":        data.get("hold_time_min"),
+            "failed_check":         data.get("failed_check"),
+            "creator_address":      data.get("creator_address"),
+            "creator_launches":     data.get("creator_launches"),
+            "whale_count":          data.get("whale_count"),
+            "peak_price":           data.get("peak_price"),
+            "left_on_table_pct":    data.get("left_on_table_pct"),
+            "entry_price":          data.get("entry_price"),
+            "exit_price":           data.get("exit_price"),
+            "token_type":           data.get("token_type", "meme"),
+            "market_condition":     data.get("market_condition", "unknown"),
+            "exit_type":            data.get("exit_type"),
+        }
+        supabase.table("bot_decisions").insert(row).execute()
+    except Exception as e:
+        print(f"⚠️ bot_decision save error: {e}")
 
 # ========== TRADE LOGGING ==========
 def log_trade_internal(session_id: str, trade: Dict):
