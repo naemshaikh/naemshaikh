@@ -1742,7 +1742,7 @@ def _save_trade_history_to_db():
             "session_id":    _TRADES_SESSION_ID,
             "role":          "user",
             "content":       "",
-            "trade_history": json.dumps(all_hist[-5000:]),
+            "trade_history": json.dumps(all_hist[-10000:]),
             "updated_at":    datetime.utcnow().isoformat(),
         }, on_conflict="session_id").execute()
         paper_hist = [t for t in all_hist if t.get("mode", "paper") == "paper"]
@@ -2462,6 +2462,21 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     _sl = CHECKLIST_SETTINGS.get("sl_new", 12.0)
     add_position_to_monitor(AUTO_SESSION_ID, address, token_name or address[:10], entry_price, size_bnb, stop_loss_pct=_sl)
     _bnb_at_buy = market_cache.get("bnb_price", 0)  # real only — DataGuard already verified
+    # ── Buy Reasoning — kyu buy kiya ──
+    _dex_d = checklist_result.get("dex_data", {}) or {}
+    _buy_signals = [s["type"] for s in (checklist_result.get("green_signals") or [])]
+    _buy_reasoning = {
+        "score":       score,
+        "total":       total,
+        "score_pct":   round(score / max(total, 1) * 100, 1),
+        "signals":     _buy_signals,
+        "mc_usd":      round(float(_dex_d.get("fdv", 0) or 0), 0),
+        "liq_usd":     round(float(_dex_d.get("liquidity_usd", 0) or 0), 0),
+        "buys_5m":     int(_dex_d.get("buys_5m", 0) or 0),
+        "sells_5m":    int(_dex_d.get("sells_5m", 0) or 0),
+        "assumption":  f"Score {score}/{total} SAFE, signals: {', '.join(_buy_signals[:3]) if _buy_signals else 'checklist only'}",
+        "ts":          datetime.utcnow().isoformat(),
+    }
     auto_trade_stats["running_positions"][address] = {
         "token":          token_name or address[:10],
         "entry":          entry_price,
@@ -2469,11 +2484,12 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         "orig_size_bnb":  size_bnb,
         "bought_usd":     round(size_bnb * _bnb_at_buy, 2),
         "sl_pct":         CHECKLIST_SETTINGS.get("sl_new", 12.0),
-        "trail_pct":      20.0,   # ✅ immediate 20% trailing from entry
+        "trail_pct":      20.0,
         "tp_sold":        0.0,
         "banked_pnl_bnb": 0.0,
         "bought_at":      datetime.utcnow().isoformat(),
         "mode":           TRADE_MODE,
+        "buy_reasoning":  _buy_reasoning,
     }
     auto_trade_stats["total_auto_buys"] += 1
     auto_trade_stats["last_action"] = f"BUY {token_name or address[:10]}"
@@ -2564,8 +2580,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         "mode":       TRADE_MODE,
         "tp_events":  pos.get("tp_events", []),
     })
-    if len(auto_trade_stats["trade_history"]) > 5000:
-        auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-5000:]
+    if len(auto_trade_stats["trade_history"]) > 10000:
+        auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-10000:]
     # Supabase mein permanently save karo — background thread mein
     threading.Thread(target=_save_trade_history_to_db, daemon=True).start()
 
@@ -3378,6 +3394,8 @@ def _learn_trading_patterns():
                     "pnl_pct":  pnl,
                     "hold_min": t.get("hold_minutes", 0),
                     "reason":   reason,
+                    "signals":  t.get("signals_used", []),
+                    "post_mortem": t.get("post_mortem", ""),
                     "ts":       ts,
                 }
                 best = brain["trading"]["best_patterns"]
@@ -3392,6 +3410,8 @@ def _learn_trading_patterns():
                     "pnl_pct":  pnl,
                     "hold_min": t.get("hold_minutes", 0),
                     "reason":   reason,
+                    "signals":  t.get("signals_used", []),
+                    "post_mortem": t.get("post_mortem", ""),
                     "ts":       ts,
                 }
                 avoid = brain["trading"]["avoid_patterns"]
@@ -4796,6 +4816,12 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
         user_ctx  = get_user_context_for_llm()
         sa_ctx    = get_self_awareness_context_for_llm()
         learn_ctx = get_learning_context_for_decision()
+        # ── Recent trade post-mortems LLM ko do ──
+        _recent_hist = [t for t in auto_trade_stats.get("trade_history", [])[-10:] if isinstance(t, dict)]
+        _pm_ctx = " | ".join(
+            f"{t.get('token','?')}:{t.get('result','?').upper()}({t.get('pnl_pct',0):+.0f}%)-{t.get('reason','?')[:20]}"
+            for t in _recent_hist[-5:]
+        ) if _recent_hist else ""
 
         _auto_sess    = get_or_create_session(AUTO_SESSION_ID)
         _auto_balance = _auto_sess.get("paper_balance", 5.0)
@@ -4817,6 +4843,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
             + (f"|SA:{sa_ctx}" if sa_ctx else "")
             + (f"|User:{user_ctx}" if user_ctx and user_ctx != "NEW_USER" else "")
             + f"|AUTO_BAL={_auto_balance:.4f}|AUTO_POS={_auto_pos}|AUTO_WR={_auto_wr}%|AUTO_PNL={_auto_pnl}%"
+            + (f"|RecentTrades:{_pm_ctx}" if _pm_ctx else "")
             + f"]"
         )
 
@@ -5326,6 +5353,62 @@ def chat():
     mode       = data.get("mode", "paper")
     if not user_msg:
         return jsonify({"reply": "Kuch toh bolo! 😅", "session_id": session_id})
+
+    # ── Contract address detect karo — 0x paste kiya toh checklist explain karo ──
+    import re as _re
+    _addr_match = _re.search(r"0x[0-9a-fA-F]{40}", user_msg)
+    if _addr_match:
+        _ca = _addr_match.group(0)
+        try:
+            _ca_cs = Web3.to_checksum_address(_ca)
+        except Exception:
+            _ca_cs = None
+        if _ca_cs:
+            # Check if already in trade history
+            _hist = auto_trade_stats.get("trade_history", [])
+            _past = [t for t in _hist if t.get("address","").lower() == _ca.lower()]
+            # Check if currently open
+            _open = auto_trade_stats.get("running_positions", {}).get(_ca_cs, {})
+            # Run checklist
+            try:
+                _res = run_full_sniper_checklist(_ca_cs)
+                _ov  = _res.get("overall", "UNKNOWN")
+                _sc  = _res.get("score", 0)
+                _tot = _res.get("total", 1)
+                _pct = round(_sc / max(_tot, 1) * 100, 1)
+                _rec = _res.get("recommendation", "")
+                _fails = [c["label"] for c in _res.get("checklist", []) if c.get("status") == "fail"][:3]
+                _passes= [c["label"] for c in _res.get("checklist", []) if c.get("status") == "pass"][:3]
+                _sigs  = [s["type"] for s in (_res.get("green_signals") or [])]
+
+                _reply_parts = [f"🔍 Token: {_ca[:10]}..."]
+                _reply_parts.append(f"📊 Checklist: {_ov} ({_sc}/{_tot} = {_pct}%)")
+                if _ov == "SAFE":
+                    _reply_parts.append(f"✅ Buy criteria pass — {', '.join(_sigs[:2]) if _sigs else 'checklist only'}")
+                else:
+                    _reply_parts.append(f"❌ Skip reason: {_rec[:80]}")
+                    if _fails:
+                        _reply_parts.append(f"Failed: {', '.join(_fails)}")
+                if _past:
+                    _last = _past[-1]
+                    _reply_parts.append(f"📜 History: {_last.get('result','?').upper()} {_last.get('pnl_pct',0):+.1f}% | Exit: {_last.get('reason','?')[:30]}")
+                    if _last.get("post_mortem"):
+                        _reply_parts.append(f"💡 {_last['post_mortem'][:80]}")
+                elif _open:
+                    _pnl_now = ((monitored_positions.get(_ca_cs, {}).get("current", _open.get("entry",0)) - _open.get("entry",0)) / max(_open.get("entry",1e-18), 1e-18)) * 100
+                    _reply_parts.append(f"👁️ Currently open | PnL: {_pnl_now:+.1f}%")
+                else:
+                    _reply_parts.append("📭 Pehle kabhi trade nahi hua")
+
+                _auto_reply = "
+".join(_reply_parts)
+                sess2 = get_or_create_session(session_id)
+                sess2["history"].append({"role": "user",      "content": user_msg})
+                sess2["history"].append({"role": "assistant", "content": _auto_reply})
+                return jsonify({"reply": _auto_reply, "session_id": session_id,
+                                "trading": {"paper": f"{sess2.get('paper_balance',5.0):.3f}", "pnl": "+0.0%"}})
+            except Exception as _ce:
+                pass  # fallback to normal LLM
     sess = get_or_create_session(session_id)
     sess["mode"] = mode
         # FIX v5: daily_loss ab BNB mein hai, 15% of balance threshold
