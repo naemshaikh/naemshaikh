@@ -435,8 +435,18 @@ class DataGuard:
                     return gas_bnb
         except Exception as e:
             print(f"⚠️ Gas fetch error: {e}")
-        # BSC standard fallback — 5 gwei x 150k gas = 0.00075 BNB (~$0.49)
-        return 0.00075
+        # w3 se gas fetch karo — NodeReal nahi hai toh bhi sahi value milegi
+        try:
+            _gp = w3.eth.gas_price  # wei mein
+            _gwei = _gp / 1e9
+            if 0.05 < _gwei < 100:
+                _gas_bnb = (_gp * 150000) / 1e18
+                DataGuard._gas_cache = {"val": _gas_bnb, "ts": now}
+                return _gas_bnb
+        except Exception:
+            pass
+        # Last resort fallback — 1 gwei x 150k gas
+        return round((1e9 * 150000) / 1e18, 6)  # ~0.00015 BNB
 
     @staticmethod
     def trade_allowed(address, token_price_bnb):
