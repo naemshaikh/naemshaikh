@@ -1063,10 +1063,11 @@ def start_swap_monitor():
     WSS_ENDPOINTS = []
     if _nr_wss: WSS_ENDPOINTS.append(_nr_wss)
     WSS_ENDPOINTS += [
-        "wss://rpc.ankr.com/bsc/ws",
         "wss://bsc-rpc.publicnode.com",
         "wss://bsc.publicnode.com",
         "wss://bsc.drpc.org",
+        "wss://bsc.meowrpc.com",
+        "wss://bsc-dataseed.bnbchain.org",
     ]
 
     async def _swap_loop():
@@ -2169,8 +2170,8 @@ def _log(event_type: str, token: str, detail: str, address: str = ""):
     })
 discovered_addresses: dict = {}
 _discovered_lock  = threading.Lock()          # RACE FIX: protect discovered_addresses
-_token_semaphore  = threading.Semaphore(12)  # was 2 — more discovery throughput
-_check_semaphore  = threading.Semaphore(12)  # was 3 — more concurrent checks
+_token_semaphore  = threading.Semaphore(18)  # was 2 — more discovery throughput
+_check_semaphore  = threading.Semaphore(18)  # was 3 — more concurrent checks
 DISCOVERY_TTL = 7200
 PAIR_CREATED_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
 
@@ -2292,7 +2293,7 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
     _token_semaphore.release()
     # MEM FIX: max 3 concurrent checkers
     if not hasattr(_process_new_token, "_sem"):
-        _process_new_token._sem = threading.Semaphore(12)
+        _process_new_token._sem = threading.Semaphore(18)
     def _run_check():
         if not _process_new_token._sem.acquire(blocking=False): return
         try: _auto_check_new_pair(token_address)
@@ -3922,10 +3923,11 @@ def poll_new_pairs():
     WSS_ENDPOINTS = []
     if _nr: WSS_ENDPOINTS.append(_nr)
     WSS_ENDPOINTS += [
-        "wss://rpc.ankr.com/bsc/ws",
         "wss://bsc-rpc.publicnode.com",
         "wss://bsc.publicnode.com",
         "wss://bsc.drpc.org",
+        "wss://bsc.meowrpc.com",
+        "wss://bsc-dataseed.bnbchain.org",
     ]
 
     async def _listen(wss_url):
@@ -4023,10 +4025,11 @@ def poll_four_meme_wss():
     WSS_ENDPOINTS = []
     if _nr4: WSS_ENDPOINTS.append(_nr4)
     WSS_ENDPOINTS += [
-        "wss://rpc.ankr.com/bsc/ws",
         "wss://bsc-rpc.publicnode.com",
         "wss://bsc.publicnode.com",
         "wss://bsc.drpc.org",
+        "wss://bsc.meowrpc.com",
+        "wss://bsc-dataseed.bnbchain.org",
     ]
 
     async def _listen_four(wss_url):
