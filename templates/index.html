@@ -3463,7 +3463,7 @@ function _renderNotifList(){
     const sev = n.severity || 'info';
     const dotCls = 'notif-dot '+sev;
     const itemCls = 'notif-item' + (isUnread ? ' unread '+sev : '');
-    html += '<div class="'+itemCls+'" onclick="readNotif(''+n.id+'')" data-id="'+n.id+'">'+
+    html += '<div class="'+itemCls+'" onclick="readNotif(\"'+n.id+'\")" data-id="'+n.id+'">'+
       '<div class="'+dotCls+'" style="margin-top:6px;"></div>'+
       '<div style="flex:1;min-width:0;">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:3px;">'+
@@ -3473,7 +3473,7 @@ function _renderNotifList(){
         '<div style="font-size:11px;color:var(--txt2);line-height:1.4;word-break:break-word;">'+n.detail+'</div>'+
         (n.token ? '<div style="font-size:9px;color:var(--txt3);margin-top:3px;font-family:monospace;">'+n.token+'</div>' : '')+
       '</div>'+
-      '<button class="notif-del-btn" onclick="deleteNotif(event,''+n.id+'')">✕</button>'+
+      '<button class="notif-del-btn" onclick="deleteNotif(event,\"'+n.id+'\")">✕</button>'+
     '</div>';
   });
   list.innerHTML = html;
