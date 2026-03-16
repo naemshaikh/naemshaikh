@@ -2562,23 +2562,34 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
      _total_pnl_bnb_trade = round(pos.get("banked_pnl_bnb", 0.0), 6)
      _total_pnl_pct_trade = round((_total_pnl_bnb_trade / _orig_sz * 100), 2) if _orig_sz > 0 else pnl_pct
      _gas_bnb_sell = DataGuard.get_real_gas_bnb()
+     # ── Post-mortem ──
+     _buy_rsn = pos.get("buy_reasoning", {}) or {}
+     _assumption = _buy_rsn.get("assumption", "N/A")
+     _signals_used = _buy_rsn.get("signals", [])
+     if _total_pnl_pct_trade > 0:
+         _post_mortem = f"WIN +{_total_pnl_pct_trade:.1f}% | Exit: {reason} | Signals: {', '.join(_signals_used[:2]) if _signals_used else 'checklist'}"
+     else:
+         _post_mortem = f"LOSS {_total_pnl_pct_trade:.1f}% | Exit: {reason} | Assumption fail: {_assumption[:60]}"
      auto_trade_stats["trade_history"].append({
-        "token":      token,
-        "address":    address,
-        "entry":      entry,
-        "exit":       current,
-        "pnl_pct":    _total_pnl_pct_trade,
-        "pnl_bnb":    _total_pnl_bnb_trade,
-        "size_bnb":   _orig_sz,
-        "gas_bnb":    _gas_bnb_sell,
-        "bought_usd": _saved_bought_usd if _saved_bought_usd else round(_orig_sz * _bnb_at_sell, 2),
-        "sold_usd":   round(max(0.0, (_saved_bought_usd / _bnb_at_sell if _bnb_at_sell > 0 else _orig_sz) + _total_pnl_bnb_trade) * _bnb_at_sell, 2) if _bnb_at_sell > 0 else 0,
-        "bought_at":  bought_at_str,
-        "sold_at":    datetime.utcnow().isoformat(),
-        "result":     "win" if _total_pnl_pct_trade > 0 else "loss",
-        "reason":     reason,
-        "mode":       TRADE_MODE,
-        "tp_events":  pos.get("tp_events", []),
+        "token":        token,
+        "address":      address,
+        "entry":        entry,
+        "exit":         current,
+        "pnl_pct":      _total_pnl_pct_trade,
+        "pnl_bnb":      _total_pnl_bnb_trade,
+        "size_bnb":     _orig_sz,
+        "gas_bnb":      _gas_bnb_sell,
+        "bought_usd":   _saved_bought_usd if _saved_bought_usd else round(_orig_sz * _bnb_at_sell, 2),
+        "sold_usd":     round(max(0.0, (_saved_bought_usd / _bnb_at_sell if _bnb_at_sell > 0 else _orig_sz) + _total_pnl_bnb_trade) * _bnb_at_sell, 2) if _bnb_at_sell > 0 else 0,
+        "bought_at":    bought_at_str,
+        "sold_at":      datetime.utcnow().isoformat(),
+        "result":       "win" if _total_pnl_pct_trade > 0 else "loss",
+        "reason":       reason,
+        "mode":         TRADE_MODE,
+        "tp_events":    pos.get("tp_events", []),
+        "buy_reasoning":_buy_rsn,
+        "post_mortem":  _post_mortem,
+        "signals_used": _signals_used,
     })
     if len(auto_trade_stats["trade_history"]) > 10000:
         auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-10000:]
