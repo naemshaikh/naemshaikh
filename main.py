@@ -34,8 +34,43 @@ from typing import List, Dict, Optional
 import hmac
 import hashlib
 
-# ========== FREEFLOW LLM ==========
-from freeflow_llm import FreeFlowClient, NoProvidersAvailableError
+# ========== GROQ DIRECT CLIENT — Infinite Round-Robin ==========
+import groq as _groq_module
+
+class NoProvidersAvailableError(Exception):
+    pass
+
+class FreeFlowClient:
+    def __init__(self):
+        _raw = os.getenv("GROQ_API_KEY", "")
+        self._keys = [k.strip() for k in _raw.split(",") if k.strip()]
+        self._idx  = 0
+        if not self._keys:
+            print("⚠️ GROQ_API_KEY not set — chat disabled")
+        else:
+            print(f"✅ Groq ready — {len(self._keys)} keys loaded")
+
+    def chat(self, model: str, messages: list, max_tokens: int = 600) -> str:
+        if not self._keys:
+            raise NoProvidersAvailableError("No GROQ_API_KEY set")
+        total    = len(self._keys)
+        last_err = None
+        for attempt in range(total):
+            key_idx = (self._idx + attempt) % total
+            key     = self._keys[key_idx]
+            try:
+                client = _groq_module.Groq(api_key=key)
+                resp   = client.chat.completions.create(
+                    model=model, messages=messages,
+                    max_tokens=max_tokens, timeout=30,
+                )
+                self._idx = (key_idx + 1) % total
+                return resp.choices[0].message.content.strip()
+            except Exception as e:
+                last_err = e
+                print(f"⚠️ Groq key[{key_idx+1}/{total}] fail: {str(e)[:60]} — next try")
+                continue
+        raise NoProvidersAvailableError(f"All {total} Groq keys failed. Last: {str(last_err)[:100]}")
 
 app = Flask(__name__)
 MODELS_PRIORITY = [
@@ -5055,20 +5090,16 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
         messages.append({"role": "user", "content": user_message + ctx + rules_reminder})
 
         reply_text = None
-        try:
-            response = client.chat(model=MODEL_NAME, messages=messages, max_tokens=600)
-            if isinstance(response, str): reply_text = response.strip()
-            elif hasattr(response, "choices"): reply_text = response.choices[0].message.content.strip()
-            elif hasattr(response, "content"): reply_text = response.content.strip()
-        except Exception as e1:
-            print(f"FreeFlow P1 fail: {e1}")
-
-        if not reply_text:
+        # Round-robin keys — MODEL_NAME pehle, MODEL_FAST fallback
+        for _model in [MODEL_NAME, MODEL_FAST]:
             try:
-                r2 = client.completions.create(model=MODEL_NAME, messages=messages, max_tokens=600)
-                reply_text = (r2.choices[0].message.content if hasattr(r2, "choices") else str(r2)).strip()
-            except Exception as e2:
-                print(f"FreeFlow P2 fail: {e2}")
+                reply_text = client.chat(model=_model, messages=messages, max_tokens=600)
+                if reply_text:
+                    break
+            except NoProvidersAvailableError:
+                raise
+            except Exception as e:
+                print(f"⚠️ Model {_model} fail: {str(e)[:60]}")
 
         return reply_text or "AI temporarily unavailable. Thodi der mein try karo."
 
