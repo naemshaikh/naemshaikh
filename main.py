@@ -2602,9 +2602,9 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
      _assumption = _buy_rsn.get("assumption", "N/A")
      _signals_used = _buy_rsn.get("signals", [])
      if _total_pnl_pct_trade > 0:
-         _post_mortem = f"WIN +{_total_pnl_pct_trade:.1f}% | Exit: {reason} | Signals: {', '.join(_signals_used[:2]) if _signals_used else 'checklist'}"
+         _post_mortem = (f"WIN +{_total_pnl_pct_trade:.1f}% | Exit: {reason} | "f"Entry: {entry:.2e} BNB | ExitPrice: {current:.2e} BNB | "f"HoldTime: {round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds()/60, 1) if bought_at_str else 0:.0f}min | "f"Signals used: {', '.join(_signals_used[:3]) if _signals_used else 'checklist only'} | "f"BNB at sell: {market_cache.get('bnb_price', 0):.2f} | Mode: {TRADE_MODE}")
      else:
-         _post_mortem = f"LOSS {_total_pnl_pct_trade:.1f}% | Exit: {reason} | Assumption fail: {_assumption[:60]}"
+         _post_mortem = (f"LOSS {_total_pnl_pct_trade:.1f}% | Exit: {reason} | "f"Entry: {entry:.2e} BNB | ExitPrice: {current:.2e} BNB | "f"HoldTime: {round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds()/60, 1) if bought_at_str else 0:.0f}min | "f"Assumption: {_assumption[:80]} | "f"Signals used: {', '.join(_signals_used[:3]) if _signals_used else 'none'} | "f"BNB at sell: {market_cache.get('bnb_price', 0):.2f} | Mode: {TRADE_MODE}")
      auto_trade_stats["trade_history"].append({
         "token":        token,
         "address":      address,
@@ -3904,7 +3904,7 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
                 "token_name":         _final_name,
                 "decision":           "SKIP",
                 "reason":             f"Checklist {overall} — {rec[:80]}",
-                "thought":            f"Token scan kiya. Overall={overall}. Score={score}/{total}. Fail: {_failed_chk}. Skip kiya.",
+                "thought":            (f"SKIP (DANGER/RISK): Score={score}/{total} ({round(score/max(total,1)*100)}%). "f"Overall={overall}. Pehla fail: {_failed_chk}. "f"Liquidity={float((_dex_safe or {}).get('liquidity_usd', 0) or 0):,.0f}USD. "f"MCap={float((_dex_safe or {}).get('fdv', 0) or 0):,.0f}USD. "f"BuyTax={float((_dex_safe or {}).get('buy_tax', 0) or 0):.1f}% SellTax={float((_dex_safe or {}).get('sell_tax', 0) or 0):.1f}%. "f"TokenAge={_token_age_min:.0f}min. Market={_market_cond}. BNB={market_cache.get('bnb_price',0):.2f}. "f"Creator={_creator_addr[:8] if _creator_addr else 'unknown'}. Whales={_whale_cnt}."),
                 "score":              score,
                 "total":              total,
                 "checklist":          result.get("checklist"),
@@ -3930,7 +3930,7 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
                 "token_name":         _final_name,
                 "decision":           "SKIP",
                 "reason":             f"Score {score}/{total} ({round(score/max(total,1)*100)}%) threshold se kam",
-                "thought":            f"Checklist SAFE tha lekin score {score}/{total} threshold {_safe_score:.0f}% se kam. Skip.",
+                "thought":            (f"SKIP (LOW SCORE): Checklist SAFE tha lekin score {score}/{total} ({round(score/max(total,1)*100)}%) threshold {_safe_score:.0f}% se kam. "f"Pehla fail: {_failed_chk}. "f"Liquidity={float((_dex_safe or {}).get('liquidity_usd', 0) or 0):,.0f}USD. "f"MCap={float((_dex_safe or {}).get('fdv', 0) or 0):,.0f}USD. "f"TokenAge={_token_age_min:.0f}min. Market={_market_cond}. BNB={market_cache.get('bnb_price',0):.2f}."),
                 "score":              score,
                 "total":              total,
                 "checklist":          result.get("checklist"),
@@ -3966,7 +3966,7 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
                 "token_name":           _final_name,
                 "decision":             "BUY",
                 "reason":               f"Checklist SAFE {score}/{total} + signals: {', '.join(_opp_sigs[:3])}",
-                "thought":              f"Token safe laga. Score={score}/{total}. Signals={_opp_score}pt: {', '.join(_opp_sigs)}. BNB={market_cache.get('bnb_price',0):.2f}. Buy kiya.",
+                "thought":              (f"BUY decision: Score={score}/{total} ({round(score/max(total,1)*100)}%) SAFE. "f"Signals={_opp_score}pt: {', '.join(_opp_sigs)}. "f"Liquidity={float((_dex_d or {}).get('liquidity_usd', 0) or 0):,.0f}USD. "f"MCap={float((_dex_d or {}).get('fdv', 0) or 0):,.0f}USD. "f"TokenAge={_token_age_min:.0f}min. "f"BNB={market_cache.get('bnb_price',0):.2f}. "f"Market={_market_cond}. FearGreed={_fg}. "f"Whales={_whale_cnt}. Creator={_creator_addr[:8] if _creator_addr else 'unknown'}. "f"Buys5m={int((_dex_d or {}).get('buys_5m', 0) or 0)} Sells5m={int((_dex_d or {}).get('sells_5m', 0) or 0)}."),
                 "score":                score,
                 "total":                total,
                 "checklist":            result.get("checklist"),
@@ -5009,6 +5009,17 @@ R10. DISCOVERED TOKENS: Context mein list hai to naam aur address dono do.
 R11. LEARNING CYCLES: Sirf real CYCLES number use karo — fake number kabhi nahi.
 [END HARD RULES]
 
+[ANTI-HALLUCINATION RULES — KABHI MAT TODO]
+H1. GUESS MAT KARO: Agar DB mein data nahi hai — seedha bolo "Is token ka koi record nahi mila mujhe".
+H2. PRICE: Token price aur BNB price alag hain — kabhi mix mat karo. Token price = 0.000001 BNB jaisa hota hai.
+H3. TRADE HISTORY: Sirf woh trades bolo jo [RECENT_DECISIONS] ya context mein hain — apne se mat banao.
+H4. WRONG MATCH: Ek token ka data doosre token pe mat chipkao — exact address match hona chahiye.
+H5. SYSTEM STATS: Queue size, semaphore, monitoring count — sirf context mein jo diya hai wahi bolo.
+H6. CONFLICT: Agar ek token DANGER tha aur buy hua — seedha bolo "Buy ke waqt SAFE tha, ab DANGER hai — liquidity change ho gayi".
+H7. CONFIDENCE: Kabhi "100% sure" mat bolo — hamesha "DB ke hisaab se" ya "checklist ke hisaab se" bolo.
+H8. NO APOLOGY FOR CORRECT TRADES: Agar trade profit mein tha — "khed" mat karo — sahi decision tha.
+[END ANTI-HALLUCINATION RULES]
+
 Tu MrBlack hai — BSC Sniper AI. Hamesha Hinglish mein. Sharp, concise, honest.
 13-Stage checklist + Auto trading + Price monitor + Telegram alerts sab active hai.
 Paper mode se shuru, 70% WR ke baad real trading. Kabhi profit guarantee nahi.
@@ -5048,13 +5059,18 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
         _auto_pos     = len(auto_trade_stats.get("running_positions", {}))
         _auto_pnl     = round(auto_trade_stats.get("auto_pnl_total", 0.0), 2)
 
+        _queue_size   = len(new_pairs_queue)
+        _monitor_size = len(monitored_positions)
+        _positions    = len(auto_trade_stats.get("running_positions", {}))
+        _discovered   = len(discovered_addresses)
+        _cycles       = brain.get("total_learning_cycles", 0)
         ctx = (
             f"\n[BNB=${market_cache['bnb_price']:.2f}|F&G={market_cache['fear_greed']}/100"
             f"|Paper={session_data.get('paper_balance',5.0):.3f}BNB"
             f"|Trades={trade_count} WR={win_rate_str}"
-            f"|NewPairs={len(new_pairs_queue)}|Monitoring={len(monitored_positions)}"
-            f"|TokensDiscovered={len(discovered_addresses)}"
-            f"|LearningCyclesExact={brain.get('total_learning_cycles',0)}"
+            f"|NewPairs={_queue_size}|Monitoring={_monitor_size}|OpenPositions={_positions}"
+            f"|TokensDiscovered={_discovered}"
+            f"|LearningCyclesExact={_cycles}"
             + (f"|Brain:{brain_ctx}" if brain_ctx else "")
             + (f"|Learned:{learn_ctx}" if learn_ctx else "")
             + (f"|SA:{sa_ctx}" if sa_ctx else "")
@@ -5602,16 +5618,70 @@ def chat():
                     _reply_parts.append(f"❌ Skip reason: {_rec[:80]}")
                     if _fails:
                         _reply_parts.append(f"Failed: {', '.join(_fails)}")
+                # ── Trade history exact match ──
                 if _past:
                     _last = _past[-1]
-                    _reply_parts.append(f"📜 History: {_last.get('result','?').upper()} {_last.get('pnl_pct',0):+.1f}% | Exit: {_last.get('reason','?')[:30]}")
-                    if _last.get("post_mortem"):
-                        _reply_parts.append(f"💡 {_last['post_mortem'][:80]}")
+                    _result_str = _last.get("result","?").upper()
+                    _pnl_str    = f"{_last.get('pnl_pct',0):+.1f}%"
+                    _exit_str   = _last.get("reason","?")[:40]
+                    _entry_str  = f"{_last.get('entry',0):.2e}"
+                    _exit_p_str = f"{_last.get('exit',0):.2e}"
+                    _reply_parts.append(f"📜 Trade: {_result_str} {_pnl_str} | Entry: {_entry_str} BNB | Exit: {_exit_p_str} BNB | Reason: {_exit_str}")
+                    _pm = _last.get("post_mortem","")
+                    if _pm:
+                        _reply_parts.append(f"💡 Post-mortem: {_pm[:120]}")
+                    # Buy reasoning bhi dikhao
+                    _buy_rsn = (_last.get("buy_reasoning") or {})
+                    if _buy_rsn.get("assumption"):
+                        _reply_parts.append(f"🎯 Buy reason: {_buy_rsn['assumption'][:100]}")
+                    # Checklist state at buy time
+                    if _ov != (_last.get("buy_reasoning") or {}).get("overall",""):
+                        _reply_parts.append(f"⚠️ Note: Buy ke waqt checklist alag thi — ab {_ov} hai (liquidity/price change ho sakta hai)")
                 elif _open:
                     _pnl_now = ((monitored_positions.get(_ca_cs, {}).get("current", _open.get("entry",0)) - _open.get("entry",0)) / max(_open.get("entry",1e-18), 1e-18)) * 100
-                    _reply_parts.append(f"👁️ Currently open | PnL: {_pnl_now:+.1f}%")
+                    _entry_now = _open.get("entry", 0)
+                    _reply_parts.append(f"👁️ Abhi open hai | Entry: {_entry_now:.2e} BNB | PnL: {_pnl_now:+.1f}%")
                 else:
-                    _reply_parts.append("📭 Pehle kabhi trade nahi hua")
+                    # bot_decisions table se EXACT address match karo
+                    try:
+                        if supabase:
+                            _bd = supabase.table("bot_decisions").select(
+                                "decision,reason,thought,score,total,failed_check,token_age_min,discovery_source,market_condition,created_at"
+                            ).eq("token_address", _ca).order("created_at", desc=True).limit(1).execute()
+                            if not _bd.data:
+                                # lowercase try karo
+                                _bd = supabase.table("bot_decisions").select(
+                                    "decision,reason,thought,score,total,failed_check,token_age_min,discovery_source,market_condition,created_at"
+                                ).eq("token_address", _ca.lower()).order("created_at", desc=True).limit(1).execute()
+                            if _bd.data:
+                                _row  = _bd.data[0]
+                                _dec  = _row.get("decision", "?")
+                                _rsn  = _row.get("reason", "")
+                                _thgt = _row.get("thought", "")
+                                _fail = _row.get("failed_check", "")
+                                _age  = _row.get("token_age_min", 0)
+                                _src  = _row.get("discovery_source", "")
+                                _mkt  = _row.get("market_condition", "")
+                                if _dec == "PREFILTER_SKIP":
+                                    _reply_parts.append(f"🚫 Bot ne discover kiya lekin blacklisted tha — scan bhi nahi kiya")
+                                elif _dec == "SKIP":
+                                    _reply_parts.append(f"⏭️ Bot ne scan kiya — SKIP kiya")
+                                    _reply_parts.append(f"❌ Reason: {_rsn[:100]}")
+                                    if _fail:
+                                        _reply_parts.append(f"💀 Failed check: {_fail}")
+                                    if _thgt:
+                                        _reply_parts.append(f"🧠 Bot ki soch: {_thgt[:150]}")
+                                elif _dec == "BUY":
+                                    _reply_parts.append(f"✅ Bot ne buy kiya tha")
+                                    _reply_parts.append(f"📋 Reason: {_rsn[:100]}")
+                                    if _thgt:
+                                        _reply_parts.append(f"🧠 Bot ki soch: {_thgt[:150]}")
+                                if _age:
+                                    _reply_parts.append(f"⏱️ Token age: {_age:.0f}min | Market: {_mkt} | Source: {_src}")
+                            else:
+                                _reply_parts.append("📭 Is token ka koi record nahi mila — bot ne discover nahi kiya hoga")
+                    except Exception as _bde:
+                        _reply_parts.append("📭 DB se data nahi mila")
 
                 _auto_reply = "\n".join(_reply_parts)
                 sess2 = get_or_create_session(session_id)
