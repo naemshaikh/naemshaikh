@@ -4017,6 +4017,287 @@ FOUR_MEME_CONTRACTS = [
 ]
 _four_meme_seen: set = set()  # dedup
 
+# ══════════════════════════════════════════════════════════════
+# FOUR.MEME DEDICATED GRADUATION SNIPER
+# Ankr RPC exclusively — dusre bot systems ko touch nahi karta
+# ══════════════════════════════════════════════════════════════
+
+# Dedicated Ankr RPC — SIRF four.meme ke liye
+_FM_ANKR_RPC = "https://rpc.ankr.com/bsc"
+_fm_w3       = None
+
+def _get_fm_w3():
+    """Four.meme dedicated Web3 — Ankr RPC only"""
+    global _fm_w3
+    if _fm_w3 is None or not _fm_w3.is_connected():
+        try:
+            _fm_w3 = Web3(Web3.HTTPProvider(_FM_ANKR_RPC, request_kwargs={"timeout": 3}))
+            if _fm_w3.is_connected():
+                print("✅ [FM Sniper] Ankr RPC connected")
+        except Exception as e:
+            print(f"⚠️ [FM Sniper] Ankr connect error: {e}")
+    return _fm_w3
+
+# ERC20 ABI — balanceOf + totalSupply
+_FM_ERC20_ABI = [
+    {"name": "balanceOf",   "type": "function", "stateMutability": "view",
+     "inputs": [{"name": "account", "type": "address"}],
+     "outputs": [{"name": "", "type": "uint256"}]},
+    {"name": "totalSupply", "type": "function", "stateMutability": "view",
+     "inputs": [], "outputs": [{"name": "", "type": "uint256"}]}
+]
+
+# ── Watch list ──
+# {addr_lower: {"address": str, "added_at": float, "progress": float, "checks": int}}
+_fm_watch:      dict      = {}
+_fm_watch_lock: threading.Lock = threading.Lock()
+_FM_WATCH_MAX     = 100    # max 100 tokens — koi fark nahi
+_FM_WATCH_TIMEOUT = 600    # 10 min timeout
+
+# ── Semaphore — sirf 6 snipes simultaneously ──
+_fm_snipe_sem = threading.Semaphore(6)
+
+# ── Already sniped ──
+_fm_sniped: set = set()
+
+# ── Thresholds ──
+_FM_QUEUE_AT  = 75.0   # 75%+ pe watch list mein daal do
+_FM_FAST_AT   = 90.0   # 90%+ pe 200ms monitoring
+_FM_SNIPE_AT  = 98.0   # 98%+ pe 50ms monitoring
+_FM_GRAD_AT   = 99.8   # 99.8%+ = graduated → BUY!
+
+def _fm_get_progress(token_address: str) -> float:
+    """Bonding curve progress on-chain — Ankr RPC"""
+    try:
+        w3fm = _get_fm_w3()
+        if not w3fm:
+            return 0.0
+        token_cs = Web3.to_checksum_address(token_address)
+        tc       = w3fm.eth.contract(address=token_cs, abi=_FM_ERC20_ABI)
+        total    = tc.functions.totalSupply().call()
+        if total <= 0:
+            return 0.0
+        left = 0
+        for proxy in FOUR_MEME_CONTRACTS:
+            try:
+                left += tc.functions.balanceOf(Web3.to_checksum_address(proxy)).call()
+            except Exception:
+                continue
+        if left == 0:
+            return 100.0
+        return round((1 - left / total) * 100, 2)
+    except Exception:
+        return 0.0
+
+def _fm_check_and_queue(token_address: str):
+    """Token ka progress check — 75%+ toh watch list mein"""
+    try:
+        addr_lower = token_address.lower()
+        if addr_lower in _fm_sniped:
+            return
+        with _fm_watch_lock:
+            if addr_lower in _fm_watch:
+                return
+            if len(_fm_watch) >= _FM_WATCH_MAX:
+                return
+        progress = _fm_get_progress(token_address)
+        if progress >= _FM_QUEUE_AT:
+            with _fm_watch_lock:
+                _fm_watch[addr_lower] = {
+                    "address":  token_address,
+                    "added_at": time.time(),
+                    "progress": progress,
+                    "checks":   1,
+                }
+            print(f"👀 [FM Sniper] Watching: {token_address[:10]} {progress:.1f}%")
+    except Exception as e:
+        print(f"⚠️ [FM Sniper] queue error: {e}")
+
+def _fm_do_snipe(token_address: str):
+    """Graduated token snipe — honeypot check + buy"""
+    if not _fm_snipe_sem.acquire(blocking=False):
+        print(f"⏭️ [FM Sniper] Semaphore full — skip: {token_address[:10]}")
+        return
+    try:
+        print(f"🎯 [FM Sniper] Sniping: {token_address[:10]}")
+
+        # Honeypot check
+        hp = _get_honeypot(token_address)
+        if hp.get("isHoneypot", False):
+            print(f"🍯 [FM Sniper] Honeypot — skip: {token_address[:10]}")
+            return
+
+        # Auto trade checks
+        if not AUTO_TRADE_ENABLED:
+            return
+        if len(auto_trade_stats.get("running_positions", {})) >= AUTO_MAX_POSITIONS:
+            print(f"🛑 [FM Sniper] Max positions — skip")
+            return
+
+        # Balance check
+        sess = get_or_create_session(AUTO_SESSION_ID)
+        bal  = sess.get("paper_balance", 5.0)
+        if bal < AUTO_BUY_SIZE_BNB:
+            print(f"🛑 [FM Sniper] Low balance — skip")
+            return
+
+        # DataGuard
+        _ok, _msg = DataGuard.bnb_price_ok()
+        if not _ok:
+            print(f"🛑 [FM Sniper] DataGuard: {_msg}")
+            return
+
+        # Price fetch
+        entry_price = get_token_price_bnb(token_address)
+        if entry_price <= 0:
+            time.sleep(1)
+            entry_price = get_token_price_bnb(token_address)
+        if entry_price <= 0 or entry_price > 1.0:
+            print(f"❌ [FM Sniper] Bad price={entry_price} — skip")
+            return
+
+        entry_price = entry_price * 1.005
+        size_bnb    = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
+        token_name  = token_address[:8]
+
+        # Real trade mode
+        if TRADE_MODE == "real":
+            _real = real_buy_token(token_address, size_bnb)
+            if not _real.get("success"):
+                print(f"❌ [FM Sniper] Real buy failed: {_real.get('error')}")
+                return
+            if _real.get("entry_price", 0) > 0:
+                entry_price = _real["entry_price"]
+
+        # Paper mode balance
+        if TRADE_MODE != "real":
+            sess["paper_balance"] = round(bal - size_bnb, 6)
+
+        # Position open
+        add_position_to_monitor(
+            AUTO_SESSION_ID, token_address, token_name,
+            entry_price, size_bnb,
+            stop_loss_pct=CHECKLIST_SETTINGS.get("sl_new", 12.0)
+        )
+        auto_trade_stats["running_positions"][token_address] = {
+            "token":          token_name,
+            "entry":          entry_price,
+            "size_bnb":       size_bnb,
+            "orig_size_bnb":  size_bnb,
+            "bought_usd":     round(size_bnb * market_cache.get("bnb_price", 0), 2),
+            "sl_pct":         CHECKLIST_SETTINGS.get("sl_new", 12.0),
+            "trail_pct":      20.0,
+            "tp_sold":        0.0,
+            "banked_pnl_bnb": 0.0,
+            "bought_at":      datetime.utcnow().isoformat(),
+            "mode":           TRADE_MODE,
+            "buy_reasoning":  {
+                "source":     "FM_Graduation_Sniper",
+                "assumption": "four.meme bonding curve 100% — graduation snipe",
+            },
+        }
+        auto_trade_stats["total_auto_buys"] += 1
+        _persist_positions()
+
+        _push_notif("success", "🎓 Graduation Snipe!",
+                    f"{token_name} @ {entry_price:.2e} BNB | {size_bnb:.4f} BNB",
+                    token_name, token_address)
+        _log("buy", token_name, f"🎓 FM SNIPE @ {entry_price:.2e} BNB", token_address)
+
+        threading.Thread(target=_save_bot_decision, args=({
+            "token_address":      token_address,
+            "token_name":         token_name,
+            "decision":           "BUY",
+            "reason":             "FourMeme graduation snipe — bonding curve 100%",
+            "thought":            f"Bonding curve complete. Graduated to PancakeSwap. Fast snipe. Entry={entry_price:.2e}",
+            "discovery_source":   "four_meme_graduation",
+            "bnb_price_at_entry": market_cache.get("bnb_price", 0),
+            "entry_price":        entry_price,
+            "token_type":         "meme",
+        },), daemon=True).start()
+
+        print(f"✅ [FM Sniper] SNIPED: {token_name} @ {entry_price:.2e} size={size_bnb:.4f}")
+
+    except Exception as e:
+        print(f"⚠️ [FM Sniper] snipe error: {e}")
+    finally:
+        _fm_snipe_sem.release()
+
+def _fm_graduation_sniper():
+    """
+    DEDICATED FOUR.MEME GRADUATION SNIPER LOOP
+    2-tier monitoring:
+      75-89%  → har 2 sec check  (slow tier)
+      90-97%  → har 200ms check  (fast tier)
+      98%+    → har 50ms check   (snipe ready!)
+      99.8%+  → TURANT BUY!
+    Sirf Ankr RPC use karta hai — dusre systems ko touch nahi karta
+    """
+    print("🎯 [FM Sniper] Graduation sniper started!")
+    time.sleep(15)
+
+    while True:
+        try:
+            now       = time.time()
+            to_remove = []
+            min_sleep = 2.0  # default slow tier
+
+            with _fm_watch_lock:
+                watch_list = dict(_fm_watch)
+
+            for addr_lower, info in watch_list.items():
+                token_address = info["address"]
+
+                # Timeout
+                if now - info["added_at"] > _FM_WATCH_TIMEOUT:
+                    to_remove.append(addr_lower)
+                    continue
+
+                # Already traded
+                _already = any(
+                    t.get("address", "").lower() == addr_lower
+                    for t in auto_trade_stats.get("trade_history", [])
+                )
+                if _already or addr_lower in _fm_sniped:
+                    to_remove.append(addr_lower)
+                    continue
+
+                # Progress check
+                progress = _fm_get_progress(token_address)
+                with _fm_watch_lock:
+                    if addr_lower in _fm_watch:
+                        _fm_watch[addr_lower]["progress"] = progress
+                        _fm_watch[addr_lower]["checks"]  += 1
+
+                if progress >= _FM_GRAD_AT:
+                    # 🎓 GRADUATED!
+                    print(f"🚀 [FM Sniper] GRADUATED! {token_address[:10]} {progress:.1f}%")
+                    _fm_sniped.add(addr_lower)
+                    to_remove.append(addr_lower)
+                    threading.Thread(
+                        target=_fm_do_snipe,
+                        args=(token_address,),
+                        daemon=True
+                    ).start()
+                elif progress >= _FM_SNIPE_AT:
+                    # 98%+ → 50ms tier
+                    min_sleep = min(min_sleep, 0.05)
+                    print(f"⚡ [FM Sniper] {token_address[:10]} {progress:.1f}% — 50ms mode")
+                elif progress >= _FM_FAST_AT:
+                    # 90%+ → 200ms tier
+                    min_sleep = min(min_sleep, 0.2)
+
+            # Cleanup
+            if to_remove:
+                with _fm_watch_lock:
+                    for addr in to_remove:
+                        _fm_watch.pop(addr, None)
+
+        except Exception as e:
+            print(f"⚠️ [FM Sniper] loop error: {e}")
+
+        time.sleep(min_sleep)
+
 def _poll_four_meme_api() -> list:
     """four.meme direct API — no key needed, fastest source"""
     found = []
@@ -4088,6 +4369,13 @@ def poll_four_meme():
                 if addr_lower not in _four_meme_seen:
                     _four_meme_seen.add(addr_lower)
                     new_count += 1
+                    # Graduation sniper — 75%+ wale fast monitor mein
+                    threading.Thread(
+                        target=_fm_check_and_queue,
+                        args=(addr,),
+                        daemon=True
+                    ).start()
+                    # Normal discovery pipeline
                     threading.Thread(
                         target=_process_new_token,
                         args=(addr, addr, "FourMeme"),
@@ -5375,6 +5663,7 @@ def _startup_once():
         threading.Thread(target=_delayed(poll_new_pairs,        10),  daemon=True).start()
         threading.Thread(target=_delayed(poll_four_meme,         20), daemon=True).start()
         threading.Thread(target=_delayed(poll_four_meme_wss,     15), daemon=True).start()  # ✅ real-time WSS
+        threading.Thread(target=_delayed(_fm_graduation_sniper,  20), daemon=True).start()  # 🎓 FM graduation sniper
         threading.Thread(target=_delayed(start_swap_monitor,    20), daemon=True).start()  # ✅ real-time swap vol
 
         threading.Thread(target=_delayed(price_monitor_loop,    15),  daemon=True).start()
