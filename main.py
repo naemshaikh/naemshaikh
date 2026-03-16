@@ -4192,8 +4192,16 @@ def _fm_do_snipe(token_address: str):
             "bought_at":      datetime.utcnow().isoformat(),
             "mode":           TRADE_MODE,
             "buy_reasoning":  {
-                "source":     "FM_Graduation_Sniper",
-                "assumption": "four.meme bonding curve 100% — graduation snipe",
+                "source":          "FM_Graduation_Sniper",
+                "assumption":      "four.meme bonding curve 100% complete — graduation snipe",
+                "strategy":        "FourMeme_Graduation",
+                "entry_reason":    "Bonding curve filled — PancakeSwap pe auto-listed",
+                "checklist_used":  False,
+                "honeypot_passed": True,
+                "bc_progress":     "100%",
+                "snipe_type":      "graduation",
+                "bnb_at_buy":      market_cache.get("bnb_price", 0),
+                "fear_greed":      market_cache.get("fear_greed", 50),
             },
         }
         auto_trade_stats["total_auto_buys"] += 1
@@ -4209,7 +4217,7 @@ def _fm_do_snipe(token_address: str):
             "token_name":         token_name,
             "decision":           "BUY",
             "reason":             "FourMeme graduation snipe — bonding curve 100%",
-            "thought":            f"Bonding curve complete. Graduated to PancakeSwap. Fast snipe. Entry={entry_price:.2e}",
+            "thought":            f"FourMeme graduation snipe. Bonding curve 100% fill hua. PancakeSwap pe auto-list hua. Entry={entry_price:.2e} BNB. BNB=${market_cache.get('bnb_price',0):.2f}. Size={size_bnb:.4f} BNB. Mode={TRADE_MODE}. Checklist skip — graduation confirmed.",
             "discovery_source":   "four_meme_graduation",
             "bnb_price_at_entry": market_cache.get("bnb_price", 0),
             "entry_price":        entry_price,
