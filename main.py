@@ -2637,6 +2637,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         "buy_reasoning":_buy_rsn,
         "post_mortem":  _post_mortem,
         "signals_used": _signals_used,
+        "snipe_source": _buy_rsn.get("source", "checklist"),
+        "snipe_strategy": _buy_rsn.get("strategy", "Normal_Checklist"),
     })
     if len(auto_trade_stats["trade_history"]) > 10000:
         auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-10000:]
