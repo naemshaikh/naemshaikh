@@ -2169,8 +2169,8 @@ def _log(event_type: str, token: str, detail: str, address: str = ""):
     })
 discovered_addresses: dict = {}
 _discovered_lock  = threading.Lock()          # RACE FIX: protect discovered_addresses
-_token_semaphore  = threading.Semaphore(6)   # was 2 — more discovery throughput
-_check_semaphore  = threading.Semaphore(5)   # was 3 — more concurrent checks
+_token_semaphore  = threading.Semaphore(12)  # was 2 — more discovery throughput
+_check_semaphore  = threading.Semaphore(12)  # was 3 — more concurrent checks
 DISCOVERY_TTL = 7200
 PAIR_CREATED_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
 
@@ -2185,7 +2185,7 @@ REAL_WALLET        = ""        # user wallet address
 
 # Checklist thresholds — user can edit from UI
 CHECKLIST_SETTINGS = {
-    "min_liq_bnb":       2.0,    # Stage 1: Min liquidity BNB
+    "min_liq_bnb":       3.0,    # Stage 1: Min liquidity BNB
     "min_liq_locked":   80.0,    # Stage 1: Min liquidity locked %
     "max_buy_tax":       8.0,    # Stage 1: Max buy tax %
     "max_sell_tax":      8.0,    # Stage 1: Max sell tax %
@@ -2292,7 +2292,7 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
     _token_semaphore.release()
     # MEM FIX: max 3 concurrent checkers
     if not hasattr(_process_new_token, "_sem"):
-        _process_new_token._sem = threading.Semaphore(6)
+        _process_new_token._sem = threading.Semaphore(12)
     def _run_check():
         if not _process_new_token._sem.acquire(blocking=False): return
         try: _auto_check_new_pair(token_address)
@@ -2897,6 +2897,7 @@ def auto_position_manager():
                     elif drop_hi <= -12.0:
                         _auto_paper_sell(addr, f"TrailSL -12% entry {'(vol fallback)' if not _has_vol else ''}", 100.0)
                         _trail_triggered = True
+                        blacklist_token(addr, f"TrailSL -12% rebuy block")
                         print(f"🔒 TrailSL entry: {addr[:10]} drop={drop_hi:.1f}%")
 
                     # ── TRAILING TAKE PROFIT (GMGN style) ──
@@ -3737,7 +3738,7 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
                     _bp = [p for p in (_ar_json.get("pairs") or []) if p and p.get("chainId") == "bsc"]
                     if _bp:
                         _ct = _bp[0].get("pairCreatedAt", 0) or 0
-                        if _ct and (time.time() - _ct / 1000) / 60 > 10080:
+                        if _ct and (time.time() - _ct / 1000) / 60 > 360:
                             _log("reject", pair_address[:8], "Token too old (7d+) — skip", pair_address)
                             del _ar_json, _bp, _ar
                             return
@@ -4415,7 +4416,7 @@ def run_full_sniper_checklist(address: str, prefetched_dex: dict = None) -> Dict
     transfer = not _gp_bool_flag(goplus_data, "transfer_pausable")
 
     cs = CHECKLIST_SETTINGS
-    add(f"Liquidity ≥ {cs['min_liq_bnb']} BNB", "pass" if liq_bnb > cs['min_liq_bnb'] else ("warn" if liq_bnb > cs['min_liq_bnb']*0.25 else "fail"), f"{liq_bnb:.2f} BNB", 1)
+    add(f"Liquidity ≥ {cs['min_liq_bnb']} BNB", "pass" if liq_bnb > cs['min_liq_bnb'] else "fail", f"{liq_bnb:.2f} BNB", 1)
     add("Liquidity Locked",         "pass" if liq_locked > cs['min_liq_locked'] else ("warn" if liq_locked > 20 else "fail"), f"{liq_locked:.0f}%", 1)
     add(f"Buy Tax ≤ {cs['max_buy_tax']}%",  "pass" if buy_tax  <= cs['max_buy_tax']  else "fail", f"{buy_tax:.1f}%",  1)
     add(f"Sell Tax ≤ {cs['max_sell_tax']}%","pass" if sell_tax <= cs['max_sell_tax'] else "fail", f"{sell_tax:.1f}%", 1)
@@ -4440,11 +4441,11 @@ def run_full_sniper_checklist(address: str, prefetched_dex: dict = None) -> Dict
 
     honeypot  = _gp_bool_flag(goplus_data, "is_honeypot")
     can_sell  = not _gp_bool_flag(goplus_data, "cannot_sell_all")
-    slippage_ok = sell_tax <= 15
+    slippage_ok = sell_tax <= 10
 
     add("Honeypot Safe",           "fail" if honeypot    else "pass", "DANGER" if honeypot    else "SAFE", 2)
     add("Can Sell All Tokens",     "fail" if not can_sell else "pass", "NO"    if not can_sell else "YES",  2)
-    add("Slippage OK",             "pass" if slippage_ok  else "warn", f"Sell={sell_tax:.0f}%",             2)
+    add("Slippage OK",             "pass" if slippage_ok  else "fail", f"Sell={sell_tax:.0f}%",             2)
 
     token_age_min = 0.0
     try:
@@ -4502,7 +4503,7 @@ def run_full_sniper_checklist(address: str, prefetched_dex: dict = None) -> Dict
     _no_txns = _dex_src == "geckoterminal"  # GeckoTerminal txn data nahi deta
     add("Buy > Sell (5min)", "pass" if buys_5m > sells_5m else ("warn" if _no_txns or buys_5m==0 else "warn"), f"B:{buys_5m} S:{sells_5m}" + (" (no txn data)" if _no_txns else ""), 4)
     add("Buy > Sell (1hr)",  "pass" if buys_1h > sells_1h else ("warn" if _no_txns or buys_1h==0 else "warn"), f"B:{buys_1h} S:{sells_1h}" + (" (no txn data)" if _no_txns else ""), 4)
-    add(f"Volume 24h > ${cs['min_volume_24h']:,.0f}", "pass" if dex_data.get("volume_24h",0) > cs['min_volume_24h'] else "warn", f"${dex_data.get('volume_24h',0):,.0f}", 4)
+    add(f"Volume 24h", "pass", f"${dex_data.get('volume_24h',0):,.0f} (not checked — sniper mode)", 4)
 
     # Stage 6 — DEX checks: GoPlus + DexScreener/GeckoTerminal dono se verify
     # Naye tokens GoPlus mein late index hote hain — isliye dex_data bhi check karo
