@@ -288,7 +288,7 @@ def get_token_price_bnb_full(token_address: str) -> float:
 w3 = Web3(Web3.HTTPProvider(BSC_RPC, request_kwargs={"timeout": 5}))
 if not w3.is_connected():
     print(f"⚠️ Primary RPC failed — trying Ankr fallback...")
-    w3 = Web3(Web3.HTTPProvider("https://rpc.ankr.com/bsc", request_kwargs={"timeout": 5}))
+    w3 = Web3(Web3.HTTPProvider("https://bsc-rpc.publicnode.com", request_kwargs={"timeout": 5}))
 threading.Thread(target=lambda: print(f"✅ BSC: {w3.is_connected()}"), daemon=True).start()
 
 # ========== SUPABASE ==========
@@ -6039,7 +6039,7 @@ def wallet_info():
             "https://bsc-dataseed.bnbchain.org",
             "https://bsc-dataseed1.binance.org",
             "https://bsc.drpc.org",
-            "https://rpc.ankr.com/bsc",
+            "https://bsc-rpc.publicnode.com",
             "https://1rpc.io/bnb",
         ]
         for _rpc in _rpcs:
