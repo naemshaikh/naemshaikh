@@ -5411,8 +5411,7 @@ def chat():
                 else:
                     _reply_parts.append("📭 Pehle kabhi trade nahi hua")
 
-                _auto_reply = "
-".join(_reply_parts)
+                _auto_reply = "\n".join(_reply_parts)
                 sess2 = get_or_create_session(session_id)
                 sess2["history"].append({"role": "user",      "content": user_msg})
                 sess2["history"].append({"role": "assistant", "content": _auto_reply})
