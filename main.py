@@ -4660,7 +4660,7 @@ def poll_four_meme_v2():
         return
 
     async def _listen(url):
-        async with _ws.connect(url, ping_interval=20, ping_timeout=15, close_timeout=5, max_size=2**20) as ws:
+        async with _ws.connect(url, ping_interval=20, ping_timeout=15, close_timeout=30, max_size=2**20) as ws:
             await ws.send(_j.dumps({
                 "id": 11, "jsonrpc": "2.0", "method": "eth_subscribe",
                 "params": ["logs", {"address": _FM_FACTORY_ADDRS, "topics": [_FM_TRANSFER_TOPIC]}]
@@ -4741,7 +4741,7 @@ def poll_new_pairs():
 
     async def _listen(wss_url):
         try:
-            async with _ws.connect(wss_url, ping_interval=25, ping_timeout=18, close_timeout=8, max_size=2**20) as ws:
+            async with _ws.connect(wss_url, ping_interval=25, ping_timeout=18, close_timeout=30, max_size=2**20) as ws:
                 await ws.send(_json.dumps({
                     "id": 1, "method": "eth_subscribe",
                     "params": ["logs", {"address": [FACTORY], "topics": [[PAIR_TOPIC]]}],
