@@ -2200,9 +2200,14 @@ def _log(event_type: str, token: str, detail: str, address: str = ""):
     })
 discovered_addresses: dict = {}
 _discovered_lock  = threading.Lock()          # RACE FIX: protect discovered_addresses
-_token_semaphore  = threading.Semaphore(10)  # PC token discovery
-_check_semaphore  = threading.Semaphore(10)  # PC checklist — alag FM se
-_goplus_sem       = threading.Semaphore(2)   # GoPlus rate limit: 30/min = max 2 parallel safe
+
+# ── Queue-based Engine — Zero Drop ──────────────────────────
+import queue as _queue_module
+_discovery_queue  = _queue_module.Queue()   # PC pre-filter queue — infinite, zero drop
+_checklist_queue  = _queue_module.Queue()   # PC checklist queue — infinite, zero drop
+_fm_queue         = _queue_module.Queue()   # FM snipe queue — infinite, zero drop
+# GoPlus semaphore removed — parallel chalega Honeypot ke saath
+_goplus_sem       = threading.Semaphore(5)  # GoPlus: 5 parallel safe (was 2)
 DISCOVERY_TTL = 7200
 PAIR_CREATED_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
 
@@ -2287,15 +2292,9 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
             cutoff = _now - DISCOVERY_TTL
             for k in [k for k, v in list(discovered_addresses.items()) if v < cutoff][:100]:
                 del discovered_addresses[k]
-    if not _token_semaphore.acquire(blocking=True, timeout=30):
-        return  # 30s wait ke baad bhi nahi mila — skip
-    if any(token_address.lower() == str(q).lower() for q in list(new_pairs_queue)):
-        _token_semaphore.release()  # BUG FIX: semaphore leak — release before return
-        return
     try:
         token_address = Web3.to_checksum_address(token_address)
     except Exception:
-        _token_semaphore.release()  # BUG FIX: semaphore leak — release before return
         return
     with _discovered_lock:
         discovered_addresses[token_address] = _now
@@ -2333,10 +2332,8 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
         "source":     source,
     })
     print(f"🆕 [{source}] {token_symbol} | {token_name} ({token_address[:10]})")
-    _token_semaphore.release()
-    def _run_check():
-        _auto_check_new_pair(token_address)
-    threading.Thread(target=_run_check, daemon=True).start()
+    # Queue mein daalo — zero drop, no semaphore blocking
+    _discovery_queue.put(token_address)
 
 # ========== POSITION MONITOR ==========
 def add_position_to_monitor(session_id, token_address, token_name, entry_price, size_bnb, stop_loss_pct=12.0):
@@ -3833,9 +3830,6 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
             "fear_greed_at_entry": market_cache.get("fear_greed", 50),
         },), daemon=True).start()
         return
-    if not _check_semaphore.acquire(blocking=True, timeout=60):
-        print(f"⏭️ Check timeout (semaphore full 60s): {pair_address[:10]}")
-        return
     try:
         if whale_triggered:
             _log("whale", pair_address[:8], f"🐋 Whale follow — scanning ({whale_wallet[:8]})", pair_address)
@@ -4051,7 +4045,7 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
         })
         knowledge_base["bsc"]["new_tokens"] = knowledge_base["bsc"]["new_tokens"][-20:]
     finally:
-        _check_semaphore.release()
+        pass  # semaphore removed — queue handles concurrency
 
 
 # ========== FOUR.MEME NEW TOKEN POLLER ==========
@@ -4562,9 +4556,6 @@ def _fm_snipe(token_addr, pair_addr):
     with _fm_sniped_lock:
         if addr_lower in _fm_sniped: return
         _fm_sniped.add(addr_lower)
-    if not _fm_sem.acquire(blocking=False):
-        with _fm_sniped_lock: _fm_sniped.discard(addr_lower)
-        return
     try:
         if not AUTO_TRADE_ENABLED: return
         if len(auto_trade_stats.get("running_positions", {})) >= AUTO_MAX_POSITIONS: return
@@ -4586,12 +4577,7 @@ def _fm_snipe(token_addr, pair_addr):
         cur = _fm_get_price(token_addr)
         if cur <= 0: cur = grad
 
-        if cur > grad * _FM_MAX_PUMP:
-            pump = round((cur / grad - 1) * 100, 1)
-            print(f"🚫 [FM] pumped {pump:.1f}% skip: {token_addr[:10]}")
-            _log("reject", token_addr[:8], f"FM pumped {pump:.1f}%", token_addr)
-            return
-
+        # Pump check removed — testing mein direct snipe karo
         pump       = round((cur / grad - 1) * 100, 1)
         entry      = cur * 1.005
         size_bnb   = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
@@ -4640,17 +4626,21 @@ def _fm_snipe(token_addr, pair_addr):
     except Exception as e:
         print(f"⚠️ [FM] snipe error: {e}")
         with _fm_sniped_lock: _fm_sniped.discard(addr_lower)
-    finally:
-        _fm_sem.release()
 
 def _fm_handle_transfer(token_addr):
     addr_lower = token_addr.lower()
     with _fm_sniped_lock:
         if addr_lower in _fm_sniped: return
-    pair = _fm_get_pair(token_addr)
+    # Pair fetch with retry — token abhi list ho raha hai
+    pair = ""
+    for _attempt in range(3):
+        pair = _fm_get_pair(token_addr)
+        if pair: break
+        time.sleep(0.1)  # 100ms retry — pair abhi ban raha hai
     if not pair: return
     print(f"🔥 [FM] Graduated: {token_addr[:10]} pair={pair[:10]}")
-    threading.Thread(target=_fm_snipe, args=(token_addr, pair), daemon=True).start()
+    # Queue mein daalo — zero drop
+    _fm_queue.put((token_addr, pair))
 
 def poll_four_meme_v2():
     import asyncio, json as _j
@@ -5993,6 +5983,56 @@ def _startup_once():
         threading.Thread(target=_delayed(poll_four_meme_v2, 15), daemon=True).start()  # 🎓 FM v2
         # ⚡ PC Fast Sniper — background mein chalta hai, _pc_add_to_snipe_queue se trigger hota hai
         threading.Thread(target=_delayed(start_swap_monitor,    20), daemon=True).start()  # ✅ real-time swap vol
+
+        # ── Queue Workers Start ──────────────────────────────────
+        def _start_queue_workers():
+            import time as _t
+            _t.sleep(5)  # startup settle karne do
+
+            # ── FM Workers: 3 active + 5 hot-standby = 8 total ──
+            def _fm_worker(worker_id, is_standby=False):
+                if is_standby:
+                    time.sleep(2)  # standby workers thoda late start
+                while True:
+                    try:
+                        token_addr, pair_addr = _fm_queue.get(timeout=5)
+                        threading.Thread(
+                            target=_fm_snipe,
+                            args=(token_addr, pair_addr),
+                            daemon=True
+                        ).start()
+                        _fm_queue.task_done()
+                    except:
+                        continue  # timeout = normal, loop chalta rahe
+
+            for i in range(3):
+                threading.Thread(target=_fm_worker, args=(i, False), daemon=True).start()
+            for i in range(5):
+                threading.Thread(target=_fm_worker, args=(i, True), daemon=True).start()
+            print("🎓 FM Queue Workers started: 3 active + 5 standby = 8 total")
+
+            # ── PC Pre-filter Workers: 10 active + 10 hot-standby = 20 total ──
+            def _prefilter_worker(worker_id, is_standby=False):
+                if is_standby:
+                    time.sleep(3)  # standby workers thoda late start
+                while True:
+                    try:
+                        token_address = _discovery_queue.get(timeout=5)
+                        try:
+                            _auto_check_new_pair(token_address)
+                        except Exception as _we:
+                            print(f"⚠️ PreFilter worker error: {_we}")
+                        _discovery_queue.task_done()
+                    except:
+                        continue  # timeout = normal
+
+            for i in range(10):
+                threading.Thread(target=_prefilter_worker, args=(i, False), daemon=True).start()
+            for i in range(10):
+                threading.Thread(target=_prefilter_worker, args=(i, True), daemon=True).start()
+            print("🔍 PC Queue Workers started: 10 active + 10 standby = 20 total")
+
+        threading.Thread(target=_start_queue_workers, daemon=True).start()
 
         threading.Thread(target=_delayed(price_monitor_loop,    15),  daemon=True).start()
         threading.Thread(target=_delayed(continuous_learning,   25),  daemon=True).start()
