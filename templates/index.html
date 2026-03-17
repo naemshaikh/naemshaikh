@@ -301,28 +301,9 @@ function _checkLock(){
       localStorage.setItem('mrblack_auth','1');
       document.getElementById('lock-screen').style.display = 'none';
       document.body.style.overflow = '';
-      if(typeof init === 'function'){
-        // BUG FIX: Pehle intervals start karo phir init
-        if(!window._intervalsStarted){
-          window._intervalsStarted = true;
-          setInterval(fetchStats,8000);
-          setInterval(fetchHistory,30000);
-          setInterval(fetchRamStats, 10000);
-          setInterval(loadSettings,30000);
-          setInterval(fetchActivity, 5000);
-          setInterval(fetchScannerStats, 5000);
-          setInterval(fetchRejectionStats, 10000);
-          setInterval(fetchRealBalance, 68000);
-          setInterval(fetchNotifications, 10000);
-          fetchActivity();
-          fetchRamStats();
-          fetchScannerStats();
-          fetchRejectionStats();
-          setTimeout(fetchNotifications, 1000);
-        }
-        init();
-        fetchRealBalance();
-      }
+      // FIX: init() abhi exist nahi karta — flag set karo
+      // Main script block mein _startApp check karega
+      window._startApp = true;
     } else {
       errEl.textContent = '❌ Wrong password';
       document.getElementById('lock-input').value = '';
@@ -1535,14 +1516,37 @@ async function init(){
 
 // BUG FIX: Lock screen ke baad hi init karo
 // Pehle check karo unlocked hai ya nahi
-if(localStorage.getItem('mrblack_auth')==='1'){
-  init();
-  fetchRealBalance();
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// APP START
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function _startAllIntervals(){
+  if(window._intervalsStarted) return;
+  window._intervalsStarted = true;
   setInterval(fetchStats,8000);
   setInterval(fetchHistory,30000);
+  setInterval(fetchRamStats, 10000);
+  setInterval(loadSettings, 30000);
+  setInterval(fetchActivity, 5000);
+  setInterval(fetchScannerStats, 5000);
+  setInterval(fetchRejectionStats, 10000);
+  setInterval(fetchRealBalance, 68000);
+  setInterval(fetchNotifications, 10000);
+}
+
+if(localStorage.getItem('mrblack_auth')==='1'){
+  _startAllIntervals();
+  init();
+  fetchRealBalance();
 } else {
-  // Lock screen pe hain — init baad mein hoga _checkLock se
   window._intervalsStarted = false;
+  var _lockChecker = setInterval(function(){
+    if(window._startApp){
+      clearInterval(_lockChecker);
+      _startAllIntervals();
+      init();
+      fetchRealBalance();
+    }
+  }, 100);
 }
 
 // RAM stats — every 10 seconds
