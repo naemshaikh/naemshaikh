@@ -5885,8 +5885,8 @@ def _startup_once():
         def _bnb_price_loop():
             import time as _t
             _sources = [
-                ("CoinPaprika",  "https://api.coinpaprika.com/v1/tickers/bnb-binance-coin", None, lambda r: float((r.json() or {}).get("quotes", {}).get("USD", {}).get("price", 0) or 0)),
                 ("OKX",          "https://www.okx.com/api/v5/market/ticker",           {"instId":"BNB-USDT"},                   lambda r: float(((r.json() or {}).get("data") or [{}])[0].get("last",0) or 0)),
+                ("CoinPaprika",  "https://api.coinpaprika.com/v1/tickers/bnb-binance-coin", None, lambda r: float((r.json() or {}).get("quotes", {}).get("USD", {}).get("price", 0) or 0)),
             ]
             while True:
                 fetched = False
