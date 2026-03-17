@@ -661,8 +661,15 @@ _scanner_stats = {
     "pc_speed_count":    0,
     "fm_speed_total":    0.0,
     "fm_speed_count":    0,
+    # Rejection breakdown
+    "rej_low_liq":       0,
+    "rej_high_liq":      0,
+    "rej_honeypot":      0,
+    "rej_danger":        0,
+    "rej_too_old":       0,
+    "rej_blacklist":     0,
     # Per-minute history — last 60 entries
-    "history":           [],  # [{"ts": epoch, "pc_disc": N, "fm_disc": N, "pc_buy": N, "fm_buy": N}]
+    "history":           [],
     "_last_min_ts":      0.0,
     "_last_min_pc_disc": 0,
     "_last_min_fm_disc": 0,
@@ -3871,6 +3878,7 @@ def _memory_cleanup_loop():
 def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale_wallet: str = ""):
     # Sabse pehle — token blacklist check (zero cost, instant)
     if is_token_blacklisted(pair_address):
+        _scanner_stats["rej_blacklist"] += 1
         _log("reject", pair_address[:8], "Blacklisted 24h — skip", pair_address)
         print(f"🚫 Token blacklisted — skip: {pair_address[:10]}")
         threading.Thread(target=_save_bot_decision, args=({
@@ -3915,11 +3923,13 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
                         print(f"⏭️ Low liq {_liq_bnb:.2f} BNB — skip: {pair_address[:10]}")
                         _log("reject", pair_address[:8], f"Low liq {_liq_bnb:.2f} BNB", pair_address)
                         _scanner_stats["pc_prefilter_fail"] += 1
+                        _scanner_stats["rej_low_liq"] += 1
                         return
                     if _liq_bnb > 500:
                         print(f"⏭️ Old/fake token liq={_liq_bnb:.0f} BNB — skip: {pair_address[:10]}")
                         _log("reject", pair_address[:8], f"Too high liq {_liq_bnb:.0f} BNB", pair_address)
                         _scanner_stats["pc_prefilter_fail"] += 1
+                        _scanner_stats["rej_high_liq"] += 1
                         return
                     _scanner_stats["pc_prefilter_pass"] += 1
                     print(f"✅ Liq ok {_liq_bnb:.2f} BNB — checklist: {pair_address[:10]}")
@@ -3965,6 +3975,7 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
             if _bp:
                 _ct = _bp[0].get("pairCreatedAt", 0) or 0
                 if _ct and (time.time() - _ct / 1000) / 60 > 360:
+                    _scanner_stats["rej_too_old"] += 1
                     _log("reject", pair_address[:8], "Token too old (6h+) — skip", pair_address)
                     return
                 _prefetched_dex = _dex_json
@@ -4007,6 +4018,8 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
 
         if overall != "SAFE":
             _scanner_stats["pc_checklist_fail"] += 1
+            if overall == "DANGER":
+                _scanner_stats["rej_danger"] += 1
             _log("reject", _final_name, f"Checklist {overall} ({score}/{total}) — {rec[:40]}", pair_address)
             print(f"⏭️ SKIP {_final_name}: checklist={overall} — CAUTION/RISK/DANGER pe trade nahi")
             threading.Thread(target=_save_bot_decision, args=({
@@ -7156,6 +7169,14 @@ def scanner_stats():
             "fm_buy":  _sum(last1d, "fm_buy"),
         },
         "history_points": len(hist),
+        "rejections": {
+            "low_liq":   _scanner_stats["rej_low_liq"],
+            "high_liq":  _scanner_stats["rej_high_liq"],
+            "honeypot":  _scanner_stats["rej_honeypot"],
+            "danger":    _scanner_stats["rej_danger"],
+            "too_old":   _scanner_stats["rej_too_old"],
+            "blacklist": _scanner_stats["rej_blacklist"],
+        },
     })
 
 
