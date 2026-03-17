@@ -663,65 +663,7 @@ function _checkLock(){
     </div>
   </div>
 
-  <!-- ── REJECTION BREAKDOWN ── -->
-  <div style="padding:0 12px 4px;margin-top:4px;">
-    <div style="background:var(--ink2);border:1px solid var(--line);border-radius:var(--r);padding:12px;display:flex;flex-direction:column;gap:8px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;">
-        <span style="font-size:10px;font-weight:800;color:var(--txt2);letter-spacing:0.5px;">❌ REJECTION BREAKDOWN</span>
-        <span style="font-size:9px;color:var(--txt3);" id="rej-updated">—</span>
-      </div>
-      <!-- Rejection bars -->
-      <div style="display:flex;flex-direction:column;gap:5px;" id="rej-bars">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:9px;color:var(--txt3);width:80px;flex-shrink:0;">Low Liq</span>
-          <div style="flex:1;height:6px;background:var(--ink3);border-radius:4px;overflow:hidden;">
-            <div id="rej-bar-lowliq" style="height:100%;background:var(--ice);border-radius:4px;width:0%;transition:width 0.5s;"></div>
-          </div>
-          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:var(--ice);width:40px;text-align:right;" id="rej-cnt-lowliq">0</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:9px;color:var(--txt3);width:80px;flex-shrink:0;">High Liq</span>
-          <div style="flex:1;height:6px;background:var(--ink3);border-radius:4px;overflow:hidden;">
-            <div id="rej-bar-highliq" style="height:100%;background:var(--gold);border-radius:4px;width:0%;transition:width 0.5s;"></div>
-          </div>
-          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:var(--gold);width:40px;text-align:right;" id="rej-cnt-highliq">0</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:9px;color:var(--txt3);width:80px;flex-shrink:0;">Honeypot</span>
-          <div style="flex:1;height:6px;background:var(--ink3);border-radius:4px;overflow:hidden;">
-            <div id="rej-bar-honeypot" style="height:100%;background:var(--red);border-radius:4px;width:0%;transition:width 0.5s;"></div>
-          </div>
-          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:var(--red);width:40px;text-align:right;" id="rej-cnt-honeypot">0</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:9px;color:var(--txt3);width:80px;flex-shrink:0;">DANGER</span>
-          <div style="flex:1;height:6px;background:var(--ink3);border-radius:4px;overflow:hidden;">
-            <div id="rej-bar-danger" style="height:100%;background:var(--red);border-radius:4px;width:0%;transition:width 0.5s;opacity:0.6;"></div>
-          </div>
-          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:var(--red);width:40px;text-align:right;" id="rej-cnt-danger">0</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:9px;color:var(--txt3);width:80px;flex-shrink:0;">Too Old</span>
-          <div style="flex:1;height:6px;background:var(--ink3);border-radius:4px;overflow:hidden;">
-            <div id="rej-bar-old" style="height:100%;background:var(--txt3);border-radius:4px;width:0%;transition:width 0.5s;"></div>
-          </div>
-          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:var(--txt3);width:40px;text-align:right;" id="rej-cnt-old">0</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:9px;color:var(--txt3);width:80px;flex-shrink:0;">Blacklist</span>
-          <div style="flex:1;height:6px;background:var(--ink3);border-radius:4px;overflow:hidden;">
-            <div id="rej-bar-bl" style="height:100%;background:#a064ff;border-radius:4px;width:0%;transition:width 0.5s;"></div>
-          </div>
-          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:#a064ff;width:40px;text-align:right;" id="rej-cnt-bl">0</span>
-        </div>
-      </div>
-      <!-- Total -->
-      <div style="display:flex;justify-content:space-between;border-top:1px solid var(--line);padding-top:6px;">
-        <span style="font-size:9px;color:var(--txt3);">Total rejected</span>
-        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:800;color:var(--txt1);" id="rej-total">0</span>
-      </div>
-    </div>
-  </div>
+  
 
   <!-- Intelligence Panel -->
   <div class="sep" style="margin-top:10px;">🧠 Bot Intelligence</div>
@@ -867,6 +809,7 @@ function _checkLock(){
         <button class="gtab active" onclick="gTab('holding',this)">Holding</button>
       </div>
       <div id="gtab-holding">
+        <div id="trades-list-wrap" style="display:none;overflow-y:auto;max-height:calc(7 * 57px);overscroll-behavior:contain;-webkit-overflow-scrolling:touch;"></div>
         <div style="background:var(--ink2);border:1px solid rgba(255,255,255,0.10);border-radius:14px;overflow:hidden;margin-top:6px;margin-bottom:16px;">
           <div id="holding-list-wrap" style="overflow-y:auto;max-height:calc(7 * 57px);overscroll-behavior:contain;-webkit-overflow-scrolling:touch;"><div class="empty-state">⏳ Loading...</div></div>
         </div>
@@ -951,6 +894,9 @@ function _checkLock(){
   <div class="mactions"    id="modal-actions"></div>
 </div>
 
+<!-- hidden notif elements for JS -->
+<div id="notif-bell" style="display:none;"></div>
+<div id="notif-badge" style="display:none;"></div>
 <button class="fab" onclick="openChat()">
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
   <div class="fab-badge" id="fab-badge"></div>
@@ -1514,6 +1460,7 @@ async function init(){
 }
 
 init();
+fetchRealBalance();
 // loadSettings called via setInterval
 setInterval(fetchStats,8000);
 setInterval(fetchHistory,30000);
@@ -1603,6 +1550,36 @@ async function fetchRamStats(){
 fetchRamStats();
 setInterval(fetchRamStats, 10000);
 setInterval(loadSettings,30000);
+
+// ── fetchActivity — inline notifications live feed ──
+async function fetchActivity() {
+  try {
+    const d = await fetchJSON('/notifications?limit=20', {}, 5000);
+    if (!d || !d.notifications) return;
+    const list = document.getElementById('inline-notif-list');
+    const countEl = document.getElementById('inline-notif-count');
+    if (!list) return;
+    const items = d.notifications;
+    if (!items.length) {
+      list.innerHTML = '<div style="text-align:center;padding:20px 8px;color:var(--txt3);font-size:10px;">No alerts yet</div>';
+      if (countEl) countEl.textContent = '';
+      return;
+    }
+    if (countEl) countEl.textContent = items.length + ' total';
+    list.innerHTML = items.map(function(n) {
+      const sev = n.severity || 'info';
+      const dotClr = sev === 'success' ? 'var(--em)' : sev === 'danger' ? 'var(--red)' : 'var(--gold)';
+      const isUnread = !n.read;
+      return '<div style="display:flex;gap:6px;padding:7px 10px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;' + (isUnread ? 'background:rgba(255,255,255,0.03);' : '') + '" onclick="readNotif('' + n.id + '')">' +
+        '<div style="width:6px;height:6px;border-radius:50%;background:' + dotClr + ';flex-shrink:0;margin-top:4px;"></div>' +
+        '<div style="flex:1;min-width:0;">' +
+          '<div style="font-size:10px;font-weight:' + (isUnread ? '700' : '500') + ';color:var(--txt1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + n.title + '</div>' +
+          '<div style="font-size:9px;color:var(--txt3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + n.detail + '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch(e) { }
+}
 setInterval(fetchActivity, 5000);
 fetchActivity();
 
@@ -2549,7 +2526,7 @@ function gTab(name,el){
   document.querySelectorAll('.gtab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
   document.getElementById('gtab-holding').style.display=name==='holding'?'':'none';
-  document.getElementById('gtab-trades').style.display =name==='trades' ?'':'none';
+  const _gtTab=document.getElementById('gtab-trades'); if(_gtTab) _gtTab.style.display=name==='trades'?'':'none';
   if(name==='trades') window._renderTPage();
 }
 
