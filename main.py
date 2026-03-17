@@ -4397,599 +4397,283 @@ def _pc_do_snipe(token_address: str, pair_address: str, liq_bnb: float):
         with _pc_snipe_queue_lock:
             _pc_snipe_queue.pop(addr_lower, None)
 
-FOUR_MEME_CONTRACTS = [
-    "0x5c952063c7fc8610ffdb798152d69f0b9550762b",  # v1
-    "0x8b8cF6D0C2B5F4CB61Da5E7dc94E52f4F1dD8D64",  # v2
-    "0x48a31B72F77a2A90eBE24E5C4c88bE43E2AD6BEB",  # v3 latest
+
+
+# ══════════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════
+# FOUR.MEME GRADUATION SNIPER v2
+# Speed: ~900ms - 1.7 sec (PublicNode free WSS)
+# Flow:
+#   1. four.meme factory Transfer events (WSS)
+#   2. getPair() — PancakeSwap pe pair hai? NO=skip YES=graduated
+#   3. getReserves() graduation price
+#   4. cur_price <= grad_price x 1.30 = BUY else SKIP
+# ══════════════════════════════════════════════════════════════
+
+_FM_FACTORY_ADDRS = [
+    "0x5c952063c7fc8610ffdb798152d69f0b9550762b",
+    "0x8b8cf6d0c2b5f4cb61da5e7dc94e52f4f1dd8d64",
+    "0x48a31b72f77a2a90ebe24e5c4c88be43e2ad6beb",
 ]
-_four_meme_seen: set = set()  # dedup
+_FM_TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+_FM_WSS = [
+    "wss://bsc-rpc.publicnode.com",
+    "wss://bsc.drpc.org",
+    "wss://bsc.publicnode.com",
+]
+_FM_RPC = [
+    "https://bsc-rpc.publicnode.com",
+    "https://bsc.drpc.org",
+    "https://1rpc.io/bnb",
+]
+_FM_MAX_PUMP   = 1.30
+_FM_PAIR_ABI   = [
+    {"name":"getReserves","type":"function","stateMutability":"view","inputs":[],
+     "outputs":[{"name":"r0","type":"uint112"},{"name":"r1","type":"uint112"},{"name":"ts","type":"uint32"}]},
+    {"name":"token0","type":"function","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"address"}]}
+]
+_FM_FACTORY_ABI = [
+    {"name":"getPair","type":"function","stateMutability":"view",
+     "inputs":[{"name":"tokenA","type":"address"},{"name":"tokenB","type":"address"}],
+     "outputs":[{"name":"pair","type":"address"}]}
+]
+_FM_DEC_ABI    = [{"name":"decimals","type":"function","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"uint8"}]}]
+_FM_ROUTER_ABI = [
+    {"name":"getAmountsOut","type":"function","stateMutability":"view",
+     "inputs":[{"name":"amountIn","type":"uint256"},{"name":"path","type":"address[]"}],
+     "outputs":[{"name":"amounts","type":"uint256[]"}]}
+]
 
-# ══════════════════════════════════════════════════════════════
-# FOUR.MEME DEDICATED GRADUATION SNIPER
-# Ankr RPC exclusively — dusre bot systems ko touch nahi karta
-# ══════════════════════════════════════════════════════════════
+_fm_sniped      = set()
+_fm_sniped_lock = threading.Lock()
+_fm_sem         = threading.Semaphore(3)
+_fm_w3          = None
+_fm_w3_lock     = threading.Lock()
 
-# Dedicated Ankr RPC — SIRF four.meme ke liye
-_FM_ANKR_RPC = "https://rpc.ankr.com/bsc"
-_fm_w3       = None
-
-def _get_fm_w3():
-    """Four.meme dedicated Web3 — Ankr RPC only"""
+def _fm_get_w3():
     global _fm_w3
-    if _fm_w3 is None or not _fm_w3.is_connected():
-        try:
-            _fm_w3 = Web3(Web3.HTTPProvider(_FM_ANKR_RPC, request_kwargs={"timeout": 3}))
-            if _fm_w3.is_connected():
-                print("✅ [FM Sniper] Ankr RPC connected")
-        except Exception as e:
-            print(f"⚠️ [FM Sniper] Ankr connect error: {e}")
-    return _fm_w3
-
-# ERC20 ABI — balanceOf + totalSupply
-_FM_ERC20_ABI = [
-    {"name": "balanceOf",   "type": "function", "stateMutability": "view",
-     "inputs": [{"name": "account", "type": "address"}],
-     "outputs": [{"name": "", "type": "uint256"}]},
-    {"name": "totalSupply", "type": "function", "stateMutability": "view",
-     "inputs": [], "outputs": [{"name": "", "type": "uint256"}]}
-]
-
-# ── Watch list ──
-# {addr_lower: {"address": str, "added_at": float, "progress": float, "checks": int}}
-_fm_watch:      dict      = {}
-_fm_watch_lock: threading.Lock = threading.Lock()
-_FM_WATCH_MAX     = 100    # max 100 tokens — koi fark nahi
-_FM_WATCH_TIMEOUT = 600    # 10 min timeout
-
-# ── Semaphore — sirf 6 snipes simultaneously ──
-_fm_snipe_sem = threading.Semaphore(6)
-
-# ── Already sniped ──
-_fm_sniped: set = set()
-
-# ── Thresholds ──
-_FM_QUEUE_AT  = 75.0   # 75%+ pe watch list mein daal do
-_FM_FAST_AT   = 90.0   # 90%+ pe 200ms monitoring
-_FM_SNIPE_AT  = 98.0   # 98%+ pe 50ms monitoring
-_FM_GRAD_AT   = 99.8   # 99.8%+ = graduated → BUY!
-
-def _fm_get_progress(token_address: str) -> float:
-    """Bonding curve progress on-chain — Ankr RPC"""
-    try:
-        w3fm = _get_fm_w3()
-        if not w3fm:
-            return 0.0
-        token_cs = Web3.to_checksum_address(token_address)
-        tc       = w3fm.eth.contract(address=token_cs, abi=_FM_ERC20_ABI)
-        total    = tc.functions.totalSupply().call()
-        if total <= 0:
-            return 0.0
-        left = 0
-        for proxy in FOUR_MEME_CONTRACTS:
+    with _fm_w3_lock:
+        if _fm_w3 and _fm_w3.is_connected():
+            return _fm_w3
+        for rpc in _FM_RPC:
             try:
-                left += tc.functions.balanceOf(Web3.to_checksum_address(proxy)).call()
+                w = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 4}))
+                if w.is_connected():
+                    _fm_w3 = w
+                    print(f"✅ [FM] RPC: {rpc[:40]}")
+                    return _fm_w3
             except Exception:
                 continue
-        if left == 0:
-            return 100.0
-        return round((1 - left / total) * 100, 2)
+    return None
+
+def _fm_get_pair(token_addr):
+    try:
+        w = _fm_get_w3()
+        if not w: return ""
+        factory = w.eth.contract(
+            address=Web3.to_checksum_address("0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"),
+            abi=_FM_FACTORY_ABI
+        )
+        pair = factory.functions.getPair(
+            Web3.to_checksum_address(token_addr),
+            Web3.to_checksum_address(WBNB)
+        ).call()
+        zero = "0x0000000000000000000000000000000000000000"
+        return "" if pair == zero else pair
+    except Exception:
+        return ""
+
+def _fm_get_grad_price(pair_addr, token_addr):
+    try:
+        w = _fm_get_w3()
+        if not w: return 0.0
+        pc  = w.eth.contract(address=Web3.to_checksum_address(pair_addr), abi=_FM_PAIR_ABI)
+        res = pc.functions.getReserves().call()
+        t0  = pc.functions.token0().call().lower()
+        r0, r1 = res[0], res[1]
+        if r0 <= 0 or r1 <= 0: return 0.0
+        dec = 18
+        try:
+            dec = w.eth.contract(address=Web3.to_checksum_address(token_addr), abi=_FM_DEC_ABI).functions.decimals().call()
+        except Exception: pass
+        if t0 == WBNB.lower():
+            return (r0 / 1e18) / (r1 / (10 ** dec))
+        else:
+            return (r1 / 1e18) / (r0 / (10 ** dec))
+    except Exception as e:
+        print(f"⚠️ [FM] grad price: {e}")
+        return 0.0
+
+def _fm_get_price(token_addr):
+    try:
+        w = _fm_get_w3()
+        if not w: return 0.0
+        dec = 18
+        try:
+            dec = w.eth.contract(address=Web3.to_checksum_address(token_addr), abi=_FM_DEC_ABI).functions.decimals().call()
+        except Exception: pass
+        router  = w.eth.contract(address=Web3.to_checksum_address(PANCAKE_ROUTER), abi=_FM_ROUTER_ABI)
+        amounts = router.functions.getAmountsOut(
+            10 ** dec,
+            [Web3.to_checksum_address(token_addr), Web3.to_checksum_address(WBNB)]
+        ).call()
+        return amounts[1] / 1e18 if amounts[1] > 0 else 0.0
     except Exception:
         return 0.0
 
-def _fm_check_and_queue(token_address: str):
-    """Token ka progress check — 75%+ toh watch list mein"""
-    try:
-        addr_lower = token_address.lower()
-        if addr_lower in _fm_sniped:
-            return
-        with _fm_watch_lock:
-            if addr_lower in _fm_watch:
-                return
-            if len(_fm_watch) >= _FM_WATCH_MAX:
-                return
-        progress = _fm_get_progress(token_address)
-        if progress >= _FM_QUEUE_AT:
-            with _fm_watch_lock:
-                _fm_watch[addr_lower] = {
-                    "address":  token_address,
-                    "added_at": time.time(),
-                    "progress": progress,
-                    "checks":   1,
-                }
-            print(f"👀 [FM Sniper] Watching: {token_address[:10]} {progress:.1f}%")
-    except Exception as e:
-        print(f"⚠️ [FM Sniper] queue error: {e}")
-
-def _fm_do_snipe(token_address: str):
-    """Graduated token snipe — honeypot check + buy"""
-    if not _fm_snipe_sem.acquire(blocking=False):
-        print(f"⏭️ [FM Sniper] Semaphore full — skip: {token_address[:10]}")
+def _fm_snipe(token_addr, pair_addr):
+    addr_lower = token_addr.lower()
+    with _fm_sniped_lock:
+        if addr_lower in _fm_sniped: return
+        _fm_sniped.add(addr_lower)
+    if not _fm_sem.acquire(blocking=False):
+        with _fm_sniped_lock: _fm_sniped.discard(addr_lower)
         return
     try:
-        print(f"🎯 [FM Sniper] Sniping: {token_address[:10]}")
-
-        # Honeypot check
-        hp = _get_honeypot(token_address)
-        if hp.get("isHoneypot", False):
-            print(f"🍯 [FM Sniper] Honeypot — skip: {token_address[:10]}")
-            return
-
-        # Auto trade checks
-        if not AUTO_TRADE_ENABLED:
-            return
-        if len(auto_trade_stats.get("running_positions", {})) >= AUTO_MAX_POSITIONS:
-            print(f"🛑 [FM Sniper] Max positions — skip")
-            return
-
-        # Balance check
+        if not AUTO_TRADE_ENABLED: return
+        if len(auto_trade_stats.get("running_positions", {})) >= AUTO_MAX_POSITIONS: return
         sess = get_or_create_session(AUTO_SESSION_ID)
         bal  = sess.get("paper_balance", 5.0)
-        if bal < AUTO_BUY_SIZE_BNB:
-            print(f"🛑 [FM Sniper] Low balance — skip")
-            return
-
-        # DataGuard
+        if bal < AUTO_BUY_SIZE_BNB: return
         _ok, _msg = DataGuard.bnb_price_ok()
-        if not _ok:
-            print(f"🛑 [FM Sniper] DataGuard: {_msg}")
+        if not _ok: return
+        if any(t.get("address","").lower() == addr_lower for t in auto_trade_stats.get("trade_history", [])): return
+        if token_addr in auto_trade_stats.get("running_positions", {}): return
+
+        grad = _fm_get_grad_price(pair_addr, token_addr)
+        if grad <= 0: grad = _fm_get_price(token_addr)
+        if grad <= 0:
+            print(f"❌ [FM] price=0 skip: {token_addr[:10]}")
             return
 
-        # Price fetch
-        entry_price = get_token_price_bnb(token_address)
-        if entry_price <= 0:
-            time.sleep(1)
-            entry_price = get_token_price_bnb(token_address)
-        if entry_price <= 0 or entry_price > 1.0:
-            print(f"❌ [FM Sniper] Bad price={entry_price} — skip")
+        time.sleep(0.05)
+        cur = _fm_get_price(token_addr)
+        if cur <= 0: cur = grad
+
+        if cur > grad * _FM_MAX_PUMP:
+            pump = round((cur / grad - 1) * 100, 1)
+            print(f"🚫 [FM] pumped {pump:.1f}% skip: {token_addr[:10]}")
+            _log("reject", token_addr[:8], f"FM pumped {pump:.1f}%", token_addr)
             return
 
-        entry_price = entry_price * 1.005
-        size_bnb    = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
-        token_name  = token_address[:8]
+        pump       = round((cur / grad - 1) * 100, 1)
+        entry      = cur * 1.005
+        size_bnb   = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
+        token_name = token_addr[:8]
 
-        # Real trade mode
+        _ok2, _msg2 = DataGuard.trade_allowed(token_addr, entry)
+        if not _ok2: return
+
         if TRADE_MODE == "real":
-            _real = real_buy_token(token_address, size_bnb)
-            if not _real.get("success"):
-                print(f"❌ [FM Sniper] Real buy failed: {_real.get('error')}")
-                return
-            if _real.get("entry_price", 0) > 0:
-                entry_price = _real["entry_price"]
+            _r = real_buy_token(token_addr, size_bnb, 0, 0)
+            if not _r.get("success"): return
+            if _r.get("entry_price", 0) > 0: entry = _r["entry_price"]
 
-        # Paper mode balance
         if TRADE_MODE != "real":
             sess["paper_balance"] = round(bal - size_bnb, 6)
 
-        # Position open
-        add_position_to_monitor(
-            AUTO_SESSION_ID, token_address, token_name,
-            entry_price, size_bnb,
-            stop_loss_pct=CHECKLIST_SETTINGS.get("sl_new", 12.0)
-        )
-        auto_trade_stats["running_positions"][token_address] = {
-            "token":          token_name,
-            "entry":          entry_price,
-            "size_bnb":       size_bnb,
-            "orig_size_bnb":  size_bnb,
-            "bought_usd":     round(size_bnb * market_cache.get("bnb_price", 0), 2),
-            "sl_pct":         CHECKLIST_SETTINGS.get("sl_new", 12.0),
-            "trail_pct":      20.0,
-            "tp_sold":        0.0,
-            "banked_pnl_bnb": 0.0,
-            "bought_at":      datetime.utcnow().isoformat(),
-            "mode":           TRADE_MODE,
-            "buy_reasoning":  {
-                "source":          "FM_Graduation_Sniper",
-                "assumption":      "four.meme bonding curve 100% complete — graduation snipe",
-                "strategy":        "FourMeme_Graduation",
-                "entry_reason":    "Bonding curve filled — PancakeSwap pe auto-listed",
-                "checklist_used":  False,
-                "honeypot_passed": True,
-                "bc_progress":     "100%",
-                "snipe_type":      "graduation",
-                "bnb_at_buy":      market_cache.get("bnb_price", 0),
-                "fear_greed":      market_cache.get("fear_greed", 50),
+        add_position_to_monitor(AUTO_SESSION_ID, token_addr, token_name, entry, size_bnb,
+                                stop_loss_pct=CHECKLIST_SETTINGS.get("sl_new", 12.0))
+        auto_trade_stats["running_positions"][token_addr] = {
+            "token": token_name, "entry": entry, "size_bnb": size_bnb,
+            "orig_size_bnb": size_bnb,
+            "bought_usd": round(size_bnb * market_cache.get("bnb_price", 0), 2),
+            "sl_pct": CHECKLIST_SETTINGS.get("sl_new", 12.0),
+            "trail_pct": 20.0, "tp_sold": 0.0, "banked_pnl_bnb": 0.0,
+            "bought_at": datetime.utcnow().isoformat(), "mode": TRADE_MODE,
+            "buy_reasoning": {
+                "source": "FM_Sniper_v2", "strategy": "FourMeme_Graduation",
+                "grad_price": grad, "pump_at_entry": f"{pump:+.1f}%",
+                "pair": pair_addr, "bnb_at_buy": market_cache.get("bnb_price", 0),
             },
         }
         auto_trade_stats["total_auto_buys"] += 1
         _persist_positions()
-
-        _push_notif("success", "🎓 Graduation Snipe!",
-                    f"{token_name} @ {entry_price:.2e} BNB | {size_bnb:.4f} BNB",
-                    token_name, token_address)
-        _log("buy", token_name, f"🎓 FM SNIPE @ {entry_price:.2e} BNB", token_address)
-
+        _push_notif("success", "🎓 FM Graduation Snipe!",
+                    f"{token_name} {pump:+.1f}% from grad | {size_bnb:.4f} BNB",
+                    token_name, token_addr)
+        _log("buy", token_name, f"🎓 FM @ {entry:.2e} ({pump:+.1f}% from grad)", token_addr)
         threading.Thread(target=_save_bot_decision, args=({
-            "token_address":      token_address,
-            "token_name":         token_name,
-            "decision":           "BUY",
-            "reason":             "FourMeme graduation snipe — bonding curve 100%",
-            "thought":            f"FourMeme graduation snipe. Bonding curve 100% fill hua. PancakeSwap pe auto-list hua. Entry={entry_price:.2e} BNB. BNB=${market_cache.get('bnb_price',0):.2f}. Size={size_bnb:.4f} BNB. Mode={TRADE_MODE}. Checklist skip — graduation confirmed.",
-            "discovery_source":   "four_meme_graduation",
+            "token_address": token_addr, "token_name": token_name,
+            "decision": "BUY", "reason": f"FourMeme grad. Entry {pump:+.1f}%.",
+            "discovery_source": "fourmeme_graduation_v2",
             "bnb_price_at_entry": market_cache.get("bnb_price", 0),
-            "entry_price":        entry_price,
-            "token_type":         "meme",
+            "entry_price": entry, "token_type": "meme",
         },), daemon=True).start()
-
-        print(f"✅ [FM Sniper] SNIPED: {token_name} @ {entry_price:.2e} size={size_bnb:.4f}")
-
+        print(f"✅ [FM] SNIPED: {token_name} @ {entry:.2e} ({pump:+.1f}% from grad)")
     except Exception as e:
-        print(f"⚠️ [FM Sniper] snipe error: {e}")
+        print(f"⚠️ [FM] snipe error: {e}")
+        with _fm_sniped_lock: _fm_sniped.discard(addr_lower)
     finally:
-        _fm_snipe_sem.release()
+        _fm_sem.release()
 
-def _fm_graduation_sniper():
-    """
-    DEDICATED FOUR.MEME GRADUATION SNIPER LOOP
-    2-tier monitoring:
-      75-89%  → har 2 sec check  (slow tier)
-      90-97%  → har 200ms check  (fast tier)
-      98%+    → har 50ms check   (snipe ready!)
-      99.8%+  → TURANT BUY!
-    Sirf Ankr RPC use karta hai — dusre systems ko touch nahi karta
-    """
-    print("🎯 [FM Sniper] Graduation sniper started!")
-    time.sleep(15)
+def _fm_handle_transfer(token_addr):
+    addr_lower = token_addr.lower()
+    with _fm_sniped_lock:
+        if addr_lower in _fm_sniped: return
+    pair = _fm_get_pair(token_addr)
+    if not pair: return
+    print(f"🔥 [FM] Graduated: {token_addr[:10]} pair={pair[:10]}")
+    threading.Thread(target=_fm_snipe, args=(token_addr, pair), daemon=True).start()
 
-    while True:
-        try:
-            now       = time.time()
-            to_remove = []
-            min_sleep = 2.0  # default slow tier
-
-            with _fm_watch_lock:
-                watch_list = dict(_fm_watch)
-
-            for addr_lower, info in watch_list.items():
-                token_address = info["address"]
-
-                # Timeout
-                if now - info["added_at"] > _FM_WATCH_TIMEOUT:
-                    to_remove.append(addr_lower)
-                    continue
-
-                # Already traded
-                _already = any(
-                    t.get("address", "").lower() == addr_lower
-                    for t in auto_trade_stats.get("trade_history", [])
-                )
-                if _already or addr_lower in _fm_sniped:
-                    to_remove.append(addr_lower)
-                    continue
-
-                # Progress check
-                progress = _fm_get_progress(token_address)
-                with _fm_watch_lock:
-                    if addr_lower in _fm_watch:
-                        _fm_watch[addr_lower]["progress"] = progress
-                        _fm_watch[addr_lower]["checks"]  += 1
-
-                if progress >= _FM_GRAD_AT:
-                    # 🎓 GRADUATED!
-                    print(f"🚀 [FM Sniper] GRADUATED! {token_address[:10]} {progress:.1f}%")
-                    _fm_sniped.add(addr_lower)
-                    to_remove.append(addr_lower)
-                    threading.Thread(
-                        target=_fm_do_snipe,
-                        args=(token_address,),
-                        daemon=True
-                    ).start()
-                elif progress >= _FM_SNIPE_AT:
-                    # 98%+ → 50ms tier
-                    min_sleep = min(min_sleep, 0.05)
-                    print(f"⚡ [FM Sniper] {token_address[:10]} {progress:.1f}% — 50ms mode")
-                elif progress >= _FM_FAST_AT:
-                    # 90%+ → 200ms tier
-                    min_sleep = min(min_sleep, 0.2)
-
-            # Cleanup
-            if to_remove:
-                with _fm_watch_lock:
-                    for addr in to_remove:
-                        _fm_watch.pop(addr, None)
-
-        except Exception as e:
-            print(f"⚠️ [FM Sniper] loop error: {e}")
-
-        time.sleep(min_sleep)
-
-def _poll_four_meme_api() -> list:
-    """four.meme direct API — no key needed, fastest source"""
-    found = []
-    try:
-        r = requests.get(
-            "https://four.meme/meme-api/v1/private/project/list",
-            params={"page": 1, "pageSize": 20, "orderBy": "createdAt", "sort": "desc"},
-            headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
-            timeout=8
-        )
-        if r.status_code == 200:
-            data = r.json()
-            items = data.get("data", {}).get("list") or data.get("list") or []
-            for item in items:
-                addr = item.get("tokenAddress") or item.get("address") or ""
-                if addr and len(addr) == 42:
-                    found.append(addr)
-    except Exception as e:
-        print(f"⚠️ four.meme direct API error: {e}")
-    return found
-
-def _poll_four_meme_gecko() -> list:
-    """GeckoTerminal four-meme pools — reliable fallback"""
-    found = []
-    try:
-        r = requests.get(
-            "https://api.geckoterminal.com/api/v2/networks/bsc/dexes/four-meme/pools",
-            params={"page": 1},
-            headers={"Accept": "application/json;version=20230302"},
-            timeout=10
-        )
-        if r.status_code == 200:
-            pools = r.json().get("data", [])
-            for pool in pools[:15]:
-                attrs = pool.get("attributes", {})
-                # base token address
-                rels = pool.get("relationships", {})
-                base = rels.get("base_token", {}).get("data", {}).get("id", "")
-                if base and "_" in base:
-                    addr = base.split("_")[-1]
-                    if len(addr) == 42:
-                        found.append(addr)
-    except Exception as e:
-        print(f"⚠️ four.meme gecko error: {e}")
-    return found
-
-
-def poll_four_meme():
-    """four.meme naye tokens — 3 sources: direct API + GeckoTerminal + BSCScan"""
-    global _four_meme_seen
-    time.sleep(30)  # startup delay (was 60)
-    _cycle = 0
-    while True:
-        try:
-            _cycle += 1
-            addrs = []
-
-            # Source 1: four.meme direct API (fastest, no key)
-            addrs += _poll_four_meme_api()
-
-            # Source 2: GeckoTerminal removed — WSS real-time hai, backup nahi chahiye
-
-            # Dedup + process
-            new_count = 0
-            for addr in addrs:
-                addr_lower = addr.lower()
-                if addr_lower not in _four_meme_seen:
-                    _four_meme_seen.add(addr_lower)
-                    new_count += 1
-                    # Graduation sniper — 75%+ wale fast monitor mein
-                    threading.Thread(
-                        target=_fm_check_and_queue,
-                        args=(addr,),
-                        daemon=True
-                    ).start()
-                    # Normal discovery pipeline
-                    threading.Thread(
-                        target=_process_new_token,
-                        args=(addr, addr, "FourMeme"),
-                        daemon=True
-                    ).start()
-
-            # Cleanup seen set — sirf last 500 rakhte hain
-            if len(_four_meme_seen) > 500:
-                _four_meme_seen = set(list(_four_meme_seen)[-500:])
-
-            if new_count > 0:
-                print(f"🔥 four.meme: {new_count} new tokens queued")
-
-        except Exception as e:
-            print(f"⚠️ four.meme poll error: {e}")
-        time.sleep(20)  # har 20 sec (was 300!)
-
-# ========== POLL NEW PAIRS ==========
-def poll_new_pairs():
-    import asyncio, json as _json
+def poll_four_meme_v2():
+    import asyncio, json as _j
     try:
         import websockets as _ws
     except ImportError:
-        _ws = None
+        print("⚠️ [FM] websockets not installed")
+        return
 
-    FACTORY    = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
-    PAIR_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
-    WBNB_LOWER = WBNB.lower()
-    # Chainstack primary — fallback to public
-    WSS_ENDPOINTS = [
-        "wss://bsc-rpc.publicnode.com",
-        "wss://bsc.publicnode.com",
-        "wss://bsc.drpc.org",
-    ]
-
-    async def _listen(wss_url):
-        try:
-            async with _ws.connect(wss_url, ping_interval=25, ping_timeout=18, close_timeout=8, max_size=2**20) as ws:
-                await ws.send(_json.dumps({
-                    "id": 1, "method": "eth_subscribe",
-                    "params": ["logs", {"address": [FACTORY, PANCAKE_V3_FACTORY], "topics": [[PAIR_TOPIC]]}],
-                    "jsonrpc": "2.0"
-                }))
-                await asyncio.wait_for(ws.recv(), timeout=10)
-                while True:
-                    msg  = await asyncio.wait_for(ws.recv(), timeout=60)
-                    data = _json.loads(msg)
-                    log  = (data.get("params") or {}).get("result") or {}
+    async def _listen(url):
+        async with _ws.connect(url, ping_interval=20, ping_timeout=15, close_timeout=5, max_size=2**20) as ws:
+            await ws.send(_j.dumps({
+                "id": 11, "jsonrpc": "2.0", "method": "eth_subscribe",
+                "params": ["logs", {"address": _FM_FACTORY_ADDRS, "topics": [_FM_TRANSFER_TOPIC]}]
+            }))
+            await asyncio.wait_for(ws.recv(), timeout=10)
+            print(f"✅ [FM] Subscribed: {url[:35]}")
+            while True:
+                try:
+                    msg    = await asyncio.wait_for(ws.recv(), timeout=60)
+                    data   = _j.loads(msg)
+                    log    = (data.get("params") or {}).get("result") or {}
                     if not log: continue
-                    topics   = log.get("topics") or []
-                    raw_data = log.get("data", "0x")
-                    token0 = ("0x" + topics[1][-40:]) if len(topics) > 1 else ""
-                    token1 = ("0x" + topics[2][-40:]) if len(topics) > 2 else ""
-                    pair_addr = ""
-                    if len(raw_data) >= 66:
-                        pair_addr = "0x" + raw_data[26:66]
-                    new_token = token0 if (token0 and token0.lower() != WBNB_LOWER) else (
-                                token1 if (token1 and token1.lower() != WBNB_LOWER) else "")
-                    if new_token:
-                        threading.Thread(target=_process_new_token, args=(new_token, pair_addr, "WebSocket"), daemon=True).start()
-        except Exception as e:
-            err_str = str(e).lower()
-            if "1013" in err_str or "timeout" in err_str or "connection" in err_str:
-                print(f"⚠️ WSS error: received 1013 — switching RPC")
-            else:
-                print(f"Warning: WSS error: {str(e)[:80]}")
-            gc.collect()  # ← MEMORY CLEANUP
+                    topics = log.get("topics", [])
+                    if len(topics) < 3: continue
+                    token_addr = log.get("address", "")
+                    if not token_addr: continue
+                    threading.Thread(target=_fm_handle_transfer, args=(token_addr,), daemon=True).start()
+                except asyncio.TimeoutError:
+                    continue
+                except Exception as e:
+                    raise e
 
-    async def _ws_loop():
-        idx = 0
-        fail_count = 0
-        last_mem_print = 0
+    async def _loop():
+        idx = fails = 0
         while True:
             try:
-                url = WSS_ENDPOINTS[idx % len(WSS_ENDPOINTS)]
-                print(f"🔌 WSS connecting: {url}")
+                url = _FM_WSS[idx % len(_FM_WSS)]
+                print(f"🔌 [FM] Connecting: {url}")
                 await _listen(url)
-                fail_count = 0
+                fails = 0
             except Exception as e:
-                fail_count += 1
-                wait = min(3 * fail_count, 30) if "1013" in str(e).lower() else min(2 * fail_count, 20)
-                print(f"Warning: WSS loop fail #{fail_count} — retry in {wait}s")
+                fails += 1
+                wait = min(5 * fails, 60)
+                print(f"⚠️ [FM] fail #{fails}: {str(e)[:50]} retry {wait}s")
                 await asyncio.sleep(wait)
-                if fail_count % 10 == 0:
-                    gc.collect()
-                    print("🧹 Memory cleanup done")
             idx += 1
 
-    if _ws is not None:
-        def _run_ws():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                loop.run_until_complete(_ws_loop())
-            except Exception as ex:
-                print(f"Warning: WSS thread: {ex}")
-            finally:
-                loop.close()  # always close — no dangling loops
-        threading.Thread(target=_run_ws, daemon=True).start()
+    def _run():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try: loop.run_until_complete(_loop())
+        except Exception as ex: print(f"⚠️ [FM] crashed: {ex}")
+        finally: loop.close()
 
+    threading.Thread(target=_run, daemon=True).start()
+    print("🎓 [FM] Four.meme Graduation Sniper v2 started!")
 
-
-def poll_four_meme_wss():
-    """
-    four.meme real-time token listener via BSC WebSocket.
-    four.meme factory contracts ka TokenCreated / PairCreated event sunna.
-    Polling ke saath parallel chalta hai — dono milke koi token miss nahi hoga.
-    """
-    import asyncio, json as _json
-    try:
-        import websockets as _ws
-    except ImportError:
-        _ws = None
-
-    # four.meme factory contracts — v1, v2, v3
-    FOUR_CONTRACTS = [
-        "0x5c952063c7fc8610ffdb798152d69f0b9550762b",  # v1
-        "0x8b8cF6D0C2B5F4CB61Da5E7dc94E52f4F1dD8D64",  # v2
-        "0x48a31B72F77a2A90eBE24E5C4c88bE43E2AD6BEB",  # v3
-    ]
-    # keccak256("TokenCreated(address,address,uint256)") — four.meme event
-    FOUR_TOPIC_CREATED  = "0x9d239d0744ed82176a90994b1b96316c6c1a2a4de3fe2e5ed29ef93f98d2b741"
-    # keccak256("PairCreated(address,address,address,uint256)") — pancake style
-    FOUR_TOPIC_PAIR     = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
-    FOUR_TOPIC_LAUNCH   = "0xb9ed0243fdf00f0545c63a0af8850c090d86bb46673f2a9a30adece5df78e34e"
-
-    WSS_ENDPOINTS = [
-        "wss://bsc-rpc.publicnode.com",
-        "wss://bsc.publicnode.com",
-        "wss://bsc.drpc.org",
-    ]
-
-    async def _listen_four(wss_url):
-        try:
-            async with _ws.connect(
-                wss_url,
-                ping_interval=25, ping_timeout=18, close_timeout=8, max_size=2**20
-            ) as ws:
-                # Subscribe to all three four.meme factory contracts + all known topics
-                await ws.send(_json.dumps({
-                    "id": 2, "method": "eth_subscribe",
-                    "params": ["logs", {
-                        "address": FOUR_CONTRACTS,
-                        "topics": [[FOUR_TOPIC_CREATED, FOUR_TOPIC_PAIR, FOUR_TOPIC_LAUNCH]]
-                    }],
-                    "jsonrpc": "2.0"
-                }))
-                await asyncio.wait_for(ws.recv(), timeout=10)
-                print("🔥 four.meme WSS: subscribed to token events")
-                while True:
-                    msg  = await asyncio.wait_for(ws.recv(), timeout=60)
-                    data = _json.loads(msg)
-                    log  = (data.get("params") or {}).get("result") or {}
-                    if not log: continue
-                    topics   = log.get("topics") or []
-                    raw_data = log.get("data", "0x")
-
-                    # Extract token address from topics or data
-                    token_addr = ""
-
-                    # topic[1] = token address (most four.meme events)
-                    if len(topics) > 1:
-                        t1 = topics[1]
-                        if len(t1) == 66:
-                            token_addr = "0x" + t1[-40:]
-
-                    # If topic extraction failed, try data field
-                    if not token_addr and len(raw_data) >= 66:
-                        token_addr = "0x" + raw_data[26:66]
-
-                    if token_addr and len(token_addr) == 42 and token_addr.lower() != WBNB.lower():
-                        threading.Thread(
-                            target=_process_new_token,
-                            args=(token_addr, token_addr, "FourMeme-WSS"),
-                            daemon=True
-                        ).start()
-                        print(f"⚡ four.meme WSS: new token {token_addr[:12]}...")
-
-        except Exception as e:
-            err = str(e).lower()
-            if "1013" in err or "timeout" in err or "connection" in err:
-                print(f"⚠️ four.meme WSS: {str(e)[:60]} — switching RPC")
-            else:
-                print(f"⚠️ four.meme WSS error: {str(e)[:80]}")
-            gc.collect()
-
-    async def _four_wss_loop():
-        idx = 0
-        fail_count = 0
-        while True:
-            try:
-                url = WSS_ENDPOINTS[idx % len(WSS_ENDPOINTS)]
-                print(f"🔌 four.meme WSS connecting: {url}")
-                await _listen_four(url)
-                fail_count = 0
-            except Exception as e:
-                fail_count += 1
-                wait = min(10 * fail_count, 120)
-                print(f"⚠️ four.meme WSS fail #{fail_count} — retry in {wait}s")
-                await asyncio.sleep(wait)
-                if fail_count % 5 == 0:
-                    gc.collect()
-            idx += 1
-
-    if _ws is not None:
-        def _run_four_wss():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                loop.run_until_complete(_four_wss_loop())
-            except Exception as ex:
-                print(f"⚠️ four.meme WSS thread: {ex}")
-            finally:
-                loop.close()
-        threading.Thread(target=_run_four_wss, daemon=True).start()
-    else:
-        print("⚠️ websockets not installed — four.meme WSS disabled")
-
-
-
-# ══════════════════════════════════════════════════════════════
 # REAL-TIME SWAP MONITOR — Open positions ke liye on-chain data
 # PancakeSwap Swap event sunna directly BSC WSS se
 # Har swap = buy ya sell, 100ms mein pata chal jaata hai
@@ -6054,9 +5738,7 @@ def _startup_once():
             threading.Thread(target=_run, daemon=True).start()
 
         threading.Thread(target=_delayed(poll_new_pairs,        10),  daemon=True).start()
-        threading.Thread(target=_delayed(poll_four_meme,         20), daemon=True).start()
-        threading.Thread(target=_delayed(poll_four_meme_wss,     15), daemon=True).start()  # ✅ real-time WSS
-        threading.Thread(target=_delayed(_fm_graduation_sniper,  20), daemon=True).start()  # 🎓 FM graduation sniper
+        threading.Thread(target=_delayed(poll_four_meme_v2, 15), daemon=True).start()  # 🎓 FM v2
         threading.Thread(target=_delayed(_pc_mint_monitor,        15), daemon=True).start()  # 🔥 PC Mint event monitor
         threading.Thread(target=_pc_mint_cleanup,                     daemon=True).start()   # 🧹 PC Mint cleanup
         # ⚡ PC Fast Sniper — background mein chalta hai, _pc_add_to_snipe_queue se trigger hota hai
