@@ -299,11 +299,9 @@ function _checkLock(){
   }).then(function(r){ return r.json(); }).then(function(d){
     if(d.status === 'ok'){
       localStorage.setItem('mrblack_auth','1');
-      document.getElementById('lock-screen').style.display = 'none';
-      document.body.style.overflow = '';
-      // FIX: init() abhi exist nahi karta — flag set karo
-      // Main script block mein _startApp check karega
-      window._startApp = true;
+      // SIMPLE FIX: Page reload karo — localStorage mein auth set hai
+      // Reload ke baad normal flow chalega seedha
+      window.location.reload();
     } else {
       errEl.textContent = '❌ Wrong password';
       document.getElementById('lock-input').value = '';
@@ -1533,21 +1531,13 @@ function _startAllIntervals(){
   setInterval(fetchNotifications, 10000);
 }
 
+// SIMPLE: Reload ke baad yahan auth='1' hoga
 if(localStorage.getItem('mrblack_auth')==='1'){
   _startAllIntervals();
   init();
   fetchRealBalance();
-} else {
-  window._intervalsStarted = false;
-  var _lockChecker = setInterval(function(){
-    if(window._startApp){
-      clearInterval(_lockChecker);
-      _startAllIntervals();
-      init();
-      fetchRealBalance();
-    }
-  }, 100);
 }
+// else: lock screen dikhega, password daalne ke baad reload hoga
 
 // RAM stats — every 10 seconds
 async function fetchRamStats(){
