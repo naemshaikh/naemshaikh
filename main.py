@@ -1739,10 +1739,10 @@ def is_dev_blacklisted(wallet: str) -> bool:
 # TOKEN BLACKLIST — rug/SL tokens 24h block
 # ══════════════════════════════════════════════
 _token_blacklist: dict = {}  # {addr_lower: {"reason": str, "ts": float}}
-_TOKEN_BL_TTL = 691200  # 8 days (bot 7d+ token skip karta hai)
+_TOKEN_BL_TTL = 691200  # 8 days blacklist TTL
 
 def blacklist_token(token_address: str, reason: str = "rug"):
-    """Token ko 8 days ke liye blacklist karo — 7d+ tokens bot skip karta hai"""
+    """Token ko 8 days ke liye blacklist karo — 6h+ tokens bot skip karta hai"""
     if not token_address: return
     _token_blacklist[token_address.lower()] = {
         "reason": reason,
@@ -3906,13 +3906,13 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
             _gp_data  = _f_gp.result(timeout=8)
             _dex_json = _f_dex.result(timeout=8)
 
-        # Token too old check (7d+)
+        # Token too old check (6h+)
         try:
             _bp = [p for p in (_dex_json.get("pairs") or []) if p and p.get("chainId") == "bsc"]
             if _bp:
                 _ct = _bp[0].get("pairCreatedAt", 0) or 0
                 if _ct and (time.time() - _ct / 1000) / 60 > 360:
-                    _log("reject", pair_address[:8], "Token too old (7d+) — skip", pair_address)
+                    _log("reject", pair_address[:8], "Token too old (6h+) — skip", pair_address)
                     return
                 _prefetched_dex = _dex_json
         except Exception:
