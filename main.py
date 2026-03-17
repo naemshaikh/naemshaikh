@@ -2330,20 +2330,24 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
             return
     except Exception:
         pass
+    # ── Checksum pehle karo — lock ke bahar ──
+    try:
+        token_address = Web3.to_checksum_address(token_address)
+    except Exception:
+        return
+
+    # ── Check + Set ATOMICALLY ek hi lock mein ──
+    # Race condition fix: dono WSS threads same token detect karte the
     with _discovered_lock:
         if _now - discovered_addresses.get(token_address, 0) <= DISCOVERY_TTL:
-            return
+            return  # Already processing — dusra thread handle kar raha hai
+        # Turant set karo — lock ke andar — koi doosra thread pass nahi hoga
+        discovered_addresses[token_address] = _now
         # RAM CAP cleanup
         if len(discovered_addresses) > 150:
             cutoff = _now - DISCOVERY_TTL
             for k in [k for k, v in list(discovered_addresses.items()) if v < cutoff][:100]:
                 del discovered_addresses[k]
-    try:
-        token_address = Web3.to_checksum_address(token_address)
-    except Exception:
-        return
-    with _discovered_lock:
-        discovered_addresses[token_address] = _now
     brain["total_tokens_discovered_ever"] += 1
 
     token_name = "Unknown"
