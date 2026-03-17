@@ -535,7 +535,10 @@ function _checkLock(){
           <span style="font-size:11px;font-weight:800;color:var(--txt1);letter-spacing:0.5px;">LIVE SCANNER</span>
           <div id="scanner-dot" style="width:7px;height:7px;border-radius:50%;background:var(--em);box-shadow:0 0 8px var(--em);animation:blink 2s infinite;"></div>
         </div>
-        <span style="font-size:9px;color:var(--txt3);" id="scanner-updated">—</span>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:9px;color:var(--txt3);" id="scanner-updated">—</span>
+          <button onclick="fetchScannerStats()" style="background:var(--ink3);border:1px solid var(--line2);border-radius:6px;padding:3px 8px;font-size:9px;font-weight:700;color:var(--txt2);cursor:pointer;" id="sc-refresh-btn">↻</button>
+        </div>
       </div>
 
       <!-- Queue status -->
@@ -608,27 +611,49 @@ function _checkLock(){
 
       <!-- Per min / hour / day tabs -->
       <div>
-        <div style="display:flex;gap:4px;margin-bottom:6px;">
+        <div style="display:flex;gap:4px;margin-bottom:8px;">
           <button onclick="scTab('min')" id="sc-tab-min" style="flex:1;padding:4px;border-radius:6px;border:1px solid var(--em);background:var(--em-dim);color:var(--em);font-size:9px;font-weight:700;cursor:pointer;">PER MIN</button>
           <button onclick="scTab('hour')" id="sc-tab-hour" style="flex:1;padding:4px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--txt3);font-size:9px;font-weight:700;cursor:pointer;">PER HOUR</button>
           <button onclick="scTab('day')" id="sc-tab-day" style="flex:1;padding:4px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--txt3);font-size:9px;font-weight:700;cursor:pointer;">TODAY</button>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4px;text-align:center;" id="sc-tab-content">
-          <div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;color:var(--ice);" id="sc-t-pc-disc">0</div>
-            <div style="font-size:7px;color:var(--txt3);">PC Found</div>
+        <!-- PC row -->
+        <div style="background:var(--ink3);border-radius:8px;padding:8px 10px;margin-bottom:6px;">
+          <div style="font-size:8px;font-weight:700;color:var(--ice);letter-spacing:0.5px;margin-bottom:6px;">🥞 PANCAKESWAP</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4px;text-align:center;">
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--txt1);" id="sc-t-pc-disc">0</div>
+              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Found</div>
+            </div>
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--em);" id="sc-t-pc-pf">0</div>
+              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Pre-filter ✓</div>
+            </div>
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--em);" id="sc-t-pc-cl">0</div>
+              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Checklist ✓</div>
+            </div>
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--gold);" id="sc-t-pc-buy">0</div>
+              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Bought 🟢</div>
+            </div>
           </div>
-          <div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;color:var(--gold);" id="sc-t-fm-disc">0</div>
-            <div style="font-size:7px;color:var(--txt3);">FM Found</div>
-          </div>
-          <div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;color:var(--em);" id="sc-t-pc-buy">0</div>
-            <div style="font-size:7px;color:var(--txt3);">PC Bought</div>
-          </div>
-          <div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;color:var(--em);" id="sc-t-fm-buy">0</div>
-            <div style="font-size:7px;color:var(--txt3);">FM Bought</div>
+        </div>
+        <!-- FM row -->
+        <div style="background:var(--ink3);border-radius:8px;padding:8px 10px;">
+          <div style="font-size:8px;font-weight:700;color:var(--gold);letter-spacing:0.5px;margin-bottom:6px;">🎓 FOURMEME</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;text-align:center;">
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--txt1);" id="sc-t-fm-disc">0</div>
+              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Graduated</div>
+            </div>
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--gold);" id="sc-t-fm-buy">0</div>
+              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Sniped 🎯</div>
+            </div>
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--em);" id="sc-t-fm-rate-tab">0%</div>
+              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Snipe rate</div>
+            </div>
           </div>
         </div>
       </div>
@@ -1568,36 +1593,69 @@ function scTab(tab) {
 function _updateScTab(d) {
   const t = _scActiveTab;
   const src = t === 'min' ? d.per_min : t === 'hour' ? d.per_hour : d.per_day;
+  // PC alag
   document.getElementById('sc-t-pc-disc').textContent = src.pc_disc || 0;
-  document.getElementById('sc-t-fm-disc').textContent = src.fm_disc || 0;
   document.getElementById('sc-t-pc-buy').textContent  = src.pc_buy  || 0;
+  // PC per-tab prefilter + checklist (from all-time ratios)
+  if (d.pc.discovered > 0) {
+    const pfRatio = d.pc.prefilter_pass / d.pc.discovered;
+    const clRatio = d.pc.checklist_pass / d.pc.discovered;
+    document.getElementById('sc-t-pc-pf').textContent = Math.round((src.pc_disc || 0) * pfRatio) || 0;
+    document.getElementById('sc-t-pc-cl').textContent = Math.round((src.pc_disc || 0) * clRatio) || 0;
+  } else {
+    document.getElementById('sc-t-pc-pf').textContent = 0;
+    document.getElementById('sc-t-pc-cl').textContent = 0;
+  }
+  // FM alag
+  document.getElementById('sc-t-fm-disc').textContent = src.fm_disc || 0;
   document.getElementById('sc-t-fm-buy').textContent  = src.fm_buy  || 0;
+  const fmTabRate = (src.fm_disc || 0) > 0 ? Math.round((src.fm_buy || 0) / (src.fm_disc || 0) * 100) : 0;
+  document.getElementById('sc-t-fm-rate-tab').textContent = fmTabRate + '%';
 }
 
-async function fetchScannerStats() {
+async function fetchScannerStats(isManual = false) {
+  // Refresh button animate
+  const btn = document.getElementById('sc-refresh-btn');
+  if (btn) { btn.textContent = '⟳'; btn.style.opacity = '0.5'; }
+
   try {
     const d = await fetchJSON('/scanner-stats', {}, 5000);
     if (!d) return;
     _scData = d;
 
-    // Queue
-    document.getElementById('sc-pc-queue').textContent = d.pc.queue || 0;
-    document.getElementById('sc-fm-queue').textContent = d.fm.queue || 0;
+    // Queue — animate agar > 0
+    const pcQ = d.pc.queue || 0;
+    const fmQ = d.fm.queue || 0;
+    document.getElementById('sc-pc-queue').textContent = pcQ;
+    document.getElementById('sc-fm-queue').textContent = fmQ;
+    document.getElementById('sc-pc-queue').style.color = pcQ > 0 ? 'var(--gold)' : 'var(--ice)';
+    document.getElementById('sc-fm-queue').style.color = fmQ > 0 ? 'var(--em)'   : 'var(--gold)';
 
-    // PC funnel
-    document.getElementById('sc-pc-disc').textContent = d.pc.discovered || 0;
-    document.getElementById('sc-pc-pf').textContent   = d.pc.prefilter_pass || 0;
-    document.getElementById('sc-pc-cl').textContent   = d.pc.checklist_pass || 0;
-    document.getElementById('sc-pc-buy').textContent  = d.pc.bought || 0;
+    // PC funnel — with animation flash on change
+    const _set = (id, val) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (el.textContent != String(val)) {
+        el.style.transform = 'scale(1.2)';
+        el.style.transition = 'transform 0.2s';
+        setTimeout(() => { el.style.transform = 'scale(1)'; }, 200);
+      }
+      el.textContent = val;
+    };
+
+    _set('sc-pc-disc', d.pc.discovered || 0);
+    _set('sc-pc-pf',   d.pc.prefilter_pass || 0);
+    _set('sc-pc-cl',   d.pc.checklist_pass || 0);
+    _set('sc-pc-buy',  d.pc.bought || 0);
 
     // Pass rate bar
     const rate = d.pc.discovered > 0 ? Math.round(d.pc.bought / d.pc.discovered * 100) : 0;
     document.getElementById('sc-pc-rate').textContent = rate + '%';
-    document.getElementById('sc-pc-bar').style.width  = Math.min(rate * 3, 100) + '%';
+    document.getElementById('sc-pc-bar').style.width  = Math.min(rate * 5, 100) + '%';
 
     // FM
-    document.getElementById('sc-fm-disc').textContent = d.fm.discovered || 0;
-    document.getElementById('sc-fm-buy').textContent  = d.fm.bought || 0;
+    _set('sc-fm-disc', d.fm.discovered || 0);
+    _set('sc-fm-buy',  d.fm.bought || 0);
     const fmRate = d.fm.discovered > 0 ? Math.round(d.fm.bought / d.fm.discovered * 100) : 0;
     document.getElementById('sc-fm-rate').textContent = fmRate + '%';
 
@@ -1606,15 +1664,17 @@ async function fetchScannerStats() {
 
     // Updated time
     const now = new Date();
-    document.getElementById('sc-pc-queue').parentElement.parentElement.parentElement;
-    document.getElementById('scanner-updated').textContent = 'updated ' + now.toLocaleTimeString();
+    document.getElementById('scanner-updated').textContent = now.toLocaleTimeString();
 
   } catch(e) {}
+  finally {
+    if (btn) { btn.textContent = '↻'; btn.style.opacity = '1'; }
+  }
 }
 
-// Start scanner polling
+// Real-time: har 5s auto-refresh
 fetchScannerStats();
-setInterval(fetchScannerStats, 15000);  // har 15s refresh
+setInterval(fetchScannerStats, 5000);
 
 // ── BOT ACTIVITY FEED ──
 const ACT_STYLES = {
