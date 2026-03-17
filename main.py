@@ -4916,6 +4916,36 @@ def get_rt_vol_pressure(token_address: str) -> dict:
 
 # _decode_swap + resubscribe event → merged into start_swap_monitor (line ~654)
 
+def _decode_swap(log: dict, pair_info: dict) -> str:
+    """
+    PancakeSwap v2 Swap event decode karo — buy ya sell?
+    pair_info = {"token": addr, "token0_is_wbnb": bool, "pair": addr}
+    Returns: "buy" / "sell" / "unknown"
+    """
+    try:
+        raw = log.get("data", "0x")
+        if len(raw) < 130:
+            return "unknown"
+        raw_hex = raw[2:]  # 0x remove karo
+        a0in  = int(raw_hex[0:64],   16)
+        a1in  = int(raw_hex[64:128], 16)
+
+        wbnb_is_t0 = pair_info.get("token0_is_wbnb", False)
+
+        if wbnb_is_t0:
+            # token0 = WBNB, token1 = token
+            # BUY:  WBNB in  (a0in > 0)
+            # SELL: WBNB out (a1in > 0)
+            return "buy" if a0in > 0 else ("sell" if a1in > 0 else "unknown")
+        else:
+            # token0 = token, token1 = WBNB
+            # BUY:  WBNB in  (a1in > 0)
+            # SELL: token in (a0in > 0)
+            return "buy" if a1in > 0 else ("sell" if a0in > 0 else "unknown")
+    except Exception:
+        return "unknown"
+
+
 def _start_swap_monitor_wss():
     """
     Single WSS connection — saare open positions ke pairs monitor karta hai.
