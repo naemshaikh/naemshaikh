@@ -5503,6 +5503,9 @@ R4. NO INTERNAL VARS: TRADING_IQ, EMOTION, UPTIME, CONFIDENCE, SESSIONS_TOGETHER
 R5. NO CLICHE: "market mein fear hai lekin opportunities" — permanently banned.
 R6. NO END QUESTION: Har reply ke end mein sawaal mat poocho.
 R7. ACCURATE DATA: Context mein TokensDiscovered, QueueSize, TotalTrades fields hain — inhe use karo.
+R12. OPEN POSITIONS: OPEN_POSITIONS_DETAIL field mein exact RAM data hai — token naam, entry, current price, PnL — yahi use karo, apne se mat banao.
+R13. DB VERIFIED: DB_DECISIONS_VERIFIED field mein Supabase se verified decisions hain — token queries pe yahi reference karo.
+R14. CROSS VERIFY: Agar RAM data aur DB data conflict kare — dono batao, apne se decide mat karo.
 R8. PERMANENT_USER_RULES field — hamesha follow karo.
 R9. USER ORDERS: User jo maange — karo. Agar possible nahi to seedha bolo.
 R10. DISCOVERED TOKENS: Context mein list hai to naam aur address dono do.
@@ -5567,6 +5570,44 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
         _positions    = len(auto_trade_stats.get("running_positions", {}))
         _discovered   = len(discovered_addresses)
         _cycles       = brain.get("total_learning_cycles", 0)
+
+        # ── Open positions detail — RAM se verified ──
+        _pos_detail_parts = []
+        for _pa, _pv in list(auto_trade_stats.get("running_positions", {}).items())[:10]:
+            _tok   = _pv.get("token", _pa[:8])
+            _entry = _pv.get("entry", 0)
+            _size  = _pv.get("size_bnb", 0)
+            _mon   = monitored_positions.get(_pa, {})
+            _cur   = _mon.get("current", _entry)
+            _pnl   = round(((_cur - _entry) / _entry * 100), 1) if _entry > 0 else 0
+            _tp    = _pv.get("tp_sold", 0)
+            _sl    = _pv.get("sl_pct", 12)
+            _pos_detail_parts.append(
+                f"{_tok}|entry={_entry:.2e}|cur={_cur:.2e}|pnl={_pnl:+.1f}%|size={_size:.4f}BNB|tp_sold={_tp:.0f}%|sl={_sl:.0f}%|addr={_pa[:10]}"
+            )
+        _pos_detail_str = " || ".join(_pos_detail_parts) if _pos_detail_parts else "none"
+
+        # ── bot_decisions recent — DB se verified ──
+        _bd_ctx_inline = ""
+        try:
+            if supabase:
+                _bd_r = supabase.table("bot_decisions").select(
+                    "token_name,token_address,decision,reason,failed_check,score,total,created_at"
+                ).order("created_at", desc=True).limit(15).execute()
+                if _bd_r.data:
+                    _bd_parts = []
+                    for _r in _bd_r.data:
+                        _d  = _r.get("decision","?")
+                        _t  = _r.get("token_name","?")
+                        _rs = (_r.get("reason","") or "")[:40]
+                        _fc = (_r.get("failed_check","") or "")[:20]
+                        _sc = _r.get("score",0)
+                        _tt = _r.get("total",1)
+                        _bd_parts.append(f"{_d}|{_t}|{_rs}|fail={_fc}|{_sc}/{_tt}")
+                    _bd_ctx_inline = "[DB_DECISIONS_VERIFIED]" + " ; ".join(_bd_parts) + "[/DB_DECISIONS_VERIFIED]"
+        except Exception:
+            pass
+
         ctx = (
             f"\n[BNB=${market_cache['bnb_price']:.2f}|F&G={market_cache['fear_greed']}/100"
             f"|Paper={session_data.get('paper_balance',5.0):.3f}BNB"
@@ -5580,6 +5621,8 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
             + (f"|User:{user_ctx}" if user_ctx and user_ctx != "NEW_USER" else "")
             + f"|AUTO_BAL={_auto_balance:.4f}|AUTO_POS={_auto_pos}|AUTO_WR={_auto_wr}%|AUTO_PNL={_auto_pnl}%"
             + (f"|RecentTrades:{_pm_ctx}" if _pm_ctx else "")
+            + f"|OPEN_POSITIONS_DETAIL={_pos_detail_str}"
+            + (f"|{_bd_ctx_inline}" if _bd_ctx_inline else "")
             + f"]"
         )
 
@@ -5598,7 +5641,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
             memory_block = "\n\n[MRBLACK MEMORY]\n" + "\n".join(f"- {f}" for f in memory_facts) + "\n[END MEMORY]"
 
         messages = [{"role": "system", "content": SYSTEM_PROMPT + memory_block}]
-        messages += [{"role": m["role"], "content": m["content"]} for m in history[-8:]]  # mem opt
+        messages += [{"role": m["role"], "content": m["content"]} for m in history[-12:]]  # mem opt
 
         _perm_rules = user_profile.get("user_rules", [])
         _perm_str = (" | UserRules: " + " | ".join(_perm_rules[-3:])) if _perm_rules else ""
@@ -5612,7 +5655,7 @@ def get_llm_reply(user_message: str, history: list, session_data: dict) -> str:
         # Round-robin keys — MODEL_NAME pehle, MODEL_FAST fallback
         for _model in [MODEL_NAME, MODEL_FAST]:
             try:
-                reply_text = client.chat(model=_model, messages=messages, max_tokens=600)
+                reply_text = client.chat(model=_model, messages=messages, max_tokens=1000)
                 if reply_text:
                     break
             except NoProvidersAvailableError:
