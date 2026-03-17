@@ -3857,20 +3857,23 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
         if not whale_triggered:
             try:
                 _min_liq = CHECKLIST_SETTINGS.get("min_liq_bnb", 3.0)
-                _pc_w3   = Web3(Web3.HTTPProvider("https://bsc-rpc.publicnode.com", request_kwargs={"timeout": 3}))
-                _pc_c    = _pc_w3.eth.contract(
-                    address=Web3.to_checksum_address(pair_address),
-                    abi=PAIR_ABI_PRICE
-                )
-                _res     = _pc_c.functions.getReserves().call()
-                _liq_bnb = max(_res[0], _res[1]) / 1e18
-                if _liq_bnb < _min_liq:
-                    print(f"⏭️ Low liq {_liq_bnb:.2f} BNB — skip: {pair_address[:10]}")
-                    _log("reject", pair_address[:8], f"Low liq {_liq_bnb:.2f} BNB", pair_address)
-                    return
-                print(f"✅ Liq ok {_liq_bnb:.2f} BNB — checklist: {pair_address[:10]}")
+                _actual_pair = _get_v2_pair(pair_address)
+                if not _actual_pair:
+                    print(f"⚠️ No pair found — proceeding: {pair_address[:10]}")
+                else:
+                    _pc_w3   = Web3(Web3.HTTPProvider("https://bsc-rpc.publicnode.com", request_kwargs={"timeout": 3}))
+                    _pc_c    = _pc_w3.eth.contract(
+                        address=Web3.to_checksum_address(_actual_pair),
+                        abi=PAIR_ABI_PRICE
+                    )
+                    _res     = _pc_c.functions.getReserves().call()
+                    _liq_bnb = max(_res[0], _res[1]) / 1e18
+                    if _liq_bnb < _min_liq:
+                        print(f"⏭️ Low liq {_liq_bnb:.2f} BNB — skip: {pair_address[:10]}")
+                        _log("reject", pair_address[:8], f"Low liq {_liq_bnb:.2f} BNB", pair_address)
+                        return
+                    print(f"✅ Liq ok {_liq_bnb:.2f} BNB — checklist: {pair_address[:10]}")
             except Exception as _le:
-                # RPC fail — checklist pe jaao anyway
                 print(f"⚠️ Liq check failed — proceeding: {pair_address[:10]}")
 
         # ── STEP 2: Parallel fetch — Honeypot + GoPlus + DexScreener SAATH MEIN ──
@@ -4747,7 +4750,10 @@ def poll_new_pairs():
                     "params": ["logs", {"address": [FACTORY], "topics": [[PAIR_TOPIC]]}],
                     "jsonrpc": "2.0"
                 }))
-                await asyncio.wait_for(ws.recv(), timeout=10)
+                _ack = await asyncio.wait_for(ws.recv(), timeout=10)
+                _ack_data = _json.loads(_ack)
+                if _ack_data.get("error"):
+                    raise Exception(f"Sub rejected: {_ack_data['error']}")
                 print(f"✅ WSS connected: {wss_url[:35]}")
                 while True:
                     msg  = await ws.recv()  # timeout=None — ping/pong se alive
@@ -4773,41 +4779,36 @@ def poll_new_pairs():
                 print(f"Warning: WSS error: {str(e)[:80]}")
             gc.collect()
 
-    # BSCScan fallback — har 30 sec last 2 min ke missed pairs
-    async def _bscscan_fallback():
-        await asyncio.sleep(60)
-        _seen_bs: set = set()
+    # DexScreener fallback — tabhi chalega jab WSS miss kare
+    async def _dexscreener_fallback():
+        await asyncio.sleep(90)
+        _seen_ds: set = set()
         while True:
             try:
-                if BSC_SCAN_KEY:
-                    import urllib.request as _ur, json as _bj
-                    _cutoff = int(time.time()) - 120
-                    _url = (f"https://api.bscscan.com/api?module=logs&action=getLogs"
-                            f"&address={FACTORY}&topic0={PAIR_TOPIC}"
-                            f"&fromBlock=latest&toBlock=latest"
-                            f"&page=1&offset=10&apikey={BSC_SCAN_KEY}")
-                    _req = _ur.Request(_url, headers={"User-Agent": "Mozilla/5.0"})
-                    with _ur.urlopen(_req, timeout=8) as _resp:
-                        _data = _bj.loads(_resp.read())
-                        for _log in (_data.get("result") or []):
-                            _ts = int(_log.get("timeStamp", "0x0"), 16)
-                            if _ts < _cutoff: continue
-                            _topics = _log.get("topics", [])
-                            _rdata  = _log.get("data", "0x")
-                            _t0 = ("0x" + _topics[1][-40:]) if len(_topics) > 1 else ""
-                            _t1 = ("0x" + _topics[2][-40:]) if len(_topics) > 2 else ""
-                            _pa = ("0x" + _rdata[26:66]) if len(_rdata) >= 66 else ""
-                            _tk = _t0 if (_t0 and _t0.lower() != WBNB_LOWER) else (
-                                  _t1 if (_t1 and _t1.lower() != WBNB_LOWER) else "")
-                            if _tk and _tk not in _seen_bs:
-                                _seen_bs.add(_tk)
-                                if len(_seen_bs) > 200: _seen_bs.clear()
-                                threading.Thread(target=_process_new_token,
-                                    args=(_tk, _pa, "BSCScan-Fallback"), daemon=True).start()
-                                print(f"📡 BSCScan fallback: {_tk[:10]}")
+                import requests as _req_ds
+                _r = _req_ds.get(
+                    "https://api.dexscreener.com/token-profiles/latest/v1",
+                    timeout=8, headers={"Accept": "application/json"}
+                )
+                if _r.status_code == 200:
+                    _items = _r.json() if isinstance(_r.json(), list) else []
+                    for _item in (_items or []):
+                        if not isinstance(_item, dict): continue
+                        if _item.get("chainId") != "bsc": continue
+                        _tk = _item.get("tokenAddress", "")
+                        if not _tk or _tk.lower() in _seen_ds: continue
+                        if _tk.lower() == WBNB_LOWER: continue
+                        _seen_ds.add(_tk.lower())
+                        if len(_seen_ds) > 300: _seen_ds.clear()
+                        threading.Thread(
+                            target=_process_new_token,
+                            args=(_tk, "", "DexScreener-Fallback"),
+                            daemon=True
+                        ).start()
+                        print(f"📡 DexScreener fallback: {_tk[:10]}")
             except Exception:
                 pass
-            await asyncio.sleep(30)
+            await asyncio.sleep(60)
 
     async def _ws_loop_primary():
         idx = fails = 0
@@ -4843,7 +4844,7 @@ def poll_new_pairs():
             asyncio.set_event_loop(loop)
             try:
                 loop.run_until_complete(asyncio.gather(
-                    _ws_loop_primary(), _bscscan_fallback()
+                    _ws_loop_primary(), _dexscreener_fallback()
                 ))
             except Exception as ex:
                 print(f"Warning: WSS primary: {ex}")
@@ -4862,7 +4863,7 @@ def poll_new_pairs():
 
         threading.Thread(target=_run_primary, daemon=True).start()
         threading.Thread(target=_run_backup,  daemon=True).start()
-        print("🔌 Dual WSS + BSCScan fallback started")
+        print("🔌 Dual WSS + DexScreener fallback started")
 
 
 def _register_position_pair(token_address: str, known_pair: str = None):
@@ -5854,7 +5855,7 @@ def _startup_once():
         def _bnb_price_loop():
             import time as _t
             _sources = [
-                ("Binance",      "https://api.binance.com/api/v3/ticker/price",        {"symbol":"BNBUSDT"},                    lambda r: float(r.json().get("price",0) or 0)),
+                ("CoinPaprika",  "https://api.coinpaprika.com/v1/tickers/bnb-binance-coin", None, lambda r: float((r.json() or {}).get("quotes", {}).get("USD", {}).get("price", 0) or 0)),
                 ("OKX",          "https://www.okx.com/api/v5/market/ticker",           {"instId":"BNB-USDT"},                   lambda r: float(((r.json() or {}).get("data") or [{}])[0].get("last",0) or 0)),
             ]
             while True:
