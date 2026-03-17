@@ -644,6 +644,52 @@ def get_user_context_for_llm() -> str:
 # ========== SELF AWARENESS ==========
 BIRTH_TIME = datetime.utcnow()
 
+# ── Scanner Stats — Per Min/Hour/Day tracking ────────────
+_scanner_stats = {
+    # PancakeSwap
+    "pc_discovered":     0,
+    "pc_prefilter_pass": 0,
+    "pc_prefilter_fail": 0,
+    "pc_checklist_pass": 0,
+    "pc_checklist_fail": 0,
+    "pc_bought":         0,
+    # FourMeme
+    "fm_discovered":     0,
+    "fm_bought":         0,
+    # Speed tracking (ms)
+    "pc_speed_total":    0.0,
+    "pc_speed_count":    0,
+    "fm_speed_total":    0.0,
+    "fm_speed_count":    0,
+    # Per-minute history — last 60 entries
+    "history":           [],  # [{"ts": epoch, "pc_disc": N, "fm_disc": N, "pc_buy": N, "fm_buy": N}]
+    "_last_min_ts":      0.0,
+    "_last_min_pc_disc": 0,
+    "_last_min_fm_disc": 0,
+    "_last_min_pc_buy":  0,
+    "_last_min_fm_buy":  0,
+}
+
+def _scanner_tick():
+    """Har minute snapshot save karo"""
+    import time as _t
+    now = _t.time()
+    if now - _scanner_stats["_last_min_ts"] >= 60:
+        snap = {
+            "ts":      now,
+            "pc_disc": _scanner_stats["pc_discovered"] - _scanner_stats["_last_min_pc_disc"],
+            "fm_disc": _scanner_stats["fm_discovered"] - _scanner_stats["_last_min_fm_disc"],
+            "pc_buy":  _scanner_stats["pc_bought"]     - _scanner_stats["_last_min_pc_buy"],
+            "fm_buy":  _scanner_stats["fm_bought"]     - _scanner_stats["_last_min_fm_buy"],
+        }
+        _scanner_stats["history"].append(snap)
+        _scanner_stats["history"] = _scanner_stats["history"][-1440:]  # 24h max
+        _scanner_stats["_last_min_ts"]      = now
+        _scanner_stats["_last_min_pc_disc"] = _scanner_stats["pc_discovered"]
+        _scanner_stats["_last_min_fm_disc"] = _scanner_stats["fm_discovered"]
+        _scanner_stats["_last_min_pc_buy"]  = _scanner_stats["pc_bought"]
+        _scanner_stats["_last_min_fm_buy"]  = _scanner_stats["fm_bought"]
+
 # ════════════════════════════════════════════
 # ANTI-MEV + REAL TRADING ENGINE
 # Real mode ke liye actual BSC transactions
@@ -2332,6 +2378,10 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
         "source":     source,
     })
     print(f"🆕 [{source}] {token_symbol} | {token_name} ({token_address[:10]})")
+    # Scanner stats
+    if "fourmeme" not in source.lower() and "FM" not in source:
+        _scanner_stats["pc_discovered"] += 1
+    _scanner_tick()
     # Queue mein daalo — zero drop, no semaphore blocking
     _discovery_queue.put(token_address)
 
@@ -2546,6 +2596,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     if len(sess["positions"]) > 20:
         sess["positions"] = sess["positions"][-20:]  # ✅ memory leak fix
     _persist_positions()  # ✅ FIX: full data save with tp_sold, sl_pct, bought_usd
+    _scanner_stats["pc_bought"] += 1
     print(f"AUTO BUY: {address[:10]} @ {entry_price:.10f} size={size_bnb:.4f}")
 
 # ========== AUTO PAPER SELL ==========  FIX 3: All variable names fixed
@@ -3859,11 +3910,14 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
                     if _liq_bnb < _min_liq:
                         print(f"⏭️ Low liq {_liq_bnb:.2f} BNB — skip: {pair_address[:10]}")
                         _log("reject", pair_address[:8], f"Low liq {_liq_bnb:.2f} BNB", pair_address)
+                        _scanner_stats["pc_prefilter_fail"] += 1
                         return
                     if _liq_bnb > 500:
                         print(f"⏭️ Old/fake token liq={_liq_bnb:.0f} BNB — skip: {pair_address[:10]}")
                         _log("reject", pair_address[:8], f"Too high liq {_liq_bnb:.0f} BNB", pair_address)
+                        _scanner_stats["pc_prefilter_fail"] += 1
                         return
+                    _scanner_stats["pc_prefilter_pass"] += 1
                     print(f"✅ Liq ok {_liq_bnb:.2f} BNB — checklist: {pair_address[:10]}")
             except Exception as _le:
                 print(f"⚠️ Liq check failed — proceeding: {pair_address[:10]}")
@@ -3948,6 +4002,7 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
         _dex_safe      = {k: v for k, v in (_dex_d or {}).items() if k != "_raw_pairs"}
 
         if overall != "SAFE":
+            _scanner_stats["pc_checklist_fail"] += 1
             _log("reject", _final_name, f"Checklist {overall} ({score}/{total}) — {rec[:40]}", pair_address)
             print(f"⏭️ SKIP {_final_name}: checklist={overall} — CAUTION/RISK/DANGER pe trade nahi")
             threading.Thread(target=_save_bot_decision, args=({
@@ -4011,6 +4066,7 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
                 print(f"✅ BUY {_final_name}: checklist SAFE ✅ — no extra signals but checklist passed")
             # Buy karo — checklist SAFE ho toh opportunity score optional
             _log("pass", _final_name, f"✅ SAFE {score}/{total} · signals: {', '.join(_opp_sigs[:2])}", pair_address)
+            _scanner_stats["pc_checklist_pass"] += 1
             print(f"✅ BUY CONFIRMED {_final_name}: checklist={overall} ({score}/{total}) + opp={_opp_score}pt signals={_opp_sigs}")
             threading.Thread(target=_save_bot_decision, args=({
                 "token_address":        pair_address,
@@ -4622,6 +4678,7 @@ def _fm_snipe(token_addr, pair_addr):
             "bnb_price_at_entry": market_cache.get("bnb_price", 0),
             "entry_price": entry, "token_type": "meme",
         },), daemon=True).start()
+        _scanner_stats["fm_bought"] += 1
         print(f"✅ [FM] SNIPED: {token_name} @ {entry:.2e} ({pump:+.1f}% from grad)")
     except Exception as e:
         print(f"⚠️ [FM] snipe error: {e}")
@@ -4638,6 +4695,8 @@ def _fm_handle_transfer(token_addr):
         if pair: break
         time.sleep(0.1)  # 100ms retry — pair abhi ban raha hai
     if not pair: return
+    _scanner_stats["fm_discovered"] += 1
+    _scanner_tick()
     print(f"🔥 [FM] Graduated: {token_addr[:10]} pair={pair[:10]}")
     # Queue mein daalo — zero drop
     _fm_queue.put((token_addr, pair))
@@ -7028,6 +7087,73 @@ def close_one_position():
     threading.Thread(target=_auto_paper_sell, args=(addr, "Manual close via UI", 100.0), daemon=True).start()
     print(f"🔴 Manual close: {tok} ({addr[:10]})")
     return jsonify({"status": "closing", "address": addr, "token": tok, "remaining": remaining})
+
+@app.route("/scanner-stats")
+def scanner_stats():
+    """Scanner performance stats — per min/hour/day"""
+    import time as _t
+    now   = _t.time()
+    hist  = _scanner_stats.get("history", [])
+
+    # Per minute (last 5 min avg)
+    last5  = [h for h in hist if now - h["ts"] <= 300]
+    last60 = [h for h in hist if now - h["ts"] <= 3600]
+    last1d = hist  # all history = up to 24h
+
+    def _sum(arr, key): return sum(h.get(key, 0) for h in arr)
+    def _avg(arr, key):
+        v = _sum(arr, key)
+        return round(v / max(len(arr), 1), 1)
+
+    # Speed avg
+    pc_spd = round(_scanner_stats["pc_speed_total"] / max(_scanner_stats["pc_speed_count"], 1), 2)
+    fm_spd = round(_scanner_stats["fm_speed_total"] / max(_scanner_stats["fm_speed_count"], 1), 2)
+
+    # Queue sizes
+    try:
+        pc_q = _discovery_queue.qsize()
+        fm_q = _fm_queue.qsize()
+    except Exception:
+        pc_q = fm_q = 0
+
+    return jsonify({
+        "pc": {
+            "discovered":     _scanner_stats["pc_discovered"],
+            "prefilter_pass": _scanner_stats["pc_prefilter_pass"],
+            "prefilter_fail": _scanner_stats["pc_prefilter_fail"],
+            "checklist_pass": _scanner_stats["pc_checklist_pass"],
+            "checklist_fail": _scanner_stats["pc_checklist_fail"],
+            "bought":         _scanner_stats["pc_bought"],
+            "queue":          pc_q,
+            "avg_speed_s":    pc_spd,
+        },
+        "fm": {
+            "discovered": _scanner_stats["fm_discovered"],
+            "bought":     _scanner_stats["fm_bought"],
+            "queue":      fm_q,
+            "avg_speed_s": fm_spd,
+        },
+        "per_min": {
+            "pc_disc": _avg(last5, "pc_disc"),
+            "fm_disc": _avg(last5, "fm_disc"),
+            "pc_buy":  _avg(last5, "pc_buy"),
+            "fm_buy":  _avg(last5, "fm_buy"),
+        },
+        "per_hour": {
+            "pc_disc": _sum(last60, "pc_disc"),
+            "fm_disc": _sum(last60, "fm_disc"),
+            "pc_buy":  _sum(last60, "pc_buy"),
+            "fm_buy":  _sum(last60, "fm_buy"),
+        },
+        "per_day": {
+            "pc_disc": _sum(last1d, "pc_disc"),
+            "fm_disc": _sum(last1d, "fm_disc"),
+            "pc_buy":  _sum(last1d, "pc_buy"),
+            "fm_buy":  _sum(last1d, "fm_buy"),
+        },
+        "history_points": len(hist),
+    })
+
 
 @app.route("/health")
 def health():

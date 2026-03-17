@@ -523,6 +523,119 @@ function _checkLock(){
 
   </div>
 
+
+  <!-- ── SCANNER STATS PANEL ── -->
+  <div class="sep" style="margin-top:4px;">📡 Scanner Intelligence</div>
+  <div style="padding:0 12px 4px;">
+    <div style="background:var(--ink2);border:1px solid var(--line);border-radius:var(--r);padding:12px;display:flex;flex-direction:column;gap:10px;">
+
+      <!-- Header row -->
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:11px;font-weight:800;color:var(--txt1);letter-spacing:0.5px;">LIVE SCANNER</span>
+          <div id="scanner-dot" style="width:7px;height:7px;border-radius:50%;background:var(--em);box-shadow:0 0 8px var(--em);animation:blink 2s infinite;"></div>
+        </div>
+        <span style="font-size:9px;color:var(--txt3);" id="scanner-updated">—</span>
+      </div>
+
+      <!-- Queue status -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div style="background:var(--ink3);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:3px;">
+          <div style="font-size:8px;color:var(--txt3);font-weight:700;letter-spacing:0.5px;">🥞 PC QUEUE</div>
+          <div style="display:flex;align-items:baseline;gap:4px;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:800;color:var(--ice);" id="sc-pc-queue">0</span>
+            <span style="font-size:8px;color:var(--txt3);">waiting</span>
+          </div>
+        </div>
+        <div style="background:var(--ink3);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:3px;">
+          <div style="font-size:8px;color:var(--txt3);font-weight:700;letter-spacing:0.5px;">🎓 FM QUEUE</div>
+          <div style="display:flex;align-items:baseline;gap:4px;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:800;color:var(--gold);" id="sc-fm-queue">0</span>
+            <span style="font-size:8px;color:var(--txt3);">waiting</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Funnel — PC -->
+      <div style="background:var(--ink3);border-radius:8px;padding:10px;">
+        <div style="font-size:9px;font-weight:800;color:var(--ice);letter-spacing:0.5px;margin-bottom:8px;">🥞 PANCAKESWAP FUNNEL</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;text-align:center;">
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--txt1);" id="sc-pc-disc">0</div>
+            <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Discovered</div>
+          </div>
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--em);" id="sc-pc-pf">0</div>
+            <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Pre-filter ✓</div>
+          </div>
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--em);" id="sc-pc-cl">0</div>
+            <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Checklist ✓</div>
+          </div>
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--gold);" id="sc-pc-buy">0</div>
+            <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Bought 🟢</div>
+          </div>
+        </div>
+        <!-- Progress bar -->
+        <div style="margin-top:8px;height:3px;background:var(--ink2);border-radius:4px;overflow:hidden;">
+          <div id="sc-pc-bar" style="height:100%;background:linear-gradient(90deg,var(--ice),var(--em));border-radius:4px;width:0%;transition:width 1s;"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:3px;">
+          <span style="font-size:8px;color:var(--txt3);">Pass rate</span>
+          <span style="font-size:8px;font-weight:700;color:var(--em);" id="sc-pc-rate">0%</span>
+        </div>
+      </div>
+
+      <!-- FM row -->
+      <div style="background:var(--ink3);border-radius:8px;padding:10px;">
+        <div style="font-size:9px;font-weight:800;color:var(--gold);letter-spacing:0.5px;margin-bottom:8px;">🎓 FOURMEME SNIPER</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;text-align:center;">
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--txt1);" id="sc-fm-disc">0</div>
+            <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Graduated</div>
+          </div>
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--gold);" id="sc-fm-buy">0</div>
+            <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Sniped 🎯</div>
+          </div>
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--em);" id="sc-fm-rate">0%</div>
+            <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Snipe rate</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Per min / hour / day tabs -->
+      <div>
+        <div style="display:flex;gap:4px;margin-bottom:6px;">
+          <button onclick="scTab('min')" id="sc-tab-min" style="flex:1;padding:4px;border-radius:6px;border:1px solid var(--em);background:var(--em-dim);color:var(--em);font-size:9px;font-weight:700;cursor:pointer;">PER MIN</button>
+          <button onclick="scTab('hour')" id="sc-tab-hour" style="flex:1;padding:4px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--txt3);font-size:9px;font-weight:700;cursor:pointer;">PER HOUR</button>
+          <button onclick="scTab('day')" id="sc-tab-day" style="flex:1;padding:4px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--txt3);font-size:9px;font-weight:700;cursor:pointer;">TODAY</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4px;text-align:center;" id="sc-tab-content">
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;color:var(--ice);" id="sc-t-pc-disc">0</div>
+            <div style="font-size:7px;color:var(--txt3);">PC Found</div>
+          </div>
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;color:var(--gold);" id="sc-t-fm-disc">0</div>
+            <div style="font-size:7px;color:var(--txt3);">FM Found</div>
+          </div>
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;color:var(--em);" id="sc-t-pc-buy">0</div>
+            <div style="font-size:7px;color:var(--txt3);">PC Bought</div>
+          </div>
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;color:var(--em);" id="sc-t-fm-buy">0</div>
+            <div style="font-size:7px;color:var(--txt3);">FM Bought</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
   <!-- ── BOT ACTIVITY PANEL ── -->
   <div class="sep" style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;padding-right:14px;">
     <span>📡 Bot Activity</span>
@@ -1428,6 +1541,80 @@ setInterval(fetchRamStats, 10000);
 setInterval(loadSettings,30000);
 setInterval(fetchActivity, 5000);
 fetchActivity();
+
+
+// ── SCANNER STATS ────────────────────────────────────────
+let _scData = null;
+let _scActiveTab = 'min';
+
+function scTab(tab) {
+  _scActiveTab = tab;
+  ['min','hour','day'].forEach(t => {
+    const btn = document.getElementById('sc-tab-' + t);
+    if (!btn) return;
+    if (t === tab) {
+      btn.style.background = 'var(--em-dim)';
+      btn.style.borderColor = 'var(--em)';
+      btn.style.color = 'var(--em)';
+    } else {
+      btn.style.background = 'transparent';
+      btn.style.borderColor = 'var(--line)';
+      btn.style.color = 'var(--txt3)';
+    }
+  });
+  if (_scData) _updateScTab(_scData);
+}
+
+function _updateScTab(d) {
+  const t = _scActiveTab;
+  const src = t === 'min' ? d.per_min : t === 'hour' ? d.per_hour : d.per_day;
+  document.getElementById('sc-t-pc-disc').textContent = src.pc_disc || 0;
+  document.getElementById('sc-t-fm-disc').textContent = src.fm_disc || 0;
+  document.getElementById('sc-t-pc-buy').textContent  = src.pc_buy  || 0;
+  document.getElementById('sc-t-fm-buy').textContent  = src.fm_buy  || 0;
+}
+
+async function fetchScannerStats() {
+  try {
+    const d = await fetchJSON('/scanner-stats', {}, 5000);
+    if (!d) return;
+    _scData = d;
+
+    // Queue
+    document.getElementById('sc-pc-queue').textContent = d.pc.queue || 0;
+    document.getElementById('sc-fm-queue').textContent = d.fm.queue || 0;
+
+    // PC funnel
+    document.getElementById('sc-pc-disc').textContent = d.pc.discovered || 0;
+    document.getElementById('sc-pc-pf').textContent   = d.pc.prefilter_pass || 0;
+    document.getElementById('sc-pc-cl').textContent   = d.pc.checklist_pass || 0;
+    document.getElementById('sc-pc-buy').textContent  = d.pc.bought || 0;
+
+    // Pass rate bar
+    const rate = d.pc.discovered > 0 ? Math.round(d.pc.bought / d.pc.discovered * 100) : 0;
+    document.getElementById('sc-pc-rate').textContent = rate + '%';
+    document.getElementById('sc-pc-bar').style.width  = Math.min(rate * 3, 100) + '%';
+
+    // FM
+    document.getElementById('sc-fm-disc').textContent = d.fm.discovered || 0;
+    document.getElementById('sc-fm-buy').textContent  = d.fm.bought || 0;
+    const fmRate = d.fm.discovered > 0 ? Math.round(d.fm.bought / d.fm.discovered * 100) : 0;
+    document.getElementById('sc-fm-rate').textContent = fmRate + '%';
+
+    // Tab data
+    _updateScTab(d);
+
+    // Updated time
+    const now = new Date();
+    document.getElementById('sc-pc-queue').parentElement.parentElement.parentElement;
+    document.getElementById('scanner-updated').textContent = 'updated ' + now.toLocaleTimeString();
+
+  } catch(e) {}
+}
+
+// Start scanner polling
+fetchScannerStats();
+setInterval(fetchScannerStats, 15000);  // har 15s refresh
 
 // ── BOT ACTIVITY FEED ──
 const ACT_STYLES = {
