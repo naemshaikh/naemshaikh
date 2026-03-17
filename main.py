@@ -6680,7 +6680,6 @@ def introspect():
 
 @app.route("/auto-stats", methods=["GET"])
 def auto_stats_route():
-  _startup_once()
   try:
     sess        = get_or_create_session(AUTO_SESSION_ID)
     # BUG FIX: wins/losses trade_history se calculate karo grouped by position
