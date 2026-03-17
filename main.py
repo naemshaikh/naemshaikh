@@ -3918,7 +3918,11 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
                         abi=PAIR_ABI_PRICE
                     )
                     _res     = _pc_c.functions.getReserves().call()
-                    _liq_bnb = max(_res[0], _res[1]) / 1e18
+                    try:
+                        _t0_addr = _pc_c.functions.token0().call().lower()
+                        _liq_bnb = (_res[0] / 1e18) if _t0_addr == WBNB.lower() else (_res[1] / 1e18)
+                    except Exception:
+                        _liq_bnb = min(_res[0], _res[1]) / 1e18
                     if _liq_bnb < _min_liq:
                         print(f"⏭️ Low liq {_liq_bnb:.2f} BNB — skip: {pair_address[:10]}")
                         _log("reject", pair_address[:8], f"Low liq {_liq_bnb:.2f} BNB", pair_address)
@@ -7179,6 +7183,21 @@ def scanner_stats():
         },
     })
 
+
+
+@app.route("/auto-status", methods=["GET"])
+def auto_status():
+    try:
+        return jsonify({
+            "ready":      True,
+            "mode":       TRADE_MODE,
+            "enabled":    AUTO_TRADE_ENABLED,
+            "bnb_price":  market_cache.get("bnb_price", 0),
+            "fear_greed": market_cache.get("fear_greed", 50),
+            "positions":  len(auto_trade_stats.get("running_positions", {})),
+        })
+    except Exception as e:
+        return jsonify({"ready": False, "error": str(e)[:60]})
 
 @app.route("/health")
 def health():
