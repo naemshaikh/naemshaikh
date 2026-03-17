@@ -3866,6 +3866,10 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
                         print(f"⏭️ Low liq {_liq_bnb:.2f} BNB — skip: {pair_address[:10]}")
                         _log("reject", pair_address[:8], f"Low liq {_liq_bnb:.2f} BNB", pair_address)
                         return
+                    if _liq_bnb > 500:
+                        print(f"⏭️ Old/fake token liq={_liq_bnb:.0f} BNB — skip: {pair_address[:10]}")
+                        _log("reject", pair_address[:8], f"Too high liq {_liq_bnb:.0f} BNB", pair_address)
+                        return
                     print(f"✅ Liq ok {_liq_bnb:.2f} BNB — checklist: {pair_address[:10]}")
             except Exception as _le:
                 print(f"⚠️ Liq check failed — proceeding: {pair_address[:10]}")
