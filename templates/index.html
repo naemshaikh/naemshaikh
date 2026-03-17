@@ -372,8 +372,8 @@ function _checkLock(){
   <div class="bal-row">
     <div class="bal-card em">
       <div class="bal-lbl" id="bal-mode-lbl">Paper Balance</div>
-      <div class="bal-val" id="b-bal" style="color:var(--em)">5.0000 BNB</div>
-      <div class="bal-sub" id="b-usd">approx $—</div>
+      <div class="bal-val" id="b-bal" style="color:var(--em)">— BNB</div>
+      <div class="bal-sub" id="b-usd">loading...</div>
     </div>
     <div class="bal-card ice" style="cursor:pointer;" onclick="openWalletModal()">
       <div class="bal-lbl">Real Balance <span style="font-size:9px;color:var(--txt3);" id="wallet-short"></span></div>
@@ -1368,19 +1368,15 @@ async function sendMsg(){
 // ── Apply partial data from /trading-data immediately ──────────
 function _applyTD(td){
   if(!td) return;
-  const bnb=parseFloat(td.bnb_price||0);
+  const bnb=parseFloat(td.bnb_price||0)||window._bnbReal||0;
   if(bnb>0){_bnbReal=bnb;window._bnbReal=bnb;document.getElementById('h-bnb').textContent='$'+bnb.toFixed(0);document.getElementById('h-bnb').style.color='';}
-  else{document.getElementById('h-bnb').textContent='ERR';document.getElementById('h-bnb').style.color='var(--red)';}
   const fg=td.fear_greed!=null?td.fear_greed:50;
   const fgEl=document.getElementById('h-fg');
   fgEl.textContent=fg;fgEl.style.color=fg>60?'var(--em)':fg<40?'var(--red)':'var(--gold)';
-  // FIX: td.paper is string "5.0000" — parseFloat handles it correctly
-  const bal=parseFloat(td.paper||'5.0')||5.0;
+  const bal=parseFloat(td.paper)||5.0;
   document.getElementById('b-bal').textContent=bal.toFixed(4)+' BNB';
-  document.getElementById('b-usd').textContent='approx $'+Math.round(bal*bnb).toLocaleString();
+  document.getElementById('b-usd').textContent=bnb>0?'approx $'+Math.round(bal*bnb).toLocaleString():'approx $—';
   document.getElementById('sg-watch').textContent=td.monitoring||0;
-  // FIX: sg-scan ko sirf /auto-stats se update karo — yahan mat karo (race condition fix)
-  // document.getElementById('sg-scan').textContent=td.new_pairs_found||0;
   setConn(true,'✅ Connected');
 }
 
@@ -1412,7 +1408,7 @@ async function fetchStats(){
   if(_modeEl&&_as){
     _modeEl.textContent=_as.enabled?'BSC SNIPER · AUTO ON':'BSC SNIPER · PAPER MODE';
   }
-  const bnb=parseFloat((_as&&_as.bnb_price)||(_td&&_td.bnb_price)||0);
+  const bnb=parseFloat((_as&&_as.bnb_price)||(_td&&_td.bnb_price)||0)||window._bnbReal||0;
   const fg=(_td&&_td.fear_greed!=null)?_td.fear_greed:((_as&&_as.fear_greed)!=null?_as.fear_greed:50);
   // ✅ _bnbReal PEHLE set karo — renderGHolding iske baad call hoga toh $0.00 nahi ayega
   if(bnb>0){
@@ -2419,9 +2415,11 @@ async function _doModeSwitch(){
   } catch(e){}
 })();
 
-fetchRealBalance();
+if(localStorage.getItem('mrblack_auth')==='1'){
+  fetchRealBalance();
+  setInterval(fetchRealBalance, 68000);
+}
 _applyModeUI();
-setInterval(fetchRealBalance, 68000);
 
 // ── THEME SYSTEM — Day/Night eye-friendly ──
 function _applyTheme(isDay){
