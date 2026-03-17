@@ -4722,6 +4722,88 @@ _swap_monitor_resubscribe = threading.Event()  # ✅ WSS resubscribe trigger
 # Pair → token mapping (taaki Swap event decode kar sakein)
 _pair_to_token: dict = {}   # {pair_lower: {"token": addr, "token0_is_wbnb": bool}}
 
+
+def poll_new_pairs():
+    import asyncio, json as _json
+    try:
+        import websockets as _ws
+    except ImportError:
+        _ws = None
+
+    FACTORY    = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
+    PAIR_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
+    WBNB_LOWER = WBNB.lower()
+    WSS_ENDPOINTS = [
+        "wss://bsc-rpc.publicnode.com",
+        "wss://bsc.publicnode.com",
+        "wss://bsc.drpc.org",
+    ]
+
+    async def _listen(wss_url):
+        try:
+            async with _ws.connect(wss_url, ping_interval=25, ping_timeout=18, close_timeout=8, max_size=2**20) as ws:
+                await ws.send(_json.dumps({
+                    "id": 1, "method": "eth_subscribe",
+                    "params": ["logs", {"address": [FACTORY], "topics": [[PAIR_TOPIC]]}],
+                    "jsonrpc": "2.0"
+                }))
+                await asyncio.wait_for(ws.recv(), timeout=10)
+                print(f"✅ WSS connected: {wss_url[:35]}")
+                while True:
+                    msg  = await asyncio.wait_for(ws.recv(), timeout=60)
+                    data = _json.loads(msg)
+                    log  = (data.get("params") or {}).get("result") or {}
+                    if not log: continue
+                    topics   = log.get("topics") or []
+                    raw_data = log.get("data", "0x")
+                    token0 = ("0x" + topics[1][-40:]) if len(topics) > 1 else ""
+                    token1 = ("0x" + topics[2][-40:]) if len(topics) > 2 else ""
+                    pair_addr = ""
+                    if len(raw_data) >= 66:
+                        pair_addr = "0x" + raw_data[26:66]
+                    new_token = token0 if (token0 and token0.lower() != WBNB_LOWER) else (
+                                token1 if (token1 and token1.lower() != WBNB_LOWER) else "")
+                    if new_token:
+                        threading.Thread(target=_process_new_token, args=(new_token, pair_addr, "WebSocket"), daemon=True).start()
+        except Exception as e:
+            err_str = str(e).lower()
+            if "1013" in err_str or "timeout" in err_str or "connection" in err_str:
+                print(f"⚠️ WSS error: {str(e)[:60]} — switching RPC")
+            else:
+                print(f"Warning: WSS error: {str(e)[:80]}")
+            gc.collect()
+
+    async def _ws_loop():
+        idx = 0
+        fail_count = 0
+        while True:
+            try:
+                url = WSS_ENDPOINTS[idx % len(WSS_ENDPOINTS)]
+                print(f"🔌 WSS connecting: {url}")
+                await _listen(url)
+                fail_count = 0
+            except Exception as e:
+                fail_count += 1
+                wait = min(3 * fail_count, 30) if "1013" in str(e).lower() else min(2 * fail_count, 20)
+                print(f"Warning: WSS loop fail #{fail_count} — retry in {wait}s")
+                await asyncio.sleep(wait)
+                if fail_count % 10 == 0:
+                    gc.collect()
+            idx += 1
+
+    if _ws is not None:
+        def _run_ws():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(_ws_loop())
+            except Exception as ex:
+                print(f"Warning: WSS thread: {ex}")
+            finally:
+                loop.close()
+        threading.Thread(target=_run_ws, daemon=True).start()
+
+
 def _register_position_pair(token_address: str, known_pair: str = None):
     """Naya position open hua — pair address dhundo aur register karo"""
     try:
