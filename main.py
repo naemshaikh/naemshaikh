@@ -380,7 +380,7 @@ bsc_engine = MrBlackChecklistEngine()
 
 # ========== MARKET CACHE (early init) ==========
 market_cache = {
-    "bnb_price":    0.0,
+    "bnb_price":    300.0,  # fallback until real price fetched
     "fear_greed":   50,
     "trending":     [],
     "last_updated": None
@@ -6703,7 +6703,7 @@ def auto_stats_route():
 
 
     # FIX: bnb_price 0 hai toh 300 fallback use karo — UI blank nahi rahegi
-    bnb_price   = market_cache.get("bnb_price", 0)
+    bnb_price   = market_cache.get("bnb_price", 0) or 300
     paper_bal   = float(sess.get("paper_balance") or 5.0)
 
     # Build open_trades array for UI — sirf current mode ki positions
