@@ -301,7 +301,28 @@ function _checkLock(){
       localStorage.setItem('mrblack_auth','1');
       document.getElementById('lock-screen').style.display = 'none';
       document.body.style.overflow = '';
-      if(typeof init === 'function'){ init(); fetchRealBalance(); }
+      if(typeof init === 'function'){
+        // BUG FIX: Pehle intervals start karo phir init
+        if(!window._intervalsStarted){
+          window._intervalsStarted = true;
+          setInterval(fetchStats,8000);
+          setInterval(fetchHistory,30000);
+          setInterval(fetchRamStats, 10000);
+          setInterval(loadSettings,30000);
+          setInterval(fetchActivity, 5000);
+          setInterval(fetchScannerStats, 5000);
+          setInterval(fetchRejectionStats, 10000);
+          setInterval(fetchRealBalance, 68000);
+          setInterval(fetchNotifications, 10000);
+          fetchActivity();
+          fetchRamStats();
+          fetchScannerStats();
+          fetchRejectionStats();
+          setTimeout(fetchNotifications, 1000);
+        }
+        init();
+        fetchRealBalance();
+      }
     } else {
       errEl.textContent = '❌ Wrong password';
       document.getElementById('lock-input').value = '';
@@ -1516,11 +1537,17 @@ async function init(){
   await fetchHistory();
 }
 
-init();
-fetchRealBalance();
-// loadSettings called via setInterval
-setInterval(fetchStats,8000);
-setInterval(fetchHistory,30000);
+// BUG FIX: Lock screen ke baad hi init karo
+// Pehle check karo unlocked hai ya nahi
+if(localStorage.getItem('mrblack_auth')==='1'){
+  init();
+  fetchRealBalance();
+  setInterval(fetchStats,8000);
+  setInterval(fetchHistory,30000);
+} else {
+  // Lock screen pe hain — init baad mein hoga _checkLock se
+  window._intervalsStarted = false;
+}
 
 // RAM stats — every 10 seconds
 async function fetchRamStats(){
@@ -1604,9 +1631,11 @@ async function fetchRamStats(){
     }
   } catch(e){}
 }
-fetchRamStats();
-setInterval(fetchRamStats, 10000);
-setInterval(loadSettings,30000);
+if(localStorage.getItem('mrblack_auth')==='1'){
+  fetchRamStats();
+  setInterval(fetchRamStats, 10000);
+  setInterval(loadSettings,30000);
+}
 
 // ── fetchActivity — inline notifications live feed ──
 async function fetchActivity() {
@@ -1637,8 +1666,10 @@ async function fetchActivity() {
     }).join('');
   } catch(e) { }
 }
-setInterval(fetchActivity, 5000);
-fetchActivity();
+if(localStorage.getItem('mrblack_auth')==='1'){
+  setInterval(fetchActivity, 5000);
+  fetchActivity();
+}
 
 
 // ── SCANNER STATS ────────────────────────────────────────
@@ -1746,8 +1777,10 @@ async function fetchScannerStats(isManual = false) {
 }
 
 // Real-time: har 5s auto-refresh
-fetchScannerStats();
-setInterval(fetchScannerStats, 5000);
+if(localStorage.getItem('mrblack_auth')==='1'){
+  fetchScannerStats();
+  setInterval(fetchScannerStats, 5000);
+}
 
 // ── REJECTION BREAKDOWN ──────────────────────────────────
 async function fetchRejectionStats() {
@@ -1781,8 +1814,10 @@ async function fetchRejectionStats() {
   } catch(e) {}
 }
 
-fetchRejectionStats();
-setInterval(fetchRejectionStats, 10000);
+if(localStorage.getItem('mrblack_auth')==='1'){
+  fetchRejectionStats();
+  setInterval(fetchRejectionStats, 10000);
+}
 
 
 // ─── CONTROL PANEL ──────────────────────────────────────────
@@ -3858,8 +3893,10 @@ async function clearAllNotifs(){
 }
 
 // Fetch notifications every 10 seconds
-setTimeout(fetchNotifications, 2000);
-setInterval(fetchNotifications, 10000);
+if(localStorage.getItem('mrblack_auth')==='1'){
+  setTimeout(fetchNotifications, 2000);
+  setInterval(fetchNotifications, 10000);
+}
 </script>
 
 <script>/* FIX_RETRY_RECOVERY */
