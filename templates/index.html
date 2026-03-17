@@ -1408,8 +1408,8 @@ async function fetchStats(){
   window._renderPnlCard(_as);
   document.getElementById('sg-scan').textContent=((_as&&_as.total_scanned!=null?_as.total_scanned:null)||(_td&&_td.new_pairs_found)||0).toLocaleString();
   document.getElementById('sg-watch').textContent=(_as&&_as.open_positions!=null?_as.open_positions:(_as&&_as.monitoring!=null?_as.monitoring:(_td&&_td.monitoring)||0));
-  document.getElementById('sg-wins').textContent=(_as&&_as.wins)||0;
-  document.getElementById('sg-losses').textContent=(_as&&_as.losses)||0;
+  document.getElementById('sg-wins').textContent=(_as&&_as.wins!=null?_as.wins:0);
+  document.getElementById('sg-losses').textContent=(_as&&_as.losses!=null?_as.losses:0);
 
   // Intelligence Panel update
   if(_as){
@@ -1887,6 +1887,8 @@ function _pnlPeriodFilter(trades, period){
   });
 }
 
+window._pnlPeriod = window._pnlPeriod || 'ALL';
+window._lastStats  = window._lastStats  || null;
 window._renderPnlCard = function(_as){
   var period  = window._pnlPeriod||'ALL';
   var pEl     = document.getElementById('b-pnl');
