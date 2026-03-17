@@ -4109,7 +4109,7 @@ def _pc_register_for_mint(pair_address: str, token_address: str = ""):
                     print("✅ [PC Mint] Mint monitor connected!")
                     fail = 0
                     while True:
-                        msg  = await asyncio.wait_for(ws.recv(), timeout=60)
+                        msg  = await ws.recv()  # timeout=None
                         data = _j.loads(msg)
                         log  = (data.get("params") or {}).get("result") or {}
                         if not log:
@@ -4669,7 +4669,7 @@ def poll_four_meme_v2():
             print(f"✅ [FM] Subscribed: {url[:35]}")
             while True:
                 try:
-                    msg    = await asyncio.wait_for(ws.recv(), timeout=60)
+                    msg    = await ws.recv()  # timeout=None — ping se alive
                     data   = _j.loads(msg)
                     log    = (data.get("params") or {}).get("result") or {}
                     if not log: continue
@@ -5923,7 +5923,7 @@ def _startup_once():
                             market_cache["wss_status"] = "live"
                             fail = 0
                             while True:
-                                msg  = await asyncio.wait_for(ws.recv(), timeout=60)
+                                msg  = await ws.recv()  # timeout=None
                                 data = _j.loads(msg)
                                 raw  = ((data.get("params") or {}).get("result") or {}).get("data", "")
                                 if raw:
