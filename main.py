@@ -3848,39 +3848,73 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
             _log("discover", pair_address[:8], "New pair — liquidity monitor start", pair_address)
             print(f"👀 Liquidity monitor: {pair_address[:10]}")
 
-        # ── On-chain liquidity check — 30s wait hataya ──
-        # getReserves() direct RPC se — DexScreener nahi
-        # pair_address already WSS event mein aata hai
-        # ── Event-driven liquidity detection ──
-        # Polling loop hataya — Mint event se liquidity detect karo
-        # Semaphore free rehega — naaye tokens block nahi honge
         _prefetched_dex = None
 
+        # ── STEP 1: Pre-filter — getReserves() liquidity check ──
+        # Sirf 1 RPC call ~200ms — 90% tokens yahan reject
         if not whale_triggered:
-            # PC Fast Sniper ke liye — Mint event monitor mein register karo
-            _pc_register_for_mint(pair_address)
-            return  # Mint event aane pe sniper handle karega
-
-        # Liquidity ok — DexScreener se token data fetch karo (checklist ke liye)
-        for _dex_try in range(2):  # 2 tries only
             try:
-                _ar = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{pair_address}", timeout=6)
-                if _ar.status_code == 200:
-                    _ar_json = _ar.json() or {}
-                    _bp = [p for p in (_ar_json.get("pairs") or []) if p and p.get("chainId") == "bsc"]
-                    if _bp:
-                        _ct = _bp[0].get("pairCreatedAt", 0) or 0
-                        if _ct and (time.time() - _ct / 1000) / 60 > 360:
-                            _log("reject", pair_address[:8], "Token too old (7d+) — skip", pair_address)
-                            del _ar_json, _bp, _ar
-                            return
-                        _prefetched_dex = _ar_json
-                        del _ar
-                        break
-                del _ar
-            except Exception:
-                if _dex_try < 1:
-                    time.sleep(3)
+                _min_liq = CHECKLIST_SETTINGS.get("min_liq_bnb", 3.0)
+                _pc_w3   = Web3(Web3.HTTPProvider("https://bsc-rpc.publicnode.com", request_kwargs={"timeout": 3}))
+                _pc_c    = _pc_w3.eth.contract(
+                    address=Web3.to_checksum_address(pair_address),
+                    abi=PAIR_ABI_PRICE
+                )
+                _res     = _pc_c.functions.getReserves().call()
+                _liq_bnb = max(_res[0], _res[1]) / 1e18
+                if _liq_bnb < _min_liq:
+                    print(f"⏭️ Low liq {_liq_bnb:.2f} BNB — skip: {pair_address[:10]}")
+                    _log("reject", pair_address[:8], f"Low liq {_liq_bnb:.2f} BNB", pair_address)
+                    return
+                print(f"✅ Liq ok {_liq_bnb:.2f} BNB — checklist: {pair_address[:10]}")
+            except Exception as _le:
+                # RPC fail — checklist pe jaao anyway
+                print(f"⚠️ Liq check failed — proceeding: {pair_address[:10]}")
+
+        # ── STEP 2: Parallel fetch — Honeypot + GoPlus + DexScreener SAATH MEIN ──
+        import concurrent.futures as _cf
+        _hp_data  = {}
+        _gp_data  = {}
+        _dex_json = {}
+
+        def _fetch_hp():
+            try: return _get_honeypot(pair_address)
+            except: return {}
+
+        def _fetch_gp():
+            try: return _get_goplus(pair_address)
+            except: return {}
+
+        def _fetch_dex():
+            try:
+                _r = requests.get(
+                    f"https://api.dexscreener.com/latest/dex/tokens/{pair_address}",
+                    timeout=6
+                )
+                if _r.status_code == 200:
+                    return _r.json() or {}
+            except: pass
+            return {}
+
+        with _cf.ThreadPoolExecutor(max_workers=3) as _ex:
+            _f_hp  = _ex.submit(_fetch_hp)
+            _f_gp  = _ex.submit(_fetch_gp)
+            _f_dex = _ex.submit(_fetch_dex)
+            _hp_data  = _f_hp.result(timeout=8)
+            _gp_data  = _f_gp.result(timeout=8)
+            _dex_json = _f_dex.result(timeout=8)
+
+        # Token too old check (7d+)
+        try:
+            _bp = [p for p in (_dex_json.get("pairs") or []) if p and p.get("chainId") == "bsc"]
+            if _bp:
+                _ct = _bp[0].get("pairCreatedAt", 0) or 0
+                if _ct and (time.time() - _ct / 1000) / 60 > 360:
+                    _log("reject", pair_address[:8], "Token too old (7d+) — skip", pair_address)
+                    return
+                _prefetched_dex = _dex_json
+        except Exception:
+            pass
 
         result  = run_full_sniper_checklist(pair_address, prefetched_dex=_prefetched_dex)
         score   = result.get("score", 0)
@@ -4045,7 +4079,6 @@ def _pc_register_for_mint(pair_address: str, token_address: str = ""):
             }
     print(f"📝 [PC Mint] Registered: {pair_address[:10]}")
 
-def _pc_mint_monitor():
     """
     Dedicated Mint event monitor — publicnode WSS
     Registered pairs ka Mint event sunna
@@ -4129,7 +4162,6 @@ def _pc_mint_monitor():
     threading.Thread(target=_run, daemon=True).start()
 
 # Cleanup thread — expired pending pairs remove karo
-def _pc_mint_cleanup():
     while True:
         try:
             now = time.time()
@@ -4899,17 +4931,17 @@ def run_full_sniper_checklist(address: str, prefetched_dex: dict = None) -> Dict
 
     # ── STEP 2: GoPlus — deep static analysis (cached 5 min) ──
     goplus_data = {}
-    for _gp_try in range(3):  # 3 retries
+    for _gp_try in range(2):  # 2 retries (parallel fetch already done)
         try:
             goplus_data = _get_goplus(address)
             if goplus_data:
                 break
-            if _gp_try < 2:
-                time.sleep(2)  # 2s gap before retry
+            if _gp_try < 1:
+                time.sleep(0.5)  # 500ms only — parallel se already cached hoga
         except Exception as e:
             print(f"⚠️ GoPlus error (try {_gp_try+1}): {e}")
-            if _gp_try < 2:
-                time.sleep(2)
+            if _gp_try < 1:
+                time.sleep(0.5)
 
     goplus_empty = not bool(goplus_data)
     result["_goplus_raw"] = goplus_data  # green signals ke liye
@@ -5739,8 +5771,6 @@ def _startup_once():
 
         threading.Thread(target=_delayed(poll_new_pairs,        10),  daemon=True).start()
         threading.Thread(target=_delayed(poll_four_meme_v2, 15), daemon=True).start()  # 🎓 FM v2
-        threading.Thread(target=_delayed(_pc_mint_monitor,        15), daemon=True).start()  # 🔥 PC Mint event monitor
-        threading.Thread(target=_pc_mint_cleanup,                     daemon=True).start()   # 🧹 PC Mint cleanup
         # ⚡ PC Fast Sniper — background mein chalta hai, _pc_add_to_snipe_queue se trigger hota hai
         threading.Thread(target=_delayed(start_swap_monitor,    20), daemon=True).start()  # ✅ real-time swap vol
 
