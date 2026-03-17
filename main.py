@@ -128,12 +128,16 @@ _goplus_cache: dict = {}  # {addr_lower: {"data": {...}, "ts": float}}
 _GOPLUS_TTL = 300  # 5 minutes
 
 def _get_goplus(token_address: str) -> dict:
-    """GoPlus security data — cached 5 min"""
+    """GoPlus security data — cached 5 min | rate limit: 30/min = max 2 parallel"""
     key = token_address.lower()
     now = time.time()
     cached = _goplus_cache.get(key)
     if cached and (now - cached["ts"]) < _GOPLUS_TTL:
         return cached["data"]
+    # Rate limit protection — max 2 parallel GoPlus calls
+    if not _goplus_sem.acquire(blocking=True, timeout=15):
+        print(f"⚠️ GoPlus sem timeout — returning empty for {token_address[:10]}")
+        return {}
     try:
         r = requests.get(
             "https://api.gopluslabs.io/api/v1/token_security/56",
@@ -149,6 +153,8 @@ def _get_goplus(token_address: str) -> dict:
             return data
     except Exception as e:
         print(f"⚠️ GoPlus error: {e}")
+    finally:
+        _goplus_sem.release()
     return {}
 
 # Honeypot.is cache — 5 min TTL, max 100 tokens
@@ -2200,8 +2206,9 @@ def _log(event_type: str, token: str, detail: str, address: str = ""):
     })
 discovered_addresses: dict = {}
 _discovered_lock  = threading.Lock()          # RACE FIX: protect discovered_addresses
-_token_semaphore  = threading.Semaphore(18)  # was 2 — more discovery throughput
-_check_semaphore  = threading.Semaphore(18)  # was 3 — more concurrent checks
+_token_semaphore  = threading.Semaphore(10)  # PC token discovery
+_check_semaphore  = threading.Semaphore(10)  # PC checklist — alag FM se
+_goplus_sem       = threading.Semaphore(2)   # GoPlus rate limit: 30/min = max 2 parallel safe
 DISCOVERY_TTL = 7200
 PAIR_CREATED_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
 
@@ -2286,8 +2293,8 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
             cutoff = _now - DISCOVERY_TTL
             for k in [k for k, v in list(discovered_addresses.items()) if v < cutoff][:100]:
                 del discovered_addresses[k]
-    if not _token_semaphore.acquire(blocking=False):
-        return  # Max threads already running, skip
+    if not _token_semaphore.acquire(blocking=True, timeout=30):
+        return  # 30s wait ke baad bhi nahi mila — skip
     if any(token_address.lower() == str(q).lower() for q in list(new_pairs_queue)):
         _token_semaphore.release()  # BUG FIX: semaphore leak — release before return
         return
@@ -2333,13 +2340,8 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
     })
     print(f"🆕 [{source}] {token_symbol} | {token_name} ({token_address[:10]})")
     _token_semaphore.release()
-    # MEM FIX: max 3 concurrent checkers
-    if not hasattr(_process_new_token, "_sem"):
-        _process_new_token._sem = threading.Semaphore(18)
     def _run_check():
-        if not _process_new_token._sem.acquire(blocking=False): return
-        try: _auto_check_new_pair(token_address)
-        finally: _process_new_token._sem.release()
+        _auto_check_new_pair(token_address)
     threading.Thread(target=_run_check, daemon=True).start()
 
 # ========== POSITION MONITOR ==========
@@ -3837,8 +3839,8 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
             "fear_greed_at_entry": market_cache.get("fear_greed", 50),
         },), daemon=True).start()
         return
-    if not _check_semaphore.acquire(blocking=False):
-        print(f"⏭️ Check skipped (semaphore full): {pair_address[:10]}")
+    if not _check_semaphore.acquire(blocking=True, timeout=60):
+        print(f"⏭️ Check timeout (semaphore full 60s): {pair_address[:10]}")
         return
     try:
         if whale_triggered:
@@ -4479,7 +4481,7 @@ _FM_ROUTER_ABI = [
 
 _fm_sniped      = set()
 _fm_sniped_lock = threading.Lock()
-_fm_sem         = threading.Semaphore(3)
+_fm_sem         = threading.Semaphore(10)  # FM graduation — buffer rakho
 _fm_w3          = None
 _fm_w3_lock     = threading.Lock()
 
