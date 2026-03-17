@@ -6306,7 +6306,7 @@ def trading_data():
     # FIX: Hamesha AUTO_SESSION_ID ka data do — random SID se ghost sessions mat banao
     # Random SID se get_or_create_session call hoti thi → memory leak
     _auto_sess_td = sessions.get(AUTO_SESSION_ID) or {"paper_balance":5.0,"trade_count":0,"win_count":0,"loss_count":0,"positions":[],"pnl":0,"daily_loss":0}
-    bnb_price     = market_cache.get("bnb_price", 0)
+    bnb_price     = market_cache.get("bnb_price", 0) or 300  # BUG FIX: 0 nahi dikhao
     trade_count   = _auto_sess_td.get("trade_count", 0)
     win_count     = _auto_sess_td.get("win_count", 0)
     win_rate      = round((win_count / trade_count * 100), 1) if trade_count > 0 else 0
@@ -6703,7 +6703,7 @@ def auto_stats_route():
 
 
     # FIX: bnb_price 0 hai toh 300 fallback use karo — UI blank nahi rahegi
-    bnb_price   = market_cache.get("bnb_price", 0) or 300
+    bnb_price   = market_cache.get("bnb_price", 0) or 300  # BUG FIX or 300
     paper_bal   = float(sess.get("paper_balance") or 5.0)
 
     # Build open_trades array for UI — sirf current mode ki positions

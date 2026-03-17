@@ -1014,8 +1014,11 @@ function safeFetch(url,opts,ms){
   });
 }
 async function fetchJSON(url,opts,ms){
-  try{const r=await safeFetch(url,opts,ms);return r.ok?await r.json():null;}
-  catch(e){return null;}
+  try{
+    const r=await safeFetch(url,opts,ms);
+    if(!r.ok){dbg("❌ HTTP "+r.status+" from "+url);return null;}
+    return await r.json();
+  }catch(e){dbg("❌ fetchJSON fail: "+url+" — "+(e.message||e));return null;}
 }
 
 // ─── HELPERS ────────────────────────────────────────────────
@@ -1372,7 +1375,7 @@ async function fetchStats(){
   try {
   const tdPromise = fetchJSON('/trading-data?session_id='+SID,{},10000);
   // Step 2: /auto-stats (8s timeout)
-  const asPromise = fetchJSON('/auto-stats',{},15000);
+  const asPromise = fetchJSON('/auto-stats',{},20000); // BUG FIX: timeout 15s→20s
   tdPromise.then(td=>{ if(td) _applyTD(td); });
   const [_as,_td] = await Promise.all([asPromise, tdPromise]);
   // DEBUG: log what we got
