@@ -1089,8 +1089,11 @@ def _get_vol_pressure_rt(token_address: str) -> dict:
 
 def start_swap_monitor():
     """
-    Open positions ke pair contracts ke BSC Swap events real-time sunna.
-    Naye position add hone pe automatically subscribe karta hai.
+    Hot-standby Swap Monitor:
+    - Primary chal raha hai → Backup 1 & 2 so rahe hain
+    - Primary gira → Backup 1 milliseconds mein le leta hai
+    - Primary wapas aaya → Backup fir so jaata hai
+    - Loop kabhi nahi tootega
     """
     import asyncio, json as _json
     try:
@@ -1099,111 +1102,121 @@ def start_swap_monitor():
         print("⚠️ websockets nahi — swap monitor disabled")
         return
 
-    # Chainstack WSS primary — fastest, fallback to public
-    WSS_ENDPOINTS = [
-        "wss://bsc-rpc.publicnode.com",
-        "wss://bsc.publicnode.com",
-        "wss://bsc.drpc.org",
-    ]
+    # 1 Primary + 2 Backup — priority order
+    _SM_PRIMARY = "wss://bsc-rpc.publicnode.com"
+    _SM_BACKUP1 = "wss://bsc.publicnode.com"
+    _SM_BACKUP2 = "wss://bsc.drpc.org"
 
-    async def _swap_loop():
-        idx = 0
-        fail_count = 0
+    # Shared active flag — kaun abhi active hai
+    # 0 = koi nahi, 1 = primary, 2 = backup1, 3 = backup2
+    _sm_active = {"slot": 0, "ts": 0.0}
+    _sm_lock   = threading.Lock()
+
+    def _set_active(slot):
+        with _sm_lock:
+            _sm_active["slot"] = slot
+            _sm_active["ts"]   = time.time()
+
+    def _get_active():
+        with _sm_lock:
+            return _sm_active["slot"]
+
+    async def _run_connection(wss_url, my_slot, label):
+        """
+        Single WSS connection loop — agar higher priority slot active hai
+        toh yeh so jaata hai. Primary gire toh backup turant jaag jaata hai.
+        """
+        pair_to_token: dict = {}
+        last_map_refresh    = 0.0
+
         while True:
-            wss_url = WSS_ENDPOINTS[idx % len(WSS_ENDPOINTS)]
+            # ── Higher priority already active hai? So jao ──
+            current = _get_active()
+            if current != 0 and current < my_slot:
+                await asyncio.sleep(2)  # 2s check — primary alive hai?
+                continue
+
+            # ── Connect karo ──
             try:
                 async with _ws.connect(
                     wss_url,
-                    ping_interval=15, ping_timeout=10,
-                    close_timeout=5, max_size=2**20
+                    ping_interval=20, ping_timeout=15,
+                    close_timeout=5,  max_size=2**20
                 ) as ws:
-                    print(f"⚡ Swap Monitor connected: {wss_url}")
-                    fail_count = 0
+                    # Subscribe
+                    sub_msg = _json.dumps({
+                        "id": 10, "method": "eth_subscribe",
+                        "params": ["logs", {
+                            "topics": [[SWAP_TOPIC, BURN_TOPIC]]
+                        }],
+                        "jsonrpc": "2.0"
+                    })
+                    await ws.send(sub_msg)
+                    _ack = await asyncio.wait_for(ws.recv(), timeout=10)
+                    _ack_data = _json.loads(_ack)
+                    if _ack_data.get("error"):
+                        raise Exception(f"Sub rejected: {_ack_data['error']}")
 
-                    # Sab monitored positions ke pair addresses subscribe karo
-                    # Reverse map: pair_lower → token_lower
-                    pair_to_token: dict = {}
+                    # Active mark karo
+                    _set_active(my_slot)
+                    print(f"⚡ SwapMonitor [{label}] connected: {wss_url}")
 
-                    # Subscribe to Swap events — pair addresses dynamically update
-                    # Initial subscription with currently monitored tokens
-                    async def _subscribe_current():
-                        pairs = []
-                        with monitor_lock:
-                            tokens = list(monitored_positions.keys())
-                        for tok in tokens:
-                            pair = _get_pair_for_token(tok)
-                            if pair:
-                                pairs.append(pair)
-                                pair_to_token[pair] = tok.lower()
+                    # Pair map initialize
+                    with monitor_lock:
+                        tokens = list(monitored_positions.keys())
+                    for tok in tokens:
+                        pair = _get_pair_for_token(tok)
+                        if pair:
+                            pair_to_token[pair.lower()] = tok.lower()
 
-                        if not pairs:
-                            # Koi position nahi abhi, generic subscribe
-                            pairs = []
-
-                        sub_msg = _json.dumps({
-                            "id": 10, "method": "eth_subscribe",
-                            "params": ["logs", {
-                                "topics": [[SWAP_TOPIC, BURN_TOPIC]]
-                            }],
-                            "jsonrpc": "2.0"
-                        })
-                        await ws.send(sub_msg)
-                        await asyncio.wait_for(ws.recv(), timeout=10)
-                        print(f"⚡ Swap Monitor: subscribed (Swap + LP Burn detection 🔥)")
-
-                    await _subscribe_current()
-
-                    # Reverse map refresh loop
-                    last_map_refresh = 0
-
+                    # ── Event loop ──
                     while True:
-                        msg = await asyncio.wait_for(ws.recv(), timeout=30)
-                        data = _json.loads(msg)
-                        log  = (data.get("params") or {}).get("result") or {}
+                        # Higher priority wapas aa gaya? Gracefully exit
+                        if _get_active() < my_slot and _get_active() != 0:
+                            print(f"⚡ SwapMonitor [{label}] stepping back — primary recovered")
+                            _set_active(0)
+                            break
+
+                        try:
+                            msg = await asyncio.wait_for(ws.recv(), timeout=25)
+                        except asyncio.TimeoutError:
+                            continue  # Timeout = normal, loop chalta rahe
+
+                        data        = _json.loads(msg)
+                        log         = (data.get("params") or {}).get("result") or {}
                         if not log: continue
 
-                        topics   = log.get("topics") or []
+                        topics      = log.get("topics") or []
                         if not topics: continue
                         event_topic = topics[0].lower()
+                        pair_addr   = log.get("address", "").lower()
 
-                        pair_addr = log.get("address", "").lower()
-
-                        # ══════════════════════════════════════════════
-                        # LP BURN DETECTION — Rug se PEHLE exit!
-                        # Dev removeLiquidity() → Burn event fire hota hai
-                        # Yeh price drop se pehle aata hai — milliseconds mein sell
-                        # ══════════════════════════════════════════════
+                        # ── LP BURN — Rug detect ──
                         if event_topic == BURN_TOPIC.lower():
-                            # Refresh map first
                             with monitor_lock:
                                 tokens_now = list(monitored_positions.keys())
                             for tok in tokens_now:
                                 pair = _get_pair_for_token(tok)
                                 if pair:
                                     pair_to_token[pair.lower()] = tok.lower()
-
                             token_addr = pair_to_token.get(pair_addr)
                             if token_addr:
-                                # Ye hamare position ka pair hai — LP burn detected!
                                 already_alerted = False
                                 with _lp_burn_lock:
                                     if token_addr in _lp_burn_alerts:
                                         already_alerted = True
                                     else:
                                         _lp_burn_alerts.add(token_addr)
-
                                 if not already_alerted:
-                                    print(f"🚨 LP BURN DETECTED: {token_addr[:10]} — INSTANT SELL!")
+                                    print(f"🚨 LP BURN [{label}]: {token_addr[:10]} — INSTANT SELL!")
                                     _log("sell", token_addr[:10], "LP Burn — Rug Incoming 🚨", token_addr)
-                                    # Turant sell — price drop se pehle
                                     _auto_paper_sell(token_addr, "LP Burn 🚨 Rug Detected", 100.0)
-                            continue  # Burn event process ho gaya
+                            continue
 
-                        # Normal swap event processing
                         if event_topic != SWAP_TOPIC.lower():
                             continue
 
-                        # Refresh pair→token map every 30s
+                        # ── Pair map refresh every 30s ──
                         now_t = time.time()
                         if now_t - last_map_refresh > 30:
                             with monitor_lock:
@@ -1212,7 +1225,6 @@ def start_swap_monitor():
                                 pair = _get_pair_for_token(tok)
                                 if pair:
                                     pair_to_token[pair.lower()] = tok.lower()
-                            # Remove pairs for closed positions
                             active_tokens = set(t.lower() for t in tokens)
                             pair_to_token = {
                                 p: t for p, t in pair_to_token.items()
@@ -1220,34 +1232,23 @@ def start_swap_monitor():
                             }
                             last_map_refresh = now_t
 
-                        # Is pair hamare kisi token ka hai?
                         token_addr = pair_to_token.get(pair_addr)
                         if not token_addr:
                             continue
 
-                        # Decode Swap event: amount0In, amount1In, amount0Out, amount1Out
-                        # data = 4 × uint256 = 256 bytes
+                        # ── Swap decode ──
                         raw = log.get("data", "0x")
                         if len(raw) < 130:
                             continue
-                        raw_hex = raw[2:]  # remove 0x
+                        raw_hex = raw[2:]
                         try:
                             a0in  = int(raw_hex[0:64],   16)
-                            a1in  = int(raw_hex[64:128],  16)
+                            a1in  = int(raw_hex[64:128], 16)
+                            a0out = int(raw_hex[128:192], 16)
+                            a1out = int(raw_hex[192:256], 16)
                         except Exception:
                             continue
 
-                        # token0 = WBNB ya token?
-                        # Agar pair mein token0 = WBNB:
-                        #   BUY  = amount1In > 0 (BNB in, token out)
-                        #   SELL = amount0In > 0 (token in, BNB out)  
-                        # Agar token0 = token:
-                        #   BUY  = amount0In > 0
-                        #   SELL = amount1In > 0
-
-                        # Simpler heuristic: whichever side has input = that side
-                        # We'll use WBNB check via cache
-                        pair_lower = pair_addr
                         _tok_is_t0 = _pair_addr_cache.get("_t0_" + token_addr, None)
                         if _tok_is_t0 is None:
                             try:
@@ -1261,59 +1262,52 @@ def start_swap_monitor():
                             except Exception:
                                 _tok_is_t0 = False
 
-                        # Full decode: all 4 amounts for BNB volume
-                        try:
-                            a0out = int(raw_hex[128:192], 16)
-                            a1out = int(raw_hex[192:256], 16)
-                        except Exception:
-                            a0out = a1out = 0
-
                         if _tok_is_t0:
-                            # token=token0, WBNB=token1
-                            # BUY:  BNB in (a1in)   → a1in = BNB spent
-                            # SELL: BNB out (a1out)  → a1out = BNB received
-                            is_buy    = a1in > 0
-                            bnb_wei   = a1in if is_buy else a1out
+                            is_buy  = a1in > 0
+                            bnb_wei = a1in if is_buy else a1out
                         else:
-                            # token=token1, WBNB=token0
-                            # BUY:  BNB in (a0in)   → a0in = BNB spent
-                            # SELL: BNB out (a0out)  → a0out = BNB received
-                            is_buy    = a0in > 0
-                            bnb_wei   = a0in if is_buy else a0out
+                            is_buy  = a0in > 0
+                            bnb_wei = a0in if is_buy else a0out
 
-                        bnb_amt = bnb_wei / 1e18  # wei → BNB
+                        bnb_amt = bnb_wei / 1e18
                         _record_swap(token_addr, is_buy, bnb_amt)
 
-                        # Log significant swaps (> 0.1 BNB)
                         if bnb_amt >= 0.1:
                             _dir = "🟢BUY " if is_buy else "🔴SELL"
-                            print(f"⚡ {_dir} {token_addr[:10]} {bnb_amt:.3f} BNB")
+                            print(f"⚡ [{label}] {_dir} {token_addr[:10]} {bnb_amt:.3f} BNB")
 
             except Exception as e:
-                fail_count += 1
-                wait = min(10 * fail_count, 60)
-                err  = str(e).lower()
-                if "1013" in err or "timeout" in err:
-                    print(f"⚠️ Swap Monitor: reconnecting (#{fail_count})")
+                # Primary gira → active = 0 → backup jaag jayega
+                if _get_active() == my_slot:
+                    _set_active(0)
+                err = str(e).lower()
+                if "1013" in err or "close frame" in err or "timeout" in err:
+                    print(f"⚠️ SwapMonitor [{label}] disconnect — backup le raha hai")
                 else:
-                    print(f"⚠️ Swap Monitor error: {str(e)[:60]}")
-                await asyncio.sleep(wait)
-                if fail_count % 5 == 0:
-                    import gc; gc.collect()
-                idx += 1
+                    print(f"⚠️ SwapMonitor [{label}] error: {str(e)[:60]}")
+                await asyncio.sleep(2)  # 2s baad reconnect try
+
+    async def _master():
+        # Teeno connections parallel start karo
+        # Primary = slot 1, Backup1 = slot 2, Backup2 = slot 3
+        await asyncio.gather(
+            _run_connection(_SM_PRIMARY, 1, "PRIMARY"),
+            _run_connection(_SM_BACKUP1, 2, "BACKUP1"),
+            _run_connection(_SM_BACKUP2, 3, "BACKUP2"),
+        )
 
     def _run_swap_monitor():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            loop.run_until_complete(_swap_loop())
+            loop.run_until_complete(_master())
         except Exception as ex:
             print(f"⚠️ Swap Monitor thread: {ex}")
         finally:
             loop.close()
 
     threading.Thread(target=_run_swap_monitor, daemon=True).start()
-    print("⚡ Real-time Swap Monitor starting...")
+    print("⚡ Real-time Swap Monitor starting (Hot-Standby mode)...")
 
 # ══════════════════════════════════════════════
 # SELF-LEARNING WHALE DETECTOR
@@ -3262,14 +3256,14 @@ def fetch_market_data():
         return r0 / r1 if r1 > 0 else 0
     sources = [
         ("NodeReal",     _nodereal_bnb),
-        ("Binance",      lambda: float(requests.get(
-            "https://api.binance.com/api/v3/ticker/price",
-            params={"symbol":"BNBUSDT"}, timeout=30
-        ).json().get("price",0) or 0)),
         ("OKX",          lambda: float(((requests.get(
             "https://www.okx.com/api/v5/market/ticker",
             params={"instId":"BNB-USDT"}, timeout=20
         ).json() or {}).get("data") or [{}])[0].get("last",0) or 0)),
+        ("CoinPaprika",  lambda: float((requests.get(
+            "https://api.coinpaprika.com/v1/tickers/bnb-binance-coin",
+            timeout=10
+        ).json() or {}).get("quotes", {}).get("USD", {}).get("price", 0) or 0)),
     ]
     for attempt in range(2):  # 2 attempts
         if bnb_fetched: break
