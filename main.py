@@ -4750,7 +4750,7 @@ def poll_new_pairs():
                 await asyncio.wait_for(ws.recv(), timeout=10)
                 print(f"✅ WSS connected: {wss_url[:35]}")
                 while True:
-                    msg  = await asyncio.wait_for(ws.recv(), timeout=60)
+                    msg  = await ws.recv()  # timeout=None — ping/pong se alive
                     data = _json.loads(msg)
                     log  = (data.get("params") or {}).get("result") or {}
                     if not log: continue
@@ -4773,35 +4773,96 @@ def poll_new_pairs():
                 print(f"Warning: WSS error: {str(e)[:80]}")
             gc.collect()
 
-    async def _ws_loop():
-        idx = 0
-        fail_count = 0
+    # BSCScan fallback — har 30 sec last 2 min ke missed pairs
+    async def _bscscan_fallback():
+        await asyncio.sleep(60)
+        _seen_bs: set = set()
         while True:
             try:
-                url = WSS_ENDPOINTS[idx % len(WSS_ENDPOINTS)]
-                print(f"🔌 WSS connecting: {url}")
+                if BSC_SCAN_KEY:
+                    import urllib.request as _ur, json as _bj
+                    _cutoff = int(time.time()) - 120
+                    _url = (f"https://api.bscscan.com/api?module=logs&action=getLogs"
+                            f"&address={FACTORY}&topic0={PAIR_TOPIC}"
+                            f"&fromBlock=latest&toBlock=latest"
+                            f"&page=1&offset=10&apikey={BSC_SCAN_KEY}")
+                    _req = _ur.Request(_url, headers={"User-Agent": "Mozilla/5.0"})
+                    with _ur.urlopen(_req, timeout=8) as _resp:
+                        _data = _bj.loads(_resp.read())
+                        for _log in (_data.get("result") or []):
+                            _ts = int(_log.get("timeStamp", "0x0"), 16)
+                            if _ts < _cutoff: continue
+                            _topics = _log.get("topics", [])
+                            _rdata  = _log.get("data", "0x")
+                            _t0 = ("0x" + _topics[1][-40:]) if len(_topics) > 1 else ""
+                            _t1 = ("0x" + _topics[2][-40:]) if len(_topics) > 2 else ""
+                            _pa = ("0x" + _rdata[26:66]) if len(_rdata) >= 66 else ""
+                            _tk = _t0 if (_t0 and _t0.lower() != WBNB_LOWER) else (
+                                  _t1 if (_t1 and _t1.lower() != WBNB_LOWER) else "")
+                            if _tk and _tk not in _seen_bs:
+                                _seen_bs.add(_tk)
+                                if len(_seen_bs) > 200: _seen_bs.clear()
+                                threading.Thread(target=_process_new_token,
+                                    args=(_tk, _pa, "BSCScan-Fallback"), daemon=True).start()
+                                print(f"📡 BSCScan fallback: {_tk[:10]}")
+            except Exception:
+                pass
+            await asyncio.sleep(30)
+
+    async def _ws_loop_primary():
+        idx = fails = 0
+        PRIMARY = ["wss://bsc-rpc.publicnode.com", "wss://bsc.publicnode.com"]
+        while True:
+            try:
+                url = PRIMARY[idx % len(PRIMARY)]
+                print(f"🔌 WSS [P] connecting: {url}")
                 await _listen(url)
-                fail_count = 0
+                fails = 0
             except Exception as e:
-                fail_count += 1
-                wait = min(3 * fail_count, 30) if "1013" in str(e).lower() else min(2 * fail_count, 20)
-                print(f"Warning: WSS loop fail #{fail_count} — retry in {wait}s")
-                await asyncio.sleep(wait)
-                if fail_count % 10 == 0:
-                    gc.collect()
+                fails += 1
+                await asyncio.sleep(min(2 * fails, 20))
+            idx += 1
+
+    async def _ws_loop_backup():
+        idx = fails = 0
+        BACKUP = ["wss://bsc.drpc.org", "wss://bsc-rpc.publicnode.com"]
+        while True:
+            try:
+                url = BACKUP[idx % len(BACKUP)]
+                print(f"🔌 WSS [B] connecting: {url}")
+                await _listen(url)
+                fails = 0
+            except Exception as e:
+                fails += 1
+                await asyncio.sleep(min(3 * fails, 30))
             idx += 1
 
     if _ws is not None:
-        def _run_ws():
+        def _run_primary():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                loop.run_until_complete(_ws_loop())
+                loop.run_until_complete(asyncio.gather(
+                    _ws_loop_primary(), _bscscan_fallback()
+                ))
             except Exception as ex:
-                print(f"Warning: WSS thread: {ex}")
+                print(f"Warning: WSS primary: {ex}")
             finally:
                 loop.close()
-        threading.Thread(target=_run_ws, daemon=True).start()
+
+        def _run_backup():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(_ws_loop_backup())
+            except Exception as ex:
+                print(f"Warning: WSS backup: {ex}")
+            finally:
+                loop.close()
+
+        threading.Thread(target=_run_primary, daemon=True).start()
+        threading.Thread(target=_run_backup,  daemon=True).start()
+        print("🔌 Dual WSS + BSCScan fallback started")
 
 
 def _register_position_pair(token_address: str, known_pair: str = None):
