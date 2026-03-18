@@ -533,7 +533,6 @@ function _checkLock(){
             <div style="font-size:11px;font-weight:800;color:var(--ice);letter-spacing:0.5px;">PANCAKESWAP</div>
             <div style="font-size:9px;color:var(--txt3);">BSC New Pair Sniper</div>
           </div>
-          <!-- Running status -->
           <div id="pc-status-badge" style="display:flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;background:var(--em-dim);border:1px solid rgba(52,201,146,0.3);">
             <div id="pc-status-dot" style="width:6px;height:6px;border-radius:50%;background:var(--em);box-shadow:0 0 6px var(--em);animation:blink 2s infinite;"></div>
             <span id="pc-status-lbl" style="font-size:8px;font-weight:800;color:var(--em);">RUNNING</span>
@@ -541,14 +540,14 @@ function _checkLock(){
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
           <span style="font-size:8px;color:var(--txt3);" id="pc-updated">—</span>
-          <button onclick="refreshPC()" id="pc-refresh-btn" style="display:flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;border:1px solid rgba(91,159,214,0.35);background:rgba(91,159,214,0.08);color:var(--ice);font-size:10px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;transition:all 0.15s;" ontouchstart="this.style.opacity='0.7'" ontouchend="this.style.opacity='1'">
+          <button onclick="refreshPC()" id="pc-refresh-btn" style="display:flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;border:1px solid rgba(91,159,214,0.35);background:rgba(91,159,214,0.08);color:var(--ice);font-size:10px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">
             <span id="pc-refresh-icon">🔄</span> Refresh
           </button>
         </div>
       </div>
 
-      <!-- PC Queue + Funnel -->
       <div style="padding:10px 12px;display:flex;flex-direction:column;gap:10px;">
+
         <!-- Queue -->
         <div style="display:flex;align-items:center;justify-content:space-between;background:var(--ink3);border-radius:8px;padding:8px 12px;">
           <span style="font-size:9px;color:var(--txt3);font-weight:700;">QUEUE WAITING</span>
@@ -558,7 +557,7 @@ function _checkLock(){
           </div>
         </div>
 
-        <!-- Funnel stats -->
+        <!-- ALL TIME funnel stats — always visible -->
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center;">
           <div style="background:var(--ink3);border-radius:8px;padding:8px 4px;">
             <div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:800;color:var(--txt1);" id="sc-pc-disc">0</div>
@@ -578,39 +577,45 @@ function _checkLock(){
           </div>
         </div>
 
-        <!-- Progress bar -->
+        <!-- Pass rate bar -->
         <div>
           <div style="height:4px;background:var(--ink3);border-radius:4px;overflow:hidden;">
             <div id="sc-pc-bar" style="height:100%;background:linear-gradient(90deg,var(--ice),var(--em));border-radius:4px;width:0%;transition:width 1s;"></div>
           </div>
           <div style="display:flex;justify-content:space-between;margin-top:3px;">
-            <span style="font-size:8px;color:var(--txt3);">Buy pass rate (Disc → Bought)</span>
+            <span style="font-size:8px;color:var(--txt3);">Buy pass rate (All time)</span>
             <span style="font-size:8px;font-weight:700;color:var(--em);" id="sc-pc-rate">0%</span>
           </div>
         </div>
 
-        <!-- PC Tabs: Per Min / Per Hour / Today -->
+        <!-- Time tabs: 24H / 7D / 1M / ALL TIME -->
         <div style="background:var(--ink3);border-radius:8px;padding:8px 10px;">
           <div style="display:flex;gap:4px;margin-bottom:8px;">
-            <button onclick="scTabPC('min')" id="sc-pc-tab-min" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--ice);background:rgba(91,159,214,0.12);color:var(--ice);font-size:9px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">PER MIN</button>
-            <button onclick="scTabPC('hour')" id="sc-pc-tab-hour" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--txt3);font-size:9px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">PER HOUR</button>
-            <button onclick="scTabPC('day')" id="sc-pc-tab-day" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--txt3);font-size:9px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">TODAY</button>
+            <button onclick="scTabPC('24h')" id="sc-pc-tab-24h" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--ice);background:rgba(91,159,214,0.12);color:var(--ice);font-size:9px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">24H</button>
+            <button onclick="scTabPC('7d')"  id="sc-pc-tab-7d"  style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--txt3);font-size:9px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">7D</button>
+            <button onclick="scTabPC('30d')" id="sc-pc-tab-30d" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--txt3);font-size:9px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">1M</button>
+            <button onclick="scTabPC('all')" id="sc-pc-tab-all" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--txt3);font-size:9px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">ALL</button>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;text-align:center;">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;text-align:center;">
             <div>
-              <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:800;color:var(--txt1);" id="sc-pc-t-disc">0</div>
-              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">New Tokens<br>Discovered</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--txt1);" id="sc-pc-t-disc">0</div>
+              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Discovered</div>
             </div>
             <div>
-              <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:800;color:var(--em);" id="sc-pc-t-snipe">0</div>
-              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Sniped<br>🎯</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--ice);" id="sc-pc-t-pf">0</div>
+              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Pre-filter</div>
             </div>
             <div>
-              <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:800;color:var(--gold);" id="sc-pc-t-buy">0</div>
-              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Bought<br>💰</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--em);" id="sc-pc-t-snipe">0</div>
+              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Checklist</div>
+            </div>
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--gold);" id="sc-pc-t-buy">0</div>
+              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Bought 💰</div>
             </div>
           </div>
         </div>
+
       </div>
     </div>
   </div>
@@ -624,9 +629,8 @@ function _checkLock(){
           <span style="font-size:15px;">🎓</span>
           <div>
             <div style="font-size:11px;font-weight:800;color:var(--gold);letter-spacing:0.5px;">FOURMEME</div>
-            <div style="font-size:9px;color:var(--txt3);">Graduated Token Sniper</div>
+            <div style="font-size:9px;color:var(--txt3);">Graduation Sniper v4</div>
           </div>
-          <!-- Running status -->
           <div id="fm-status-badge" style="display:flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;background:var(--em-dim);border:1px solid rgba(52,201,146,0.3);">
             <div id="fm-status-dot" style="width:6px;height:6px;border-radius:50%;background:var(--em);box-shadow:0 0 6px var(--em);animation:blink 2s infinite;"></div>
             <span id="fm-status-lbl" style="font-size:8px;font-weight:800;color:var(--em);">RUNNING</span>
@@ -634,14 +638,14 @@ function _checkLock(){
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
           <span style="font-size:8px;color:var(--txt3);" id="fm-updated">—</span>
-          <button onclick="refreshFM()" id="fm-refresh-btn" style="display:flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;border:1px solid rgba(212,168,71,0.35);background:rgba(212,168,71,0.08);color:var(--gold);font-size:10px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;transition:all 0.15s;" ontouchstart="this.style.opacity='0.7'" ontouchend="this.style.opacity='1'">
+          <button onclick="refreshFM()" id="fm-refresh-btn" style="display:flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;border:1px solid rgba(212,168,71,0.35);background:rgba(212,168,71,0.08);color:var(--gold);font-size:10px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">
             <span id="fm-refresh-icon">🔄</span> Refresh
           </button>
         </div>
       </div>
 
-      <!-- FM Queue + Stats -->
       <div style="padding:10px 12px;display:flex;flex-direction:column;gap:10px;">
+
         <!-- Queue -->
         <div style="display:flex;align-items:center;justify-content:space-between;background:var(--ink3);border-radius:8px;padding:8px 12px;">
           <span style="font-size:9px;color:var(--txt3);font-weight:700;">QUEUE WAITING</span>
@@ -651,7 +655,7 @@ function _checkLock(){
           </div>
         </div>
 
-        <!-- FM funnel stats -->
+        <!-- ALL TIME stats -->
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;text-align:center;">
           <div style="background:var(--ink3);border-radius:8px;padding:8px 4px;">
             <div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:800;color:var(--txt1);" id="sc-fm-disc">0</div>
@@ -673,33 +677,35 @@ function _checkLock(){
             <div id="sc-fm-bar" style="height:100%;background:linear-gradient(90deg,var(--gold),var(--em));border-radius:4px;width:0%;transition:width 1s;"></div>
           </div>
           <div style="display:flex;justify-content:space-between;margin-top:3px;">
-            <span style="font-size:8px;color:var(--txt3);">Snipe success rate</span>
+            <span style="font-size:8px;color:var(--txt3);">Snipe success rate (All time)</span>
             <span style="font-size:8px;font-weight:700;color:var(--gold);" id="sc-fm-rate2">0%</span>
           </div>
         </div>
 
-        <!-- FM Tabs: Per Min / Per Hour / Today -->
+        <!-- Time tabs: 24H / 7D / 1M / ALL TIME -->
         <div style="background:var(--ink3);border-radius:8px;padding:8px 10px;">
           <div style="display:flex;gap:4px;margin-bottom:8px;">
-            <button onclick="scTabFM('min')" id="sc-fm-tab-min" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--gold);background:rgba(212,168,71,0.12);color:var(--gold);font-size:9px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">PER MIN</button>
-            <button onclick="scTabFM('hour')" id="sc-fm-tab-hour" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--txt3);font-size:9px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">PER HOUR</button>
-            <button onclick="scTabFM('day')" id="sc-fm-tab-day" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--txt3);font-size:9px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">TODAY</button>
+            <button onclick="scTabFM('24h')" id="sc-fm-tab-24h" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--gold);background:rgba(212,168,71,0.12);color:var(--gold);font-size:9px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">24H</button>
+            <button onclick="scTabFM('7d')"  id="sc-fm-tab-7d"  style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--txt3);font-size:9px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">7D</button>
+            <button onclick="scTabFM('30d')" id="sc-fm-tab-30d" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--txt3);font-size:9px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">1M</button>
+            <button onclick="scTabFM('all')" id="sc-fm-tab-all" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--txt3);font-size:9px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">ALL</button>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;text-align:center;">
             <div>
-              <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:800;color:var(--txt1);" id="sc-fm-t-disc">0</div>
-              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Graduated<br>Detected</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--txt1);" id="sc-fm-t-disc">0</div>
+              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Graduated</div>
             </div>
             <div>
-              <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:800;color:var(--em);" id="sc-fm-t-snipe">0</div>
-              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Sniped<br>🎯</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--em);" id="sc-fm-t-snipe">0</div>
+              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Sniped 🎯</div>
             </div>
             <div>
-              <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:800;color:var(--gold);" id="sc-fm-t-buy">0</div>
-              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Bought<br>💰</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--gold);" id="sc-fm-t-buy">0</div>
+              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Bought 💰</div>
             </div>
           </div>
         </div>
+
       </div>
     </div>
   </div>
@@ -1591,119 +1597,116 @@ fetchActivity();
 
 
 // ── SCANNER STATS ────────────────────────────────────────
-let _scData = null;
-let _scActivePCTab = 'min';
-let _scActiveFMTab = 'min';
+let _scData       = null;
+let _scActivePCTab = '24h';
+let _scActiveFMTab = '24h';
 
-// ── PC Tab Switch
+// localStorage cache — page refresh pe data persist kare
+function _scSaveCache(d) {
+  try { localStorage.setItem('mb_sc_cache', JSON.stringify({d, ts: Date.now()})); } catch(e){}
+}
+function _scLoadCache() {
+  try {
+    const c = JSON.parse(localStorage.getItem('mb_sc_cache') || 'null');
+    if (c && c.d && (Date.now() - c.ts) < 300000) return c.d; // 5 min valid
+  } catch(e){}
+  return null;
+}
+
+// Tab data compute — period ke hisaab se
+function _scComputePeriod(d, period) {
+  if (!d) return {pc_disc:0, pc_pf:0, pc_cl:0, pc_buy:0, fm_disc:0, fm_buy:0};
+  const hist = d.history || [];
+  const now  = Date.now() / 1000;
+  const ms   = period === '24h' ? 86400
+             : period === '7d'  ? 604800
+             : period === '30d' ? 2592000
+             : null; // all = full history
+
+  const filtered = ms ? hist.filter(h => (now - (h.ts || 0)) <= ms) : hist;
+
+  function sum(key) { return filtered.reduce((s, h) => s + (h[key] || 0), 0); }
+
+  if (period === 'all') {
+    return {
+      pc_disc: d.pc ? (d.pc.discovered || 0) : 0,
+      pc_pf:   d.pc ? (d.pc.prefilter_pass || 0) : 0,
+      pc_cl:   d.pc ? (d.pc.checklist_pass || 0) : 0,
+      pc_buy:  d.pc ? (d.pc.bought || 0) : 0,
+      fm_disc: d.fm ? (d.fm.discovered || 0) : 0,
+      fm_buy:  d.fm ? (d.fm.bought || 0) : 0,
+    };
+  }
+  return {
+    pc_disc: sum('pc_disc'),
+    pc_pf:   sum('pc_pf')  || Math.round(sum('pc_disc') * 0.5),
+    pc_cl:   sum('pc_cl')  || sum('pc_buy'),
+    pc_buy:  sum('pc_buy'),
+    fm_disc: sum('fm_disc'),
+    fm_buy:  sum('fm_buy'),
+  };
+}
+
+// PC tab switch
 function scTabPC(tab) {
   _scActivePCTab = tab;
-  ['min','hour','day'].forEach(t => {
+  ['24h','7d','30d','all'].forEach(t => {
     const btn = document.getElementById('sc-pc-tab-' + t);
     if (!btn) return;
     if (t === tab) {
-      btn.style.background = 'rgba(91,159,214,0.12)';
-      btn.style.borderColor = 'var(--ice)';
-      btn.style.color = 'var(--ice)';
+      btn.style.background   = 'rgba(91,159,214,0.12)';
+      btn.style.borderColor  = 'var(--ice)';
+      btn.style.color        = 'var(--ice)';
     } else {
-      btn.style.background = 'transparent';
-      btn.style.borderColor = 'var(--line)';
-      btn.style.color = 'var(--txt3)';
+      btn.style.background   = 'transparent';
+      btn.style.borderColor  = 'var(--line)';
+      btn.style.color        = 'var(--txt3)';
     }
   });
   if (_scData) _updateScPCTab(_scData);
 }
 
-// ── FM Tab Switch
+// FM tab switch
 function scTabFM(tab) {
   _scActiveFMTab = tab;
-  ['min','hour','day'].forEach(t => {
+  ['24h','7d','30d','all'].forEach(t => {
     const btn = document.getElementById('sc-fm-tab-' + t);
     if (!btn) return;
     if (t === tab) {
-      btn.style.background = 'rgba(212,168,71,0.12)';
-      btn.style.borderColor = 'var(--gold)';
-      btn.style.color = 'var(--gold)';
+      btn.style.background   = 'rgba(212,168,71,0.12)';
+      btn.style.borderColor  = 'var(--gold)';
+      btn.style.color        = 'var(--gold)';
     } else {
-      btn.style.background = 'transparent';
-      btn.style.borderColor = 'var(--line)';
-      btn.style.color = 'var(--txt3)';
+      btn.style.background   = 'transparent';
+      btn.style.borderColor  = 'var(--line)';
+      btn.style.color        = 'var(--txt3)';
     }
   });
   if (_scData) _updateScFMTab(_scData);
 }
 
-// ── Legacy scTab (backward compat)
+// Legacy compat
 function scTab(tab) { scTabPC(tab); scTabFM(tab); }
 
 function _updateScPCTab(d) {
-  const t = _scActivePCTab;
-  const src = t === 'min' ? d.per_min : t === 'hour' ? d.per_hour : d.per_day;
-  if(!src) return;
-  _animateCount('sc-pc-t-disc',  src.pc_disc || 0, 'var(--txt1)');
-  _animateCount('sc-pc-t-snipe', src.pc_buy  || 0, 'var(--em)');
-  _animateCount('sc-pc-t-buy',   src.pc_buy  || 0, 'var(--gold)');
-  _animateCount('sc-t-pc-disc',  src.pc_disc || 0, 'var(--ice)');
-  _animateCount('sc-t-pc-buy',   src.pc_buy  || 0, 'var(--em)');
+  const p = _scComputePeriod(d, _scActivePCTab);
+  _animateCount('sc-pc-t-disc',  p.pc_disc, 'var(--txt1)');
+  _animateCount('sc-pc-t-pf',    p.pc_pf,   'var(--ice)');
+  _animateCount('sc-pc-t-snipe', p.pc_cl,   'var(--em)');
+  _animateCount('sc-pc-t-buy',   p.pc_buy,  'var(--gold)');
+  // Legacy
+  _animateCount('sc-t-pc-disc', p.pc_disc, 'var(--ice)');
+  _animateCount('sc-t-pc-buy',  p.pc_buy,  'var(--em)');
 }
 
 function _updateScFMTab(d) {
-  const t = _scActiveFMTab;
-  const src = t === 'min' ? d.per_min : t === 'hour' ? d.per_hour : d.per_day;
-  if(!src) return;
-  _animateCount('sc-fm-t-disc',  src.fm_disc || 0, 'var(--txt1)');
-  _animateCount('sc-fm-t-snipe', src.fm_buy  || 0, 'var(--em)');
-  _animateCount('sc-fm-t-buy',   src.fm_buy  || 0, 'var(--gold)');
-  _animateCount('sc-t-fm-disc',  src.fm_disc || 0, 'var(--gold)');
-  _animateCount('sc-t-fm-buy',   src.fm_buy  || 0, 'var(--em)');
-}
-
-// ── Spinner helper for refresh buttons
-function _refreshSpinner(btnId, iconId, color) {
-  const btn = document.getElementById(btnId);
-  const icon = document.getElementById(iconId);
-  if(btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
-  if(icon) icon.textContent = '⏳';
-  return function done() {
-    if(btn) { btn.disabled = false; btn.style.opacity = '1'; }
-    if(icon) icon.textContent = '🔄';
-  };
-}
-
-// ── PC Refresh Button
-async function refreshPC() {
-  const done = _refreshSpinner('pc-refresh-btn', 'pc-refresh-icon');
-  await fetchScannerStats();
-  done();
-  const upd = document.getElementById('pc-updated');
-  if(upd) upd.textContent = 'updated ' + new Date().toLocaleTimeString();
-}
-
-// ── FM Refresh Button
-async function refreshFM() {
-  const done = _refreshSpinner('fm-refresh-btn', 'fm-refresh-icon');
-  await fetchScannerStats();
-  done();
-  const upd = document.getElementById('fm-updated');
-  if(upd) upd.textContent = 'updated ' + new Date().toLocaleTimeString();
-}
-
-// ── Update sniper running status badges
-// Backend mein 'running' field nahi — data aa raha hai matlab RUNNING
-function _updateSniperStatus(d) {
-  ['pc','fm'].forEach(function(key) {
-    const dot   = document.getElementById(key+'-status-dot');
-    const lbl   = document.getElementById(key+'-status-lbl');
-    const badge = document.getElementById(key+'-status-badge');
-    if(!dot || !lbl || !badge) return;
-    dot.style.background    = 'var(--em)';
-    dot.style.boxShadow     = '0 0 6px var(--em)';
-    dot.style.animation     = 'blink 2s infinite';
-    lbl.textContent         = 'RUNNING';
-    lbl.style.color         = 'var(--em)';
-    badge.style.background  = 'var(--em-dim)';
-    badge.style.borderColor = 'rgba(52,201,146,0.3)';
-  });
+  const p = _scComputePeriod(d, _scActiveFMTab);
+  _animateCount('sc-fm-t-disc',  p.fm_disc, 'var(--txt1)');
+  _animateCount('sc-fm-t-snipe', p.fm_buy,  'var(--em)');
+  _animateCount('sc-fm-t-buy',   p.fm_buy,  'var(--gold)');
+  // Legacy
+  _animateCount('sc-t-fm-disc', p.fm_disc, 'var(--gold)');
+  _animateCount('sc-t-fm-buy',  p.fm_buy,  'var(--em)');
 }
 
 async function fetchScannerStats() {
@@ -1712,43 +1715,46 @@ async function fetchScannerStats() {
     if (!d) return;
     _scData = d;
     _lastScannerFetch = Date.now();
+    _scSaveCache(d);  // localStorage mein save karo
 
-    // ── PC Queue & Funnel — animated
+    const el = id => document.getElementById(id);
+
+    // ALL TIME funnel (always top mein)
     _animateCount('sc-pc-queue', d.pc.queue,           'var(--ice)');
     _animateCount('sc-pc-disc',  d.pc.discovered,      'var(--txt1)');
     _animateCount('sc-pc-pf',    d.pc.prefilter_pass,  'var(--ice)');
     _animateCount('sc-pc-cl',    d.pc.checklist_pass,  'var(--em)');
-    _animateCount('sc-pc-buy',   d.pc.bought,          'var(--gold)');
+    _animateCount('sc-pc-buy',   d.pc.bought,           'var(--gold)');
 
-    // PC Pass rate bar
     const rate = d.pc.discovered > 0 ? Math.round(d.pc.bought / d.pc.discovered * 100) : 0;
-    const pcRateEl = document.getElementById('sc-pc-rate');
-    if(pcRateEl) pcRateEl.textContent = rate + '%';
-    const pcBarEl = document.getElementById('sc-pc-bar');
-    if(pcBarEl) pcBarEl.style.width = Math.min(rate * 3, 100) + '%';
+    if(el('sc-pc-rate')) el('sc-pc-rate').textContent = rate + '%';
+    if(el('sc-pc-bar'))  el('sc-pc-bar').style.width  = Math.min(rate * 3, 100) + '%';
 
-    // ── FM Queue & Funnel — animated
     _animateCount('sc-fm-queue', d.fm.queue,      'var(--gold)');
     _animateCount('sc-fm-disc',  d.fm.discovered, 'var(--txt1)');
     _animateCount('sc-fm-buy',   d.fm.bought,     'var(--gold)');
 
     const fmRate = d.fm.discovered > 0 ? Math.round(d.fm.bought / d.fm.discovered * 100) : 0;
-    const fmRateEl  = document.getElementById('sc-fm-rate');
-    const fmRate2El = document.getElementById('sc-fm-rate2');
-    if(fmRateEl)  fmRateEl.textContent  = fmRate + '%';
-    if(fmRate2El) fmRate2El.textContent = fmRate + '%';
-    const fmBarEl = document.getElementById('sc-fm-bar');
-    if(fmBarEl) fmBarEl.style.width = Math.min(fmRate * 3, 100) + '%';
+    if(el('sc-fm-rate'))  el('sc-fm-rate').textContent  = fmRate + '%';
+    if(el('sc-fm-rate2')) el('sc-fm-rate2').textContent = fmRate + '%';
+    if(el('sc-fm-bar'))   el('sc-fm-bar').style.width   = Math.min(fmRate * 3, 100) + '%';
 
-    // ── Tab data — animated
+    // Tab data
     _updateScPCTab(d);
     _updateScFMTab(d);
-
-    // ── Sniper running status
     _updateSniperStatus(d);
 
   } catch(e) {}
 }
+
+// Page load pe cache se restore karo
+(function _restoreScCache() {
+  const cached = _scLoadCache();
+  if (cached) {
+    _scData = cached;
+    fetchScannerStats(); // bhi call karo fresh data ke liye
+  }
+})();
 
 // ══ LIVE ANIMATED COUNTER SYSTEM ══
 // Jab bhi koi number change hota hai — smoothly count up hota hai
