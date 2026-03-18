@@ -268,23 +268,42 @@ _monitor_price_cache = {}  # {addr: (price, timestamp)}
 
 def get_token_price_bnb(token_address: str) -> float:
     import time as _t
-    # Cache: same token 1s ke andar dobara call nahi
     _cached = _monitor_price_cache.get(token_address)
     if _cached and (_t.time() - _cached[1]) < 0.3:
         return _cached[0]
+
+    _USDT = "0x55d398326f99059ff775485246999027b3197955"
+    _BUSD = "0xe9e7cea3dedca5984780bafc599bd69add087d56"
+    router   = w3.eth.contract(address=Web3.to_checksum_address(PANCAKE_ROUTER), abi=ROUTER_ABI_PRICE)
+    dec      = _get_dec(token_address)
+    token_cs = Web3.to_checksum_address(token_address)
+    wbnb_cs  = Web3.to_checksum_address(WBNB)
+
+    def _cache_return(price):
+        _monitor_price_cache[token_address] = (price, _t.time())
+        if len(_monitor_price_cache) > 50:
+            oldest = sorted(_monitor_price_cache.items(), key=lambda x: x[1][1])[:10]
+            for k, _ in oldest: del _monitor_price_cache[k]
+        return price
+
+    # Path 1: Direct Token→BNB
     try:
-        dec = _get_dec(token_address)
-        amt = w3.eth.contract(address=Web3.to_checksum_address(PANCAKE_ROUTER), abi=ROUTER_ABI_PRICE).functions.getAmountsOut(
-            10**dec, [Web3.to_checksum_address(token_address), Web3.to_checksum_address(WBNB)]).call()
-        if amt[1] > 0:
-            price = amt[1] / 1e18
-            _monitor_price_cache[token_address] = (price, _t.time())
-            # Cache cleanup — max 50 entries
-            if len(_monitor_price_cache) > 50:
-                oldest = sorted(_monitor_price_cache.items(), key=lambda x: x[1][1])[:10]
-                for k, _ in oldest: del _monitor_price_cache[k]
-            return price
+        amt = router.functions.getAmountsOut(10**dec, [token_cs, wbnb_cs]).call()
+        if amt[1] > 0: return _cache_return(amt[1] / 1e18)
     except: pass
+
+    # Path 2: Token→USDT→BNB
+    try:
+        amt2 = router.functions.getAmountsOut(10**dec, [token_cs, Web3.to_checksum_address(_USDT), wbnb_cs]).call()
+        if amt2[2] > 0: return _cache_return(amt2[2] / 1e18)
+    except: pass
+
+    # Path 3: Token→BUSD→BNB
+    try:
+        amt3 = router.functions.getAmountsOut(10**dec, [token_cs, Web3.to_checksum_address(_BUSD), wbnb_cs]).call()
+        if amt3[2] > 0: return _cache_return(amt3[2] / 1e18)
+    except: pass
+
     return 0.0
 
 def get_token_price_bnb_full(token_address: str) -> float:
@@ -823,26 +842,70 @@ def real_buy_token(token_address: str, bnb_amount: float,
 
         # Slippage: tax-aware + random
         slippage_pct = _anti_mev_slippage(buy_tax, sell_tax)
-        expected_out = router.functions.getAmountsOut(bnb_wei, [wbnb_cs, token_cs]).call()
-        amount_out_min = int(expected_out[1] * (1 - slippage_pct / 100))
+
+        _USDT_CS = Web3.to_checksum_address("0x55d398326f99059ff775485246999027b3197955")
+        _BUSD_CS = Web3.to_checksum_address("0xe9e7cea3dedca5984780bafc599bd69add087d56")
+
+        # Multi-path: best path dhundo
+        _buy_path      = None
+        _amount_out_min = 0
+
+        # Path 1: Direct BNB→Token
+        try:
+            _out1 = router.functions.getAmountsOut(bnb_wei, [wbnb_cs, token_cs]).call()
+            if _out1[1] > 0:
+                _buy_path       = [wbnb_cs, token_cs]
+                _amount_out_min = int(_out1[1] * (1 - slippage_pct / 100))
+                print(f"🛣️ Path: BNB→Token direct")
+        except Exception:
+            pass
+
+        # Path 2: BNB→USDT→Token
+        if not _buy_path:
+            try:
+                _out2 = router.functions.getAmountsOut(bnb_wei, [wbnb_cs, _USDT_CS, token_cs]).call()
+                if _out2[2] > 0:
+                    _buy_path       = [wbnb_cs, _USDT_CS, token_cs]
+                    _amount_out_min = int(_out2[2] * (1 - slippage_pct / 100))
+                    print(f"🛣️ Path: BNB→USDT→Token")
+            except Exception:
+                pass
+
+        # Path 3: BNB→BUSD→Token
+        if not _buy_path:
+            try:
+                _out3 = router.functions.getAmountsOut(bnb_wei, [wbnb_cs, _BUSD_CS, token_cs]).call()
+                if _out3[2] > 0:
+                    _buy_path       = [wbnb_cs, _BUSD_CS, token_cs]
+                    _amount_out_min = int(_out3[2] * (1 - slippage_pct / 100))
+                    print(f"🛣️ Path: BNB→BUSD→Token")
+            except Exception:
+                pass
+
+        if not _buy_path:
+            result["error"] = "No valid swap path found"
+            print(f"❌ REAL BUY: no path for {token_address[:10]}")
+            return result
+
+        amount_out_min = _amount_out_min
 
         # Deadline: 60 sec
-        deadline = int(time.time()) + 60
-        nonce    = w3.eth.get_transaction_count(wallet)
+        deadline  = int(time.time()) + 60
+        nonce     = w3.eth.get_transaction_count(wallet)
         gas_price = _get_gas_price_fast()
 
         txn = router.functions.swapExactETHForTokensSupportingFeeOnTransferTokens(
             amount_out_min,
-            [wbnb_cs, token_cs],
+            _buy_path,
             wallet,
             deadline
         ).build_transaction({
             "from":     wallet,
             "value":    bnb_wei,
-            "gas":      300000,
+            "gas":      350000,
             "gasPrice": gas_price,
             "nonce":    nonce,
-            "chainId":  56  # BSC mainnet
+            "chainId":  56
         })
 
         signed  = w3.eth.account.sign_transaction(txn, REAL_PRIVATE_KEY)
@@ -4771,7 +4834,12 @@ def _fm_snipe(token_addr, pair_addr):
             if _w:
                 _pc_c = _w.eth.contract(address=Web3.to_checksum_address(pair_addr), abi=_FM_PAIR_ABI)
                 _res  = _pc_c.functions.getReserves().call()
-                _liq_bnb = round(max(_res[0], _res[1]) / 1e18, 4)
+                _t0_fm = _pc_c.functions.token0().call().lower()
+            _WBNB_L = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
+            if _t0_fm == _WBNB_L:
+                _liq_bnb = round(_res[0] / 1e18, 4)
+            else:
+                _liq_bnb = round(_res[1] / 1e18, 4)
         except Exception:
             pass
 
@@ -5107,8 +5175,14 @@ def poll_new_pairs():
                     pair_addr = ""
                     if len(raw_data) >= 66:
                         pair_addr = "0x" + raw_data[26:66]
-                    new_token = token0 if (token0 and token0.lower() != WBNB_LOWER) else (
-                                token1 if (token1 and token1.lower() != WBNB_LOWER) else "")
+                    _STABLE_LOWER = {
+                        WBNB_LOWER,
+                        "0x55d398326f99059ff775485246999027b3197955",  # USDT
+                        "0xe9e7cea3dedca5984780bafc599bd69add087d56",  # BUSD
+                        "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d",  # USDC
+                    }
+                    new_token = token0 if (token0 and token0.lower() not in _STABLE_LOWER) else (
+                                token1 if (token1 and token1.lower() not in _STABLE_LOWER) else "")
                     if new_token:
                         threading.Thread(target=_process_new_token, args=(new_token, pair_addr, "WebSocket"), daemon=True).start()
         except Exception as e:
@@ -5201,9 +5275,34 @@ def poll_new_pairs():
             finally:
                 loop.close()
 
-        threading.Thread(target=_run_primary, daemon=True).start()
-        threading.Thread(target=_run_backup,  daemon=True).start()
-        print("🔌 Dual WSS + DexScreener fallback started")
+        _QN_PC_WSS = os.getenv("QUICKNODE_WSS", "wss://blissful-dark-scion.bsc.quiknode.pro/15a13a747cf019149b7c43a1a0bbd2ce37179d15/")
+
+        async def _ws_loop_quicknode():
+            """QuickNode 3rd confirmed stream — PairCreated"""
+            fails = 0
+            while True:
+                try:
+                    print(f"🔌 WSS [QN-PC] connecting: QuickNode")
+                    await _listen(_QN_PC_WSS)
+                    fails = 0
+                except Exception as e:
+                    fails += 1
+                    await asyncio.sleep(min(2 * fails, 20))
+
+        def _run_quicknode():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(_ws_loop_quicknode())
+            except Exception as ex:
+                print(f"Warning: WSS quicknode PC: {ex}")
+            finally:
+                loop.close()
+
+        threading.Thread(target=_run_primary,   daemon=True).start()
+        threading.Thread(target=_run_backup,    daemon=True).start()
+        threading.Thread(target=_run_quicknode, daemon=True).start()
+        print("🔌 Triple WSS + DexScreener fallback started")
 
 
 def _register_position_pair(token_address: str, known_pair: str = None):
