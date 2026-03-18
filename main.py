@@ -4296,16 +4296,48 @@ def _pc_add_to_snipe_queue(token_address: str, pair_address: str, liq_bnb: float
         daemon=True
     ).start()
 
+def _save_pc_event(token_addr, liq_bnb, prefilter, cl_score, cl_total, snipe_price, result, skip_reason, time_ms):
+    """PC event Supabase mein save karo — async"""
+    try:
+        if not supabase: return
+        supabase.table("pc_events").insert({
+            "token_address":   token_addr,
+            "token_short":     token_addr[:10],
+            "detected_at":     datetime.utcnow().isoformat(),
+            "liquidity_bnb":   round(float(liq_bnb or 0), 6),
+            "prefilter":       prefilter or "",
+            "checklist_score": int(cl_score or 0),
+            "checklist_total": int(cl_total or 0),
+            "snipe_price":     float(snipe_price or 0),
+            "result":          result,
+            "skip_reason":     skip_reason or "",
+            "time_taken_ms":   int(time_ms or 0),
+            "mode":            TRADE_MODE,
+        }).execute()
+    except Exception as e:
+        print(f"⚠️ [PC] event save error: {e}")
+
 def _pc_do_snipe(token_address: str, pair_address: str, liq_bnb: float):
     """
     PancakeSwap fast snipe — parallel checks
     Honeypot + GoPlus critical PARALLEL mein
     """
     addr_lower = token_address.lower()
+    _t_start   = time.time()
+    _cl_score  = 0
+    _cl_total  = 0
+
+    def _pc_skip(reason, prefilter="PASS"):
+        ms = int((time.time() - _t_start) * 1000)
+        threading.Thread(target=_save_pc_event, args=(
+            token_address, liq_bnb, prefilter, _cl_score, _cl_total, 0, "SKIP", reason, ms
+        ), daemon=True).start()
+
     if not _pc_snipe_sem.acquire(blocking=False):
         print(f"⏭️ [PC Sniper] Semaphore full — skip: {token_address[:10]}")
         with _pc_snipe_queue_lock:
             _pc_snipe_queue.pop(addr_lower, None)
+        _pc_skip("semaphore full")
         return
     try:
         print(f"🎯 [PC Sniper] Checking: {token_address[:10]}")
@@ -4343,6 +4375,7 @@ def _pc_do_snipe(token_address: str, pair_address: str, liq_bnb: float):
         # 1. Honeypot
         if _hp_result.get("isHoneypot", False):
             print(f"🍯 [PC Sniper] Honeypot — skip: {token_address[:10]}")
+            _pc_skip("honeypot detected")
             return
 
         # 2. GoPlus critical — mint, hidden owner, blacklist
@@ -4357,9 +4390,11 @@ def _pc_do_snipe(token_address: str, pair_address: str, liq_bnb: float):
 
             if _mint:
                 print(f"🚫 [PC Sniper] Mintable — skip: {token_address[:10]}")
+                _pc_skip("mintable token")
                 return
             if _hidden:
                 print(f"🚫 [PC Sniper] Hidden owner — skip: {token_address[:10]}")
+                _pc_skip("hidden owner")
                 return
             if _hp_gp or _no_sell:
                 print(f"🚫 [PC Sniper] GoPlus honeypot — skip: {token_address[:10]}")
@@ -4376,13 +4411,14 @@ def _pc_do_snipe(token_address: str, pair_address: str, liq_bnb: float):
 
         # 4. Full checklist run karo — quality ensure karo
         try:
-            _cl_result = run_full_sniper_checklist(token_address)
+            _cl_result  = run_full_sniper_checklist(token_address)
             _cl_overall = _cl_result.get("overall", "UNKNOWN")
             _cl_score   = _cl_result.get("score", 0)
             _cl_total   = _cl_result.get("total", 1)
             _cl_safe    = CHECKLIST_SETTINGS.get("score_safe", 50.0)
             if _cl_overall != "SAFE" or _cl_score < int(_cl_total * _cl_safe / 100):
                 print(f"🚫 [PC Sniper] Checklist {_cl_overall} {_cl_score}/{_cl_total} — skip: {token_address[:10]}")
+                _pc_skip(f"checklist {_cl_overall} {_cl_score}/{_cl_total}")
                 threading.Thread(target=_save_bot_decision, args=({
                     "token_address": token_address,
                     "token_name":    token_address[:8],
@@ -4397,6 +4433,7 @@ def _pc_do_snipe(token_address: str, pair_address: str, liq_bnb: float):
             print(f"✅ [PC Sniper] Checklist SAFE {_cl_score}/{_cl_total}: {token_address[:10]}")
         except Exception as _cle:
             print(f"⚠️ [PC Sniper] Checklist error: {_cle} — skip")
+            _pc_skip(f"checklist error: {str(_cle)[:40]}")
             return
 
         # ── Auto trade checks ──
@@ -4494,7 +4531,11 @@ def _pc_do_snipe(token_address: str, pair_address: str, liq_bnb: float):
             "token_type":         "meme",
         },), daemon=True).start()
 
-        print(f"✅ [PC Sniper] SNIPED: {token_name} @ {entry_price:.2e} liq={liq_bnb:.1f}")
+        ms_pc = int((time.time() - _t_start) * 1000)
+        threading.Thread(target=_save_pc_event, args=(
+            token_address, liq_bnb, "PASS", _cl_score, _cl_total, entry_price, "BUY", "", ms_pc
+        ), daemon=True).start()
+        print(f"✅ [PC Sniper] SNIPED: {token_name} @ {entry_price:.2e} liq={liq_bnb:.1f} {ms_pc}ms")
 
     except Exception as e:
         print(f"⚠️ [PC Sniper] error: {e}")
@@ -4653,23 +4694,65 @@ def _fm_get_price(token_addr):
     except Exception:
         return 0.0
 
+def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, result, skip_reason, time_ms):
+    """FM event Supabase mein save karo — async"""
+    try:
+        if not supabase: return
+        supabase.table("fm_events").insert({
+            "token_address": token_addr,
+            "token_short":   token_addr[:10],
+            "detected_at":   datetime.utcnow().isoformat(),
+            "liquidity_bnb": round(float(liq_bnb or 0), 6),
+            "grad_price":    float(grad_price or 0),
+            "snipe_price":   float(snipe_price or 0),
+            "pump_pct":      round(float(pump_pct or 0), 2),
+            "result":        result,
+            "skip_reason":   skip_reason or "",
+            "time_taken_ms": int(time_ms or 0),
+            "mode":          TRADE_MODE,
+        }).execute()
+    except Exception as e:
+        print(f"⚠️ [FM] event save error: {e}")
+
 def _fm_snipe(token_addr, pair_addr):
-    addr_lower = token_addr.lower()
+    addr_lower  = token_addr.lower()
+    _t_start    = time.time()
+    _liq_bnb    = 0.0
+    _grad_price = 0.0
+
     with _fm_sniped_lock:
         if addr_lower in _fm_sniped: return
         _fm_sniped.add(addr_lower)
+
+    def _skip(reason):
+        ms = int((time.time() - _t_start) * 1000)
+        print(f"⏭️ [FM] SKIP — {reason}: {token_addr[:10]}")
+        threading.Thread(target=_save_fm_event, args=(
+            token_addr, _liq_bnb, _grad_price, 0, 0, "SKIP", reason, ms
+        ), daemon=True).start()
+
     try:
-        if not AUTO_TRADE_ENABLED: return
-        if len(auto_trade_stats.get("running_positions", {})) >= AUTO_MAX_POSITIONS: return
+        if not AUTO_TRADE_ENABLED:
+            _skip("AUTO_TRADE disabled")
+            return
+        if len(auto_trade_stats.get("running_positions", {})) >= AUTO_MAX_POSITIONS:
+            _skip("max positions reached")
+            return
         sess = get_or_create_session(AUTO_SESSION_ID)
         bal  = sess.get("paper_balance", 5.0)
-        if bal < AUTO_BUY_SIZE_BNB: return
+        if bal < AUTO_BUY_SIZE_BNB:
+            _skip(f"low balance {bal:.4f} BNB")
+            return
         _ok, _msg = DataGuard.bnb_price_ok()
         if not _ok:
-            print(f"⚠️ [FM] DataGuard BNB fail: {_msg}")
+            _skip(f"DataGuard BNB: {_msg}")
             return
-        if any(t.get("address","").lower() == addr_lower for t in auto_trade_stats.get("trade_history", [])): return
-        if token_addr in auto_trade_stats.get("running_positions", {}): return
+        if any(t.get("address","").lower() == addr_lower for t in auto_trade_stats.get("trade_history", [])):
+            _skip("already traded")
+            return
+        if token_addr in auto_trade_stats.get("running_positions", {}):
+            _skip("already in positions")
+            return
 
         # Mempool se aaya? pair_addr="" → fetch karo
         if not pair_addr:
@@ -4678,31 +4761,46 @@ def _fm_snipe(token_addr, pair_addr):
                 if pair_addr: break
                 time.sleep(0.1)
             if not pair_addr:
-                print(f"⚠️ [FM] pair not found: {token_addr[:10]}")
+                _skip("pair not found after 3 retries")
                 with _fm_sniped_lock: _fm_sniped.discard(addr_lower)
                 return
+
+        # Liquidity estimate
+        try:
+            _w = _fm_get_w3()
+            if _w:
+                _pc_c = _w.eth.contract(address=Web3.to_checksum_address(pair_addr), abi=_FM_PAIR_ABI)
+                _res  = _pc_c.functions.getReserves().call()
+                _liq_bnb = round(max(_res[0], _res[1]) / 1e18, 4)
+        except Exception:
+            pass
 
         grad = _fm_get_grad_price(pair_addr, token_addr)
         if grad <= 0: grad = _fm_get_price(token_addr)
         if grad <= 0:
-            print(f"❌ [FM] price=0 skip: {token_addr[:10]}")
+            _skip("price=0 grad fetch failed")
             return
+        _grad_price = grad
 
         cur = _fm_get_price(token_addr)
         if cur <= 0: cur = grad
 
-        # No pump check — har price pe snipe (paper mode)
+        # No pump check — har price pe snipe (data collection mode)
         pump       = round((cur / grad - 1) * 100, 1) if grad > 0 else 0.0
         entry      = cur * 1.005
         size_bnb   = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
         token_name = token_addr[:8]
 
         _ok2, _msg2 = DataGuard.trade_allowed(token_addr, entry)
-        if not _ok2: return
+        if not _ok2:
+            _skip(f"DataGuard trade: {_msg2}")
+            return
 
         if TRADE_MODE == "real":
             _r = real_buy_token(token_addr, size_bnb, 0, 0)
-            if not _r.get("success"): return
+            if not _r.get("success"):
+                _skip(f"real buy failed: {_r.get('error','')[:40]}")
+                return
             if _r.get("entry_price", 0) > 0: entry = _r["entry_price"]
 
         if TRADE_MODE != "real":
@@ -4724,7 +4822,7 @@ def _fm_snipe(token_addr, pair_addr):
             },
         }
         auto_trade_stats["total_auto_buys"] += 1
-        threading.Thread(target=_persist_positions, daemon=True).start()  # async — non-blocking
+        threading.Thread(target=_persist_positions, daemon=True).start()
         _push_notif("success", "🎓 FM Graduation Snipe!",
                     f"{token_name} {pump:+.1f}% from grad | {size_bnb:.4f} BNB",
                     token_name, token_addr)
@@ -4737,7 +4835,14 @@ def _fm_snipe(token_addr, pair_addr):
             "entry_price": entry, "token_type": "meme",
         },), daemon=True).start()
         _scanner_stats["fm_bought"] += 1
-        print(f"✅ [FM] SNIPED: {token_name} @ {entry:.2e} ({pump:+.1f}% from grad)")
+
+        # ✅ FM Event save — BUY
+        ms = int((time.time() - _t_start) * 1000)
+        threading.Thread(target=_save_fm_event, args=(
+            token_addr, _liq_bnb, grad, entry, pump, "BUY", "", ms
+        ), daemon=True).start()
+
+        print(f"✅ [FM] SNIPED: {token_name} @ {entry:.2e} ({pump:+.1f}% from grad) liq={_liq_bnb:.2f} BNB {ms}ms")
     except Exception as e:
         print(f"⚠️ [FM] snipe error: {e}")
         with _fm_sniped_lock: _fm_sniped.discard(addr_lower)
@@ -7394,6 +7499,30 @@ def auto_status():
         })
     except Exception as e:
         return jsonify({"ready": False, "error": str(e)[:60]})
+
+
+
+@app.route("/fm-events")
+def fm_events_api():
+    """FM event log — Supabase se all events"""
+    try:
+        if not supabase:
+            return jsonify({"events": [], "error": "supabase not connected"})
+        res = supabase.table("fm_events").select("*").order("detected_at", desc=True).limit(500).execute()
+        return jsonify({"events": res.data or []})
+    except Exception as e:
+        return jsonify({"events": [], "error": str(e)[:60]})
+
+@app.route("/pc-events")
+def pc_events_api():
+    """PC event log — Supabase se all events"""
+    try:
+        if not supabase:
+            return jsonify({"events": [], "error": "supabase not connected"})
+        res = supabase.table("pc_events").select("*").order("detected_at", desc=True).limit(500).execute()
+        return jsonify({"events": res.data or []})
+    except Exception as e:
+        return jsonify({"events": [], "error": str(e)[:60]})
 
 @app.route("/health")
 def health():

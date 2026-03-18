@@ -554,7 +554,18 @@ function _checkLock(){
           <div style="display:flex;align-items:baseline;gap:4px;">
             <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:800;color:var(--ice);" id="sc-pc-queue">0</span>
             <span style="font-size:9px;color:var(--txt3);">tokens</span>
+          
+          <!-- PC ALL EVENTS TABLE -->
+          <div style="margin-top:16px;background:rgba(91,159,214,0.04);border:1px solid rgba(91,159,214,0.12);border-radius:12px;padding:14px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+              <span style="color:var(--ice);font-size:12px;font-weight:700;">⚡ PC — All Events</span>
+              <span style="color:var(--muted);font-size:10px;">Auto refresh 30s</span>
+            </div>
+            <div id="pc-events-table">
+              <div style="color:var(--muted);text-align:center;padding:16px;font-size:12px;">Loading...</div>
+            </div>
           </div>
+</div>
         </div>
 
         <!-- ALL TIME funnel stats — always visible -->
@@ -652,7 +663,18 @@ function _checkLock(){
           <div style="display:flex;align-items:baseline;gap:4px;">
             <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:800;color:var(--gold);" id="sc-fm-queue">0</span>
             <span style="font-size:9px;color:var(--txt3);">tokens</span>
+          
+          <!-- FM ALL EVENTS TABLE -->
+          <div style="margin-top:16px;background:rgba(212,168,71,0.04);border:1px solid rgba(212,168,71,0.12);border-radius:12px;padding:14px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+              <span style="color:var(--gold);font-size:12px;font-weight:700;">🎓 FM — All Events</span>
+              <span style="color:var(--muted);font-size:10px;">Auto refresh 30s</span>
+            </div>
+            <div id="fm-events-table">
+              <div style="color:var(--muted);text-align:center;padding:16px;font-size:12px;">Loading...</div>
+            </div>
           </div>
+</div>
         </div>
 
         <!-- ALL TIME stats -->
