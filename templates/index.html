@@ -557,12 +557,21 @@ function _checkLock(){
           
           <!-- PC ALL EVENTS TABLE -->
           <div style="margin-top:16px;background:rgba(91,159,214,0.04);border:1px solid rgba(91,159,214,0.12);border-radius:12px;padding:14px;">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px;">
               <span style="color:var(--ice);font-size:12px;font-weight:700;">⚡ PC — All Events</span>
-              <span style="color:var(--muted);font-size:10px;">Auto refresh 30s</span>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="color:var(--txt3);font-size:10px;" id="pc-events-count">Auto refresh 30s</span>
+                <select id="pc-dl-count" style="font-size:10px;background:var(--ink3);color:var(--txt1);border:1px solid rgba(91,159,214,0.3);border-radius:6px;padding:2px 4px;cursor:pointer;">
+                  <option value="100">100</option>
+                  <option value="200">200</option>
+                  <option value="500">500</option>
+                  <option value="all">All</option>
+                </select>
+                <button onclick="downloadPCEvents()" style="font-size:10px;background:rgba(91,159,214,0.12);color:var(--ice);border:1px solid rgba(91,159,214,0.3);border-radius:6px;padding:3px 8px;cursor:pointer;">⬇ CSV</button>
+              </div>
             </div>
-            <div id="pc-events-table">
-              <div style="color:var(--muted);text-align:center;padding:16px;font-size:12px;">Loading...</div>
+            <div id="pc-events-table" style="max-height:320px;overflow-y:auto;-webkit-overflow-scrolling:touch;">
+              <div style="color:var(--txt3);text-align:center;padding:16px;font-size:12px;">Loading...</div>
             </div>
           </div>
 </div>
@@ -666,12 +675,21 @@ function _checkLock(){
           
           <!-- FM ALL EVENTS TABLE -->
           <div style="margin-top:16px;background:rgba(212,168,71,0.04);border:1px solid rgba(212,168,71,0.12);border-radius:12px;padding:14px;">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px;">
               <span style="color:var(--gold);font-size:12px;font-weight:700;">🎓 FM — All Events</span>
-              <span style="color:var(--muted);font-size:10px;">Auto refresh 30s</span>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="color:var(--txt3);font-size:10px;" id="fm-events-count">Auto refresh 30s</span>
+                <select id="fm-dl-count" style="font-size:10px;background:var(--ink3);color:var(--txt1);border:1px solid rgba(212,168,71,0.3);border-radius:6px;padding:2px 4px;cursor:pointer;">
+                  <option value="100">100</option>
+                  <option value="200">200</option>
+                  <option value="500">500</option>
+                  <option value="all">All</option>
+                </select>
+                <button onclick="downloadFMEvents()" style="font-size:10px;background:rgba(212,168,71,0.12);color:var(--gold);border:1px solid rgba(212,168,71,0.3);border-radius:6px;padding:3px 8px;cursor:pointer;">⬇ CSV</button>
+              </div>
             </div>
-            <div id="fm-events-table">
-              <div style="color:var(--muted);text-align:center;padding:16px;font-size:12px;">Loading...</div>
+            <div id="fm-events-table" style="max-height:320px;overflow-y:auto;-webkit-overflow-scrolling:touch;">
+              <div style="color:var(--txt3);text-align:center;padding:16px;font-size:12px;">Loading...</div>
             </div>
           </div>
 </div>
@@ -1686,6 +1704,28 @@ function scTabPC(tab) {
     }
   });
   if (_scData) _updateScPCTab(_scData);
+  // Supabase events se tab data — persistent across sessions
+  _updatePCTabFromEvents(tab);
+}
+
+function _updatePCTabFromEvents(tab) {
+  const data = window._pcEventsData || [];
+  if (!data.length) return;
+  const now  = Date.now();
+  const ms   = tab === '24h' ? 86400000
+             : tab === '7d'  ? 604800000
+             : tab === '30d' ? 2592000000
+             : null;
+  const filtered = ms ? data.filter(e => new Date(e.detected_at).getTime() > (now - ms)) : data;
+  const disc  = filtered.length;
+  const pf    = filtered.filter(e => e.prefilter === 'PASS').length;
+  const cl    = filtered.filter(e => (e.checklist_score||0) > 0 || e.result === 'BUY').length;
+  const bought = filtered.filter(e => e.result === 'BUY').length;
+  const el = id => document.getElementById(id);
+  if (el('sc-pc-t-disc'))  el('sc-pc-t-disc').textContent  = disc;
+  if (el('sc-pc-t-pf'))    el('sc-pc-t-pf').textContent    = pf || disc;
+  if (el('sc-pc-t-snipe')) el('sc-pc-t-snipe').textContent = cl;
+  if (el('sc-pc-t-buy'))   el('sc-pc-t-buy').textContent   = bought;
 }
 
 // FM tab switch
@@ -1705,6 +1745,25 @@ function scTabFM(tab) {
     }
   });
   if (_scData) _updateScFMTab(_scData);
+  // Supabase events se tab data — persistent across sessions
+  _updateFMTabFromEvents(tab);
+}
+
+function _updateFMTabFromEvents(tab) {
+  const data = window._fmEventsData || [];
+  if (!data.length) return;
+  const now = Date.now();
+  const ms  = tab === '24h' ? 86400000
+            : tab === '7d'  ? 604800000
+            : tab === '30d' ? 2592000000
+            : null;
+  const filtered = ms ? data.filter(e => new Date(e.detected_at).getTime() > (now - ms)) : data;
+  const disc   = filtered.length;
+  const sniped = filtered.filter(e => e.result === 'BUY').length;
+  const el = id => document.getElementById(id);
+  if (el('sc-fm-t-disc'))  el('sc-fm-t-disc').textContent  = disc;
+  if (el('sc-fm-t-snipe')) el('sc-fm-t-snipe').textContent = sniped;
+  if (el('sc-fm-t-buy'))   el('sc-fm-t-buy').textContent   = sniped;
 }
 
 // Legacy compat
@@ -4163,7 +4222,7 @@ setInterval(fetchNotifications, 10000);
     }).join('');
     el.innerHTML = `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
       <table style="width:100%;border-collapse:collapse;min-width:600px;">
-        <thead>
+        <thead style="position:sticky;top:0;background:var(--ink2,#1e1e1e);z-index:1;">
           <tr style="color:var(--txt3);font-size:9px;text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,0.08);">
             <th style="padding:5px 6px;text-align:left;">Time</th>
             <th style="padding:5px 6px;text-align:left;">Token</th>
@@ -4178,6 +4237,31 @@ setInterval(fetchNotifications, 10000);
         </thead>
         <tbody>${rows}</tbody>
       </table></div>`;
+    window._fmEventsData = events;
+    _updateFMTabFromEvents(_scActiveFMTab || '24h');
+  }
+
+  function downloadFMEvents() {
+    const count = document.getElementById('fm-dl-count')?.value || '100';
+    const data  = window._fmEventsData || [];
+    const rows  = count === 'all' ? data : data.slice(0, parseInt(count));
+    if (!rows.length) { showToast && showToast('FM data nahi hai abhi'); return; }
+    const headers = ['time','token_address','liquidity_bnb','grad_price','pump_pct','snipe_price','result','skip_reason','time_ms'];
+    const csv = [headers.join(',')].concat(rows.map(e => [
+      (e.detected_at||'').slice(0,19),
+      e.token_address||'',
+      e.liquidity_bnb||0,
+      e.grad_price||0,
+      e.pump_pct||0,
+      e.snipe_price||0,
+      e.result||'',
+      (e.skip_reason||'').replace(/,/g,';'),
+      e.time_taken_ms||0
+    ].join(','))).join('\n');
+    const a = document.createElement('a');
+    a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+    a.download = 'fm_events_' + new Date().toISOString().slice(0,10) + '.csv';
+    a.click();
   }
 
   // ═══════════════════════════════════════════════
@@ -4252,13 +4336,13 @@ setInterval(fetchNotifications, 10000);
     }).join('');
     el.innerHTML = `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
       <table style="width:100%;border-collapse:collapse;min-width:560px;">
-        <thead>
+        <thead style="position:sticky;top:0;background:var(--ink2,#1e1e1e);z-index:1;">
           <tr style="color:var(--txt3);font-size:9px;text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,0.08);">
             <th style="padding:5px 6px;text-align:left;">Time</th>
             <th style="padding:5px 6px;text-align:left;">Token</th>
             <th style="padding:5px 6px;text-align:left;">Liq</th>
             <th style="padding:5px 6px;text-align:left;">Prefilter</th>
-            <th style="padding:5px 6px;text-align:left;">Checklist</th>
+            <th style="padding:5px 6px;text-align:left;">Sim</th>
             <th style="padding:5px 6px;text-align:left;">Snipe</th>
             <th style="padding:5px 6px;text-align:left;">Result</th>
             <th style="padding:5px 6px;text-align:left;">Skip Reason</th>
@@ -4267,6 +4351,32 @@ setInterval(fetchNotifications, 10000);
         </thead>
         <tbody>${rows}</tbody>
       </table></div>`;
+    window._pcEventsData = events;
+    _updatePCTabFromEvents(_scActivePCTab || '24h');
+  }
+
+  function downloadPCEvents() {
+    const count = document.getElementById('pc-dl-count')?.value || '100';
+    const data  = window._pcEventsData || [];
+    const rows  = count === 'all' ? data : data.slice(0, parseInt(count));
+    if (!rows.length) { showToast && showToast('PC data nahi hai abhi'); return; }
+    const headers = ['time','token_address','liquidity_bnb','prefilter','checklist_score','checklist_total','snipe_price','result','skip_reason','time_ms'];
+    const csv = [headers.join(',')].concat(rows.map(e => [
+      (e.detected_at||'').slice(0,19),
+      e.token_address||'',
+      e.liquidity_bnb||0,
+      e.prefilter||'',
+      e.checklist_score||0,
+      e.checklist_total||0,
+      e.snipe_price||0,
+      e.result||'',
+      (e.skip_reason||'').replace(/,/g,';'),
+      e.time_taken_ms||0
+    ].join(','))).join('\n');
+    const a = document.createElement('a');
+    a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+    a.download = 'pc_events_' + new Date().toISOString().slice(0,10) + '.csv';
+    a.click();
   }
 
   // ═══════════════════════════════════════════════
