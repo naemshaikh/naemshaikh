@@ -2338,7 +2338,7 @@ REAL_WALLET        = ""        # user wallet address
 
 # Checklist thresholds — user can edit from UI
 CHECKLIST_SETTINGS = {
-    "min_liq_bnb":       3.0,    # Stage 1: Min liquidity BNB
+    "min_liq_bnb":       2.0,    # Stage 1: Min liquidity BNB
     "min_liq_locked":   80.0,    # Stage 1: Min liquidity locked %
     "max_buy_tax":       8.0,    # Stage 1: Max buy tax %
     "max_sell_tax":      8.0,    # Stage 1: Max sell tax %
@@ -4380,6 +4380,111 @@ def _save_pc_event(token_addr, liq_bnb, prefilter, cl_score, cl_total, snipe_pri
     except Exception as e:
         print(f"⚠️ [PC] event save error: {e}")
 
+
+def _onchain_sim(token_address: str, w3_instance=None) -> dict:
+    """
+    On-chain honeypot simulation — eth_call only, no gas, no BNB
+    approve + sell simulate karo — revert = honeypot
+    Speed: ~300-500ms
+    Returns: {"safe": bool, "reason": str, "buy_tax": float, "sell_tax": float}
+    """
+    result = {"safe": False, "reason": "", "buy_tax": 0.0, "sell_tax": 0.0}
+    try:
+        _w3 = w3_instance or w3
+        token_cs  = Web3.to_checksum_address(token_address)
+        router_cs = Web3.to_checksum_address(PANCAKE_ROUTER)
+        wbnb_cs   = Web3.to_checksum_address(WBNB)
+
+        # Fake wallet for simulation
+        _SIM_WALLET = "0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF"
+        _SIM_WALLET_CS = Web3.to_checksum_address(_SIM_WALLET)
+
+        # ERC20 minimal ABI
+        _ERC20_ABI = [
+            {"name":"approve","type":"function","stateMutability":"nonpayable",
+             "inputs":[{"name":"spender","type":"address"},{"name":"amount","type":"uint256"}],
+             "outputs":[{"name":"","type":"bool"}]},
+            {"name":"balanceOf","type":"function","stateMutability":"view",
+             "inputs":[{"name":"account","type":"address"}],
+             "outputs":[{"name":"","type":"uint256"}]},
+        ]
+
+        token_contract = _w3.eth.contract(address=token_cs, abi=_ERC20_ABI)
+        router_contract = _w3.eth.contract(
+            address=router_cs,
+            abi=[{
+                "name":"swapExactTokensForETHSupportingFeeOnTransferTokens",
+                "type":"function","stateMutability":"nonpayable",
+                "inputs":[
+                    {"name":"amountIn","type":"uint256"},
+                    {"name":"amountOutMin","type":"uint256"},
+                    {"name":"path","type":"address[]"},
+                    {"name":"to","type":"address"},
+                    {"name":"deadline","type":"uint256"}
+                ],
+                "outputs":[]
+            }]
+        )
+
+        # Step 1: simulate approve (eth_call — no gas)
+        try:
+            approve_data = token_contract.encodeABI(
+                fn_name="approve",
+                args=[router_cs, 2**256 - 1]
+            )
+            _w3.eth.call({
+                "from": _SIM_WALLET_CS,
+                "to":   token_cs,
+                "data": approve_data,
+            })
+        except Exception as e:
+            result["reason"] = f"approve fail: {str(e)[:60]}"
+            return result
+
+        # Step 2: simulate balanceOf
+        try:
+            _bal = token_contract.functions.balanceOf(_SIM_WALLET_CS).call()
+        except Exception:
+            _bal = 10 ** 18  # fallback amount
+
+        if _bal <= 0:
+            _bal = 10 ** 18
+
+        # Step 3: simulate sell (eth_call)
+        try:
+            sell_data = router_contract.encodeABI(
+                fn_name="swapExactTokensForETHSupportingFeeOnTransferTokens",
+                args=[
+                    _bal,
+                    0,
+                    [token_cs, wbnb_cs],
+                    _SIM_WALLET_CS,
+                    int(time.time()) + 300
+                ]
+            )
+            _w3.eth.call({
+                "from": _SIM_WALLET_CS,
+                "to":   router_cs,
+                "data": sell_data,
+            })
+        except Exception as e:
+            err = str(e)
+            if "TRANSFER_FAILED" in err or "TransferHelper" in err:
+                result["reason"] = "sell revert: transfer failed = honeypot"
+            elif "INSUFFICIENT_OUTPUT" in err:
+                result["reason"] = "sell revert: high tax"
+            else:
+                result["reason"] = f"sell revert: {err[:60]}"
+            return result
+
+        result["safe"] = True
+        result["reason"] = "simulation passed"
+        return result
+
+    except Exception as e:
+        result["reason"] = f"sim error: {str(e)[:80]}"
+        return result
+
 def _pc_do_snipe(token_address: str, pair_address: str, liq_bnb: float):
     """
     PancakeSwap fast snipe — parallel checks
@@ -4405,99 +4510,24 @@ def _pc_do_snipe(token_address: str, pair_address: str, liq_bnb: float):
     try:
         print(f"🎯 [PC Sniper] Checking: {token_address[:10]}")
 
-        # ── Parallel checks — Honeypot + GoPlus saath mein ──
-        _hp_result  = {}
-        _gp_result  = {}
-        _hp_done    = threading.Event()
-        _gp_done    = threading.Event()
-
-        def _check_hp():
-            try:
-                _hp_result.update(_get_honeypot(token_address))
-            except Exception:
-                pass
-            finally:
-                _hp_done.set()
-
-        def _check_gp():
-            try:
-                _gp_result.update(_get_goplus(token_address))
-            except Exception:
-                pass
-            finally:
-                _gp_done.set()
-
-        threading.Thread(target=_check_hp, daemon=True).start()
-        threading.Thread(target=_check_gp, daemon=True).start()
-
-        # Max 5 sec wait for both
-        _hp_done.wait(timeout=5)
-        _gp_done.wait(timeout=5)
-
-        # ── Critical checks ──
-        # 1. Honeypot
-        if _hp_result.get("isHoneypot", False):
-            print(f"🍯 [PC Sniper] Honeypot — skip: {token_address[:10]}")
-            _pc_skip("honeypot detected")
+        # ── ON-CHAIN SIMULATION — FAST PATH (~300-500ms) ──
+        # Honeypot API + GoPlus + Checklist = dead code (file mein hai, call nahi)
+        print(f"🔬 [PC Sniper] On-chain sim: {token_address[:10]}")
+        _sim = _onchain_sim(token_address)
+        if not _sim["safe"]:
+            print(f"🚫 [PC Sniper] Sim fail — {_sim['reason']}: {token_address[:10]}")
+            _pc_skip(f"onchain sim: {_sim['reason']}")
             return
+        print(f"✅ [PC Sniper] Sim passed: {token_address[:10]}")
 
-        # 2. GoPlus critical — mint, hidden owner, blacklist
-        if _gp_result:
-            _mint    = _gp_result.get("is_mintable", "0") == "1"
-            _hidden  = (_gp_result.get("can_take_back_ownership", "0") == "1" or
-                        _gp_result.get("hidden_owner", "0") == "1")
-            _hp_gp   = _gp_result.get("is_honeypot", "0") == "1"
-            _no_sell = _gp_result.get("cannot_sell_all", "0") == "1"
-            _tax_b   = float(_gp_result.get("buy_tax",  0) or 0) * 100
-            _tax_s   = float(_gp_result.get("sell_tax", 0) or 0) * 100
-
-            if _mint:
-                print(f"🚫 [PC Sniper] Mintable — skip: {token_address[:10]}")
-                _pc_skip("mintable token")
-                return
-            if _hidden:
-                print(f"🚫 [PC Sniper] Hidden owner — skip: {token_address[:10]}")
-                _pc_skip("hidden owner")
-                return
-            if _hp_gp or _no_sell:
-                print(f"🚫 [PC Sniper] GoPlus honeypot — skip: {token_address[:10]}")
-                return
-            if _tax_b > 10 or _tax_s > 10:
-                print(f"🚫 [PC Sniper] High tax B:{_tax_b:.0f}% S:{_tax_s:.0f}% — skip: {token_address[:10]}")
-                return
-
-        # 3. Dev blacklist check
-        _creator = (_gp_result.get("creator_address") or "")
-        if _creator and is_dev_blacklisted(_creator):
-            print(f"🚫 [PC Sniper] Dev blacklisted — skip: {token_address[:10]}")
-            return
-
-        # 4. Full checklist run karo — quality ensure karo
-        try:
-            _cl_result  = run_full_sniper_checklist(token_address)
-            _cl_overall = _cl_result.get("overall", "UNKNOWN")
-            _cl_score   = _cl_result.get("score", 0)
-            _cl_total   = _cl_result.get("total", 1)
-            _cl_safe    = CHECKLIST_SETTINGS.get("score_safe", 50.0)
-            if _cl_overall != "SAFE" or _cl_score < int(_cl_total * _cl_safe / 100):
-                print(f"🚫 [PC Sniper] Checklist {_cl_overall} {_cl_score}/{_cl_total} — skip: {token_address[:10]}")
-                _pc_skip(f"checklist {_cl_overall} {_cl_score}/{_cl_total}")
-                threading.Thread(target=_save_bot_decision, args=({
-                    "token_address": token_address,
-                    "token_name":    token_address[:8],
-                    "decision":      "SKIP",
-                    "reason":        f"PC Sniper checklist {_cl_overall} {_cl_score}/{_cl_total}",
-                    "score":         _cl_score,
-                    "total":         _cl_total,
-                    "checklist":     _cl_result.get("checklist"),
-                    "discovery_source": "pancakeswap_direct",
-                },), daemon=True).start()
-                return
-            print(f"✅ [PC Sniper] Checklist SAFE {_cl_score}/{_cl_total}: {token_address[:10]}")
-        except Exception as _cle:
-            print(f"⚠️ [PC Sniper] Checklist error: {_cle} — skip")
-            _pc_skip(f"checklist error: {str(_cle)[:40]}")
-            return
+        # ━━━ DEAD CODE — file mein hai, call nahi hogi ━━━
+        # Honeypot.is API (~3-4s), GoPlus API (~3-4s), Checklist (~5-7s)
+        # Agar on-chain sim fail kare toh inhe wapas enable karo
+        if False:
+            _hp_result = {}
+            _gp_result = {}
+            _cl_score  = 0
+            _cl_total  = 0
 
         # ── Auto trade checks ──
         if not AUTO_TRADE_ENABLED:
