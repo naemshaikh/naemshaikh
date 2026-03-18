@@ -4522,7 +4522,12 @@ _FM_FACTORY_ADDRS = [
     "0x8b8cf6d0c2b5f4cb61da5e7dc94e52f4f1dd8d64",
     "0x48a31b72f77a2a90ebe24e5c4c88be43e2ad6beb",
 ]
-_FM_LIQUIDITY_TOPIC = "0x06b541ddaa720db2b10a4d462db48c35cbc20e8b9f3bded5614da596d62c1a9a"  # LiquidityAdded — graduation signal
+# Official FM graduation detection (Bitquery docs confirmed):
+# PairCreated event on PancakeSwap factory
+# + transaction.to == FM factory
+_FM_PAIR_CREATED_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"  # PancakeSwap PairCreated
+_PANCAKE_FACTORY       = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"      # PancakeSwap V2 factory
+
 _FM_WSS = [
     "wss://bsc-rpc.publicnode.com",
     "wss://bsc.drpc.org",
@@ -4816,18 +4821,26 @@ def poll_four_meme_v2():
                     raise e
 
     async def _listen_confirmed(url):
-        """FALLBACK: LiquidityAdded confirmed event"""
+        """
+        CONFIRMED FALLBACK: PairCreated on PancakeSwap factory
+        Official Bitquery docs approach:
+        - PancakeSwap factory pe PairCreated event subscribe karo
+        - tx.to == FM factory check karo (graduation tx)
+        - token0/token1 mein se WBNB nahi woh FM token hai
+        """
         async with _ws.connect(url, ping_interval=20, ping_timeout=15,
                                close_timeout=30, max_size=2**20) as ws:
             await ws.send(_j.dumps({
                 "id": 2, "jsonrpc": "2.0", "method": "eth_subscribe",
                 "params": ["logs", {
-                    "address": _FM_FACTORY_ADDRS,
-                    "topics":  [_FM_LIQUIDITY_TOPIC]
+                    "address": [_PANCAKE_FACTORY],
+                    "topics":  [_FM_PAIR_CREATED_TOPIC]
                 }]
             }))
-            await asyncio.wait_for(ws.recv(), timeout=10)
-            print(f"✅ [FM] Confirmed fallback subscribed: {url[:35]}")
+            ack = _j.loads(await asyncio.wait_for(ws.recv(), timeout=10))
+            if ack.get("error"):
+                raise Exception(f"PairCreated sub failed: {ack['error']}")
+            print(f"✅ [FM] PairCreated confirmed subscribed: {url[:35]}")
 
             while True:
                 try:
@@ -4836,17 +4849,16 @@ def poll_four_meme_v2():
                     log    = (data.get("params") or {}).get("result") or {}
                     if not log: continue
                     topics = log.get("topics", [])
-                    if len(topics) < 2: continue
+                    # PairCreated has 4 topics: sig, token0, token1, pair_index
+                    if len(topics) < 3: continue
 
-                    # Token address from indexed topic[1]
-                    token_addr = _decode_token_from_log_topic(topics)
-                    if not token_addr: continue
+                    tx_hash = log.get("transactionHash", "")
+                    if not tx_hash: continue
 
-                    print(f"🎓 [FM] Confirmed graduation: {token_addr[:10]}")
-                    # Use handle_transfer for pair fetch + queue
+                    # Async check: tx.to == FM factory?
                     threading.Thread(
-                        target=_fm_handle_transfer,
-                        args=(token_addr,),
+                        target=_fm_check_paircreated_tx,
+                        args=(tx_hash, topics),
                         daemon=True
                     ).start()
 
