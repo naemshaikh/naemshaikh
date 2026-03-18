@@ -4517,6 +4517,12 @@ def _pc_do_snipe(token_address: str, pair_address: str, liq_bnb: float):
 #   4. cur_price <= grad_price x 1.30 = BUY else SKIP
 # ══════════════════════════════════════════════════════════════
 
+# Bitquery FM Graduation Stream
+BQ_CLIENT_ID     = os.environ.get("BQ_CLIENT_ID",     "1d38b4e2-008d-43cc-8ac8-9c93d8392d13")
+BQ_CLIENT_SECRET = os.environ.get("BQ_CLIENT_SECRET", "Th21wimf3DmD718dsiWGPIzT~V")
+BQ_WSS_URL       = "wss://streaming.bitquery.io/eap"
+BQ_TOKEN_URL     = "https://oauth2.bitquery.io/oauth2/token"
+
 _FM_FACTORY_ADDRS = [
     "0x5c952063c7fc8610ffdb798152d69f0b9550762b",
     "0x8b8cf6d0c2b5f4cb61da5e7dc94e52f4f1dd8d64",
@@ -4559,6 +4565,21 @@ _FM_ROUTER_ABI = [
 _fm_sniped      = set()
 _fm_sniped_lock = threading.Lock()
 _fm_sem         = threading.Semaphore(10)  # FM graduation — buffer rakho
+
+# Mempool safety queue — no thread explosion
+_fm_mempool_queue = __import__("queue").Queue(maxsize=200)
+
+def _fm_mempool_worker():
+    while True:
+        try:
+            tx_hash = _fm_mempool_queue.get(timeout=5)
+            try: _fm_check_pending_tx(tx_hash)
+            except Exception: pass
+            _fm_mempool_queue.task_done()
+        except Exception:
+            continue
+threading.Thread(target=_fm_mempool_worker, daemon=True).start()
+threading.Thread(target=_fm_mempool_worker, daemon=True).start()
 _fm_w3          = None
 _fm_w3_lock     = threading.Lock()
 
@@ -4739,108 +4760,148 @@ def _fm_handle_transfer(token_addr):
     # Queue mein daalo — zero drop
     _fm_queue.put((token_addr, pair))
 
+def _bq_get_token():
+    """Bitquery OAuth2 — auto refresh har 23h"""
+    try:
+        import requests as _req
+        r = _req.post(
+            BQ_TOKEN_URL,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            data="grant_type=client_credentials&client_id=" + BQ_CLIENT_ID +
+                 "&client_secret=" + BQ_CLIENT_SECRET + "&scope=api",
+            timeout=10
+        )
+        d = r.json()
+        token   = d.get("access_token", "")
+        expires = d.get("expires_in", 86400)
+        if token:
+            print(f"OK [FM] Bitquery token OK (expires {expires}s)")
+        else:
+            print(f"WARN [FM] Bitquery token failed: {d}")
+        return token, int(expires)
+    except Exception as e:
+        print(f"WARN [FM] Bitquery token error: {e}")
+        return "", 3600
+
+
+_BQ_FM_QUERY = """
+subscription {
+  EVM(network: bsc, mempool: true) {
+    Events(
+      where: {
+        Log: { Signature: { Name: { in: ["PairCreated", "PoolCreated"] } } }
+        Transaction: { To: { is: "0x5c952063c7fc8610ffdb798152d69f0b9550762b" } }
+      }
+    ) {
+      Log { Signature { Name } }
+      Arguments {
+        Name
+        Value {
+          ... on EVM_ABI_Address_Value_Arg { address }
+        }
+      }
+      Transaction { Hash From }
+    }
+  }
+}
+"""
+
+
 def poll_four_meme_v2():
     """
-    FM Graduation Sniper v3 — MEMPOOL approach
-    Block confirm ka wait nahi — graduation tx mempool mein detect karo
-    Speed: ~200-300ms (vs 1.2s pehle)
-
-    Flow:
-    1. newPendingTransactions subscribe → har pending tx hash milta hai
-    2. tx.to == FM factory? → graduation tx hai
-    3. input data decode → token address extract
-    4. Seedha _fm_snipe() call → workers bypass (faster)
-
-    Fallback: LiquidityAdded confirmed event bhi sun rahe hain
+    FM Sniper v4 - Bitquery WebSocket mempool
+    - Sirf FM graduation events (no thread explosion)
+    - mempool: true = block se pehle ~200ms
+    - Auto token refresh har 23h
+    - PairCreated confirmed fallback bhi
     """
-    import asyncio, json as _j
+    import asyncio, json as _j, time as _t
     try:
         import websockets as _ws
     except ImportError:
-        print("⚠️ [FM] websockets not installed")
+        print("WARN [FM] websockets not installed")
         return
 
-    _FM_FACTORY_SET = set(a.lower() for a in _FM_FACTORY_ADDRS)
+    _bq_cache = {"token": "", "expires_at": 0}
 
-    def _decode_token_from_input(input_hex):
-        """FM factory tx input se token address decode karo"""
+    def _valid_token():
+        now = _t.time()
+        if _bq_cache["token"] and now < _bq_cache["expires_at"]:
+            return _bq_cache["token"]
+        token, expires = _bq_get_token()
+        _bq_cache["token"]      = token
+        _bq_cache["expires_at"] = now + expires - 300
+        return token
+
+    def _extract_addr(event):
         try:
-            # input data: 4 bytes selector + 32 bytes token address
-            data = input_hex.replace("0x", "")
-            if len(data) < 72: return ""
-            # Token address = first 32 byte argument = last 40 chars of first 64 data chars
-            token_addr = "0x" + data[8+24:8+64]  # skip selector(4B) + padding(12B)
-            if len(token_addr) == 42 and token_addr != "0x" + "0"*40:
-                return Web3.to_checksum_address(token_addr)
+            WBNB = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
+            for arg in event.get("Arguments", []):
+                addr = (arg.get("Value") or {}).get("address", "")
+                if addr and addr.lower() != WBNB.lower():
+                    return Web3.to_checksum_address(addr)
         except Exception:
             pass
         return ""
 
-    def _decode_token_from_log_topic(topics):
-        """LiquidityAdded log se token address — topics[1] = token (indexed)"""
-        try:
-            if len(topics) >= 2:
-                raw = topics[1]  # "0x000...token_addr"
-                return "0x" + raw[-40:]
-        except Exception:
-            pass
-        return ""
-
-    async def _listen_mempool(url):
-        """FAST: newPendingTransactions — block se pehle detect"""
-        async with _ws.connect(url, ping_interval=20, ping_timeout=15,
-                               close_timeout=30, max_size=2**20) as ws:
-            # Subscribe to pending transactions
-            await ws.send(_j.dumps({
-                "id": 1, "jsonrpc": "2.0",
-                "method": "eth_subscribe",
-                "params": ["newPendingTransactions"]
-            }))
-            ack = _j.loads(await asyncio.wait_for(ws.recv(), timeout=10))
-            if ack.get("error"):
-                raise Exception(f"Mempool sub failed: {ack['error']}")
-            print(f"✅ [FM] Mempool subscribed: {url[:35]}")
-
+    async def _listen_bq(token):
+        headers = {"Authorization": "Bearer " + token}
+        async with _ws.connect(
+            BQ_WSS_URL, additional_headers=headers,
+            ping_interval=30, ping_timeout=20,
+            close_timeout=10, max_size=2**20
+        ) as ws:
+            await ws.send(_j.dumps({"type": "connection_init", "payload": {"Authorization": "Bearer " + token}}))
+            ack = _j.loads(await asyncio.wait_for(ws.recv(), timeout=15))
+            if ack.get("type") != "connection_ack":
+                raise Exception("BQ ack failed: " + str(ack))
+            await ws.send(_j.dumps({"id": "1", "type": "start", "payload": {"query": _BQ_FM_QUERY}}))
+            print("OK [FM] Bitquery stream connected!")
             while True:
                 try:
-                    msg  = await ws.recv()
-                    data = _j.loads(msg)
-                    tx_hash = (data.get("params") or {}).get("result")
-                    if not tx_hash: continue
-
-                    # Get tx details async — non-blocking
-                    threading.Thread(
-                        target=lambda h=tx_hash: globals()['_fm_check_pending_tx'](h),
-                        daemon=True
-                    ).start()
-
+                    data   = _j.loads(await ws.recv())
+                    if data.get("type") == "ka": continue
+                    events = ((data.get("payload") or {}).get("data") or {}).get("EVM", {}).get("Events", [])
+                    for ev in events:
+                        addr = _extract_addr(ev)
+                        if not addr: continue
+                        tx = (ev.get("Transaction") or {}).get("Hash", "")
+                        print(f"GRAD [FM] Bitquery: {addr[:10]} tx={tx[:10]}")
+                        _scanner_stats["fm_discovered"] += 1
+                        _scanner_tick()
+                        _fm_queue.put((addr, ""))
                 except asyncio.TimeoutError:
                     continue
                 except Exception as e:
                     raise e
 
+    async def _loop_bq():
+        fails = 0
+        while True:
+            try:
+                token = _valid_token()
+                if not token:
+                    await asyncio.sleep(30); continue
+                await _listen_bq(token)
+                fails = 0
+            except Exception as e:
+                fails += 1
+                wait = min(5 * fails, 60)
+                print(f"WARN [FM] BQ fail #{fails}: {str(e)[:80]} retry {wait}s")
+                await asyncio.sleep(wait)
+
     async def _listen_confirmed(url):
-        """
-        CONFIRMED FALLBACK: PairCreated on PancakeSwap factory
-        Official Bitquery docs approach:
-        - PancakeSwap factory pe PairCreated event subscribe karo
-        - tx.to == FM factory check karo (graduation tx)
-        - token0/token1 mein se WBNB nahi woh FM token hai
-        """
+        """Fallback: PairCreated confirmed"""
         async with _ws.connect(url, ping_interval=20, ping_timeout=15,
                                close_timeout=30, max_size=2**20) as ws:
             await ws.send(_j.dumps({
                 "id": 2, "jsonrpc": "2.0", "method": "eth_subscribe",
-                "params": ["logs", {
-                    "address": [_PANCAKE_FACTORY],
-                    "topics":  [_FM_PAIR_CREATED_TOPIC]
-                }]
+                "params": ["logs", {"address": [_PANCAKE_FACTORY], "topics": [_FM_PAIR_CREATED_TOPIC]}]
             }))
             ack = _j.loads(await asyncio.wait_for(ws.recv(), timeout=10))
             if ack.get("error"):
-                raise Exception(f"PairCreated sub failed: {ack['error']}")
-            print(f"✅ [FM] PairCreated confirmed subscribed: {url[:35]}")
-
+                raise Exception("PairCreated sub failed: " + str(ack["error"]))
+            print(f"OK [FM] PairCreated fallback: {url[:35]}")
             while True:
                 try:
                     msg    = await ws.recv()
@@ -4848,86 +4909,49 @@ def poll_four_meme_v2():
                     log    = (data.get("params") or {}).get("result") or {}
                     if not log: continue
                     topics = log.get("topics", [])
-                    # PairCreated has 4 topics: sig, token0, token1, pair_index
                     if len(topics) < 3: continue
-
                     tx_hash = log.get("transactionHash", "")
                     if not tx_hash: continue
-
-                    # Async check: tx.to == FM factory?
                     threading.Thread(
-                        target=lambda h=tx_hash, t=topics: globals()['_fm_check_paircreated_tx'](h, t),
+                        target=lambda h=tx_hash, t=topics: _fm_check_paircreated_tx(h, t),
                         daemon=True
                     ).start()
-
                 except asyncio.TimeoutError:
                     continue
                 except Exception as e:
                     raise e
 
-    async def _loop_mempool():
-        idx = fails = 0
-        while True:
-            try:
-                url = _FM_WSS[idx % len(_FM_WSS)]
-                print(f"🔌 [FM] Mempool connecting: {url}")
-                await _listen_mempool(url)
-                fails = 0
-            except Exception as e:
-                fails += 1
-                wait = min(3 * fails, 30)
-                print(f"⚠️ [FM] Mempool fail #{fails}: {str(e)[:60]} retry {wait}s")
-                await asyncio.sleep(wait)
-            idx += 1
-
     async def _loop_confirmed():
         idx = fails = 0
         while True:
             try:
-                url = _FM_WSS[(idx + 1) % len(_FM_WSS)]  # different endpoint
+                url = _FM_WSS[idx % len(_FM_WSS)]
                 await _listen_confirmed(url)
                 fails = 0
             except Exception as e:
                 fails += 1
                 wait = min(5 * fails, 60)
-                print(f"⚠️ [FM] Confirmed fail #{fails}: {str(e)[:50]} retry {wait}s")
+                print(f"WARN [FM] Confirmed fail #{fails}: {str(e)[:50]} retry {wait}s")
                 await asyncio.sleep(wait)
             idx += 1
 
-    def _run_mempool():
+    def _run_bq():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        try: loop.run_until_complete(_loop_mempool())
-        except Exception as ex: print(f"⚠️ [FM] Mempool crashed: {ex}")
+        try: loop.run_until_complete(_loop_bq())
+        except Exception as ex: print(f"WARN [FM] BQ crashed: {ex}")
         finally: loop.close()
 
     def _run_confirmed():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try: loop.run_until_complete(_loop_confirmed())
-        except Exception as ex: print(f"⚠️ [FM] Confirmed crashed: {ex}")
+        except Exception as ex: print(f"WARN [FM] Confirmed crashed: {ex}")
         finally: loop.close()
 
-    # Thread 1: Mempool (fast ~200ms)
-    threading.Thread(target=_run_mempool, daemon=True).start()
-    # Thread 2: Confirmed fallback (safe ~1.5s)
-    threading.Thread(target=_run_confirmed, daemon=True).start()
-    print("🎓 [FM] Four.meme Sniper v3 started! Mempool + Confirmed dual mode")
-
-# REAL-TIME SWAP MONITOR — Open positions ke liye on-chain data
-# PancakeSwap Swap event sunna directly BSC WSS se
-# Har swap = buy ya sell, 100ms mein pata chal jaata hai
-# ══════════════════════════════════════════════════════════════
-
-# keccak256("Swap(address,uint256,uint256,uint256,uint256,address)")
-SWAP_TOPIC = "0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822"
-
-# _rt_swap_data + _rt_swap_lock already declared at line ~820 — DO NOT redeclare (memory leak fix)
-_swap_monitor_resubscribe = threading.Event()  # ✅ WSS resubscribe trigger
-
-# Pair → token mapping (taaki Swap event decode kar sakein)
-_pair_to_token: dict = {}   # {pair_lower: {"token": addr, "token0_is_wbnb": bool}}
-
+    threading.Thread(target=_run_bq,        daemon=True).start()
+    threading.Thread(target=_run_confirmed,  daemon=True).start()
+    print("GRAD [FM] Sniper v4 — Bitquery mempool + Confirmed fallback")
 
 def poll_new_pairs():
     import asyncio, json as _json
