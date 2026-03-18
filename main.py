@@ -4570,11 +4570,10 @@ _fm_sem         = threading.Semaphore(10)  # FM graduation — buffer rakho
 _fm_mempool_queue = __import__("queue").Queue(maxsize=200)
 
 def _fm_mempool_worker():
+    """Safety worker — ab Bitquery v4 use karta hai, queue unused"""
     while True:
         try:
-            tx_hash = _fm_mempool_queue.get(timeout=5)
-            try: _fm_check_pending_tx(tx_hash)
-            except Exception: pass
+            _fm_mempool_queue.get(timeout=5)
             _fm_mempool_queue.task_done()
         except Exception:
             continue
@@ -4742,6 +4741,36 @@ def _fm_snipe(token_addr, pair_addr):
     except Exception as e:
         print(f"⚠️ [FM] snipe error: {e}")
         with _fm_sniped_lock: _fm_sniped.discard(addr_lower)
+
+def _fm_check_pending_tx(tx_hash):
+    """Mempool worker ke liye — Bitquery v4 mein use nahi hota ab"""
+    pass  # Bitquery v4 mein directly queue pe daala jata hai
+
+
+def _fm_check_paircreated_tx(tx_hash, topics):
+    """Confirmed PairCreated + tx.to==FM factory"""
+    try:
+        w = _fm_get_w3()
+        if not w: return
+        tx = w.eth.get_transaction(tx_hash)
+        if not tx: return
+        to = (tx.get("to") or "").lower()
+        if to != "0x5c952063c7fc8610ffdb798152d69f0b9550762b":
+            return
+        WBNB_LOWER = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
+        token0 = "0x" + topics[1][-40:]
+        token1 = "0x" + topics[2][-40:]
+        if token0.lower() == WBNB_LOWER:
+            token_addr = Web3.to_checksum_address(token1)
+        else:
+            token_addr = Web3.to_checksum_address(token0)
+        print(f"GRAD [FM] PairCreated confirmed: {token_addr[:10]}")
+        _scanner_stats["fm_discovered"] += 1
+        _scanner_tick()
+        _fm_queue.put((token_addr, ""))
+    except Exception:
+        pass
+
 
 def _fm_handle_transfer(token_addr):
     addr_lower = token_addr.lower()
