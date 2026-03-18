@@ -358,6 +358,17 @@ function _checkLock(){
     </div>
   </div>
 
+  <!-- Mode Switch Bar -->
+  <div id="mode-switch-bar" style="background:var(--ink2);border:1px solid var(--line);border-radius:var(--r);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;">
+    <div>
+      <div style="font-size:11px;font-weight:800;letter-spacing:0.5px;" id="mode-switch-lbl">📄 PAPER MODE</div>
+      <div style="font-size:10px;color:var(--txt3);margin-top:2px;" id="mode-switch-sub">Bot practice trades kar raha hai</div>
+    </div>
+    <button onclick="openModeSwitchModal()" id="mode-switch-btn" style="padding:8px 16px;border-radius:20px;border:none;font-size:12px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,var(--em),#00bcd4);color:#000;">
+      Switch to Real &rarr;
+    </button>
+  </div>
+
   <!-- PNL + Logs/Notif: full width stacked -->
   <div style="display:flex;flex-direction:column;gap:10px;">
 
@@ -1758,17 +1769,18 @@ async function fetchScannerStats() {
 
 // ══ LIVE ANIMATED COUNTER SYSTEM ══
 // Jab bhi koi number change hota hai — smoothly count up hota hai
-const _liveCounters = {}; // { elId: { current, target, raf } }
+const _liveCounters = {}; // { elId: { current, target, raf, rendered } }
 
 function _animateCount(elId, newVal, color) {
   const el = document.getElementById(elId);
   if (!el) return;
 
   newVal = parseInt(newVal) || 0;
-  const state = _liveCounters[elId] || { current: newVal, target: newVal };
+  // FIX: pehli baar state nahi hota — rendered:false se track karo
+  const state = _liveCounters[elId] || { current: 0, target: 0, rendered: false };
 
-  // Agar value badi hai toh animate karo, choti ho toh seedha set karo
-  if (newVal === state.target && newVal === state.current) return;
+  // Sirf skip karo agar already render hua hai aur value same hai
+  if (state.rendered && newVal === state.target && newVal === state.current) return;
 
   // Cancel previous animation
   if (state.raf) cancelAnimationFrame(state.raf);
@@ -1814,6 +1826,7 @@ function _animateCount(elId, newVal, color) {
     }
   }
   state.raf = requestAnimationFrame(tick);
+  state.rendered = true;
   _liveCounters[elId] = state;
 }
 
