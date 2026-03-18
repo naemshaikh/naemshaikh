@@ -426,32 +426,35 @@ function _checkLock(){
       <div class="bal-sub" id="b-wr" style="display:none;"></div>
     </div>
 
-    <!-- RIGHT: Live Notifications Box -->
-    <div style="background:var(--ink2);border-radius:14px;border:1px solid rgba(0,0,0,0.06);box-shadow:0 1px 4px rgba(0,0,0,0.05);display:flex;flex-direction:column;overflow:hidden;">
-      <!-- Header -->
-      <div style="padding:10px 12px 6px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
-        <div style="font-size:10px;font-weight:700;color:var(--txt3);letter-spacing:0.5px;">🔔 LIVE</div>
-        <div id="inline-notif-count" style="font-size:9px;color:var(--txt3);font-family:'JetBrains Mono',monospace;"></div>
+    <!-- RIGHT: Logs + Notifications Tabs -->
+    <div style="background:var(--ink2);border-radius:14px;border:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden;min-height:200px;">
+      <!-- Tab Header -->
+      <div style="display:flex;border-bottom:1px solid var(--line);flex-shrink:0;">
+        <button id="tab-logs-btn" onclick="switchLiveTab('logs')" style="flex:1;padding:8px 4px;font-size:10px;font-weight:800;border:none;background:var(--em-dim);color:var(--em);cursor:pointer;font-family:'Outfit',sans-serif;border-bottom:2px solid var(--em);letter-spacing:0.3px;">📡 LOGS</button>
+        <button id="tab-notif-btn" onclick="switchLiveTab('notif')" style="flex:1;padding:8px 4px;font-size:10px;font-weight:800;border:none;background:transparent;color:var(--txt3);cursor:pointer;font-family:'Outfit',sans-serif;border-bottom:2px solid transparent;letter-spacing:0.3px;display:flex;align-items:center;justify-content:center;gap:4px;">
+          🔔 NOTIF <span id="inline-notif-count" style="background:var(--red);color:#fff;font-size:8px;font-weight:800;padding:1px 5px;border-radius:8px;display:none;">0</span>
+        </button>
       </div>
-      <!-- Notifications List -->
-      <div id="inline-notif-list" style="flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:4px 0;max-height:180px;">
-        <div style="text-align:center;padding:20px 8px;color:var(--txt3);font-size:10px;">No alerts yet</div>
+
+      <!-- Logs Tab -->
+      <div id="tab-logs-content" style="flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;max-height:200px;">
+        <div id="inline-log-list" style="padding:4px 0;">
+          <div style="text-align:center;padding:20px 8px;color:var(--txt3);font-size:10px;">Loading logs...</div>
+        </div>
+      </div>
+
+      <!-- Notifications Tab -->
+      <div id="tab-notif-content" style="flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;max-height:200px;display:none;">
+        <div id="inline-notif-list" style="padding:4px 0;">
+          <div style="text-align:center;padding:20px 8px;color:var(--txt3);font-size:10px;">No alerts yet</div>
+        </div>
       </div>
     </div>
 
   </div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 12px 0;">
-
-    <!-- LEFT: Trade Stats (2x2) -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-      <div class="sg-item"><div class="sg-val" id="sg-scan" style="color:var(--em)">—</div><div class="sg-lbl">Scanned</div></div>
-      <div class="sg-item"><div class="sg-val" id="sg-watch" style="color:var(--ice)">—</div><div class="sg-lbl">Watching</div></div>
-      <div class="sg-item"><div class="sg-val" id="sg-wins" style="color:var(--em)">—</div><div class="sg-lbl">Profit</div></div>
-      <div class="sg-item"><div class="sg-val" id="sg-losses" style="color:var(--red)">—</div><div class="sg-lbl">Loss</div></div>
-    </div>
-
-    <!-- RIGHT: RAM Usage — detailed -->
+  <!-- Memory Usage -->
+  <div style="padding:0 12px 0;">
     <div style="background:var(--ink2);border:1px solid var(--line);border-radius:var(--r2);padding:10px 10px;display:flex;flex-direction:column;gap:7px;">
       <div style="font-size:9px;color:var(--txt3);font-weight:800;letter-spacing:0.5px;">💾 MEMORY USAGE</div>
 
@@ -520,144 +523,212 @@ function _checkLock(){
         </div>
       </div>
     </div>
-
   </div>
 
+
+  <!-- ── ACTIVE ERROR BOX ── -->
+  <div id="active-error-box" style="display:none;padding:0 12px 6px;">
+    <div style="background:rgba(224,107,107,0.08);border:1.5px solid rgba(224,107,107,0.4);border-radius:var(--r);overflow:hidden;">
+      <!-- Header -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-bottom:1px solid rgba(224,107,107,0.2);background:rgba(224,107,107,0.06);">
+        <div style="display:flex;align-items:center;gap:7px;">
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--red);box-shadow:0 0 8px var(--red);animation:blink 1.2s infinite;"></div>
+          <span style="font-size:10px;font-weight:800;color:var(--red);letter-spacing:0.8px;text-transform:uppercase;">Active Errors</span>
+          <span id="err-count-badge" style="background:rgba(224,107,107,0.2);color:var(--red);font-size:9px;font-weight:800;padding:1px 7px;border-radius:10px;font-family:'JetBrains Mono',monospace;">0</span>
+        </div>
+        <span style="font-size:8px;color:var(--txt3);font-family:'JetBrains Mono',monospace;">auto-clears when resolved</span>
+      </div>
+      <!-- Error list -->
+      <div id="active-error-list" style="max-height:180px;overflow-y:auto;-webkit-overflow-scrolling:touch;"></div>
+    </div>
+  </div>
 
   <!-- ── SCANNER STATS PANEL ── -->
   <div class="sep" style="margin-top:4px;">📡 Scanner Intelligence</div>
-  <div style="padding:0 12px 4px;">
-    <div style="background:var(--ink2);border:1px solid var(--line);border-radius:var(--r);padding:12px;display:flex;flex-direction:column;gap:10px;">
 
-      <!-- Header row -->
-      <div style="display:flex;align-items:center;justify-content:space-between;">
-        <div style="display:flex;align-items:center;gap:6px;">
-          <span style="font-size:11px;font-weight:800;color:var(--txt1);letter-spacing:0.5px;">LIVE SCANNER</span>
-          <div id="scanner-dot" style="width:7px;height:7px;border-radius:50%;background:var(--em);box-shadow:0 0 8px var(--em);animation:blink 2s infinite;"></div>
-        </div>
-        <span style="font-size:9px;color:var(--txt3);" id="scanner-updated">—</span>
-      </div>
-
-      <!-- Queue status -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-        <div style="background:var(--ink3);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:3px;">
-          <div style="font-size:8px;color:var(--txt3);font-weight:700;letter-spacing:0.5px;">🥞 PC QUEUE</div>
-          <div style="display:flex;align-items:baseline;gap:4px;">
-            <span style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:800;color:var(--ice);" id="sc-pc-queue">0</span>
-            <span style="font-size:8px;color:var(--txt3);">waiting</span>
-          </div>
-        </div>
-        <div style="background:var(--ink3);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:3px;">
-          <div style="font-size:8px;color:var(--txt3);font-weight:700;letter-spacing:0.5px;">🎓 FM QUEUE</div>
-          <div style="display:flex;align-items:baseline;gap:4px;">
-            <span style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:800;color:var(--gold);" id="sc-fm-queue">0</span>
-            <span style="font-size:8px;color:var(--txt3);">waiting</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Funnel — PC -->
-      <div style="background:var(--ink3);border-radius:8px;padding:10px;">
-        <div style="font-size:9px;font-weight:800;color:var(--ice);letter-spacing:0.5px;margin-bottom:8px;">🥞 PANCAKESWAP FUNNEL</div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;text-align:center;">
-          <div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--txt1);" id="sc-pc-disc">0</div>
-            <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Discovered</div>
-          </div>
-          <div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--em);" id="sc-pc-pf">0</div>
-            <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Pre-filter ✓</div>
-          </div>
-          <div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--em);" id="sc-pc-cl">0</div>
-            <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Checklist ✓</div>
-          </div>
-          <div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--gold);" id="sc-pc-buy">0</div>
-            <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Bought 🟢</div>
-          </div>
-        </div>
-        <!-- Progress bar -->
-        <div style="margin-top:8px;height:3px;background:var(--ink2);border-radius:4px;overflow:hidden;">
-          <div id="sc-pc-bar" style="height:100%;background:linear-gradient(90deg,var(--ice),var(--em));border-radius:4px;width:0%;transition:width 1s;"></div>
-        </div>
-        <div style="display:flex;justify-content:space-between;margin-top:3px;">
-          <span style="font-size:8px;color:var(--txt3);">Pass rate</span>
-          <span style="font-size:8px;font-weight:700;color:var(--em);" id="sc-pc-rate">0%</span>
-        </div>
-      </div>
-
-      <!-- FM row -->
-      <div style="background:var(--ink3);border-radius:8px;padding:10px;">
-        <div style="font-size:9px;font-weight:800;color:var(--gold);letter-spacing:0.5px;margin-bottom:8px;">🎓 FOURMEME SNIPER</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;text-align:center;">
-          <div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--txt1);" id="sc-fm-disc">0</div>
-            <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Graduated</div>
-          </div>
-          <div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--gold);" id="sc-fm-buy">0</div>
-            <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Sniped 🎯</div>
-          </div>
-          <div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:var(--em);" id="sc-fm-rate">0%</div>
-            <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Snipe rate</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Per min / hour / day tabs -->
-      <div>
-        <div style="display:flex;gap:4px;margin-bottom:6px;">
-          <button onclick="scTab('min')" id="sc-tab-min" style="flex:1;padding:4px;border-radius:6px;border:1px solid var(--em);background:var(--em-dim);color:var(--em);font-size:9px;font-weight:700;cursor:pointer;">PER MIN</button>
-          <button onclick="scTab('hour')" id="sc-tab-hour" style="flex:1;padding:4px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--txt3);font-size:9px;font-weight:700;cursor:pointer;">PER HOUR</button>
-          <button onclick="scTab('day')" id="sc-tab-day" style="flex:1;padding:4px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--txt3);font-size:9px;font-weight:700;cursor:pointer;">TODAY</button>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4px;text-align:center;" id="sc-tab-content">
-          <div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;color:var(--ice);" id="sc-t-pc-disc">0</div>
-            <div style="font-size:7px;color:var(--txt3);">PC Found</div>
-          </div>
-          <div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;color:var(--gold);" id="sc-t-fm-disc">0</div>
-            <div style="font-size:7px;color:var(--txt3);">FM Found</div>
-          </div>
-          <div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;color:var(--em);" id="sc-t-pc-buy">0</div>
-            <div style="font-size:7px;color:var(--txt3);">PC Bought</div>
-          </div>
-          <div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;color:var(--em);" id="sc-t-fm-buy">0</div>
-            <div style="font-size:7px;color:var(--txt3);">FM Bought</div>
-          </div>
-        </div>
-      </div>
-
-    </div>
-  </div>
-
-  <!-- ── BOT ACTIVITY PANEL ── -->
-  <div class="sep" style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;padding-right:14px;">
-    <span>📡 Bot Activity</span>
-    <div style="display:flex;align-items:center;gap:6px;">
-      <div id="act-dot" style="width:8px;height:8px;border-radius:50%;background:#555;"></div>
-      <span id="act-status" style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--txt3);">connecting...</span>
-    </div>
-  </div>
+  <!-- ══ PANCAKESWAP CARD ══ -->
   <div style="padding:0 12px 10px;">
-    <!-- Last action ticker -->
-    <div style="background:var(--ink2);border:1px solid var(--line2);border-radius:12px 12px 0 0;padding:10px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line2);">
-      <div style="font-size:16px;" id="act-icon">⏳</div>
-      <div style="flex:1;min-width:0;">
-        <div id="act-last" style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--txt1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Waiting for activity...</div>
-        <div id="act-last-time" style="font-size:9px;color:var(--txt3);margin-top:2px;">—</div>
+    <div style="background:var(--ink2);border:1px solid rgba(91,159,214,0.3);border-radius:var(--r);overflow:hidden;">
+      <!-- PC Header -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--line);background:rgba(91,159,214,0.05);">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:15px;">🥞</span>
+          <div>
+            <div style="font-size:11px;font-weight:800;color:var(--ice);letter-spacing:0.5px;">PANCAKESWAP</div>
+            <div style="font-size:9px;color:var(--txt3);">BSC New Pair Sniper</div>
+          </div>
+          <!-- Running status -->
+          <div id="pc-status-badge" style="display:flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;background:var(--em-dim);border:1px solid rgba(52,201,146,0.3);">
+            <div id="pc-status-dot" style="width:6px;height:6px;border-radius:50%;background:var(--em);box-shadow:0 0 6px var(--em);animation:blink 2s infinite;"></div>
+            <span id="pc-status-lbl" style="font-size:8px;font-weight:800;color:var(--em);">RUNNING</span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:8px;color:var(--txt3);" id="pc-updated">—</span>
+          <button onclick="refreshPC()" id="pc-refresh-btn" style="display:flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;border:1px solid rgba(91,159,214,0.35);background:rgba(91,159,214,0.08);color:var(--ice);font-size:10px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;transition:all 0.15s;" ontouchstart="this.style.opacity='0.7'" ontouchend="this.style.opacity='1'">
+            <span id="pc-refresh-icon">🔄</span> Refresh
+          </button>
+        </div>
+      </div>
+
+      <!-- PC Queue + Funnel -->
+      <div style="padding:10px 12px;display:flex;flex-direction:column;gap:10px;">
+        <!-- Queue -->
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--ink3);border-radius:8px;padding:8px 12px;">
+          <span style="font-size:9px;color:var(--txt3);font-weight:700;">QUEUE WAITING</span>
+          <div style="display:flex;align-items:baseline;gap:4px;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:800;color:var(--ice);" id="sc-pc-queue">0</span>
+            <span style="font-size:9px;color:var(--txt3);">tokens</span>
+          </div>
+        </div>
+
+        <!-- Funnel stats -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center;">
+          <div style="background:var(--ink3);border-radius:8px;padding:8px 4px;">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:800;color:var(--txt1);" id="sc-pc-disc">0</div>
+            <div style="font-size:7px;color:var(--txt3);margin-top:2px;line-height:1.3;">New<br>Discovered</div>
+          </div>
+          <div style="background:var(--ink3);border-radius:8px;padding:8px 4px;">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:800;color:var(--ice);" id="sc-pc-pf">0</div>
+            <div style="font-size:7px;color:var(--txt3);margin-top:2px;line-height:1.3;">Pre-filter<br>Passed ✓</div>
+          </div>
+          <div style="background:var(--ink3);border-radius:8px;padding:8px 4px;">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:800;color:var(--em);" id="sc-pc-cl">0</div>
+            <div style="font-size:7px;color:var(--txt3);margin-top:2px;line-height:1.3;">Checklist<br>Passed ✓</div>
+          </div>
+          <div style="background:var(--ink3);border-radius:8px;padding:8px 4px;border:1px solid rgba(212,168,71,0.2);">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:800;color:var(--gold);" id="sc-pc-buy">0</div>
+            <div style="font-size:7px;color:var(--txt3);margin-top:2px;line-height:1.3;">Bought<br>🟢</div>
+          </div>
+        </div>
+
+        <!-- Progress bar -->
+        <div>
+          <div style="height:4px;background:var(--ink3);border-radius:4px;overflow:hidden;">
+            <div id="sc-pc-bar" style="height:100%;background:linear-gradient(90deg,var(--ice),var(--em));border-radius:4px;width:0%;transition:width 1s;"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:3px;">
+            <span style="font-size:8px;color:var(--txt3);">Buy pass rate (Disc → Bought)</span>
+            <span style="font-size:8px;font-weight:700;color:var(--em);" id="sc-pc-rate">0%</span>
+          </div>
+        </div>
+
+        <!-- PC Tabs: Per Min / Per Hour / Today -->
+        <div style="background:var(--ink3);border-radius:8px;padding:8px 10px;">
+          <div style="display:flex;gap:4px;margin-bottom:8px;">
+            <button onclick="scTabPC('min')" id="sc-pc-tab-min" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--ice);background:rgba(91,159,214,0.12);color:var(--ice);font-size:9px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">PER MIN</button>
+            <button onclick="scTabPC('hour')" id="sc-pc-tab-hour" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--txt3);font-size:9px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">PER HOUR</button>
+            <button onclick="scTabPC('day')" id="sc-pc-tab-day" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--txt3);font-size:9px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">TODAY</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;text-align:center;">
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:800;color:var(--txt1);" id="sc-pc-t-disc">0</div>
+              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">New Tokens<br>Discovered</div>
+            </div>
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:800;color:var(--em);" id="sc-pc-t-snipe">0</div>
+              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Sniped<br>🎯</div>
+            </div>
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:800;color:var(--gold);" id="sc-pc-t-buy">0</div>
+              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Bought<br>💰</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
-    <!-- Feed -->
-    <div id="act-feed" style="background:var(--ink2);border:1px solid var(--line2);border-top:none;border-radius:0 0 12px 12px;overflow:hidden;max-height:240px;overflow-y:auto;-webkit-overflow-scrolling:touch;">
-      <div style="padding:20px;text-align:center;color:var(--txt3);font-size:11px;">Loading activity...</div>
+  </div>
+
+  <!-- ══ FOURMEME CARD ══ -->
+  <div style="padding:0 12px 10px;">
+    <div style="background:var(--ink2);border:1px solid rgba(212,168,71,0.3);border-radius:var(--r);overflow:hidden;">
+      <!-- FM Header -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--line);background:rgba(212,168,71,0.05);">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:15px;">🎓</span>
+          <div>
+            <div style="font-size:11px;font-weight:800;color:var(--gold);letter-spacing:0.5px;">FOURMEME</div>
+            <div style="font-size:9px;color:var(--txt3);">Graduated Token Sniper</div>
+          </div>
+          <!-- Running status -->
+          <div id="fm-status-badge" style="display:flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;background:var(--em-dim);border:1px solid rgba(52,201,146,0.3);">
+            <div id="fm-status-dot" style="width:6px;height:6px;border-radius:50%;background:var(--em);box-shadow:0 0 6px var(--em);animation:blink 2s infinite;"></div>
+            <span id="fm-status-lbl" style="font-size:8px;font-weight:800;color:var(--em);">RUNNING</span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:8px;color:var(--txt3);" id="fm-updated">—</span>
+          <button onclick="refreshFM()" id="fm-refresh-btn" style="display:flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;border:1px solid rgba(212,168,71,0.35);background:rgba(212,168,71,0.08);color:var(--gold);font-size:10px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;transition:all 0.15s;" ontouchstart="this.style.opacity='0.7'" ontouchend="this.style.opacity='1'">
+            <span id="fm-refresh-icon">🔄</span> Refresh
+          </button>
+        </div>
+      </div>
+
+      <!-- FM Queue + Stats -->
+      <div style="padding:10px 12px;display:flex;flex-direction:column;gap:10px;">
+        <!-- Queue -->
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--ink3);border-radius:8px;padding:8px 12px;">
+          <span style="font-size:9px;color:var(--txt3);font-weight:700;">QUEUE WAITING</span>
+          <div style="display:flex;align-items:baseline;gap:4px;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:800;color:var(--gold);" id="sc-fm-queue">0</span>
+            <span style="font-size:9px;color:var(--txt3);">tokens</span>
+          </div>
+        </div>
+
+        <!-- FM funnel stats -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;text-align:center;">
+          <div style="background:var(--ink3);border-radius:8px;padding:8px 4px;">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:800;color:var(--txt1);" id="sc-fm-disc">0</div>
+            <div style="font-size:7px;color:var(--txt3);margin-top:2px;line-height:1.3;">Graduated<br>Detected</div>
+          </div>
+          <div style="background:var(--ink3);border-radius:8px;padding:8px 4px;border:1px solid rgba(212,168,71,0.2);">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:800;color:var(--gold);" id="sc-fm-buy">0</div>
+            <div style="font-size:7px;color:var(--txt3);margin-top:2px;line-height:1.3;">Sniped<br>🎯</div>
+          </div>
+          <div style="background:var(--ink3);border-radius:8px;padding:8px 4px;">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:800;color:var(--em);" id="sc-fm-rate">0%</div>
+            <div style="font-size:7px;color:var(--txt3);margin-top:2px;line-height:1.3;">Snipe<br>Rate</div>
+          </div>
+        </div>
+
+        <!-- FM progress bar -->
+        <div>
+          <div style="height:4px;background:var(--ink3);border-radius:4px;overflow:hidden;">
+            <div id="sc-fm-bar" style="height:100%;background:linear-gradient(90deg,var(--gold),var(--em));border-radius:4px;width:0%;transition:width 1s;"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:3px;">
+            <span style="font-size:8px;color:var(--txt3);">Snipe success rate</span>
+            <span style="font-size:8px;font-weight:700;color:var(--gold);" id="sc-fm-rate2">0%</span>
+          </div>
+        </div>
+
+        <!-- FM Tabs: Per Min / Per Hour / Today -->
+        <div style="background:var(--ink3);border-radius:8px;padding:8px 10px;">
+          <div style="display:flex;gap:4px;margin-bottom:8px;">
+            <button onclick="scTabFM('min')" id="sc-fm-tab-min" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--gold);background:rgba(212,168,71,0.12);color:var(--gold);font-size:9px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">PER MIN</button>
+            <button onclick="scTabFM('hour')" id="sc-fm-tab-hour" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--txt3);font-size:9px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">PER HOUR</button>
+            <button onclick="scTabFM('day')" id="sc-fm-tab-day" style="flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--txt3);font-size:9px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;">TODAY</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;text-align:center;">
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:800;color:var(--txt1);" id="sc-fm-t-disc">0</div>
+              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Graduated<br>Detected</div>
+            </div>
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:800;color:var(--em);" id="sc-fm-t-snipe">0</div>
+              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Sniped<br>🎯</div>
+            </div>
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:800;color:var(--gold);" id="sc-fm-t-buy">0</div>
+              <div style="font-size:7px;color:var(--txt3);margin-top:1px;">Bought<br>💰</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
+
+  <!-- Bot Activity removed -->
 
   <!-- Intelligence Panel -->
   <div class="sep" style="margin-top:10px;">🧠 Bot Intelligence</div>
@@ -1451,7 +1522,7 @@ async function init(){
 
 init();
 // loadSettings called via setInterval
-setInterval(fetchStats,8000);
+setInterval(fetchStats,4000);  // LIVE — har 4s
 setInterval(fetchHistory,30000);
 
 // RAM stats — every 10 seconds
@@ -1537,41 +1608,150 @@ async function fetchRamStats(){
   } catch(e){}
 }
 fetchRamStats();
-setInterval(fetchRamStats, 10000);
+setInterval(fetchRamStats, 5000);   // LIVE — har 5s
 setInterval(loadSettings,30000);
-setInterval(fetchActivity, 5000);
+setInterval(fetchActivity, 3000);   // LIVE — har 3s
 fetchActivity();
 
 
 // ── SCANNER STATS ────────────────────────────────────────
 let _scData = null;
-let _scActiveTab = 'min';
+let _scActivePCTab = 'min';
+let _scActiveFMTab = 'min';
 
-function scTab(tab) {
-  _scActiveTab = tab;
+// ── PC Tab Switch
+function scTabPC(tab) {
+  _scActivePCTab = tab;
   ['min','hour','day'].forEach(t => {
-    const btn = document.getElementById('sc-tab-' + t);
+    const btn = document.getElementById('sc-pc-tab-' + t);
     if (!btn) return;
     if (t === tab) {
-      btn.style.background = 'var(--em-dim)';
-      btn.style.borderColor = 'var(--em)';
-      btn.style.color = 'var(--em)';
+      btn.style.background = 'rgba(91,159,214,0.12)';
+      btn.style.borderColor = 'var(--ice)';
+      btn.style.color = 'var(--ice)';
     } else {
       btn.style.background = 'transparent';
       btn.style.borderColor = 'var(--line)';
       btn.style.color = 'var(--txt3)';
     }
   });
-  if (_scData) _updateScTab(_scData);
+  if (_scData) _updateScPCTab(_scData);
 }
 
-function _updateScTab(d) {
-  const t = _scActiveTab;
+// ── FM Tab Switch
+function scTabFM(tab) {
+  _scActiveFMTab = tab;
+  ['min','hour','day'].forEach(t => {
+    const btn = document.getElementById('sc-fm-tab-' + t);
+    if (!btn) return;
+    if (t === tab) {
+      btn.style.background = 'rgba(212,168,71,0.12)';
+      btn.style.borderColor = 'var(--gold)';
+      btn.style.color = 'var(--gold)';
+    } else {
+      btn.style.background = 'transparent';
+      btn.style.borderColor = 'var(--line)';
+      btn.style.color = 'var(--txt3)';
+    }
+  });
+  if (_scData) _updateScFMTab(_scData);
+}
+
+// ── Legacy scTab (backward compat)
+function scTab(tab) { scTabPC(tab); scTabFM(tab); }
+
+function _updateScPCTab(d) {
+  const t = _scActivePCTab;
   const src = t === 'min' ? d.per_min : t === 'hour' ? d.per_hour : d.per_day;
-  document.getElementById('sc-t-pc-disc').textContent = src.pc_disc || 0;
-  document.getElementById('sc-t-fm-disc').textContent = src.fm_disc || 0;
-  document.getElementById('sc-t-pc-buy').textContent  = src.pc_buy  || 0;
-  document.getElementById('sc-t-fm-buy').textContent  = src.fm_buy  || 0;
+  if(!src) return;
+  _animateCount('sc-pc-t-disc',  src.pc_disc || 0,                    'var(--txt1)');
+  _animateCount('sc-pc-t-snipe', src.pc_snipe || src.pc_buy || 0,     'var(--em)');
+  _animateCount('sc-pc-t-buy',   src.pc_buy  || 0,                    'var(--gold)');
+  // Legacy IDs
+  _animateCount('sc-t-pc-disc',  src.pc_disc || 0, 'var(--ice)');
+  _animateCount('sc-t-pc-buy',   src.pc_buy  || 0, 'var(--em)');
+}
+
+function _updateScFMTab(d) {
+  const t = _scActiveFMTab;
+  const src = t === 'min' ? d.per_min : t === 'hour' ? d.per_hour : d.per_day;
+  if(!src) return;
+  _animateCount('sc-fm-t-disc',  src.fm_disc || 0,                    'var(--txt1)');
+  _animateCount('sc-fm-t-snipe', src.fm_snipe || src.fm_buy || 0,     'var(--em)');
+  _animateCount('sc-fm-t-buy',   src.fm_buy  || 0,                    'var(--gold)');
+  // Legacy IDs
+  _animateCount('sc-t-fm-disc',  src.fm_disc || 0, 'var(--gold)');
+  _animateCount('sc-t-fm-buy',   src.fm_buy  || 0, 'var(--em)');
+}
+
+// ── Spinner helper for refresh buttons
+function _refreshSpinner(btnId, iconId, color) {
+  const btn = document.getElementById(btnId);
+  const icon = document.getElementById(iconId);
+  if(btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+  if(icon) icon.textContent = '⏳';
+  return function done() {
+    if(btn) { btn.disabled = false; btn.style.opacity = '1'; }
+    if(icon) icon.textContent = '🔄';
+  };
+}
+
+// ── PC Refresh Button
+async function refreshPC() {
+  const done = _refreshSpinner('pc-refresh-btn', 'pc-refresh-icon');
+  await fetchScannerStats();
+  done();
+  const upd = document.getElementById('pc-updated');
+  if(upd) upd.textContent = 'updated ' + new Date().toLocaleTimeString();
+}
+
+// ── FM Refresh Button
+async function refreshFM() {
+  const done = _refreshSpinner('fm-refresh-btn', 'fm-refresh-icon');
+  await fetchScannerStats();
+  done();
+  const upd = document.getElementById('fm-updated');
+  if(upd) upd.textContent = 'updated ' + new Date().toLocaleTimeString();
+}
+
+// ── Update sniper running status badges
+function _updateSniperStatus(d) {
+  // PC status
+  const pcRunning = d.pc && (d.pc.running !== false);
+  const pcDot = document.getElementById('pc-status-dot');
+  const pcLbl = document.getElementById('pc-status-lbl');
+  const pcBadge = document.getElementById('pc-status-badge');
+  if(pcDot && pcLbl && pcBadge) {
+    if(pcRunning) {
+      pcDot.style.background = 'var(--em)'; pcDot.style.boxShadow = '0 0 6px var(--em)';
+      pcDot.style.animation = 'blink 2s infinite';
+      pcLbl.textContent = 'RUNNING'; pcLbl.style.color = 'var(--em)';
+      pcBadge.style.background = 'var(--em-dim)'; pcBadge.style.borderColor = 'rgba(52,201,146,0.3)';
+    } else {
+      pcDot.style.background = 'var(--red)'; pcDot.style.boxShadow = '0 0 6px var(--red)';
+      pcDot.style.animation = 'none';
+      pcLbl.textContent = 'STOPPED'; pcLbl.style.color = 'var(--red)';
+      pcBadge.style.background = 'var(--red-dim)'; pcBadge.style.borderColor = 'rgba(224,107,107,0.3)';
+    }
+  }
+  // FM status
+  const fmRunning = d.fm && (d.fm.running !== false);
+  const fmDot = document.getElementById('fm-status-dot');
+  const fmLbl = document.getElementById('fm-status-lbl');
+  const fmBadge = document.getElementById('fm-status-badge');
+  if(fmDot && fmLbl && fmBadge) {
+    if(fmRunning) {
+      fmDot.style.background = 'var(--em)'; fmDot.style.boxShadow = '0 0 6px var(--em)';
+      fmDot.style.animation = 'blink 2s infinite';
+      fmLbl.textContent = 'RUNNING'; fmLbl.style.color = 'var(--em)';
+      fmBadge.style.background = 'var(--em-dim)'; fmBadge.style.borderColor = 'rgba(52,201,146,0.3)';
+    } else {
+      fmDot.style.background = 'var(--red)'; fmDot.style.boxShadow = '0 0 6px var(--red)';
+      fmDot.style.animation = 'none';
+      fmLbl.textContent = 'STOPPED'; fmLbl.style.color = 'var(--red)';
+      fmBadge.style.background = 'var(--red-dim)'; fmBadge.style.borderColor = 'rgba(224,107,107,0.3)';
+    }
+  }
 }
 
 async function fetchScannerStats() {
@@ -1579,44 +1759,266 @@ async function fetchScannerStats() {
     const d = await fetchJSON('/scanner-stats', {}, 5000);
     if (!d) return;
     _scData = d;
+    _lastScannerFetch = Date.now();
 
-    // Queue
-    document.getElementById('sc-pc-queue').textContent = d.pc.queue || 0;
-    document.getElementById('sc-fm-queue').textContent = d.fm.queue || 0;
+    // ── PC Queue & Funnel — animated
+    _animateCount('sc-pc-queue', d.pc.queue,           'var(--ice)');
+    _animateCount('sc-pc-disc',  d.pc.discovered,      'var(--txt1)');
+    _animateCount('sc-pc-pf',    d.pc.prefilter_pass,  'var(--ice)');
+    _animateCount('sc-pc-cl',    d.pc.checklist_pass,  'var(--em)');
+    _animateCount('sc-pc-buy',   d.pc.bought,          'var(--gold)');
 
-    // PC funnel
-    document.getElementById('sc-pc-disc').textContent = d.pc.discovered || 0;
-    document.getElementById('sc-pc-pf').textContent   = d.pc.prefilter_pass || 0;
-    document.getElementById('sc-pc-cl').textContent   = d.pc.checklist_pass || 0;
-    document.getElementById('sc-pc-buy').textContent  = d.pc.bought || 0;
-
-    // Pass rate bar
+    // PC Pass rate bar
     const rate = d.pc.discovered > 0 ? Math.round(d.pc.bought / d.pc.discovered * 100) : 0;
-    document.getElementById('sc-pc-rate').textContent = rate + '%';
-    document.getElementById('sc-pc-bar').style.width  = Math.min(rate * 3, 100) + '%';
+    const pcRateEl = document.getElementById('sc-pc-rate');
+    if(pcRateEl) pcRateEl.textContent = rate + '%';
+    const pcBarEl = document.getElementById('sc-pc-bar');
+    if(pcBarEl) pcBarEl.style.width = Math.min(rate * 3, 100) + '%';
 
-    // FM
-    document.getElementById('sc-fm-disc').textContent = d.fm.discovered || 0;
-    document.getElementById('sc-fm-buy').textContent  = d.fm.bought || 0;
+    // ── FM Queue & Funnel — animated
+    _animateCount('sc-fm-queue', d.fm.queue,      'var(--gold)');
+    _animateCount('sc-fm-disc',  d.fm.discovered, 'var(--txt1)');
+    _animateCount('sc-fm-buy',   d.fm.bought,     'var(--gold)');
+
     const fmRate = d.fm.discovered > 0 ? Math.round(d.fm.bought / d.fm.discovered * 100) : 0;
-    document.getElementById('sc-fm-rate').textContent = fmRate + '%';
+    const fmRateEl  = document.getElementById('sc-fm-rate');
+    const fmRate2El = document.getElementById('sc-fm-rate2');
+    if(fmRateEl)  fmRateEl.textContent  = fmRate + '%';
+    if(fmRate2El) fmRate2El.textContent = fmRate + '%';
+    const fmBarEl = document.getElementById('sc-fm-bar');
+    if(fmBarEl) fmBarEl.style.width = Math.min(fmRate * 3, 100) + '%';
 
-    // Tab data
-    _updateScTab(d);
+    // ── Tab data — animated
+    _updateScPCTab(d);
+    _updateScFMTab(d);
 
-    // Updated time
-    const now = new Date();
-    document.getElementById('sc-pc-queue').parentElement.parentElement.parentElement;
-    document.getElementById('scanner-updated').textContent = 'updated ' + now.toLocaleTimeString();
+    // ── Sniper running status
+    _updateSniperStatus(d);
 
   } catch(e) {}
 }
 
-// Start scanner polling
-fetchScannerStats();
-setInterval(fetchScannerStats, 15000);  // har 15s refresh
+// ══ LIVE ANIMATED COUNTER SYSTEM ══
+// Jab bhi koi number change hota hai — smoothly count up hota hai
+const _liveCounters = {}; // { elId: { current, target, raf } }
 
-// ── BOT ACTIVITY FEED ──
+function _animateCount(elId, newVal, color) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+
+  newVal = parseInt(newVal) || 0;
+  const state = _liveCounters[elId] || { current: newVal, target: newVal };
+
+  // Agar value badi hai toh animate karo, choti ho toh seedha set karo
+  if (newVal === state.target && newVal === state.current) return;
+
+  // Cancel previous animation
+  if (state.raf) cancelAnimationFrame(state.raf);
+
+  const start = state.current;
+  const end   = newVal;
+  const diff  = end - start;
+
+  // Seedha jump karo agar value kam ho (reset) ya diff bada ho (>100)
+  if (diff < 0 || Math.abs(diff) > 100) {
+    state.current = end;
+    state.target  = end;
+    el.textContent = end;
+    _liveCounters[elId] = state;
+    return;
+  }
+
+  // Flash effect jab number badhta hai
+  if (diff > 0) {
+    el.style.transition = 'color 0.15s';
+    el.style.color = color || 'var(--em)';
+    setTimeout(() => { el.style.color = ''; }, 400);
+  }
+
+  state.target = end;
+  const duration = Math.min(600, diff * 80); // max 600ms
+  const startTime = performance.now();
+
+  function tick(now) {
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    // Ease out
+    const eased = 1 - Math.pow(1 - progress, 2);
+    const cur = Math.round(start + diff * eased);
+    el.textContent = cur;
+    state.current = cur;
+    if (progress < 1) {
+      state.raf = requestAnimationFrame(tick);
+    } else {
+      state.current = end;
+      el.textContent = end;
+      state.raf = null;
+    }
+  }
+  state.raf = requestAnimationFrame(tick);
+  _liveCounters[elId] = state;
+}
+
+// ── Live "seconds ago" updater ──
+let _lastScannerFetch = 0;
+function _startLiveAgoTimer() {
+  setInterval(() => {
+    if (!_lastScannerFetch) return;
+    const secs = Math.floor((Date.now() - _lastScannerFetch) / 1000);
+    const txt = secs < 5 ? 'just now' : secs + 's ago';
+    const el1 = document.getElementById('pc-updated');
+    const el2 = document.getElementById('fm-updated');
+    if (el1) el1.textContent = 'updated ' + txt;
+    if (el2) el2.textContent = 'updated ' + txt;
+  }, 1000);
+}
+_startLiveAgoTimer();
+
+// Start scanner polling — 3 second mein refresh
+fetchScannerStats();
+setInterval(fetchScannerStats, 3000);  // LIVE — har 3s
+
+// ══ ACTIVE ERROR BOX SYSTEM ══
+// /notifications se critical + warning filter karo
+// Jo recent hain (last 30 min) aur unread hain — dikhao
+// Jab read/resolved ho jaye — auto hata do
+
+const ERR_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
+
+// Performance keywords — sirf bot performance se related errors
+const ERR_KEYWORDS = [
+  'balance','buy failed','sell failed','reverted','timeout','nonce',
+  'gas','slippage','loss limit','sniper','scanner','connection',
+  'insufficient','stuck','stop loss','daily loss','sell timeout',
+  'buy timeout','sell reverted','buy reverted','low balance',
+  'wallet','trade','position','websocket','wss','rpc','failed'
+];
+
+function _isPerformanceError(title, detail) {
+  const text = (title + ' ' + detail).toLowerCase();
+  return ERR_KEYWORDS.some(k => text.includes(k));
+}
+
+let _activeErrors = [];
+let _errBoxVisible = false;
+
+async function fetchActiveErrors() {
+  try {
+    const r = await fetch('/notifications');
+    if (!r.ok) return;
+    const d = await r.json();
+    const notifs = d.notifications || [];
+    const now = Date.now();
+
+    // Filter: critical/warning + recent 30min + performance related
+    const active = notifs.filter(n => {
+      if (n.severity !== 'critical' && n.severity !== 'warning') return false;
+      // Recent check
+      const age = now - (n.ts_epoch ? n.ts_epoch * 1000 : 0);
+      if (age > ERR_WINDOW_MS) return false;
+      // Performance related
+      if (!_isPerformanceError(n.title || '', n.detail || '')) return false;
+      return true;
+    });
+
+    _activeErrors = active;
+    _renderErrorBox(active);
+  } catch(e) {}
+}
+
+function _renderErrorBox(errors) {
+  const box  = document.getElementById('active-error-box');
+  const list = document.getElementById('active-error-list');
+  const cnt  = document.getElementById('err-count-badge');
+  if (!box || !list) return;
+
+  if (!errors.length) {
+    // No active errors — hide box smoothly
+    if (_errBoxVisible) {
+      box.style.transition = 'opacity 0.4s';
+      box.style.opacity = '0';
+      setTimeout(() => { box.style.display = 'none'; box.style.opacity = '1'; }, 400);
+      _errBoxVisible = false;
+    }
+    return;
+  }
+
+  // Show box
+  if (!_errBoxVisible) {
+    box.style.display = 'block';
+    box.style.opacity = '0';
+    setTimeout(() => { box.style.transition = 'opacity 0.3s'; box.style.opacity = '1'; }, 10);
+    _errBoxVisible = true;
+  }
+
+  if (cnt) cnt.textContent = errors.length;
+
+  list.innerHTML = errors.map(n => {
+    const isCrit = n.severity === 'critical';
+    const clr    = isCrit ? 'var(--red)' : 'var(--gold)';
+    const bg     = isCrit ? 'rgba(224,107,107,0.06)' : 'rgba(212,168,71,0.06)';
+    const icon   = isCrit ? '🔴' : '🟡';
+
+    // Age display
+    const ageMs  = Date.now() - (n.ts_epoch ? n.ts_epoch * 1000 : 0);
+    const ageSec = Math.floor(ageMs / 1000);
+    const ageStr = ageSec < 60 ? ageSec + 's ago'
+                 : ageSec < 3600 ? Math.floor(ageSec/60) + 'm ago'
+                 : Math.floor(ageSec/3600) + 'h ago';
+
+    return `<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-bottom:1px solid rgba(224,107,107,0.12);background:${bg};">
+      <span style="font-size:13px;flex-shrink:0;margin-top:1px;">${icon}</span>
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:2px;">
+          <span style="font-size:11px;font-weight:800;color:${clr};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${n.title || '—'}</span>
+          <span style="font-size:8px;color:var(--txt3);font-family:'JetBrains Mono',monospace;flex-shrink:0;">${ageStr}</span>
+        </div>
+        <div style="font-size:10px;color:var(--txt2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${n.detail || ''}</div>
+        ${n.token ? `<div style="font-size:9px;color:var(--txt3);font-family:'JetBrains Mono',monospace;margin-top:2px;">Token: ${n.token}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Age refresh — har second "Xs ago" update karo
+setInterval(() => {
+  if (_activeErrors.length) _renderErrorBox(_activeErrors);
+}, 5000);
+
+// Poll har 5s
+fetchActiveErrors();
+setInterval(fetchActiveErrors, 5000);
+// ══ LIVE PANEL: LOGS + NOTIFICATIONS TABS ══
+let _liveTab = 'logs';
+
+function switchLiveTab(tab) {
+  _liveTab = tab;
+  const logsBtn   = document.getElementById('tab-logs-btn');
+  const notifBtn  = document.getElementById('tab-notif-btn');
+  const logsPane  = document.getElementById('tab-logs-content');
+  const notifPane = document.getElementById('tab-notif-content');
+  if (!logsBtn) return;
+  if (tab === 'logs') {
+    logsBtn.style.background    = 'var(--em-dim)';
+    logsBtn.style.color         = 'var(--em)';
+    logsBtn.style.borderBottom  = '2px solid var(--em)';
+    notifBtn.style.background   = 'transparent';
+    notifBtn.style.color        = 'var(--txt3)';
+    notifBtn.style.borderBottom = '2px solid transparent';
+    logsPane.style.display  = 'block';
+    notifPane.style.display = 'none';
+  } else {
+    notifBtn.style.background   = 'rgba(255,71,87,0.08)';
+    notifBtn.style.color        = 'var(--red)';
+    notifBtn.style.borderBottom = '2px solid var(--red)';
+    logsBtn.style.background    = 'transparent';
+    logsBtn.style.color         = 'var(--txt3)';
+    logsBtn.style.borderBottom  = '2px solid transparent';
+    notifPane.style.display = 'block';
+    logsPane.style.display  = 'none';
+  }
+}
+
 const ACT_STYLES = {
   discover: { icon:'🔍', color:'#888',     bg:'rgba(255,255,255,0.04)', label:'SCAN'    },
   reject:   { icon:'❌', color:'#ff4757',  bg:'rgba(255,71,87,0.08)',   label:'REJECT'  },
@@ -1634,48 +2036,29 @@ async function fetchActivity(){
     const d = await r.json();
     const acts = d.activity || [];
 
-    // Status dot
-    const dot = document.getElementById('act-dot');
-    const sta = document.getElementById('act-status');
-    const now = Date.now();
-    dot.style.background = '#00d4aa';
-    dot.style.boxShadow  = '0 0 6px #00d4aa';
-    sta.textContent = acts.length + ' events';
-    sta.style.color = 'var(--em)';
-
-    // Last action ticker
-    if(acts.length > 0){
-      const la = acts[0];
-      const s  = ACT_STYLES[la.type] || ACT_STYLES.discover;
-      document.getElementById('act-icon').textContent = s.icon;
-      document.getElementById('act-last').textContent  = la.detail || la.token || '—';
-      document.getElementById('act-last').style.color  = s.color;
-      document.getElementById('act-last-time').textContent = la.ts || '—';
+    // ── Render in Logs Tab ──
+    const logList = document.getElementById('inline-log-list');
+    if(logList){
+      if(!acts.length){
+        logList.innerHTML = '<div style="text-align:center;padding:20px 8px;color:var(--txt3);font-size:10px;">No activity yet</div>';
+      } else {
+        logList.innerHTML = acts.slice(0,40).map(a => {
+          const s = ACT_STYLES[a.type] || ACT_STYLES.discover;
+          return `<div style="display:flex;align-items:center;gap:7px;padding:6px 10px;border-bottom:1px solid var(--line);">
+            <span style="font-size:11px;flex-shrink:0;">${s.icon}</span>
+            <div style="flex:1;min-width:0;">
+              <div style="display:flex;align-items:center;gap:4px;">
+                <span style="font-size:8px;font-weight:800;color:${s.color};font-family:'JetBrains Mono',monospace;">${s.label}</span>
+                <span style="font-size:10px;font-weight:700;color:var(--txt1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;">${a.token||'—'}</span>
+              </div>
+              <div style="font-size:9px;color:var(--txt3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.detail||''}</div>
+            </div>
+            <span style="font-size:8px;color:var(--txt3);flex-shrink:0;font-family:'JetBrains Mono',monospace;">${a.ts||''}</span>
+          </div>`;
+        }).join('');
+      }
     }
-
-    // Feed
-    const feed = document.getElementById('act-feed');
-    if(!acts.length){
-      feed.innerHTML = '<div style="padding:20px;text-align:center;color:var(--txt3);font-size:11px;">No activity yet — bot is scanning...</div>';
-      return;
-    }
-    feed.innerHTML = acts.map(function(a){
-      const s = ACT_STYLES[a.type] || ACT_STYLES.discover;
-      const addr = a.address ? a.address.slice(0,6)+'...'+a.address.slice(-4) : '';
-      return `<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line2);background:${s.bg};">
-        <div style="width:28px;height:28px;border-radius:8px;background:rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;">${s.icon}</div>
-        <div style="flex:1;min-width:0;">
-          <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;">
-            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:800;color:${s.color};background:${s.bg};border:1px solid ${s.color}33;padding:1px 5px;border-radius:4px;">${s.label}</span>
-            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--txt1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;">${a.token||'—'}</span>
-          </div>
-          <div style="font-size:10px;color:var(--txt2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.detail||''}</div>
-          ${addr ? `<div style="font-size:9px;color:var(--txt3);font-family:'JetBrains Mono',monospace;margin-top:1px;">${addr}</div>` : ''}
-        </div>
-        <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--txt3);flex-shrink:0;">${a.ts||''}</div>
-      </div>`;
-    }).join('');
-  } catch(e){ console.log('activity err',e); }
+  } catch(e){}
 }
 
 
@@ -3642,22 +4025,31 @@ function _renderInlineNotifs(){
   const list = document.getElementById('inline-notif-list');
   const cnt  = document.getElementById('inline-notif-count');
   if(!list) return;
-  const recent = _notifData.slice(0, 5); // latest 5
+  const unread = _notifData.filter(function(n){ return !n.read; });
+  // Badge update
+  if(cnt){
+    if(unread.length > 0){
+      cnt.textContent = unread.length;
+      cnt.style.display = 'inline-block';
+    } else {
+      cnt.style.display = 'none';
+    }
+  }
+  const recent = _notifData.slice(0, 20); // latest 20
   if(!recent.length){
     list.innerHTML = '<div style="text-align:center;padding:20px 8px;color:var(--txt3);font-size:10px;">No alerts yet</div>';
-    if(cnt) cnt.textContent = '';
     return;
   }
-  if(cnt) cnt.textContent = _notifData.length + ' total';
   list.innerHTML = recent.map(function(n){
     const sev = n.severity || 'info';
     const dotClr = sev==='critical'?'#ff4757':sev==='warning'?'#ffc800':sev==='success'?'#00d4aa':'#64b4ff';
     const isUnread = !n.read;
-    return '<div style="display:flex;gap:6px;padding:7px 10px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;' + (isUnread?'background:rgba(255,255,255,0.03);':'') + '" onclick="readNotif(\'' + n.id + '\')">'+
-      '<div style="width:6px;height:6px;border-radius:50%;background:'+dotClr+';flex-shrink:0;margin-top:4px;"></div>'+
+    return '<div style="display:flex;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line);cursor:pointer;' + (isUnread?'background:rgba(255,255,255,0.025);':'') + '" onclick="readNotif(\'' + n.id + '\')">'+
+      '<div style="width:7px;height:7px;border-radius:50%;background:'+dotClr+';flex-shrink:0;margin-top:3px;box-shadow:0 0 4px '+dotClr+'66;"></div>'+
       '<div style="flex:1;min-width:0;">'+
-        '<div style="font-size:10px;font-weight:'+(isUnread?'700':'500')+';color:var(--txt1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+n.title+'</div>'+
-        '<div style="font-size:9px;color:var(--txt3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+n.detail+'</div>'+
+        '<div style="font-size:10px;font-weight:'+(isUnread?'800':'500')+';color:var(--txt1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+n.title+'</div>'+
+        '<div style="font-size:9px;color:var(--txt3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;">'+n.detail+'</div>'+
+        (n.ts ? '<div style="font-size:8px;color:var(--txt3);margin-top:1px;font-family:\'JetBrains Mono\',monospace;">'+n.ts+'</div>' : '')+
       '</div>'+
     '</div>';
   }).join('');
