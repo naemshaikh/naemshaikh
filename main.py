@@ -5305,34 +5305,9 @@ def poll_new_pairs():
             finally:
                 loop.close()
 
-        _QN_PC_WSS = os.getenv("QUICKNODE_WSS", "wss://blissful-dark-scion.bsc.quiknode.pro/15a13a747cf019149b7c43a1a0bbd2ce37179d15/")
-
-        async def _ws_loop_quicknode():
-            """QuickNode 3rd confirmed stream — PairCreated"""
-            fails = 0
-            while True:
-                try:
-                    print(f"🔌 WSS [QN-PC] connecting: QuickNode")
-                    await _listen(_QN_PC_WSS)
-                    fails = 0
-                except Exception as e:
-                    fails += 1
-                    await asyncio.sleep(min(2 * fails, 20))
-
-        def _run_quicknode():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                loop.run_until_complete(_ws_loop_quicknode())
-            except Exception as ex:
-                print(f"Warning: WSS quicknode PC: {ex}")
-            finally:
-                loop.close()
-
-        threading.Thread(target=_run_primary,   daemon=True).start()
-        threading.Thread(target=_run_backup,    daemon=True).start()
-        threading.Thread(target=_run_quicknode, daemon=True).start()
-        print("🔌 Triple WSS + DexScreener fallback started")
+        threading.Thread(target=_run_primary, daemon=True).start()
+        threading.Thread(target=_run_backup,  daemon=True).start()
+        print("🔌 Dual WSS + DexScreener fallback started")
 
 
 def _register_position_pair(token_address: str, known_pair: str = None):
