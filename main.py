@@ -6787,7 +6787,7 @@ def auto_stats_route():
         "last_action":     auto_trade_stats.get("last_action", ""),
         "open_trades":     open_trades,
         "positions":       {t["address"]: t for t in open_trades},
-        "trade_history":   list(reversed([t for t in auto_trade_stats.get("trade_history", []) if t.get("mode", "paper") == TRADE_MODE][-5000:])),
+        "trade_history":   [],  # REMOVED: use /trade-history endpoint instead (was causing huge 2-5MB response)
         "learning_cycles": brain.get("total_learning_cycles", 0),
         "new_pairs_found": len(new_pairs_queue),
         "daily_loss":      round(sess.get("daily_loss", 0), 4),
