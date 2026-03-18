@@ -3820,27 +3820,11 @@ setInterval(fetchNotifications, 10000);
 
 
 <script>
-// APP START — saari functions define hone ke BAAD
-// async functions hoist nahi hoti — isliye pehle define, phir call
-if(localStorage.getItem('mrblack_auth')==='1'){
-  _startAllIntervals();
-  init();
-  fetchRealBalance();
-}
-</script>
-<script>/* FIX_RETRY_RECOVERY v3 — direct calls, no complex state */
-(function(){
-  function _go(){
-    if(typeof fetchStats        === 'function') fetchStats().catch(function(){});
-    if(typeof fetchHistory      === 'function') fetchHistory().catch(function(){});
-    if(typeof fetchScannerStats === 'function') fetchScannerStats().catch(function(){});
-    if(typeof fetchRamStats     === 'function') fetchRamStats().catch(function(){});
-    if(typeof fetchRealBalance  === 'function') fetchRealBalance().catch(function(){});
-  }
-  setTimeout(_go,  2000);
-  setTimeout(_go,  6000);
-  setTimeout(_go, 12000);
-})();
+// index54 style — simple direct start
+init();
+setInterval(fetchStats,8000);
+setInterval(fetchHistory,30000);
+fetchRealBalance();
 </script>
 
 </body>
