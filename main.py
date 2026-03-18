@@ -4522,7 +4522,7 @@ _FM_FACTORY_ADDRS = [
     "0x8b8cf6d0c2b5f4cb61da5e7dc94e52f4f1dd8d64",
     "0x48a31b72f77a2a90ebe24e5c4c88be43e2ad6beb",
 ]
-_FM_TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+_FM_LIQUIDITY_TOPIC = "0x06b541ddaa720db2b10a4d462db48c35cbc20e8b9f3bded5614da596d62c1a9a"  # LiquidityAdded — graduation signal
 _FM_WSS = [
     "wss://bsc-rpc.publicnode.com",
     "wss://bsc.drpc.org",
@@ -4640,9 +4640,22 @@ def _fm_snipe(token_addr, pair_addr):
         bal  = sess.get("paper_balance", 5.0)
         if bal < AUTO_BUY_SIZE_BNB: return
         _ok, _msg = DataGuard.bnb_price_ok()
-        if not _ok: return
+        if not _ok:
+            print(f"⚠️ [FM] DataGuard BNB fail: {_msg}")
+            return
         if any(t.get("address","").lower() == addr_lower for t in auto_trade_stats.get("trade_history", [])): return
         if token_addr in auto_trade_stats.get("running_positions", {}): return
+
+        # Mempool se aaya? pair_addr="" → fetch karo
+        if not pair_addr:
+            for _att in range(3):
+                pair_addr = _fm_get_pair(token_addr)
+                if pair_addr: break
+                time.sleep(0.1)
+            if not pair_addr:
+                print(f"⚠️ [FM] pair not found: {token_addr[:10]}")
+                with _fm_sniped_lock: _fm_sniped.discard(addr_lower)
+                return
 
         grad = _fm_get_grad_price(pair_addr, token_addr)
         if grad <= 0: grad = _fm_get_price(token_addr)
@@ -4650,12 +4663,11 @@ def _fm_snipe(token_addr, pair_addr):
             print(f"❌ [FM] price=0 skip: {token_addr[:10]}")
             return
 
-        time.sleep(0.05)
         cur = _fm_get_price(token_addr)
         if cur <= 0: cur = grad
 
-        # Pump check removed — testing mein direct snipe karo
-        pump       = round((cur / grad - 1) * 100, 1)
+        # No pump check — har price pe snipe (paper mode)
+        pump       = round((cur / grad - 1) * 100, 1) if grad > 0 else 0.0
         entry      = cur * 1.005
         size_bnb   = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
         token_name = token_addr[:8]
@@ -4687,7 +4699,7 @@ def _fm_snipe(token_addr, pair_addr):
             },
         }
         auto_trade_stats["total_auto_buys"] += 1
-        _persist_positions()
+        threading.Thread(target=_persist_positions, daemon=True).start()  # async — non-blocking
         _push_notif("success", "🎓 FM Graduation Snipe!",
                     f"{token_name} {pump:+.1f}% from grad | {size_bnb:.4f} BNB",
                     token_name, token_addr)
@@ -4723,6 +4735,19 @@ def _fm_handle_transfer(token_addr):
     _fm_queue.put((token_addr, pair))
 
 def poll_four_meme_v2():
+    """
+    FM Graduation Sniper v3 — MEMPOOL approach
+    Block confirm ka wait nahi — graduation tx mempool mein detect karo
+    Speed: ~200-300ms (vs 1.2s pehle)
+
+    Flow:
+    1. newPendingTransactions subscribe → har pending tx hash milta hai
+    2. tx.to == FM factory? → graduation tx hai
+    3. input data decode → token address extract
+    4. Seedha _fm_snipe() call → workers bypass (faster)
+
+    Fallback: LiquidityAdded confirmed event bhi sun rahe hain
+    """
     import asyncio, json as _j
     try:
         import websockets as _ws
@@ -4730,54 +4755,154 @@ def poll_four_meme_v2():
         print("⚠️ [FM] websockets not installed")
         return
 
-    async def _listen(url):
-        async with _ws.connect(url, ping_interval=20, ping_timeout=15, close_timeout=30, max_size=2**20) as ws:
+    _FM_FACTORY_SET = set(a.lower() for a in _FM_FACTORY_ADDRS)
+
+    def _decode_token_from_input(input_hex):
+        """FM factory tx input se token address decode karo"""
+        try:
+            # input data: 4 bytes selector + 32 bytes token address
+            data = input_hex.replace("0x", "")
+            if len(data) < 72: return ""
+            # Token address = first 32 byte argument = last 40 chars of first 64 data chars
+            token_addr = "0x" + data[8+24:8+64]  # skip selector(4B) + padding(12B)
+            if len(token_addr) == 42 and token_addr != "0x" + "0"*40:
+                return Web3.to_checksum_address(token_addr)
+        except Exception:
+            pass
+        return ""
+
+    def _decode_token_from_log_topic(topics):
+        """LiquidityAdded log se token address — topics[1] = token (indexed)"""
+        try:
+            if len(topics) >= 2:
+                raw = topics[1]  # "0x000...token_addr"
+                return "0x" + raw[-40:]
+        except Exception:
+            pass
+        return ""
+
+    async def _listen_mempool(url):
+        """FAST: newPendingTransactions — block se pehle detect"""
+        async with _ws.connect(url, ping_interval=20, ping_timeout=15,
+                               close_timeout=30, max_size=2**20) as ws:
+            # Subscribe to pending transactions
             await ws.send(_j.dumps({
-                "id": 11, "jsonrpc": "2.0", "method": "eth_subscribe",
-                "params": ["logs", {"address": _FM_FACTORY_ADDRS, "topics": [_FM_TRANSFER_TOPIC]}]
+                "id": 1, "jsonrpc": "2.0",
+                "method": "eth_subscribe",
+                "params": ["newPendingTransactions"]
             }))
-            await asyncio.wait_for(ws.recv(), timeout=10)
-            print(f"✅ [FM] Subscribed: {url[:35]}")
+            ack = _j.loads(await asyncio.wait_for(ws.recv(), timeout=10))
+            if ack.get("error"):
+                raise Exception(f"Mempool sub failed: {ack['error']}")
+            print(f"✅ [FM] Mempool subscribed: {url[:35]}")
+
             while True:
                 try:
-                    msg    = await ws.recv()  # timeout=None — ping se alive
-                    data   = _j.loads(msg)
-                    log    = (data.get("params") or {}).get("result") or {}
-                    if not log: continue
-                    topics = log.get("topics", [])
-                    if len(topics) < 3: continue
-                    token_addr = log.get("address", "")
-                    if not token_addr: continue
-                    threading.Thread(target=_fm_handle_transfer, args=(token_addr,), daemon=True).start()
+                    msg  = await ws.recv()
+                    data = _j.loads(msg)
+                    tx_hash = (data.get("params") or {}).get("result")
+                    if not tx_hash: continue
+
+                    # Get tx details async — non-blocking
+                    threading.Thread(
+                        target=_fm_check_pending_tx,
+                        args=(tx_hash,),
+                        daemon=True
+                    ).start()
+
                 except asyncio.TimeoutError:
                     continue
                 except Exception as e:
                     raise e
 
-    async def _loop():
+    async def _listen_confirmed(url):
+        """FALLBACK: LiquidityAdded confirmed event"""
+        async with _ws.connect(url, ping_interval=20, ping_timeout=15,
+                               close_timeout=30, max_size=2**20) as ws:
+            await ws.send(_j.dumps({
+                "id": 2, "jsonrpc": "2.0", "method": "eth_subscribe",
+                "params": ["logs", {
+                    "address": _FM_FACTORY_ADDRS,
+                    "topics":  [_FM_LIQUIDITY_TOPIC]
+                }]
+            }))
+            await asyncio.wait_for(ws.recv(), timeout=10)
+            print(f"✅ [FM] Confirmed fallback subscribed: {url[:35]}")
+
+            while True:
+                try:
+                    msg    = await ws.recv()
+                    data   = _j.loads(msg)
+                    log    = (data.get("params") or {}).get("result") or {}
+                    if not log: continue
+                    topics = log.get("topics", [])
+                    if len(topics) < 2: continue
+
+                    # Token address from indexed topic[1]
+                    token_addr = _decode_token_from_log_topic(topics)
+                    if not token_addr: continue
+
+                    print(f"🎓 [FM] Confirmed graduation: {token_addr[:10]}")
+                    # Use handle_transfer for pair fetch + queue
+                    threading.Thread(
+                        target=_fm_handle_transfer,
+                        args=(token_addr,),
+                        daemon=True
+                    ).start()
+
+                except asyncio.TimeoutError:
+                    continue
+                except Exception as e:
+                    raise e
+
+    async def _loop_mempool():
         idx = fails = 0
         while True:
             try:
                 url = _FM_WSS[idx % len(_FM_WSS)]
-                print(f"🔌 [FM] Connecting: {url}")
-                await _listen(url)
+                print(f"🔌 [FM] Mempool connecting: {url}")
+                await _listen_mempool(url)
+                fails = 0
+            except Exception as e:
+                fails += 1
+                wait = min(3 * fails, 30)
+                print(f"⚠️ [FM] Mempool fail #{fails}: {str(e)[:60]} retry {wait}s")
+                await asyncio.sleep(wait)
+            idx += 1
+
+    async def _loop_confirmed():
+        idx = fails = 0
+        while True:
+            try:
+                url = _FM_WSS[(idx + 1) % len(_FM_WSS)]  # different endpoint
+                await _listen_confirmed(url)
                 fails = 0
             except Exception as e:
                 fails += 1
                 wait = min(5 * fails, 60)
-                print(f"⚠️ [FM] fail #{fails}: {str(e)[:50]} retry {wait}s")
+                print(f"⚠️ [FM] Confirmed fail #{fails}: {str(e)[:50]} retry {wait}s")
                 await asyncio.sleep(wait)
             idx += 1
 
-    def _run():
+    def _run_mempool():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        try: loop.run_until_complete(_loop())
-        except Exception as ex: print(f"⚠️ [FM] crashed: {ex}")
+        try: loop.run_until_complete(_loop_mempool())
+        except Exception as ex: print(f"⚠️ [FM] Mempool crashed: {ex}")
         finally: loop.close()
 
-    threading.Thread(target=_run, daemon=True).start()
-    print("🎓 [FM] Four.meme Graduation Sniper v2 started!")
+    def _run_confirmed():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try: loop.run_until_complete(_loop_confirmed())
+        except Exception as ex: print(f"⚠️ [FM] Confirmed crashed: {ex}")
+        finally: loop.close()
+
+    # Thread 1: Mempool (fast ~200ms)
+    threading.Thread(target=_run_mempool, daemon=True).start()
+    # Thread 2: Confirmed fallback (safe ~1.5s)
+    threading.Thread(target=_run_confirmed, daemon=True).start()
+    print("🎓 [FM] Four.meme Sniper v3 started! Mempool + Confirmed dual mode")
 
 # REAL-TIME SWAP MONITOR — Open positions ke liye on-chain data
 # PancakeSwap Swap event sunna directly BSC WSS se
