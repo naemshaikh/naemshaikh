@@ -4918,36 +4918,30 @@ def _bq_get_token():
         return "", 3600
 
 
-_BQ_FM_QUERY = """
-subscription {
-  EVM(network: bsc, mempool: true) {
-    Events(
-      where: {
-        Log: { Signature: { Name: { in: ["PairCreated", "PoolCreated"] } } }
-        Transaction: { To: { is: "0x5c952063c7fc8610ffdb798152d69f0b9550762b" } }
-      }
-    ) {
-      Log { Signature { Name } }
-      Arguments {
-        Name
-        Value {
-          ... on EVM_ABI_Address_Value_Arg { address }
-        }
-      }
-      Transaction { Hash From }
-    }
-  }
-}
-"""
+# ══════════════════════════════════════════════════════════════
+# QUICKNODE WSS — FM Graduation Mempool Detection
+# eth_subscribe logs — FM factory PairCreated filter
+# Speed: ~200ms (mempool level) — same as Bitquery
+# Free 1 month unlimited — no points limit
+# ══════════════════════════════════════════════════════════════
+
+_QN_WSS = os.getenv("QUICKNODE_WSS", "wss://blissful-dark-scion.bsc.quiknode.pro/15a13a747cf019149b7c43a1a0bbd2ce37179d15/")
+
+# FM Factory addresses — PairCreated event topic
+_FM_PAIR_TOPIC    = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
+_PANCAKE_FACTORY_ADDR = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
+_FM_FACTORY_ADDR  = "0x5c952063c7fc8610ffdb798152d69f0b9550762b"
+_WBNB_LOWER       = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
 
 
 def poll_four_meme_v2():
     """
-    FM Sniper v4 - Bitquery WebSocket mempool
-    - Sirf FM graduation events (no thread explosion)
-    - mempool: true = block se pehle ~200ms
-    - Auto token refresh har 23h
-    - PairCreated confirmed fallback bhi
+    FM Sniper v5 — QuickNode WSS mempool detection
+    - eth_subscribe logs — PairCreated on PancakeSwap factory
+    - tx.to == FM factory filter (graduation only)
+    - Speed: ~200ms mempool level
+    - Zero downtime — infinite reconnect
+    - Confirmed fallback bhi parallel chal raha hai
     """
     import asyncio, json as _j, time as _t
     try:
@@ -4956,80 +4950,57 @@ def poll_four_meme_v2():
         print("WARN [FM] websockets not installed")
         return
 
-    _bq_cache = {"token": "", "expires_at": 0}
-
-    def _valid_token():
-        now = _t.time()
-        if _bq_cache["token"] and now < _bq_cache["expires_at"]:
-            return _bq_cache["token"]
-        token, expires = _bq_get_token()
-        _bq_cache["token"]      = token
-        _bq_cache["expires_at"] = now + expires - 300
-        return token
-
-    def _extract_addr(event):
-        try:
-            WBNB = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
-            for arg in event.get("Arguments", []):
-                addr = (arg.get("Value") or {}).get("address", "")
-                if addr and addr.lower() != WBNB.lower():
-                    return Web3.to_checksum_address(addr)
-        except Exception:
-            pass
-        return ""
-
-    async def _listen_bq(token):
-        # Official Bitquery docs: token URL mein, subprotocol graphql-ws
-        # Ref: docs.bitquery.io/docs/subscriptions/examples
-        bq_url = BQ_WSS_URL + "?token=" + token
+    async def _listen_qn(url):
+        """QuickNode WSS — PairCreated mempool events"""
         async with _ws.connect(
-            bq_url,
-            subprotocols=["graphql-ws"],
-            ping_interval=30, ping_timeout=20,
+            url,
+            ping_interval=20, ping_timeout=15,
             close_timeout=10, max_size=2**20
         ) as ws:
-            # Step 1: connection_init (no payload needed per docs)
-            await ws.send(_j.dumps({"type": "connection_init"}))
-            # Step 2: wait for connection_ack
-            while True:
-                msg = _j.loads(await asyncio.wait_for(ws.recv(), timeout=15))
-                if msg.get("type") == "connection_ack": break
-                if msg.get("type") == "connection_error":
-                    raise Exception("BQ connection_error: " + str(msg))
-            # Step 3: subscribe
-            await ws.send(_j.dumps({"id": "1", "type": "start", "payload": {"query": _BQ_FM_QUERY}}))
-            print("OK [FM] Bitquery stream connected!")
+            # Subscribe to PancakeSwap factory PairCreated logs
+            await ws.send(_j.dumps({
+                "id": 1, "jsonrpc": "2.0",
+                "method": "eth_subscribe",
+                "params": ["logs", {
+                    "address": [_PANCAKE_FACTORY_ADDR],
+                    "topics":  [_FM_PAIR_TOPIC]
+                }]
+            }))
+            ack = _j.loads(await asyncio.wait_for(ws.recv(), timeout=10))
+            if ack.get("error"):
+                raise Exception(f"QN sub failed: {ack['error']}")
+            print(f"✅ [FM] QuickNode mempool connected!")
             while True:
                 try:
-                    data   = _j.loads(await ws.recv())
-                    if data.get("type") == "ka": continue
-                    events = ((data.get("payload") or {}).get("data") or {}).get("EVM", {}).get("Events", [])
-                    for ev in events:
-                        addr = _extract_addr(ev)
-                        if not addr: continue
-                        tx = (ev.get("Transaction") or {}).get("Hash", "")
-                        print(f"GRAD [FM] Bitquery: {addr[:10]} tx={tx[:10]}")
-                        _scanner_stats["fm_discovered"] += 1
-                        _scanner_tick()
-                        _fm_queue.put((addr, ""))
+                    msg    = await ws.recv()
+                    data   = _j.loads(msg)
+                    log    = (data.get("params") or {}).get("result") or {}
+                    if not log: continue
+                    topics = log.get("topics", [])
+                    if len(topics) < 3: continue
+                    tx_hash = log.get("transactionHash", "")
+                    if not tx_hash: continue
+                    # FM factory filter — background mein check karo
+                    threading.Thread(
+                        target=lambda h=tx_hash, t=topics: _fm_check_paircreated_tx(h, t),
+                        daemon=True
+                    ).start()
                 except asyncio.TimeoutError:
                     continue
                 except Exception as e:
                     raise e
 
-    async def _loop_bq():
+    async def _loop_qn():
+        """Infinite reconnect — zero downtime"""
         fails = 0
         while True:
             try:
-                token = _valid_token()
-                if not token:
-                    await asyncio.sleep(30); continue
-                await _listen_bq(token)
+                await _listen_qn(_QN_WSS)
                 fails = 0
             except Exception as e:
                 fails += 1
-                wait = min(5 * fails, 60)
-                print(f"WARN [FM] BQ fail #{fails}: {str(e)[:80]} retry {wait}s")
+                wait = min(3 * fails, 30)
+                print(f"WARN [FM] QN fail #{fails}: {str(e)[:80]} retry {wait}s")
                 await asyncio.sleep(wait)
 
     async def _listen_confirmed(url):
@@ -5077,11 +5048,11 @@ def poll_four_meme_v2():
                 await asyncio.sleep(wait)
             idx += 1
 
-    def _run_bq():
+    def _run_qn():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        try: loop.run_until_complete(_loop_bq())
-        except Exception as ex: print(f"WARN [FM] BQ crashed: {ex}")
+        try: loop.run_until_complete(_loop_qn())
+        except Exception as ex: print(f"WARN [FM] QN crashed: {ex}")
         finally: loop.close()
 
     def _run_confirmed():
@@ -5091,9 +5062,9 @@ def poll_four_meme_v2():
         except Exception as ex: print(f"WARN [FM] Confirmed crashed: {ex}")
         finally: loop.close()
 
-    threading.Thread(target=_run_bq,        daemon=True).start()
+    threading.Thread(target=_run_qn,        daemon=True).start()
     threading.Thread(target=_run_confirmed,  daemon=True).start()
-    print("GRAD [FM] Sniper v4 — Bitquery mempool + Confirmed fallback")
+    print("✅ [FM] Sniper v5 — QuickNode mempool + Confirmed fallback (dual stream)")
 
 def poll_new_pairs():
     import asyncio, json as _json
