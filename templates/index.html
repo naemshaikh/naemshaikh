@@ -348,103 +348,85 @@ function _checkLock(){
   <div class="bal-row">
     <div class="bal-card em">
       <div class="bal-lbl" id="bal-mode-lbl">Paper Balance</div>
-      <div class="bal-val" id="b-bal" style="color:var(--em)">5.0000 BNB</div>
-      <div class="bal-sub" id="b-usd">approx $—</div>
+      <div class="bal-val" id="b-bal" style="color:var(--em)">—</div>
+      <div class="bal-sub" id="b-bal-usd">—</div>
     </div>
-    <div class="bal-card ice" style="cursor:pointer;" onclick="openWalletModal()">
-      <div class="bal-lbl">Real Balance <span style="font-size:9px;color:var(--txt3);" id="wallet-short"></span></div>
-      <div class="bal-val" id="b-real-bal" style="color:var(--ice)">— BNB</div>
-      <div class="bal-sub" id="b-real-usd" style="color:var(--txt3);">Tap to view wallet</div>
+    <div class="bal-card ice">
+      <div class="bal-lbl">Real Wallet</div>
+      <div class="bal-val" id="b-real-bal" style="color:var(--ice)">—</div>
+      <div class="bal-sub" id="b-real-usd">—</div>
     </div>
   </div>
 
-  <!-- Paper to Real Mode Switch -->
-  <div id="mode-switch-bar" style="background:var(--ink2);border:1px solid var(--line);border-radius:var(--r);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;">
-    <div>
-      <div style="font-size:11px;font-weight:800;letter-spacing:0.5px;" id="mode-switch-lbl">📄 PAPER MODE</div>
-      <div style="font-size:10px;color:var(--txt3);margin-top:2px;" id="mode-switch-sub">Bot practice trades kar raha hai</div>
-    </div>
-    <button onclick="openModeSwitchModal()" id="mode-switch-btn" style="padding:8px 16px;border-radius:20px;border:none;font-size:12px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,var(--em),#00bcd4);color:#000;">
-      Switch →
-    </button>
-  </div>
+  <!-- PNL + Logs/Notif: full width stacked -->
+  <div style="display:flex;flex-direction:column;gap:10px;">
 
-  <!-- PNL + Live Notifications Split Card -->
-  <div style="margin:8px 0 4px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-
-    <!-- LEFT: PNL Card -->
-    <div style="background:var(--ink2);border-radius:14px;padding:14px 12px;border:1px solid rgba(0,0,0,0.06);box-shadow:0 1px 4px rgba(0,0,0,0.05);">
-
-      <!-- Period Tabs -->
-      <div style="display:flex;gap:0;background:var(--ink);border-radius:8px;padding:3px;margin-bottom:12px;width:fit-content;">
-        <button onclick="setPnlPeriod('1D')" id="pnl-tab-1D" style="font-size:10px;padding:3px 8px;border-radius:6px;border:none;background:transparent;color:var(--txt3);cursor:pointer;font-weight:600;transition:all 0.15s;">1D</button>
-        <button onclick="setPnlPeriod('7D')" id="pnl-tab-7D" style="font-size:10px;padding:3px 8px;border-radius:6px;border:none;background:transparent;color:var(--txt3);cursor:pointer;font-weight:600;transition:all 0.15s;">7D</button>
-        <button onclick="setPnlPeriod('1M')" id="pnl-tab-1M" style="font-size:10px;padding:3px 8px;border-radius:6px;border:none;background:transparent;color:var(--txt3);cursor:pointer;font-weight:600;transition:all 0.15s;">1M</button>
-        <button onclick="setPnlPeriod('ALL')" id="pnl-tab-ALL" style="font-size:10px;padding:3px 8px;border-radius:6px;border:none;background:var(--ink2);color:var(--txt);cursor:pointer;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,0.1);transition:all 0.15s;">ALL</button>
+    <!-- PNL Card — full width compact -->
+    <div style="background:var(--ink2);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div style="font-size:9px;color:var(--txt3);font-weight:700;letter-spacing:0.5px;">TOTAL PNL</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="display:flex;gap:4px;">
+            <button onclick="setPnlPeriod('1D')" id="pnl-tab-1D" style="padding:3px 8px;border-radius:6px;background:var(--ink2);border:1px solid var(--line2);font-size:9px;color:var(--txt3);cursor:pointer;font-family:'Outfit',sans-serif;">1D</button>
+            <button onclick="setPnlPeriod('7D')" id="pnl-tab-7D" style="padding:3px 8px;border-radius:6px;background:transparent;border:1px solid transparent;font-size:9px;color:var(--txt3);cursor:pointer;font-family:'Outfit',sans-serif;">7D</button>
+            <button onclick="setPnlPeriod('1M')" id="pnl-tab-1M" style="padding:3px 8px;border-radius:6px;background:transparent;border:1px solid transparent;font-size:9px;color:var(--txt3);cursor:pointer;font-family:'Outfit',sans-serif;">1M</button>
+            <button onclick="setPnlPeriod('ALL')" id="pnl-tab-ALL" style="padding:3px 8px;border-radius:6px;background:transparent;border:1px solid transparent;font-size:9px;color:var(--txt3);cursor:pointer;font-family:'Outfit',sans-serif;">ALL</button>
+          </div>
+          <button onclick="openPnlBreakdown()" style="font-size:9px;color:var(--ice);background:none;border:none;cursor:pointer;">↗ breakdown</button>
+        </div>
       </div>
-
-      <!-- Main PNL Row -->
-      <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
         <div>
-          <div style="font-size:10px;color:var(--txt3);font-weight:500;letter-spacing:0.3px;margin-bottom:2px;">TOTAL PNL</div>
-          <div id="b-pnl" style="font-size:28px;font-weight:800;color:var(--txt);line-height:1;">—</div>
-          <div id="b-pnl-usd" style="font-size:11px;color:var(--txt3);margin-top:2px;">— USD</div>
+          <div id="b-pnl" style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:900;color:var(--em);">+0.00%</div>
+          <div id="b-pnl-usd" style="font-size:11px;color:var(--txt2);margin-top:2px;">$0.00 realized</div>
         </div>
-        <div style="text-align:right;cursor:pointer;" onclick="openPnlBreakdown()">
-          <div style="font-size:9px;color:var(--txt3);margin-bottom:4px;">↗ breakdown</div>
-          <div id="b-wr-badge" style="font-size:12px;font-weight:700;padding:4px 10px;border-radius:20px;background:var(--ink);color:var(--txt2);">—% WR</div>
+        <div style="text-align:right;">
+          <div id="b-wr-badge" style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:900;color:var(--red);">0%</div>
+          <div style="font-size:9px;color:var(--txt3);">WR</div>
         </div>
       </div>
-
-      <!-- Stats Row -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding-top:10px;border-top:1px solid var(--ink);">
-        <div style="text-align:center;">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:10px;">
+        <div style="background:var(--ink3);border-radius:6px;padding:6px;text-align:center;">
           <div style="font-size:9px;color:var(--txt3);margin-bottom:2px;">TRADES</div>
-          <div id="b-stat-trades" style="font-size:14px;font-weight:700;color:var(--txt);">—</div>
+          <div id="b-stat-trades" style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;">0</div>
         </div>
-        <div style="text-align:center;">
+        <div style="background:var(--ink3);border-radius:6px;padding:6px;text-align:center;">
           <div style="font-size:9px;color:var(--txt3);margin-bottom:2px;">REALIZED</div>
-          <div id="b-stat-realized" style="font-size:14px;font-weight:700;color:var(--em);">—</div>
+          <div id="b-stat-realized" style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;">$0.00</div>
         </div>
-        <div style="text-align:center;">
+        <div style="background:var(--ink3);border-radius:6px;padding:6px;text-align:center;">
           <div style="font-size:9px;color:var(--txt3);margin-bottom:2px;">UNREALIZED</div>
-          <div id="b-stat-unrealized" style="font-size:14px;font-weight:700;color:var(--txt2);">—</div>
+          <div id="b-stat-unrealized" style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;">$0.00</div>
         </div>
       </div>
-
-      <!-- Win/Loss bar -->
-      <div style="margin-top:10px;">
+      <div style="margin-top:8px;">
         <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--txt3);margin-bottom:3px;">
-          <span id="b-wins-lbl">W: 0</span>
-          <span id="b-losses-lbl">L: 0</span>
+          <span id="b-wins-lbl">W: 0</span><span id="b-losses-lbl">L: 0</span>
         </div>
         <div style="height:4px;border-radius:4px;background:var(--ink);overflow:hidden;">
           <div id="b-wr-bar" style="height:100%;border-radius:4px;background:var(--em);width:0%;transition:width 0.4s;"></div>
         </div>
       </div>
-
       <div class="bal-sub" id="b-wr" style="display:none;"></div>
     </div>
 
-    <!-- RIGHT: Logs + Notifications Tabs -->
-    <div style="background:var(--ink2);border-radius:14px;border:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden;min-height:200px;">
+    <!-- Logs + Notifications — full width, tall -->
+    <div style="background:var(--ink2);border-radius:14px;border:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden;">
       <!-- Tab Header -->
       <div style="display:flex;border-bottom:1px solid var(--line);flex-shrink:0;">
-        <button id="tab-logs-btn" onclick="switchLiveTab('logs')" style="flex:1;padding:8px 4px;font-size:10px;font-weight:800;border:none;background:var(--em-dim);color:var(--em);cursor:pointer;font-family:'Outfit',sans-serif;border-bottom:2px solid var(--em);letter-spacing:0.3px;">📡 LOGS</button>
-        <button id="tab-notif-btn" onclick="switchLiveTab('notif')" style="flex:1;padding:8px 4px;font-size:10px;font-weight:800;border:none;background:transparent;color:var(--txt3);cursor:pointer;font-family:'Outfit',sans-serif;border-bottom:2px solid transparent;letter-spacing:0.3px;display:flex;align-items:center;justify-content:center;gap:4px;">
+        <button id="tab-logs-btn" onclick="switchLiveTab('logs')" style="flex:1;padding:9px 4px;font-size:10px;font-weight:800;border:none;background:var(--em-dim);color:var(--em);cursor:pointer;font-family:'Outfit',sans-serif;border-bottom:2px solid var(--em);letter-spacing:0.3px;">📡 LOGS</button>
+        <button id="tab-notif-btn" onclick="switchLiveTab('notif')" style="flex:1;padding:9px 4px;font-size:10px;font-weight:800;border:none;background:transparent;color:var(--txt3);cursor:pointer;font-family:'Outfit',sans-serif;border-bottom:2px solid transparent;letter-spacing:0.3px;display:flex;align-items:center;justify-content:center;gap:4px;">
           🔔 NOTIF <span id="inline-notif-count" style="background:var(--red);color:#fff;font-size:8px;font-weight:800;padding:1px 5px;border-radius:8px;display:none;">0</span>
         </button>
       </div>
-
-      <!-- Logs Tab -->
-      <div id="tab-logs-content" style="flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;max-height:200px;">
+      <!-- Logs Tab — taller -->
+      <div id="tab-logs-content" style="flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;max-height:280px;">
         <div id="inline-log-list" style="padding:4px 0;">
           <div style="text-align:center;padding:20px 8px;color:var(--txt3);font-size:10px;">Loading logs...</div>
         </div>
       </div>
-
-      <!-- Notifications Tab -->
-      <div id="tab-notif-content" style="flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;max-height:200px;display:none;">
+      <!-- Notifications Tab — taller -->
+      <div id="tab-notif-content" style="flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;max-height:280px;display:none;">
         <div id="inline-notif-list" style="padding:4px 0;">
           <div style="text-align:center;padding:20px 8px;color:var(--txt3);font-size:10px;">No alerts yet</div>
         </div>
@@ -453,9 +435,9 @@ function _checkLock(){
 
   </div>
 
-  <!-- Memory Usage -->
+    <!-- Memory Usage -->
   <div style="padding:0 12px 0;">
-    <div style="background:var(--ink2);border:1px solid var(--line);border-radius:var(--r2);padding:10px 10px;display:flex;flex-direction:column;gap:7px;">
+    <div style="background:var(--ink2);border:1px solid var(--line);border-radius:var(--r2);padding:8px 10px;display:flex;flex-direction:column;gap:6px;">
       <div style="font-size:9px;color:var(--txt3);font-weight:800;letter-spacing:0.5px;">💾 MEMORY USAGE</div>
 
       <!-- Total RAM bar -->
@@ -2006,34 +1988,77 @@ const ACT_STYLES = {
   lowbal:   { icon:'⚠️', color:'#ffbe00',  bg:'rgba(255,190,0,0.10)',   label:'LOW BAL' },
 };
 
+// ── CRITICAL LOG TYPES ONLY ──
+// discover/reject/pass hata do — sirf bot performance wale dikhao
+const CRITICAL_LOG_TYPES = new Set(['buy','sell','whale','rug','lowbal']);
+
+// System health errors — /health se fetch karo
+let _sysErrors = [];
+async function _fetchSysHealth() {
+  try {
+    const d = await fetch('/health').then(r=>r.json());
+    const errs = [];
+    if(d.bnb_price === 0 || !d.bnb_price)
+      errs.push({icon:'⚠️', color:'var(--gold)', label:'BNB PRICE', msg:'BNB price 0 — market feed broken'});
+    if(d.bsc_connected === false)
+      errs.push({icon:'🔴', color:'var(--red)', label:'BSC DOWN', msg:'BSC connection failed'});
+    const wss = d.wss_status || '';
+    if(wss && wss !== 'live' && wss !== 'unknown')
+      errs.push({icon:'📡', color:'var(--red)', label:'WSS ERROR', msg:'WebSocket: ' + wss});
+    if(d.enabled === false)
+      errs.push({icon:'⏸️', color:'var(--gold)', label:'BOT PAUSED', msg:'Auto trade disabled'});
+    _sysErrors = errs;
+  } catch(e){ _sysErrors = []; }
+}
+setInterval(_fetchSysHealth, 8000);
+_fetchSysHealth();
+
 async function fetchActivity(){
   try {
     const r = await fetch('/activity'); if(!r.ok) return;
     const d = await r.json();
     const acts = d.activity || [];
 
-    // ── Render in Logs Tab ──
+    // Sirf critical types filter karo
+    const critical = acts.filter(a => CRITICAL_LOG_TYPES.has(a.type));
+
     const logList = document.getElementById('inline-log-list');
-    if(logList){
-      if(!acts.length){
-        logList.innerHTML = '<div style="text-align:center;padding:20px 8px;color:var(--txt3);font-size:10px;">No activity yet</div>';
-      } else {
-        logList.innerHTML = acts.slice(0,40).map(a => {
-          const s = ACT_STYLES[a.type] || ACT_STYLES.discover;
-          return `<div style="display:flex;align-items:center;gap:7px;padding:6px 10px;border-bottom:1px solid var(--line);">
-            <span style="font-size:11px;flex-shrink:0;">${s.icon}</span>
-            <div style="flex:1;min-width:0;">
-              <div style="display:flex;align-items:center;gap:4px;">
-                <span style="font-size:8px;font-weight:800;color:${s.color};font-family:'JetBrains Mono',monospace;">${s.label}</span>
-                <span style="font-size:10px;font-weight:700;color:var(--txt1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;">${a.token||'—'}</span>
-              </div>
-              <div style="font-size:9px;color:var(--txt3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.detail||''}</div>
-            </div>
-            <span style="font-size:8px;color:var(--txt3);flex-shrink:0;font-family:'JetBrains Mono',monospace;">${a.ts||''}</span>
-          </div>`;
-        }).join('');
-      }
+    if(!logList) return;
+
+    // System errors sabse upar
+    let html = '';
+    _sysErrors.forEach(e => {
+      html += `<div style="display:flex;align-items:center;gap:7px;padding:7px 10px;border-bottom:1px solid var(--line);background:rgba(224,107,107,0.07);">
+        <span style="font-size:13px;flex-shrink:0;">${e.icon}</span>
+        <div style="flex:1;min-width:0;">
+          <span style="font-size:8px;font-weight:800;color:${e.color};font-family:'JetBrains Mono',monospace;">${e.label}</span>
+          <div style="font-size:10px;color:var(--txt1);margin-top:1px;">${e.msg}</div>
+        </div>
+        <span style="font-size:8px;color:var(--red);font-weight:700;flex-shrink:0;">LIVE</span>
+      </div>`;
+    });
+
+    if(!critical.length && !_sysErrors.length){
+      logList.innerHTML = '<div style="text-align:center;padding:24px 8px;color:var(--txt3);font-size:10px;">✅ No critical events — bot running clean</div>';
+      return;
     }
+
+    html += critical.slice(0, 30).map(a => {
+      const s = ACT_STYLES[a.type] || ACT_STYLES.discover;
+      return `<div style="display:flex;align-items:center;gap:7px;padding:7px 10px;border-bottom:1px solid var(--line);">
+        <span style="font-size:13px;flex-shrink:0;">${s.icon}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:4px;">
+            <span style="font-size:8px;font-weight:800;color:${s.color};font-family:'JetBrains Mono',monospace;">${s.label}</span>
+            <span style="font-size:10px;font-weight:700;color:var(--txt1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px;">${a.token||'—'}</span>
+          </div>
+          <div style="font-size:9px;color:var(--txt3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.detail||''}</div>
+        </div>
+        <span style="font-size:8px;color:var(--txt3);flex-shrink:0;font-family:'JetBrains Mono',monospace;">${a.ts||''}</span>
+      </div>`;
+    }).join('');
+
+    logList.innerHTML = html;
   } catch(e){}
 }
 
