@@ -4810,8 +4810,7 @@ def poll_four_meme_v2():
 
                     # Get tx details async — non-blocking
                     threading.Thread(
-                        target=_fm_check_pending_tx,
-                        args=(tx_hash,),
+                        target=lambda h=tx_hash: _fm_check_pending_tx(h),
                         daemon=True
                     ).start()
 
@@ -4857,8 +4856,7 @@ def poll_four_meme_v2():
 
                     # Async check: tx.to == FM factory?
                     threading.Thread(
-                        target=_fm_check_paircreated_tx,
-                        args=(tx_hash, topics),
+                        target=lambda h=tx_hash, t=topics: _fm_check_paircreated_tx(h, t),
                         daemon=True
                     ).start()
 
