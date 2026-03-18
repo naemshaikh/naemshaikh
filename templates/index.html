@@ -1618,11 +1618,9 @@ async function fetchRamStats(){
     }
   } catch(e){}
 }
-if(localStorage.getItem('mrblack_auth')==='1'){
-  fetchRamStats();
-  setInterval(fetchRamStats, 10000);
-  setInterval(loadSettings,30000);
-}
+fetchRamStats();
+setInterval(fetchRamStats, 10000);
+setInterval(loadSettings,30000);
 
 // ── fetchActivity — inline notifications live feed ──
 async function fetchActivity() {
