@@ -519,24 +519,7 @@ function _checkLock(){
   </div>
 
 
-  <!-- ── ACTIVE ERROR BOX ── -->
-  <div id="active-error-box" style="display:none;padding:0 12px 6px;">
-    <div style="background:rgba(224,107,107,0.08);border:1.5px solid rgba(224,107,107,0.4);border-radius:var(--r);overflow:hidden;">
-      <!-- Header -->
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-bottom:1px solid rgba(224,107,107,0.2);background:rgba(224,107,107,0.06);">
-        <div style="display:flex;align-items:center;gap:7px;">
-          <div style="width:8px;height:8px;border-radius:50%;background:var(--red);box-shadow:0 0 8px var(--red);animation:blink 1.2s infinite;"></div>
-          <span style="font-size:10px;font-weight:800;color:var(--red);letter-spacing:0.8px;text-transform:uppercase;">Active Errors</span>
-          <span id="err-count-badge" style="background:rgba(224,107,107,0.2);color:var(--red);font-size:9px;font-weight:800;padding:1px 7px;border-radius:10px;font-family:'JetBrains Mono',monospace;">0</span>
-        </div>
-        <span style="font-size:8px;color:var(--txt3);font-family:'JetBrains Mono',monospace;">auto-clears when resolved</span>
-      </div>
-      <!-- Error list -->
-      <div id="active-error-list" style="max-height:180px;overflow-y:auto;-webkit-overflow-scrolling:touch;"></div>
-    </div>
-  </div>
-
-  <!-- ── SCANNER STATS PANEL ── -->
+    <!-- ── SCANNER STATS PANEL ── -->
   <div class="sep" style="margin-top:4px;">📡 Scanner Intelligence</div>
 
   <!-- ══ PANCAKESWAP CARD ══ -->
@@ -1515,7 +1498,7 @@ async function init(){
 
 init();
 // loadSettings called via setInterval
-setInterval(fetchStats,4000);  // LIVE — har 4s
+setInterval(fetchStats,6000);  // har 6s
 setInterval(fetchHistory,30000);
 
 // RAM stats — every 10 seconds
@@ -1601,9 +1584,9 @@ async function fetchRamStats(){
   } catch(e){}
 }
 fetchRamStats();
-setInterval(fetchRamStats, 5000);   // LIVE — har 5s
+setInterval(fetchRamStats, 15000); // har 15s
 setInterval(loadSettings,30000);
-setInterval(fetchActivity, 3000);   // LIVE — har 3s
+setInterval(fetchActivity, 5000);  // har 5s
 fetchActivity();
 
 
@@ -1847,118 +1830,9 @@ _startLiveAgoTimer();
 
 // Start scanner polling — 3 second mein refresh
 fetchScannerStats();
-setInterval(fetchScannerStats, 3000);  // LIVE — har 3s
+setInterval(fetchScannerStats, 5000); // har 5s
 
-// ══ ACTIVE ERROR BOX SYSTEM ══
-// /notifications se critical + warning filter karo
-// Jo recent hain (last 30 min) aur unread hain — dikhao
-// Jab read/resolved ho jaye — auto hata do
 
-const ERR_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
-
-// Performance keywords — sirf bot performance se related errors
-const ERR_KEYWORDS = [
-  'balance','buy failed','sell failed','reverted','timeout','nonce',
-  'gas','slippage','loss limit','sniper','scanner','connection',
-  'insufficient','stuck','stop loss','daily loss','sell timeout',
-  'buy timeout','sell reverted','buy reverted','low balance',
-  'wallet','trade','position','websocket','wss','rpc','failed'
-];
-
-function _isPerformanceError(title, detail) {
-  const text = (title + ' ' + detail).toLowerCase();
-  return ERR_KEYWORDS.some(k => text.includes(k));
-}
-
-let _activeErrors = [];
-let _errBoxVisible = false;
-
-async function fetchActiveErrors() {
-  try {
-    const r = await fetch('/notifications');
-    if (!r.ok) return;
-    const d = await r.json();
-    const notifs = d.notifications || [];
-    const now = Date.now();
-
-    // Filter: critical/warning + recent 30min + performance related
-    const active = notifs.filter(n => {
-      if (n.severity !== 'critical' && n.severity !== 'warning') return false;
-      // Recent check
-      const age = now - (n.ts_epoch ? n.ts_epoch * 1000 : 0);
-      if (age > ERR_WINDOW_MS) return false;
-      // Performance related
-      if (!_isPerformanceError(n.title || '', n.detail || '')) return false;
-      return true;
-    });
-
-    _activeErrors = active;
-    _renderErrorBox(active);
-  } catch(e) {}
-}
-
-function _renderErrorBox(errors) {
-  const box  = document.getElementById('active-error-box');
-  const list = document.getElementById('active-error-list');
-  const cnt  = document.getElementById('err-count-badge');
-  if (!box || !list) return;
-
-  if (!errors.length) {
-    // No active errors — hide box smoothly
-    if (_errBoxVisible) {
-      box.style.transition = 'opacity 0.4s';
-      box.style.opacity = '0';
-      setTimeout(() => { box.style.display = 'none'; box.style.opacity = '1'; }, 400);
-      _errBoxVisible = false;
-    }
-    return;
-  }
-
-  // Show box
-  if (!_errBoxVisible) {
-    box.style.display = 'block';
-    box.style.opacity = '0';
-    setTimeout(() => { box.style.transition = 'opacity 0.3s'; box.style.opacity = '1'; }, 10);
-    _errBoxVisible = true;
-  }
-
-  if (cnt) cnt.textContent = errors.length;
-
-  list.innerHTML = errors.map(n => {
-    const isCrit = n.severity === 'critical';
-    const clr    = isCrit ? 'var(--red)' : 'var(--gold)';
-    const bg     = isCrit ? 'rgba(224,107,107,0.06)' : 'rgba(212,168,71,0.06)';
-    const icon   = isCrit ? '🔴' : '🟡';
-
-    // Age display
-    const ageMs  = Date.now() - (n.ts_epoch ? n.ts_epoch * 1000 : 0);
-    const ageSec = Math.floor(ageMs / 1000);
-    const ageStr = ageSec < 60 ? ageSec + 's ago'
-                 : ageSec < 3600 ? Math.floor(ageSec/60) + 'm ago'
-                 : Math.floor(ageSec/3600) + 'h ago';
-
-    return `<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-bottom:1px solid rgba(224,107,107,0.12);background:${bg};">
-      <span style="font-size:13px;flex-shrink:0;margin-top:1px;">${icon}</span>
-      <div style="flex:1;min-width:0;">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:2px;">
-          <span style="font-size:11px;font-weight:800;color:${clr};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${n.title || '—'}</span>
-          <span style="font-size:8px;color:var(--txt3);font-family:'JetBrains Mono',monospace;flex-shrink:0;">${ageStr}</span>
-        </div>
-        <div style="font-size:10px;color:var(--txt2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${n.detail || ''}</div>
-        ${n.token ? `<div style="font-size:9px;color:var(--txt3);font-family:'JetBrains Mono',monospace;margin-top:2px;">Token: ${n.token}</div>` : ''}
-      </div>
-    </div>`;
-  }).join('');
-}
-
-// Age refresh — har second "Xs ago" update karo
-setInterval(() => {
-  if (_activeErrors.length) _renderErrorBox(_activeErrors);
-}, 5000);
-
-// Poll har 5s
-fetchActiveErrors();
-setInterval(fetchActiveErrors, 5000);
 // ══ LIVE PANEL: LOGS + NOTIFICATIONS TABS ══
 let _liveTab = 'logs';
 
@@ -2003,7 +1877,7 @@ const ACT_STYLES = {
 
 // ── CRITICAL LOG TYPES ONLY ──
 // discover/reject/pass hata do — sirf bot performance wale dikhao
-const CRITICAL_LOG_TYPES = new Set(['buy','sell','whale','rug','lowbal']);
+const CRITICAL_LOG_TYPES = new Set(['buy','whale','rug']); // sell/stop-loss notif tab mein hai
 
 // System health errors — /health se fetch karo
 let _sysErrors = [];
