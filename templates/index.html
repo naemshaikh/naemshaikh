@@ -299,9 +299,8 @@ function _checkLock(){
   }).then(function(r){ return r.json(); }).then(function(d){
     if(d.status === 'ok'){
       localStorage.setItem('mrblack_auth','1');
-      // SIMPLE FIX: Page reload karo — localStorage mein auth set hai
-      // Reload ke baad normal flow chalega seedha
-      window.location.reload();
+      document.getElementById('lock-screen').style.display = 'none';
+      document.body.style.overflow = '';
     } else {
       errEl.textContent = '❌ Wrong password';
       document.getElementById('lock-input').value = '';
@@ -3819,13 +3818,7 @@ setInterval(fetchNotifications, 10000);
 </script>
 
 
-<script>
-// index54 style — simple direct start
-init();
-setInterval(fetchStats,8000);
-setInterval(fetchHistory,30000);
-fetchRealBalance();
-</script>
+
 
 </body>
 </html>
