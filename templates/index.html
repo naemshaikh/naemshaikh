@@ -1532,12 +1532,9 @@ function _startAllIntervals(){
 }
 
 // SIMPLE: Reload ke baad yahan auth='1' hoga
-if(localStorage.getItem('mrblack_auth')==='1'){
-  _startAllIntervals();
-  init();
-  fetchRealBalance();
-}
-// else: lock screen dikhega, password daalne ke baad reload hoga
+_startAllIntervals();
+init();
+fetchRealBalance();
 
 // RAM stats — every 10 seconds
 async function fetchRamStats(){
@@ -1656,10 +1653,8 @@ async function fetchActivity() {
     }).join('');
   } catch(e) { }
 }
-if(localStorage.getItem('mrblack_auth')==='1'){
-  setInterval(fetchActivity, 5000);
-  fetchActivity();
-}
+setInterval(fetchActivity, 5000);
+fetchActivity();
 
 
 // ── SCANNER STATS ────────────────────────────────────────
@@ -1767,10 +1762,8 @@ async function fetchScannerStats(isManual = false) {
 }
 
 // Real-time: har 5s auto-refresh
-if(localStorage.getItem('mrblack_auth')==='1'){
-  fetchScannerStats();
-  setInterval(fetchScannerStats, 5000);
-}
+fetchScannerStats();
+setInterval(fetchScannerStats, 5000);
 
 // ── REJECTION BREAKDOWN ──────────────────────────────────
 async function fetchRejectionStats() {
@@ -1804,10 +1797,8 @@ async function fetchRejectionStats() {
   } catch(e) {}
 }
 
-if(localStorage.getItem('mrblack_auth')==='1'){
-  fetchRejectionStats();
-  setInterval(fetchRejectionStats, 10000);
-}
+fetchRejectionStats();
+setInterval(fetchRejectionStats, 10000);
 
 
 // ─── CONTROL PANEL ──────────────────────────────────────────
@@ -2409,10 +2400,8 @@ async function _doModeSwitch(){
   } catch(e){}
 })();
 
-if(localStorage.getItem('mrblack_auth')==='1'){
-  fetchRealBalance();
-  setInterval(fetchRealBalance, 68000);
-}
+fetchRealBalance();
+setInterval(fetchRealBalance, 68000);
 _applyModeUI();
 
 // ── THEME SYSTEM — Day/Night eye-friendly ──
@@ -3885,10 +3874,8 @@ async function clearAllNotifs(){
 }
 
 // Fetch notifications every 10 seconds
-if(localStorage.getItem('mrblack_auth')==='1'){
-  setTimeout(fetchNotifications, 2000);
-  setInterval(fetchNotifications, 10000);
-}
+setTimeout(fetchNotifications, 2000);
+setInterval(fetchNotifications, 10000);
 </script>
 
 <script>/* FIX_RETRY_RECOVERY v2 — correct function names */
