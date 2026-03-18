@@ -349,7 +349,7 @@ function _checkLock(){
     <div class="bal-card em">
       <div class="bal-lbl" id="bal-mode-lbl">Paper Balance</div>
       <div class="bal-val" id="b-bal" style="color:var(--em)">—</div>
-      <div class="bal-sub" id="b-bal-usd">—</div>
+      <div class="bal-sub" id="b-usd">—</div>
     </div>
     <div class="bal-card ice">
       <div class="bal-lbl">Real Wallet</div>
@@ -4146,5 +4146,16 @@ async function clearAllNotifs(){
 setTimeout(fetchNotifications, 2000);
 setInterval(fetchNotifications, 10000);
 </script>
+
+<!-- Ghost elements — fetchStats ke liye, UI mein invisible -->
+<div style="display:none;">
+  <span id="sg-scan"></span>
+  <span id="sg-watch"></span>
+  <span id="sg-wins"></span>
+  <span id="sg-losses"></span>
+  <span id="daily-pnl"></span>
+  <span id="daily-trades"></span>
+  <span id="daily-wr"></span>
+</div>
 </body>
 </html>
