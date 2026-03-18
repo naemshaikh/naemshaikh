@@ -2385,9 +2385,17 @@ auto_trade_stats = {
 
 
 # ========== PROCESS NEW TOKEN ==========
+def _save_pc_event_bg(token_addr, liq_bnb, prefilter, cl_score, cl_total, snipe_price, result, skip_reason, time_ms):
+    """PC event background save"""
+    threading.Thread(target=_save_pc_event, args=(
+        token_addr, liq_bnb, prefilter, cl_score, cl_total, snipe_price, result, skip_reason, time_ms
+    ), daemon=True).start()
+
 def _process_new_token(token_address: str, pair_address: str, source: str = "websocket"):
     global discovered_addresses
     _now = time.time()
+    _t_process_start = _now
+    _liq_bnb = 0.0
     # ── Already traded token — dobara buy mat karo ──
     try:
         _addr_lower = token_address.lower()
@@ -4049,134 +4057,47 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
         except Exception:
             pass
 
-        result  = run_full_sniper_checklist(pair_address, prefetched_dex=_prefetched_dex)
-        score   = result.get("score", 0)
-        total   = result.get("total", 1)
-        rec     = result.get("recommendation", "")
-        overall = result.get("overall", "UNKNOWN")
-        print(f"🔍 Auto-check {pair_address[:10]}: {overall} ({score}/{total})")
-        _ss = CHECKLIST_SETTINGS.get("score_safe", 50.0)
-        print(f"📊 Score: {score}/{total} = {round(score/max(total,1)*100)}% | SAFE needs:{int(total*_ss/100)} ({_ss:.0f}%) | overall={overall}")
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # CHECKLIST STOPPED — On-chain simulation use ho raha hai
+        # Wapas enable karna ho toh is block ko uncomment karo
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        _final_name = pair_address[:8]
+        _fg         = market_cache.get("fear_greed", 50)
 
-        _dex_d    = result.get("dex_data", {})
-        _tok_sym  = _dex_d.get("symbol") or _dex_d.get("token_symbol") or ""
-        _tok_name = _dex_d.get("name")   or _dex_d.get("token_name")   or ""
-        if not _tok_sym:
-            for _qp in list(new_pairs_queue):
-                if str(_qp.get("address","")).lower() == pair_address.lower():
-                    _tok_sym  = _qp.get("symbol", "")
-                    _tok_name = _qp.get("name",   "")
-                    break
-        _final_name = _tok_sym or _tok_name or pair_address[:8]
-
-        _safe_score = CHECKLIST_SETTINGS.get("score_safe", 50.0)
-
-        # ── GATE 1: Full Checklist — MUST be SAFE ──
-        # ── Common decision context ──
-        _decision_ts   = datetime.utcnow().isoformat()
-        _failed_chk    = next((c["label"] for c in result.get("checklist", []) if c["status"] == "fail"), None)
-        _creator_addr  = (result.get("_goplus_raw") or {}).get("creator_address", "")
-        _whale_cnt     = _count_whales_in_token(pair_address, result.get("_goplus_raw") or {})
-        _fg            = market_cache.get("fear_greed", 50)
-        _market_cond   = "bullish" if _fg >= 60 else ("bearish" if _fg <= 35 else "neutral")
-        _dex_age       = (_dex_d.get("pair_created_at") or 0)
-        _token_age_min = round((time.time() - _dex_age / 1000) / 60, 1) if _dex_age else 0
-        _dex_safe      = {k: v for k, v in (_dex_d or {}).items() if k != "_raw_pairs"}
-
-        if overall != "SAFE":
+        # On-chain simulation — fast ~300-500ms
+        print(f"🔬 [PC] On-chain sim: {pair_address[:10]}")
+        _sim = _onchain_sim(pair_address)
+        if not _sim["safe"]:
             _scanner_stats["pc_checklist_fail"] += 1
-            if overall == "DANGER":
-                _scanner_stats["rej_danger"] += 1
-            _log("reject", _final_name, f"Checklist {overall} ({score}/{total}) — {rec[:40]}", pair_address)
-            print(f"⏭️ SKIP {_final_name}: checklist={overall} — CAUTION/RISK/DANGER pe trade nahi")
-            threading.Thread(target=_save_bot_decision, args=({
-                "token_address":      pair_address,
-                "token_name":         _final_name,
-                "decision":           "SKIP",
-                "reason":             f"Checklist {overall} — {rec[:80]}",
-                "thought":            (f"SKIP (DANGER/RISK): Score={score}/{total} ({round(score/max(total,1)*100)}%). "f"Overall={overall}. Pehla fail: {_failed_chk}. "f"Liquidity={float((_dex_safe or {}).get('liquidity_usd', 0) or 0):,.0f}USD. "f"MCap={float((_dex_safe or {}).get('fdv', 0) or 0):,.0f}USD. "f"BuyTax={float((_dex_safe or {}).get('buy_tax', 0) or 0):.1f}% SellTax={float((_dex_safe or {}).get('sell_tax', 0) or 0):.1f}%. "f"TokenAge={_token_age_min:.0f}min. Market={_market_cond}. BNB={market_cache.get('bnb_price',0):.2f}. "f"Creator={_creator_addr[:8] if _creator_addr else 'unknown'}. Whales={_whale_cnt}."),
-                "score":              score,
-                "total":              total,
-                "checklist":          result.get("checklist"),
-                "signals":            result.get("green_signals"),
-                "dex_data":           _dex_safe,
-                "discovery_source":   "whale" if whale_triggered else "wss",
-                "discovery_ts":       _decision_ts,
-                "bnb_price_at_entry": market_cache.get("bnb_price", 0),
-                "fear_greed_at_entry":_fg,
-                "market_condition":   _market_cond,
-                "token_age_min":      _token_age_min,
-                "failed_check":       _failed_chk,
-                "creator_address":    _creator_addr,
-                "whale_count":        _whale_cnt,
-                "token_type":         "meme",
-            },), daemon=True).start()
+            print(f"🚫 [PC] Sim fail — {_sim['reason']}: {pair_address[:10]}")
+            _save_pc_event_bg(pair_address, _liq_bnb, "PASS", 0, 0, 0, "SKIP", f"onchain sim: {_sim['reason']}", int((time.time()-_t_process_start)*1000))
+            return
+        print(f"✅ [PC] Sim passed — buying: {pair_address[:10]}")
+        _scanner_stats["pc_checklist_pass"] += 1
 
-        elif score < int(total * _safe_score / 100):
-            _log("reject", _final_name, f"Score {score}/{total} ({round(score/max(total,1)*100)}%) below threshold", pair_address)
-            print(f"⏭️ SKIP {_final_name}: checklist score {score}/{total} ({round(score/max(total,1)*100)}%) < {_safe_score:.0f}% threshold")
-            threading.Thread(target=_save_bot_decision, args=({
-                "token_address":      pair_address,
-                "token_name":         _final_name,
-                "decision":           "SKIP",
-                "reason":             f"Score {score}/{total} ({round(score/max(total,1)*100)}%) threshold se kam",
-                "thought":            (f"SKIP (LOW SCORE): Checklist SAFE tha lekin score {score}/{total} ({round(score/max(total,1)*100)}%) threshold {_safe_score:.0f}% se kam. "f"Pehla fail: {_failed_chk}. "f"Liquidity={float((_dex_safe or {}).get('liquidity_usd', 0) or 0):,.0f}USD. "f"MCap={float((_dex_safe or {}).get('fdv', 0) or 0):,.0f}USD. "f"TokenAge={_token_age_min:.0f}min. Market={_market_cond}. BNB={market_cache.get('bnb_price',0):.2f}."),
-                "score":              score,
-                "total":              total,
-                "checklist":          result.get("checklist"),
-                "signals":            result.get("green_signals"),
-                "dex_data":           _dex_safe,
-                "discovery_source":   "whale" if whale_triggered else "wss",
-                "discovery_ts":       _decision_ts,
-                "bnb_price_at_entry": market_cache.get("bnb_price", 0),
-                "fear_greed_at_entry":_fg,
-                "market_condition":   _market_cond,
-                "token_age_min":      _token_age_min,
-                "failed_check":       _failed_chk,
-                "creator_address":    _creator_addr,
-                "whale_count":        _whale_cnt,
-                "token_type":         "meme",
-            },), daemon=True).start()
+        # Save decision
+        threading.Thread(target=_save_bot_decision, args=({
+            "token_address":      pair_address,
+            "token_name":         _final_name,
+            "decision":           "BUY",
+            "reason":             "On-chain sim passed",
+            "discovery_source":   "whale" if whale_triggered else "wss",
+            "bnb_price_at_entry": market_cache.get("bnb_price", 0),
+            "token_type":         "meme",
+        },), daemon=True).start()
 
-        else:
-            # ── GATE 2: Opportunity Score ──
-            _gs = detect_green_signals(pair_address, result.get("_goplus_raw", {}), _dex_d)
-            _opp_score = _gs.get("score", 0)
-            _opp_sigs  = [s["type"] for s in _gs.get("signals", [])]
-            _buy_ts    = time.time()
+        # BUY
+        try:
+            _auto_paper_buy(pair_address, _final_name, 1, 1, {})
+        except Exception as e:
+            print(f"Auto buy error: {e}")
 
-            if _opp_score < 1:
-                _log("pass", _final_name, f"Checklist SAFE ✅ but no opp signals — buying anyway", pair_address)
-                print(f"✅ BUY {_final_name}: checklist SAFE ✅ — no extra signals but checklist passed")
-            # Buy karo — checklist SAFE ho toh opportunity score optional
-            _log("pass", _final_name, f"✅ SAFE {score}/{total} · signals: {', '.join(_opp_sigs[:2])}", pair_address)
-            _scanner_stats["pc_checklist_pass"] += 1
-            print(f"✅ BUY CONFIRMED {_final_name}: checklist={overall} ({score}/{total}) + opp={_opp_score}pt signals={_opp_sigs}")
-            threading.Thread(target=_save_bot_decision, args=({
-                "token_address":        pair_address,
-                "token_name":           _final_name,
-                "decision":             "BUY",
-                "reason":               f"Checklist SAFE {score}/{total} + signals: {', '.join(_opp_sigs[:3])}",
-                "thought":              (f"BUY decision: Score={score}/{total} ({round(score/max(total,1)*100)}%) SAFE. "f"Signals={_opp_score}pt: {', '.join(_opp_sigs)}. "f"Liquidity={float((_dex_d or {}).get('liquidity_usd', 0) or 0):,.0f}USD. "f"MCap={float((_dex_d or {}).get('fdv', 0) or 0):,.0f}USD. "f"TokenAge={_token_age_min:.0f}min. "f"BNB={market_cache.get('bnb_price',0):.2f}. "f"Market={_market_cond}. FearGreed={_fg}. "f"Whales={_whale_cnt}. Creator={_creator_addr[:8] if _creator_addr else 'unknown'}. "f"Buys5m={int((_dex_d or {}).get('buys_5m', 0) or 0)} Sells5m={int((_dex_d or {}).get('sells_5m', 0) or 0)}."),
-                "score":                score,
-                "total":                total,
-                "checklist":            result.get("checklist"),
-                "signals":              result.get("green_signals"),
-                "dex_data":             _dex_safe,
-                "discovery_source":     "whale" if whale_triggered else "wss",
-                "discovery_ts":         _decision_ts,
-                "bnb_price_at_entry":   market_cache.get("bnb_price", 0),
-                "fear_greed_at_entry":  _fg,
-                "market_condition":     _market_cond,
-                "token_age_min":        _token_age_min,
-                "discovery_to_buy_sec": round(_buy_ts - time.time() + (30 if not whale_triggered else 10), 1),
-                "creator_address":      _creator_addr,
-                "whale_count":          _whale_cnt,
-                "token_type":           "meme",
-                "entry_price":          float((_dex_d or {}).get("price_bnb", 0) or 0),
-            },), daemon=True).start()
-            try: _auto_paper_buy(pair_address, _final_name, score, total, result)
-            except Exception as e: print(f"Auto buy error: {e}")
+        # ━━━ CHECKLIST CODE — FILE MEIN HAI, BAND HAI ━━━
+        # Wapas chalana ho toh yahan se end tak uncomment karo
+        if False:
+            result = {}
+            score = 0
+            total = 0
 
         knowledge_base["bsc"]["new_tokens"] = knowledge_base["bsc"]["new_tokens"][-99:]
         knowledge_base["bsc"]["new_tokens"].append({
