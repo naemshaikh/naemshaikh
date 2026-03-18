@@ -1054,7 +1054,7 @@ function _cf(addr){const t=document.createElement('textarea');t.value=addr;docum
 function setConn(ok,msg){
   const bar=document.getElementById('conn-bar'),dot=document.getElementById('live-dot');
   document.getElementById('conn-msg').textContent=msg||'';
-  if(ok){bar.className='conn-bar ok show';dot.className='live-dot';_serverOk=true;setTimeout(()=>bar.classList.remove('show'),3000);}
+  if(ok){bar.className='conn-bar ok show';dot.className='live-dot';_serverOk=true;setTimeout(()=>bar.classList.remove('show'),1500);}
   else{bar.className='conn-bar show';dot.className='live-dot dead';_serverOk=false;}
 }
 
@@ -1378,10 +1378,10 @@ async function fetchStats(){
   // DEBUG: log what we got
   dbg('📡 /auto-stats: '+(_as?'✅ bnb='+(_as.bnb_price||0)+' bal='+(_as.paper_balance||0)+'  enabled='+_as.enabled:'❌ NULL'));
   dbg('📡 /trading-data: '+(_td?'✅ bnb='+(_td.bnb_price||0)+' paper='+(_td.paper||0):'❌ NULL'));
-  if(!_as && !_td){setConn(false,'⚡ Retry...');dbg('❌ BOTH NULL — server not responding');return false;}
+  if(!_as && !_td){if(_serverOk)setConn(false,'⚡ Connection lost — retry...');dbg('❌ BOTH NULL — server not responding');return false;}
   // FIX: agar server still starting hai toh bhi false return karo — retry karega
   if(_as && _as.status === 'starting' && !_td){setConn(false,'⏳ Server init...');return false;}
-  setConn(true,'✅ MrBlack Connected');
+  if(!_serverOk) setConn(true,'✅ MrBlack Connected');  // sirf pehli baar dikhao
   dbg('✅ Connected successfully!');
   if(_as) _setAutoUI(!!_as.enabled);
   const _modeEl=document.getElementById('hdr-mode');
