@@ -3891,35 +3891,45 @@ if(localStorage.getItem('mrblack_auth')==='1'){
 }
 </script>
 
-<script>/* FIX_RETRY_RECOVERY */
+<script>/* FIX_RETRY_RECOVERY v2 — correct function names */
 (function(){
   var bar = document.getElementById('conn-bar');
   var msg = document.getElementById('conn-msg');
   var count = 0;
-  var max = 15;
+  var max = 20;
   var timer = null;
+  var _recovered = false;
   function check(){
+    if(_recovered){ clearInterval(timer); return; }
     fetch('/health').then(function(r){ return r.json(); }).then(function(d){
       if(d && d.status === 'ok'){
-        if(bar){ bar.className = 'conn-bar ok show'; }
-        if(msg){ msg.textContent = 'Connected!'; }
-        setTimeout(function(){ if(bar) bar.classList.remove('show'); }, 2000);
-        clearInterval(timer);
-        if(typeof fetchAutoStats === 'function') fetchAutoStats();
-        if(typeof loadStats === 'function') loadStats();
+        if(!_recovered){
+          _recovered = true;
+          clearInterval(timer);
+          if(bar){ bar.className = 'conn-bar ok show'; }
+          if(msg){ msg.textContent = '✅ MrBlack Connected'; }
+          setTimeout(function(){ if(bar) bar.classList.remove('show'); }, 2500);
+          // FIX: sahi function names — fetchAutoStats/loadStats exist nahi karte
+          if(typeof fetchStats === 'function') fetchStats().catch(function(){});
+          if(typeof fetchHistory === 'function') fetchHistory().catch(function(){});
+          if(typeof fetchScannerStats === 'function') fetchScannerStats().catch(function(){});
+          if(typeof fetchRamStats === 'function') fetchRamStats().catch(function(){});
+        }
       } else {
         count++;
         if(bar) bar.classList.add('show');
-        if(msg) msg.textContent = 'Retry ' + count + '/' + max + ' server init...';
-        if(count >= max){ clearInterval(timer); if(msg) msg.textContent = 'Server unreachable - reload karo'; }
+        if(msg) msg.textContent = '⏳ Retry ' + count + '/' + max + ' — server init ho rha hai...';
+        if(count >= max){ clearInterval(timer); if(msg) msg.textContent = '❌ Server unreachable — page reload karo'; }
       }
     }).catch(function(){
       count++;
       if(bar) bar.classList.add('show');
-      if(msg) msg.textContent = 'Retry ' + count + '/' + max + ' connecting...';
+      if(msg) msg.textContent = '⏳ Retry ' + count + '/' + max + ' connecting...';
+      if(count >= max){ clearInterval(timer); if(msg) msg.textContent = '❌ Server unreachable — page reload karo'; }
     });
   }
-  setTimeout(check, 2000);
+  // FIX: 1s pe pehla check — cold start ke baad jaldi recover ho
+  setTimeout(check, 1000);
   timer = setInterval(check, 3000);
 })();
 </script>

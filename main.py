@@ -6328,7 +6328,7 @@ def trading_data():
     })
   except Exception as e:
     print(f"❌ trading_data error: {e}")
-    return jsonify({"error":"data_unavailable","bnb_price":0,"positions":[],"trade_count":0,"win_rate":0,"monitoring":0})
+    return jsonify({"error":"data_unavailable","bnb_price":300,"fear_greed":50,"paper":"5.0000","positions":[],"trade_count":0,"win_rate":0,"monitoring":0})
 
 @app.route("/chat", methods=["POST"])
 def chat():
