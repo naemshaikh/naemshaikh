@@ -4520,7 +4520,7 @@ def _pc_do_snipe(token_address: str, pair_address: str, liq_bnb: float):
 # Bitquery FM Graduation Stream
 BQ_CLIENT_ID     = os.environ.get("BQ_CLIENT_ID",     "1d38b4e2-008d-43cc-8ac8-9c93d8392d13")
 BQ_CLIENT_SECRET = os.environ.get("BQ_CLIENT_SECRET", "Th21wimf3DmD718dsiWGPIzT~V")
-BQ_WSS_URL       = "wss://streaming.bitquery.io/eap"
+BQ_WSS_URL       = "wss://streaming.bitquery.io/graphql"
 BQ_TOKEN_URL     = "https://oauth2.bitquery.io/oauth2/token"
 
 _FM_FACTORY_ADDRS = [
@@ -4874,16 +4874,24 @@ def poll_four_meme_v2():
         return ""
 
     async def _listen_bq(token):
-        headers = {"Authorization": "Bearer " + token}
+        # Official Bitquery docs: token URL mein, subprotocol graphql-ws
+        # Ref: docs.bitquery.io/docs/subscriptions/examples
+        bq_url = BQ_WSS_URL + "?token=" + token
         async with _ws.connect(
-            BQ_WSS_URL, additional_headers=headers,
+            bq_url,
+            subprotocols=["graphql-ws"],
             ping_interval=30, ping_timeout=20,
             close_timeout=10, max_size=2**20
         ) as ws:
-            await ws.send(_j.dumps({"type": "connection_init", "payload": {"Authorization": "Bearer " + token}}))
-            ack = _j.loads(await asyncio.wait_for(ws.recv(), timeout=15))
-            if ack.get("type") != "connection_ack":
-                raise Exception("BQ ack failed: " + str(ack))
+            # Step 1: connection_init (no payload needed per docs)
+            await ws.send(_j.dumps({"type": "connection_init"}))
+            # Step 2: wait for connection_ack
+            while True:
+                msg = _j.loads(await asyncio.wait_for(ws.recv(), timeout=15))
+                if msg.get("type") == "connection_ack": break
+                if msg.get("type") == "connection_error":
+                    raise Exception("BQ connection_error: " + str(msg))
+            # Step 3: subscribe
             await ws.send(_j.dumps({"id": "1", "type": "start", "payload": {"query": _BQ_FM_QUERY}}))
             print("OK [FM] Bitquery stream connected!")
             while True:
