@@ -1664,10 +1664,9 @@ function _updateScPCTab(d) {
   const t = _scActivePCTab;
   const src = t === 'min' ? d.per_min : t === 'hour' ? d.per_hour : d.per_day;
   if(!src) return;
-  _animateCount('sc-pc-t-disc',  src.pc_disc || 0,                    'var(--txt1)');
-  _animateCount('sc-pc-t-snipe', src.pc_snipe || src.pc_buy || 0,     'var(--em)');
-  _animateCount('sc-pc-t-buy',   src.pc_buy  || 0,                    'var(--gold)');
-  // Legacy IDs
+  _animateCount('sc-pc-t-disc',  src.pc_disc || 0, 'var(--txt1)');
+  _animateCount('sc-pc-t-snipe', src.pc_buy  || 0, 'var(--em)');
+  _animateCount('sc-pc-t-buy',   src.pc_buy  || 0, 'var(--gold)');
   _animateCount('sc-t-pc-disc',  src.pc_disc || 0, 'var(--ice)');
   _animateCount('sc-t-pc-buy',   src.pc_buy  || 0, 'var(--em)');
 }
@@ -1676,10 +1675,9 @@ function _updateScFMTab(d) {
   const t = _scActiveFMTab;
   const src = t === 'min' ? d.per_min : t === 'hour' ? d.per_hour : d.per_day;
   if(!src) return;
-  _animateCount('sc-fm-t-disc',  src.fm_disc || 0,                    'var(--txt1)');
-  _animateCount('sc-fm-t-snipe', src.fm_snipe || src.fm_buy || 0,     'var(--em)');
-  _animateCount('sc-fm-t-buy',   src.fm_buy  || 0,                    'var(--gold)');
-  // Legacy IDs
+  _animateCount('sc-fm-t-disc',  src.fm_disc || 0, 'var(--txt1)');
+  _animateCount('sc-fm-t-snipe', src.fm_buy  || 0, 'var(--em)');
+  _animateCount('sc-fm-t-buy',   src.fm_buy  || 0, 'var(--gold)');
   _animateCount('sc-t-fm-disc',  src.fm_disc || 0, 'var(--gold)');
   _animateCount('sc-t-fm-buy',   src.fm_buy  || 0, 'var(--em)');
 }
@@ -1715,43 +1713,21 @@ async function refreshFM() {
 }
 
 // ── Update sniper running status badges
+// Backend mein 'running' field nahi — data aa raha hai matlab RUNNING
 function _updateSniperStatus(d) {
-  // PC status
-  const pcRunning = d.pc && (d.pc.running !== false);
-  const pcDot = document.getElementById('pc-status-dot');
-  const pcLbl = document.getElementById('pc-status-lbl');
-  const pcBadge = document.getElementById('pc-status-badge');
-  if(pcDot && pcLbl && pcBadge) {
-    if(pcRunning) {
-      pcDot.style.background = 'var(--em)'; pcDot.style.boxShadow = '0 0 6px var(--em)';
-      pcDot.style.animation = 'blink 2s infinite';
-      pcLbl.textContent = 'RUNNING'; pcLbl.style.color = 'var(--em)';
-      pcBadge.style.background = 'var(--em-dim)'; pcBadge.style.borderColor = 'rgba(52,201,146,0.3)';
-    } else {
-      pcDot.style.background = 'var(--red)'; pcDot.style.boxShadow = '0 0 6px var(--red)';
-      pcDot.style.animation = 'none';
-      pcLbl.textContent = 'STOPPED'; pcLbl.style.color = 'var(--red)';
-      pcBadge.style.background = 'var(--red-dim)'; pcBadge.style.borderColor = 'rgba(224,107,107,0.3)';
-    }
-  }
-  // FM status
-  const fmRunning = d.fm && (d.fm.running !== false);
-  const fmDot = document.getElementById('fm-status-dot');
-  const fmLbl = document.getElementById('fm-status-lbl');
-  const fmBadge = document.getElementById('fm-status-badge');
-  if(fmDot && fmLbl && fmBadge) {
-    if(fmRunning) {
-      fmDot.style.background = 'var(--em)'; fmDot.style.boxShadow = '0 0 6px var(--em)';
-      fmDot.style.animation = 'blink 2s infinite';
-      fmLbl.textContent = 'RUNNING'; fmLbl.style.color = 'var(--em)';
-      fmBadge.style.background = 'var(--em-dim)'; fmBadge.style.borderColor = 'rgba(52,201,146,0.3)';
-    } else {
-      fmDot.style.background = 'var(--red)'; fmDot.style.boxShadow = '0 0 6px var(--red)';
-      fmDot.style.animation = 'none';
-      fmLbl.textContent = 'STOPPED'; fmLbl.style.color = 'var(--red)';
-      fmBadge.style.background = 'var(--red-dim)'; fmBadge.style.borderColor = 'rgba(224,107,107,0.3)';
-    }
-  }
+  ['pc','fm'].forEach(function(key) {
+    const dot   = document.getElementById(key+'-status-dot');
+    const lbl   = document.getElementById(key+'-status-lbl');
+    const badge = document.getElementById(key+'-status-badge');
+    if(!dot || !lbl || !badge) return;
+    dot.style.background    = 'var(--em)';
+    dot.style.boxShadow     = '0 0 6px var(--em)';
+    dot.style.animation     = 'blink 2s infinite';
+    lbl.textContent         = 'RUNNING';
+    lbl.style.color         = 'var(--em)';
+    badge.style.background  = 'var(--em-dim)';
+    badge.style.borderColor = 'rgba(52,201,146,0.3)';
+  });
 }
 
 async function fetchScannerStats() {
