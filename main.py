@@ -4570,11 +4570,10 @@ _fm_sniped_lock = threading.Lock()
 _fm_dev_cache      = {}
 _fm_dev_cache_lock = threading.Lock()
 
+# Global FM w3 — PC wala hi reuse karo
 def _fm_get_w3():
-    """QuickNode HTTP only"""
-    qn = os.getenv("QUICKNODE_HTTP","")
-    if qn: return Web3(Web3.HTTPProvider(qn, request_kwargs={"timeout":4}))
-    return None
+    """Reuse global QuickNode w3"""
+    return _get_w3q()
 
 def _fm_get_token_info(token_addr, w3=None):
     """Official getTokenInfo via TokenManagerHelper3"""
@@ -4633,38 +4632,31 @@ def _fm_dev_history_onchain(dev_addr, w3=None):
         ZERO_PADDED    = "0x" + "0" * 64
 
         current_block = w3.eth.block_number
-        from_block    = max(0, current_block - 200000)  # ~7 days
+        from_block    = max(0, current_block - 7200)  # sirf last 6 hours (~7200 blocks)
 
-        for factory in _FM_FACTORY_ADDRS:
-            try:
-                logs = w3.eth.get_logs({
-                    "address":   Web3.to_checksum_address(factory),
-                    "topics":    [TRANSFER_TOPIC, ZERO_PADDED],
-                    "fromBlock": from_block,
-                    "toBlock":   "latest",
-                })
-                # Filter by dev address in data or topics
-                dev_tokens = []
-                for log in logs:
-                    # to address = topics[2] last 40 chars
-                    to_addr = "0x" + log["topics"][2].hex()[-40:]
-                    if to_addr.lower() == dev_lower:
-                        token = log["address"]
-                        dev_tokens.append(token)
+        # Sirf primary factory check karo — speed ke liye
+        try:
+            logs = w3.eth.get_logs({
+                "address":   Web3.to_checksum_address(_FM_FACTORY_ADDRS[0]),
+                "topics":    [TRANSFER_TOPIC, ZERO_PADDED,
+                              "0x" + dev_lower[2:].zfill(64)],  # dev address filter
+                "fromBlock": from_block,
+                "toBlock":   "latest",
+            })
+            dev_tokens = [log["address"] for log in logs]
+            result["total"] = len(dev_tokens)
 
-                result["total"] += len(dev_tokens)
-
-                # Check each token status
-                for tok in dev_tokens[:10]:  # max 10 check
-                    try:
-                        info = _fm_get_token_info(tok, w3)
-                        if not info: continue
-                        if info["liquidityAdded"]:
-                            result["graduated"] += 1
-                        elif info["funds"] == 0:
-                            result["rugged"] += 1
-                    except: continue
-            except: continue
+            # Max 5 check karo
+            for tok in dev_tokens[:5]:
+                try:
+                    info = _fm_get_token_info(tok, w3)
+                    if not info: continue
+                    if info["liquidityAdded"]:
+                        result["graduated"] += 1
+                    elif info["funds"] == 0:
+                        result["rugged"] += 1
+                except: continue
+        except: pass
 
     except Exception as e:
         pass
