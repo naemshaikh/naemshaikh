@@ -4277,8 +4277,7 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
     if _lp_burned:
         print(f"🔥 LP burned ✅")
     else:
-        print(f"⛔ LP not burned — SKIP")
-        return
+        print(f"⚠️ LP not burned — proceeding")
 
     print(f"✅ Liq ok {_liq_bnb:.2f} BNB (${_liq_usd:.0f}): {pair_address[:10]}")
     _scanner_stats["pc_prefilter_pass"] += 1
