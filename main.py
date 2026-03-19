@@ -7461,98 +7461,139 @@ def health():
 
 @app.route("/analyze-wallet/<wallet_address>")
 def analyze_wallet(wallet_address):
-    """Wallet ka trade pattern analyze karo via Moralis"""
+    """Wallet ka full trade pattern + pool liquidity analyze karo"""
     try:
         if not MORALIS_API_KEY:
             return jsonify({"error": "MORALIS_API_KEY not set"})
 
-        # Moralis se last 100 token transfers fetch karo
+        WBNB_ADDR = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
+        wallet_lower = wallet_address.lower()
+        _headers = {"X-API-Key": MORALIS_API_KEY}
+
+        # Step 1: Last 100 ERC20 token transfers
         r = requests.get(
             f"https://deep-index.moralis.io/api/v2.2/{wallet_address}/erc20/transfers",
-            params={"chain": "bsc", "limit": 100, "order": "DESC",
-                    "contract_addresses[]": ""},
-            headers={"X-API-Key": MORALIS_API_KEY},
-            timeout=15
+            params={"chain": "bsc", "limit": 100, "order": "DESC"},
+            headers=_headers, timeout=15
         )
         if r.status_code != 200:
-            return jsonify({"error": f"Moralis error: {r.status_code}", "status": r.status_code})
+            return jsonify({"error": f"Moralis error: {r.status_code}"})
 
-        data = r.json()
-        txs = data.get("result", [])
-
-        # Filter out WBNB/BNB — sirf meme tokens
-        WBNB_ADDR = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
+        txs = r.json().get("result", [])
+        # Filter WBNB
         txs = [t for t in txs if t.get("token_address","").lower() != WBNB_ADDR.lower()]
 
-        # Buy/Sell group karo per token
+        # Step 2: Group by token
         tokens = {}
         for t in txs:
             sym  = t.get("token_symbol", "?")
-            addr = t.get("token_address", "")
-            direction = "BUY" if t.get("to_address","").lower() == wallet_address.lower() else "SELL"
+            addr = t.get("token_address", "").lower()
+            direction = "BUY" if t.get("to_address","").lower() == wallet_lower else "SELL"
             ts   = t.get("block_timestamp", "")[:19]
             val  = float(t.get("value_decimal") or 0)
-
-            key = addr.lower()
-            if key not in tokens:
-                tokens[key] = {"symbol": sym, "address": addr, "buys": [], "sells": []}
+            if not addr: continue
+            if addr not in tokens:
+                tokens[addr] = {"symbol": sym, "address": addr, "buys": [], "sells": []}
             if direction == "BUY":
-                tokens[key]["buys"].append({"ts": ts, "val": val})
+                tokens[addr]["buys"].append({"ts": ts, "val": val})
             else:
-                tokens[key]["sells"].append({"ts": ts, "val": val})
+                tokens[addr]["sells"].append({"ts": ts, "val": val})
 
-        # Analysis
+        # Step 3: Per token analysis + pool liquidity
+        bnb_price = market_cache.get("bnb_price", 0)
         results = []
         for addr, data in tokens.items():
             buys  = data["buys"]
             sells = data["sells"]
-            if not buys:
-                continue
+            if not buys: continue
 
-            first_buy  = buys[-1]["ts"] if buys else ""
-            first_sell = sells[-1]["ts"] if sells else ""
+            # Sort by time
+            buys.sort(key=lambda x: x["ts"])
+            sells.sort(key=lambda x: x["ts"])
 
-            # Hold time
+            first_buy  = buys[0]["ts"]
+            first_sell = sells[0]["ts"] if sells else ""
+            last_sell  = sells[-1]["ts"] if sells else ""
+
+            # Hold time (first buy to first sell)
             hold_min = 0
             if first_buy and first_sell:
-                from datetime import datetime as _dt
                 try:
-                    b = _dt.fromisoformat(first_buy)
-                    s = _dt.fromisoformat(first_sell)
-                    hold_min = round(abs((s - b).total_seconds()) / 60, 1)
+                    from datetime import datetime as _dt2
+                    b = _dt2.fromisoformat(first_buy)
+                    s = _dt2.fromisoformat(first_sell)
+                    hold_min = round((s - b).total_seconds() / 60, 1)
                 except Exception:
                     pass
 
+            # Pool liquidity via getReserves on-chain
+            liq_bnb = 0.0
+            liq_usd = 0.0
+            try:
+                _pair = _get_v2_pair(Web3.to_checksum_address(addr))
+                if _pair:
+                    _pc = w3.eth.contract(
+                        address=Web3.to_checksum_address(_pair),
+                        abi=PAIR_ABI_PRICE
+                    )
+                    _res = _pc.functions.getReserves().call()
+                    _t0  = _pc.functions.token0().call().lower()
+                    liq_bnb = round((_res[0] if _t0 == WBNB_ADDR else _res[1]) / 1e18, 4)
+                    liq_usd = round(liq_bnb * bnb_price, 0) if bnb_price else 0
+            except Exception:
+                pass
+
             results.append({
-                "symbol":     data["symbol"],
-                "address":    addr,
-                "buy_count":  len(buys),
-                "sell_count": len(sells),
-                "first_buy":  first_buy,
-                "first_sell": first_sell,
-                "hold_min":   hold_min,
-                "sold":       len(sells) > 0,
+                "symbol":      data["symbol"],
+                "address":     addr,
+                "buy_count":   len(buys),
+                "sell_count":  len(sells),
+                "first_buy":   first_buy,
+                "first_sell":  first_sell,
+                "last_sell":   last_sell,
+                "hold_min":    hold_min,
+                "sold":        len(sells) > 0,
+                "fully_sold":  len(sells) > 0 and last_sell != "",
+                "liq_bnb_now": liq_bnb,
+                "liq_usd_now": liq_usd,
             })
 
-        # Sort by first_buy desc
+        # Sort by first_buy desc (latest first)
         results.sort(key=lambda x: x["first_buy"], reverse=True)
 
-        # Summary stats
-        sold     = [r for r in results if r["sold"]]
-        not_sold = [r for r in results if not r["sold"]]
-        avg_hold = round(sum(r["hold_min"] for r in sold) / max(len(sold), 1), 1)
+        # Summary
+        sold_tokens  = [r for r in results if r["sold"]]
+        unsold       = [r for r in results if not r["sold"]]
+        avg_hold     = round(sum(r["hold_min"] for r in sold_tokens) / max(len(sold_tokens), 1), 1)
+        avg_liq_bnb  = round(sum(r["liq_bnb_now"] for r in results if r["liq_bnb_now"] > 0) / max(1, sum(1 for r in results if r["liq_bnb_now"] > 0)), 2)
+        avg_liq_usd  = round(avg_liq_bnb * bnb_price, 0) if bnb_price else 0
+
+        # Liq distribution
+        liq_buckets = {"<5BNB": 0, "5-15BNB": 0, "15-30BNB": 0, "30-50BNB": 0, ">50BNB": 0}
+        for r in results:
+            l = r["liq_bnb_now"]
+            if l <= 0: continue
+            if l < 5:   liq_buckets["<5BNB"] += 1
+            elif l < 15: liq_buckets["5-15BNB"] += 1
+            elif l < 30: liq_buckets["15-30BNB"] += 1
+            elif l < 50: liq_buckets["30-50BNB"] += 1
+            else:        liq_buckets[">50BNB"] += 1
 
         return jsonify({
-            "wallet":     wallet_address,
-            "total_tokens": len(results),
-            "sold":       len(sold),
-            "not_sold":   len(not_sold),
-            "avg_hold_min": avg_hold,
-            "trades":     results[:50],
+            "wallet":           wallet_address,
+            "total_tokens":     len(results),
+            "sold":             len(sold_tokens),
+            "not_sold":         len(unsold),
+            "avg_hold_min":     avg_hold,
+            "avg_liq_bnb_now":  avg_liq_bnb,
+            "avg_liq_usd_now":  avg_liq_usd,
+            "liq_distribution": liq_buckets,
+            "bnb_price":        bnb_price,
+            "trades":           results,
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)[:100]})
+        return jsonify({"error": str(e)[:200]})
 
 @app.route("/client-config")
 def client_config():
