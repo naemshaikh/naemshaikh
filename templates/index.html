@@ -4168,9 +4168,12 @@ setInterval(fetchNotifications, 10000);
     if (btn)  btn.disabled = true;
     if (icon) icon.textContent = '⏳';
     fetchScannerStats();
-    fetch('/pc-events')
+    const _pcCtrl = new AbortController();
+    const _pcTimer = setTimeout(() => _pcCtrl.abort(), 8000);
+    fetch('/pc-events', {signal: _pcCtrl.signal})
       .then(r => r.json())
       .then(d => {
+        clearTimeout(_pcTimer);
         const events = d.events || [];
         const cnt = document.getElementById('pc-events-count');
         if (cnt) cnt.textContent = events.length + ' events';
@@ -4179,7 +4182,8 @@ setInterval(fetchNotifications, 10000);
         showToast && showToast('✅ PC Refreshed');
       })
       .catch(() => {
-        showToast && showToast('❌ PC load failed');
+        clearTimeout(_pcTimer);
+        showToast && showToast('❌ PC load failed — retry karo');
       })
       .finally(() => {
         if (btn)  btn.disabled = false;
@@ -4193,9 +4197,12 @@ setInterval(fetchNotifications, 10000);
     if (btn)  btn.disabled = true;
     if (icon) icon.textContent = '⏳';
     fetchScannerStats();
-    fetch('/fm-events')
+    const _fmCtrl = new AbortController();
+    const _fmTimer = setTimeout(() => _fmCtrl.abort(), 8000);
+    fetch('/fm-events', {signal: _fmCtrl.signal})
       .then(r => r.json())
       .then(d => {
+        clearTimeout(_fmTimer);
         const events = d.events || [];
         const cnt = document.getElementById('fm-events-count');
         if (cnt) cnt.textContent = events.length + ' events';
@@ -4204,7 +4211,8 @@ setInterval(fetchNotifications, 10000);
         showToast && showToast('✅ FM Refreshed');
       })
       .catch(() => {
-        showToast && showToast('❌ FM load failed');
+        clearTimeout(_fmTimer);
+        showToast && showToast('❌ FM load failed — retry karo');
       })
       .finally(() => {
         if (btn)  btn.disabled = false;
