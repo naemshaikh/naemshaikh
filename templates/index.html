@@ -1964,7 +1964,7 @@ const ACT_STYLES = {
 
 // ── CRITICAL LOG TYPES ONLY ──
 // discover/reject/pass hata do — sirf bot performance wale dikhao
-const CRITICAL_LOG_TYPES = new Set(['buy','whale','rug']); // sell/stop-loss notif tab mein hai
+const CRITICAL_LOG_TYPES = new Set(['wss_error','rpc_error','ql_limit','error','system']); // sirf system health events
 
 // System health errors — /health se fetch karo
 let _sysErrors = [];

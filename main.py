@@ -6485,7 +6485,47 @@ def readiness():
 
 @app.route("/activity", methods=["GET"])
 def activity_route():
-    return jsonify({"activity": list(_bot_log)})
+    acts = list(_bot_log)
+
+    # System health events inject karo — top pe
+    sys_events = []
+
+    # WSS status
+    wss = market_cache.get("wss_status", "unknown")
+    if wss != "live":
+        sys_events.append({
+            "type":   "wss_error",
+            "token":  "WSS",
+            "detail": f"WebSocket status: {wss}",
+            "ts":     _now_ist(),
+        })
+
+    # QuickNode — credits check (simple heuristic)
+    _qn_errors = market_cache.get("qn_errors", 0)
+    if _qn_errors > 5:
+        sys_events.append({
+            "type":   "ql_limit",
+            "token":  "QuickNode",
+            "detail": f"QuickNode errors: {_qn_errors} — check credits",
+            "ts":     _now_ist(),
+        })
+
+    # BNB price stale
+    _last_bnb = market_cache.get("last_updated", "")
+    if _last_bnb:
+        try:
+            _age = (datetime.utcnow() - datetime.fromisoformat(_last_bnb)).total_seconds()
+            if _age > 120:
+                sys_events.append({
+                    "type":   "error",
+                    "token":  "BNB Price",
+                    "detail": f"BNB price stale — last update {int(_age)}s ago",
+                    "ts":     _now_ist(),
+                })
+        except Exception:
+            pass
+
+    return jsonify({"activity": sys_events + acts})
 
 @app.route("/notifications", methods=["GET"])
 def notifications_route():
