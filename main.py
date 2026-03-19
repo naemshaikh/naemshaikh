@@ -2769,6 +2769,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         "address":      address,
         "entry":        entry,
         "exit":         current,
+        "exit_price":   current,
         "pnl_pct":      _total_pnl_pct_trade,
         "pnl_bnb":      _total_pnl_bnb_trade,
         "size_bnb":     _orig_sz,
@@ -2778,6 +2779,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         "bought_at":    bought_at_str,
         "sold_at":      datetime.utcnow().isoformat(),
         "result":       "win" if _total_pnl_pct_trade > 0 else "loss",
+        "exit_reason":  reason,
         "reason":       reason,
         "mode":         TRADE_MODE,
         "tp_events":    pos.get("tp_events", []),
@@ -2786,6 +2788,10 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         "signals_used": _signals_used,
         "snipe_source": _buy_rsn.get("source", "checklist"),
         "snipe_strategy": _buy_rsn.get("strategy", "Normal_Checklist"),
+        # ATH + hold time — data analysis ke liye
+        "ath_price":    monitored_positions.get(address, {}).get("high", current),
+        "ath_pct":      round((monitored_positions.get(address, {}).get("high", current) - entry) / entry * 100, 1) if entry > 0 else 0,
+        "hold_minutes": round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds() / 60, 1) if bought_at_str else 0,
     })
     if len(auto_trade_stats["trade_history"]) > 10000:
         auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-10000:]
@@ -7362,12 +7368,23 @@ def _enrich_events(events):
         else:
             ev["status"] = "UNKNOWN"
 
-        # ATH from monitored positions
-        mon = monitored_positions.get(tok, {})
-        ath = mon.get("high", 0)
+        # ATH — open position se monitored, closed position se trade history
         snipe = ev.get("snipe_price", 0)
-        ev["ath_price"] = ath
-        ev["ath_pct"]   = round((ath - snipe) / snipe * 100, 1) if ath and snipe and snipe > 0 else 0
+        if ev.get("status") == "CLOSED" and hist_t:
+            # Trade history mein save hua ATH use karo
+            ev["ath_price"] = hist_t.get("ath_price", 0)
+            ev["ath_pct"]   = hist_t.get("ath_pct", 0)
+            # exit_price + exit_reason bhi fix karo
+            if not ev.get("exit_price"):
+                ev["exit_price"] = hist_t.get("exit_price", hist_t.get("exit", 0))
+            if not ev.get("exit_reason"):
+                ev["exit_reason"] = hist_t.get("exit_reason", hist_t.get("reason", ""))
+        else:
+            # Open position — monitored_positions se
+            mon = monitored_positions.get(tok, {})
+            ath = mon.get("high", 0)
+            ev["ath_price"] = ath
+            ev["ath_pct"]   = round((ath - snipe) / snipe * 100, 1) if ath and snipe and snipe > 0 else 0
 
     return events
 
