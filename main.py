@@ -4852,6 +4852,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         # 4. Raised BNB check
         raised_bnb = round(info["funds"] / 1e18, 4)
+        if raised_bnb < 0.1:
+            _skip(f"too early raised={raised_bnb:.4f} BNB < 0.1"); return
         if raised_bnb > 5.0:
             _skip(f"raised too much {raised_bnb:.2f} BNB"); return
 
