@@ -4247,8 +4247,8 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
     # ── Token % in LP check (min 80%) ──
     if _total_supply > 0 and _token_in_lp > 0:
         _tok_pct = (_token_in_lp / _total_supply) * 100
-        if _tok_pct < 90.0:
-            print(f"⏭️ Token in LP {_tok_pct:.1f}% < 90% — skip: {pair_address[:10]}")
+        if _tok_pct < 80.0:
+            print(f"⏭️ Token in LP {_tok_pct:.1f}% < 80% — skip: {pair_address[:10]}")
             with _pc_sniped_lock: _pc_sniped.discard(pair_address.lower())
             return
         print(f"✅ Token in LP: {_tok_pct:.1f}%")
