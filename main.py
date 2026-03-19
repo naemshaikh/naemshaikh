@@ -4187,6 +4187,8 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
             pass
 
         # Layer 4: LP Burn check (~100ms) — dev LP pull kar sakta hai?
+        # Note: Naye tokens mein LP turant burn nahi hoti — fail pe proceed karo
+        _lp_burned = False
         try:
             _DEAD = "0x000000000000000000000000000000000000dEaD"
             _ERC20_BAL_ABI = [{"name":"balanceOf","type":"function","stateMutability":"view",
@@ -4198,15 +4200,13 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
             _burned = _lp_contract.functions.balanceOf(
                 Web3.to_checksum_address(_DEAD)
             ).call()
-            if _burned <= 0:
-                print(f"⏭️ LP not burned — skip: {pair_address[:10]}")
-                with _pc_sniped_lock: _pc_sniped.discard(pair_address.lower())
-                return
-            print(f"🔥 LP burned ✅: {pair_address[:10]}")
+            _lp_burned = _burned > 0
+            if _lp_burned:
+                print(f"🔥 LP burned ✅: {pair_address[:10]}")
+            else:
+                print(f"⚠️ LP not burned — proceeding with caution: {pair_address[:10]}")
         except Exception as _lp_e:
-            print(f"⚠️ LP burn check failed — skip: {pair_address[:10]} {_lp_e}")
-            with _pc_sniped_lock: _pc_sniped.discard(pair_address.lower())
-            return
+            print(f"⚠️ LP burn check error — proceeding: {pair_address[:10]}")
 
         print(f"✅ Liq ok {_liq_bnb:.2f} BNB (${_liq_usd:.0f}): {pair_address[:10]}")
         _scanner_stats["pc_prefilter_pass"] += 1
