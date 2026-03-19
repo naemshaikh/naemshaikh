@@ -4792,7 +4792,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             return _fm_dev_history_onchain(dev_addr, w3)
 
         def _f_hp(factory):
-            return _fm_honeypot_sim(token_addr, factory, w3)
+            # Use tokenManager (correct manager contract for this token)
+            mgr = info.get("tokenManager", factory) if info else factory
+            return _fm_honeypot_sim(token_addr, mgr, w3)
 
         def _f_wallet():
             # Largest single wallet balance check
@@ -4881,15 +4883,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         # ── BUY ──
         size_bnb   = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
         token_name = token_addr[:8]
-        # Real entry price fetch from bonding curve
+        # Entry price from bonding curve lastPrice — token is NOT on PancakeSwap yet
         try:
-            _dec = _get_dec(token_addr)
-            _router = w3.eth.contract(address=Web3.to_checksum_address(PANCAKE_ROUTER), abi=ROUTER_ABI_PRICE)
-            _amt = _router.functions.getAmountsOut(10**_dec, [
-                Web3.to_checksum_address(token_addr),
-                Web3.to_checksum_address(WBNB)
-            ]).call()
-            entry = _amt[1] / 1e18 if _amt[1] > 0 else 1e-12
+            entry = info["lastPrice"] / 1e18 if info.get("lastPrice", 0) > 0 else 1e-12
         except:
             entry = 1e-12
 
@@ -4899,8 +4895,10 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 pk = os.getenv("WALLET_PRIVATE_KEY", "") or os.getenv("PRIVATE_KEY", "")
                 if not wallet_addr or not pk:
                     _skip("no wallet/key"); return
+                # Version-aware: V1 = buyTokenAMAP, V2 = same but different manager
+                _mgr_addr = info.get("tokenManager", info.get("factory", _FM_FACTORY_ADDR))
                 fc = w3.eth.contract(
-                    address=Web3.to_checksum_address(info["factory"]),
+                    address=Web3.to_checksum_address(_mgr_addr),
                     abi=_FM_BC_ABI
                 )
                 tx = fc.functions.buyTokenAMAP(
@@ -4910,7 +4908,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 ).build_transaction({
                     "from":     wallet_addr,
                     "value":    int(size_bnb * 1e18),
-                    "gas":      350000,
+                    "gas":      400000,
                     "gasPrice": int(w3.eth.gas_price * 1.5),
                     "nonce":    w3.eth.get_transaction_count(wallet_addr),
                 })
@@ -5002,8 +5000,7 @@ def poll_four_meme_v2():
             await ws.send(_j.dumps({
                 "id": 1, "jsonrpc": "2.0", "method": "eth_subscribe",
                 "params": ["logs", {
-                    "address": _FM_FACTORY_ADDRS,
-                    "topics":  [TRANSFER_TOPIC, ZERO_TOPIC]
+                    "topics": [TRANSFER_TOPIC, ZERO_TOPIC]
                 }]
             }))
             ack = _j.loads(await asyncio.wait_for(ws.recv(), timeout=10))
@@ -5036,12 +5033,30 @@ def poll_four_meme_v2():
                     with _fm_sniped_lock:
                         if token_addr.lower() in _fm_sniped: continue
 
-                    print(f"🆕 [FM] New token: {token_addr[:10]} dev:{dev_addr[:10]}")
-                    _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
+                    # Quick FM verify — getTokenInfo call karo
+                    # Non-FM tokens quickly fail karte hain
+                    def _try_snipe(ta, da, ts):
+                        try:
+                            _w = _fm_get_w3()
+                            if not _w: return
+                            hc = _w.eth.contract(
+                                address=Web3.to_checksum_address(_FM_HELPER_ADDR),
+                                abi=_FM_HELPER_ABI
+                            )
+                            _info = hc.functions.getTokenInfo(
+                                Web3.to_checksum_address(ta)
+                            ).call()
+                            # version=0 ya maxFunds=0 = not FM token
+                            if not _info or _info[0] == 0 or _info[10] == 0:
+                                return
+                            print(f"🆕 [FM] New token: {ta[:10]} dev:{da[:10]}")
+                            _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
+                            _fm_snipe(ta, da, ts)
+                        except: return
 
                     _now = time.time()
                     threading.Thread(
-                        target=_fm_snipe,
+                        target=_try_snipe,
                         args=(token_addr, dev_addr, _now),
                         daemon=True
                     ).start()
