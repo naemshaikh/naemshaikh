@@ -4522,16 +4522,8 @@ _FM_FACTORY_ADDRS = [
 ]
 _FM_FACTORY_ADDR = "0x5c952063c7fc8610ffdb798152d69f0b9550762b"
 _FM_WBNB         = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
-_FM_WSS = [
-    "wss://bsc-rpc.publicnode.com",
-    "wss://bsc.drpc.org",
-    "wss://bsc.publicnode.com",
-]
-_FM_RPC = [
-    "https://bsc-rpc.publicnode.com",
-    "https://bsc.drpc.org",
-    "https://1rpc.io/bnb",
-]
+_FM_WSS = []
+_FM_RPC = []
 
 # ── ABIs ──
 _FM_BC_ABI = [
@@ -4568,12 +4560,9 @@ _fm_dev_cache      = {}
 _fm_dev_cache_lock = threading.Lock()
 
 def _fm_get_w3():
-    """QuickNode ya fallback RPC"""
+    """QuickNode HTTP only"""
     qn = os.getenv("QUICKNODE_HTTP","")
     if qn: return Web3(Web3.HTTPProvider(qn, request_kwargs={"timeout":4}))
-    for r in _FM_RPC:
-        try: return Web3(Web3.HTTPProvider(r, request_kwargs={"timeout":3}))
-        except: continue
     return None
 
 def _fm_get_token_info(token_addr, w3=None):
@@ -4836,23 +4825,22 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         progress = _fm_calc_progress(info)
         if progress < 0:
             _skip("progress calc failed"); return
-        if progress > 10:
-            _skip(f"too late progress={progress:.1f}%>10%"); return
-        if progress < 1:
-            _skip(f"too early progress={progress:.1f}%<1%"); return
+        if progress > 25:
+            _skip(f"too late progress={progress:.1f}%>25%"); return
+        # progress=0 allowed — fresh mint
 
         # 4. Raised BNB check
         raised_bnb = round(info["funds"] / 1e18, 4)
-        if raised_bnb > 1.0:
+        if raised_bnb > 5.0:
             _skip(f"raised too much {raised_bnb:.2f} BNB"); return
 
-        # 5. Buy velocity — too fast = bot/bundler
-        if velocity_sec < 5 and progress > 3:
+        # 5. Buy velocity — sirf extreme fast block karo
+        if velocity_sec < 2 and progress > 5:
             _skip(f"too fast {velocity_sec:.1f}s bot/bundler"); return
 
         # 6. Single wallet dominance
-        if wallet_pct > 5.0:
-            _skip(f"dev wallet {wallet_pct:.1f}% > 5%"); return
+        if wallet_pct > 20.0:
+            _skip(f"dev wallet {wallet_pct:.1f}% > 20%"); return
 
         # 7. Dev history check
         if dev_hist["total"] >= 2:
@@ -4874,12 +4862,22 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         # ── BUY ──
         size_bnb   = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
         token_name = token_addr[:8]
-        entry      = 1e-12  # will be updated
+        # Real entry price fetch from bonding curve
+        try:
+            _dec = _get_dec(token_addr)
+            _router = w3.eth.contract(address=Web3.to_checksum_address(PANCAKE_ROUTER), abi=ROUTER_ABI_PRICE)
+            _amt = _router.functions.getAmountsOut(10**_dec, [
+                Web3.to_checksum_address(token_addr),
+                Web3.to_checksum_address(WBNB)
+            ]).call()
+            entry = _amt[1] / 1e18 if _amt[1] > 0 else 1e-12
+        except:
+            entry = 1e-12
 
         if TRADE_MODE == "real":
             try:
                 wallet_addr = BSC_WALLET or REAL_WALLET
-                pk = os.getenv("PRIVATE_KEY","")
+                pk = os.getenv("WALLET_PRIVATE_KEY", "") or os.getenv("PRIVATE_KEY", "")
                 if not wallet_addr or not pk:
                     _skip("no wallet/key"); return
                 fc = w3.eth.contract(
@@ -5034,7 +5032,7 @@ def poll_four_meme_v2():
 
     async def _loop():
         idx = fails = 0
-        endpoints = [_QN_WSS] + _FM_WSS
+        endpoints = [_QN_WSS]
         while True:
             try:
                 await _listen(endpoints[idx % len(endpoints)])
