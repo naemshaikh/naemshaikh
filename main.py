@@ -5000,7 +5000,7 @@ def poll_four_meme_v2():
             # Official: TokenCreate event emitted by FM factory on new token creation
             # factory address = log emitter (address filter)
             # topic[0] = TokenCreate keccak hash
-            TOKEN_CREATE_TOPIC = "0x1f841ba14bb24ad3d2915d62d5fd21025e4b9b7bf1e85d622fb0a7dce809cdf2"
+            TOKEN_CREATE_TOPIC = "0x0a5575b3648bae2210cee56bf33254cc1ddfbc7bf637c0af2ac18b14fb1bae19"
             await ws.send(_j.dumps({
                 "id": 1, "jsonrpc": "2.0", "method": "eth_subscribe",
                 "params": ["logs", {
