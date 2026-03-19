@@ -4130,13 +4130,10 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
     # ── STEP 1: getPair (~100ms) ──
     _liq_bnb = 0.0
     _qn_http = os.getenv("QUICKNODE_HTTP", "")
-    # Chainstack fallback — QuickNode ke credits bachao
-    _cs_http = os.getenv("BSC_RPC", "")
-    _rpc_url = _qn_http or _cs_http
-    if not _rpc_url:
-        print(f"⚠️ No RPC set — skip: {pair_address[:10]}")
+    if not _qn_http:
+        print(f"⚠️ QUICKNODE_HTTP not set — skip: {pair_address[:10]}")
         return
-    _w3q = Web3(Web3.HTTPProvider(_rpc_url, request_kwargs={"timeout": 3}))
+    _w3q = Web3(Web3.HTTPProvider(_qn_http, request_kwargs={"timeout": 3}))
 
     try:
         _factory_c = _w3q.eth.contract(
