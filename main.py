@@ -7196,12 +7196,31 @@ def auto_status():
 
 @app.route("/fm-events")
 def fm_events_api():
-    """FM event log — Supabase se all events"""
+    """FM event log — Supabase se all events + current price + ATH"""
     try:
         if not supabase:
             return jsonify({"events": [], "error": "supabase not connected"})
         res = supabase.table("fm_events").select("*").order("detected_at", desc=True).limit(500).execute()
-        return jsonify({"events": res.data or []})
+        events = res.data or []
+        for ev in events:
+            if ev.get("result") != "BUY":
+                continue
+            tok = ev.get("token_address", "")
+            if not tok: continue
+            pos = auto_trade_stats.get("running_positions", {}).get(tok, {})
+            if pos:
+                cur   = pos.get("current", 0)
+                entry = pos.get("entry", 0)
+                ev["current_price"]   = cur
+                ev["current_pnl_pct"] = round((cur - entry) / entry * 100, 2) if entry > 0 else 0
+            mon = monitored_positions.get(tok, {})
+            ev["ath_price"] = mon.get("high", 0)
+            snipe = ev.get("snipe_price", 0)
+            if ev["ath_price"] and snipe and snipe > 0:
+                ev["ath_pct"] = round((ev["ath_price"] - snipe) / snipe * 100, 1)
+            else:
+                ev["ath_pct"] = 0
+        return jsonify({"events": events})
     except Exception as e:
         return jsonify({"events": [], "error": str(e)[:60]})
 
