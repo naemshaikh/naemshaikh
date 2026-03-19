@@ -538,6 +538,7 @@ function _checkLock(){
             <div id="pc-status-dot" style="width:6px;height:6px;border-radius:50%;background:var(--em);box-shadow:0 0 6px var(--em);animation:blink 2s infinite;"></div>
             <span id="pc-status-lbl" style="font-size:8px;font-weight:800;color:var(--em);">RUNNING</span>
           </div>
+          <button id="pc-sniper-btn" onclick="togglePcSniper()" style="padding:4px 12px;border-radius:20px;border:1px solid var(--em);background:var(--em-dim);color:var(--em);font-size:9px;font-weight:800;cursor:pointer;font-family:'Outfit',sans-serif;">⚡ ON</button>
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
           <span style="font-size:8px;color:var(--txt3);" id="pc-updated">—</span>
@@ -658,6 +659,7 @@ function _checkLock(){
             <div id="fm-status-dot" style="width:6px;height:6px;border-radius:50%;background:var(--em);box-shadow:0 0 6px var(--em);animation:blink 2s infinite;"></div>
             <span id="fm-status-lbl" style="font-size:8px;font-weight:800;color:var(--em);">RUNNING</span>
           </div>
+          <button id="fm-sniper-btn" onclick="toggleFmSniper()" style="padding:4px 12px;border-radius:20px;border:1px solid var(--gold);background:rgba(212,168,71,0.1);color:var(--gold);font-size:9px;font-weight:800;cursor:pointer;font-family:'Outfit',sans-serif;">🎓 ON</button>
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
           <span style="font-size:8px;color:var(--txt3);" id="fm-updated">—</span>
@@ -821,22 +823,7 @@ function _checkLock(){
         <span id="auto-status-lbl" style="color:var(--txt2)">Loading...</span>
       </div>
     </div>
-    <div style="padding:12px 12px 0;display:flex;gap:8px;">
-      <button class="auto-toggle on" id="auto-btn-start" onclick="startAuto()" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;">
-        <span>&#9654;</span><span>START</span>
-      </button>
-      <button class="auto-toggle" id="auto-btn-stop" onclick="stopAuto()" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--red);border-color:var(--red);opacity:0.4;pointer-events:none;">
-        <span>&#9646;&#9646;</span><span>STOP</span>
-      </button>
-    </div>
-    <div style="padding:8px 12px 0;display:flex;gap:8px;">
-      <button id="pc-sniper-btn" onclick="togglePcSniper()" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--green);background:var(--green);color:#000;font-weight:700;font-size:12px;cursor:pointer;">
-        ⚡ PC ON
-      </button>
-      <button id="fm-sniper-btn" onclick="toggleFmSniper()" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--green);background:var(--green);color:#000;font-weight:700;font-size:12px;cursor:pointer;">
-        🎓 FM ON
-      </button>
-    </div>
+
     <div class="ctrl-grid" style="margin-top:1px;">
       <button class="ctrl-btn danger" id="close-one-btn" onclick="closeOne()">
         <div class="ctrl-icon">&#128308;</div>
@@ -2749,31 +2736,53 @@ async function _doStopAuto(){
 
 async function togglePcSniper(){
   const btn=document.getElementById('pc-sniper-btn');
-  const d=await fetchJSON('/toggle-pc',{method:'POST'},10000);
-  if(d && btn){
-    btn.style.background=d.enabled?'var(--green)':'var(--red)';
-    btn.style.borderColor=d.enabled?'var(--green)':'var(--red)';
-    btn.textContent=d.enabled?'⚡ PC ON':'⚡ PC OFF';
-    showToast(d.enabled?'⚡ PC Sniper STARTED':'⚡ PC Sniper STOPPED');
-  }
+  if(btn){btn.disabled=true;btn.style.opacity='0.6';}
+  try{
+    const d=await fetchJSON('/toggle-pc',{method:'POST'},10000);
+    if(d && btn){
+      const on=d.enabled;
+      btn.style.background=on?'var(--em-dim)':'rgba(255,80,80,0.15)';
+      btn.style.borderColor=on?'var(--em)':'var(--red)';
+      btn.style.color=on?'var(--em)':'var(--red)';
+      btn.textContent=on?'⚡ ON':'⚡ OFF';
+      showToast(on?'⚡ PC Sniper STARTED':'⚡ PC Sniper STOPPED');
+    }
+  }finally{if(btn){btn.disabled=false;btn.style.opacity='1';}}
 }
 async function toggleFmSniper(){
   const btn=document.getElementById('fm-sniper-btn');
-  const d=await fetchJSON('/toggle-fm',{method:'POST'},10000);
-  if(d && btn){
-    btn.style.background=d.enabled?'var(--green)':'var(--red)';
-    btn.style.borderColor=d.enabled?'var(--green)':'var(--red)';
-    btn.textContent=d.enabled?'🎓 FM ON':'🎓 FM OFF';
-    showToast(d.enabled?'🎓 FM Sniper STARTED':'🎓 FM Sniper STOPPED');
-  }
+  if(btn){btn.disabled=true;btn.style.opacity='0.6';}
+  try{
+    const d=await fetchJSON('/toggle-fm',{method:'POST'},10000);
+    if(d && btn){
+      const on=d.enabled;
+      btn.style.background=on?'rgba(212,168,71,0.1)':'rgba(255,80,80,0.15)';
+      btn.style.borderColor=on?'var(--gold)':'var(--red)';
+      btn.style.color=on?'var(--gold)':'var(--red)';
+      btn.textContent=on?'🎓 ON':'🎓 OFF';
+      showToast(on?'🎓 FM Sniper STARTED':'🎓 FM Sniper STOPPED');
+    }
+  }finally{if(btn){btn.disabled=false;btn.style.opacity='1';}}
 }
 async function loadSniperStatus(){
   const d=await fetchJSON('/sniper-status',{},5000);
   if(!d) return;
   const pcBtn=document.getElementById('pc-sniper-btn');
   const fmBtn=document.getElementById('fm-sniper-btn');
-  if(pcBtn){pcBtn.style.background=d.pc?'var(--green)':'var(--red)';pcBtn.style.borderColor=d.pc?'var(--green)':'var(--red)';pcBtn.textContent=d.pc?'⚡ PC ON':'⚡ PC OFF';}
-  if(fmBtn){fmBtn.style.background=d.fm?'var(--green)':'var(--red)';fmBtn.style.borderColor=d.fm?'var(--green)':'var(--red)';fmBtn.textContent=d.fm?'🎓 FM ON':'🎓 FM OFF';}
+  if(pcBtn){
+    const on=d.pc;
+    pcBtn.style.background=on?'var(--em-dim)':'rgba(255,80,80,0.15)';
+    pcBtn.style.borderColor=on?'var(--em)':'var(--red)';
+    pcBtn.style.color=on?'var(--em)':'var(--red)';
+    pcBtn.textContent=on?'⚡ ON':'⚡ OFF';
+  }
+  if(fmBtn){
+    const on=d.fm;
+    fmBtn.style.background=on?'rgba(212,168,71,0.1)':'rgba(255,80,80,0.15)';
+    fmBtn.style.borderColor=on?'var(--gold)':'var(--red)';
+    fmBtn.style.color=on?'var(--gold)':'var(--red)';
+    fmBtn.textContent=on?'🎓 ON':'🎓 OFF';
+  }
 }
 
 async function closeOne(){
