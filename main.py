@@ -7459,6 +7459,27 @@ def health():
     })
 
 
+@app.route("/moralis-test")
+def moralis_test():
+    """Test Moralis connection"""
+    try:
+        if not MORALIS_API_KEY:
+            return jsonify({"error": "No key"})
+        WALLET = "0xbf004bff64725914ee36d03b87d6965b0ced4903"
+        r = requests.get(
+            f"https://deep-index.moralis.io/api/v2.2/{WALLET}/erc20/transfers",
+            params={"chain": "bsc", "limit": 5},
+            headers={"X-API-Key": MORALIS_API_KEY},
+            timeout=15
+        )
+        return jsonify({
+            "status": r.status_code,
+            "key_prefix": MORALIS_API_KEY[:20],
+            "response_sample": r.json() if r.status_code == 200 else r.text[:200]
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)[:200]})
+
 @app.route("/analyze-wallet/<wallet_address>")
 def analyze_wallet(wallet_address):
     """Wallet ka full trade pattern + pool liquidity analyze karo"""
