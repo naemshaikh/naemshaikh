@@ -1723,7 +1723,8 @@ function _updatePCTabFromEvents(tab) {
              : tab === '7d'  ? 604800000
              : tab === '30d' ? 2592000000
              : null;
-  const filtered = ms ? data.filter(e => new Date(e.detected_at + (e.detected_at.includes('+') || e.detected_at.includes('Z') ? '' : '+05:30')).getTime() > (now - ms)) : data;
+  const _p = d => { if(!d) return 0; const s=(d.includes('T')?d:d.replace(' ','T')); const t=new Date(s.includes('+')||s.includes('Z')?s:s+'Z').getTime(); return isNaN(t)?0:t; };
+  const filtered = ms ? data.filter(e => _p(e.detected_at) > (now - ms)) : data;
   const disc  = filtered.length;
   const pf    = filtered.filter(e => e.prefilter === 'PASS').length;
   const cl    = filtered.filter(e => (e.checklist_score||0) > 0 || e.result === 'BUY').length;
@@ -1764,7 +1765,8 @@ function _updateFMTabFromEvents(tab) {
             : tab === '7d'  ? 604800000
             : tab === '30d' ? 2592000000
             : null;
-  const filtered = ms ? data.filter(e => new Date(e.detected_at + (e.detected_at.includes('+') || e.detected_at.includes('Z') ? '' : '+05:30')).getTime() > (now - ms)) : data;
+  const _p = d => { if(!d) return 0; const s=(d.includes('T')?d:d.replace(' ','T')); const t=new Date(s.includes('+')||s.includes('Z')?s:s+'Z').getTime(); return isNaN(t)?0:t; };
+  const filtered = ms ? data.filter(e => _p(e.detected_at) > (now - ms)) : data;
   const disc   = filtered.length;
   const sniped = filtered.filter(e => e.result === 'BUY').length;
   const el = id => document.getElementById(id);
@@ -4346,7 +4348,7 @@ setInterval(fetchNotifications, 10000);
   function _updatePC24H(events) {
     const now  = Date.now();
     const h24  = now - 86400000;
-    const _parseIST = d => new Date(d + (d.includes('+') || d.includes('Z') ? '' : '+05:30')).getTime();
+    const _parseIST = d => { if(!d) return 0; const s=d.includes('T')?d:d.replace(' ','T'); const t=new Date(s.includes('+')||s.includes('Z')?s:s+'Z').getTime(); return isNaN(t)?0:t; };
     const today = events.filter(e => _parseIST(e.detected_at) > h24);
     const disc  = today.length;
     const pf    = today.filter(e => e.prefilter === 'PASS').length;
@@ -4487,7 +4489,7 @@ setInterval(fetchNotifications, 10000);
   // ═══════════════════════════════════════════════
   // STARTUP + AUTO REFRESH
   // ═══════════════════════════════════════════════
-  setTimeout(() => { loadFMEvents(); loadPCEvents(); }, 2000);
+  // Removed duplicate — line 1930 already handles this
   setInterval(() => { loadFMEvents(); loadPCEvents(); }, 30000);
 
 </script>
