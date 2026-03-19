@@ -4169,8 +4169,10 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
             return
 
         print(f"✅ Liq ok {_liq_bnb:.2f} BNB: {pair_address[:10]}")
+        _scanner_stats["pc_prefilter_pass"] += 1
     except Exception as e:
-        print(f"⚠️ Liq check failed — proceeding: {pair_address[:10]} {e}")
+        print(f"⚠️ Liq check failed — skip: {pair_address[:10]} {e}")
+        return  # QuickNode fail = skip, no bad entry
 
     # ── Basic checks ──
     if not AUTO_TRADE_ENABLED:
@@ -4218,7 +4220,7 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
 
     # Tax too high
     _max_tax = CHECKLIST_SETTINGS.get("max_sell_tax", 15.0)
-    if 0 <= _tax_result > _max_tax:
+    if _tax_result >= 0 and _tax_result > _max_tax:
         _scanner_stats["pc_checklist_fail"] += 1
         print(f"🚫 High tax {_tax_result:.1f}% — skip: {pair_address[:10]}")
         _log("reject", pair_address[:8], f"High tax {_tax_result:.1f}%", pair_address)
