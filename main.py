@@ -3471,6 +3471,7 @@ def _save_brain_to_db():
                 "smart_wallets":  _sw_snapshot,
                 "rug_dna":        _rug_dna[-10000:],
                 "dev_blacklist":  dict(_dev_blacklist),
+                "scanner_stats":  {k: v for k, v in _scanner_stats.items() if not k.startswith("_") and k != "history"},
             })
         }, on_conflict="session_id").execute()
         print(f"🧠 Brain saved (cycle #{brain['total_learning_cycles']})")
@@ -3544,6 +3545,13 @@ def _load_brain_from_db():
                 with _dev_blacklist_lock:
                     _dev_blacklist.update(_db)
                 print(f"🚫 Dev blacklist loaded: {len(_db)} devs")
+            # Load scanner stats — cumulative counts restore
+            _ss = stored.get("scanner_stats", {})
+            if isinstance(_ss, dict) and _ss:
+                for _k, _v in _ss.items():
+                    if _k in _scanner_stats and isinstance(_v, (int, float)):
+                        _scanner_stats[_k] = _v
+                print(f"📊 Scanner stats loaded: pc={_scanner_stats.get('pc_discovered',0)} fm={_scanner_stats.get('fm_discovered',0)}")
             global _brain_loaded_from_db
             _brain_loaded_from_db = True
             print(f"🧠 Brain loaded! Cycles: {brain['total_learning_cycles']}")
