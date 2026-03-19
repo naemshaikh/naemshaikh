@@ -4135,9 +4135,15 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
         return
     _w3q = Web3(Web3.HTTPProvider(_qn_http, request_kwargs={"timeout": 3}))
     try:
-        # pair_address se pehle actual pair lookup karo
-        _actual_pair = _get_v2_pair(pair_address)
-        if not _actual_pair:
+        # QuickNode se pair lookup karo
+        _factory_c = _w3q.eth.contract(
+            address=Web3.to_checksum_address(PANCAKE_FACTORY),
+            abi=FACTORY_ABI_PRICE
+        )
+        _actual_pair = _factory_c.functions.getPair(
+            _addr_cs, Web3.to_checksum_address(WBNB)
+        ).call()
+        if not _actual_pair or _actual_pair == "0x0000000000000000000000000000000000000000":
             print(f"⚠️ No pair found — skip: {pair_address[:10]}")
             return
         _pair_c = _w3q.eth.contract(
