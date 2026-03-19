@@ -4111,14 +4111,17 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
 
     _dev_addr = ""  # will check after GoPlus (background)
 
-    # ── Deduplicate ──
+    # ── Deduplicate — turant lock karo processing start hote hi ──
     with _pc_sniped_lock:
         if pair_address.lower() in _pc_sniped:
             return
+        _pc_sniped.add(pair_address.lower())  # LOCK immediately
 
     # ── Already traded ──
     if any(t.get("address","").lower() == pair_address.lower()
            for t in auto_trade_stats.get("trade_history", [])):
+        with _pc_sniped_lock:
+            _pc_sniped.discard(pair_address.lower())
         return
 
     # ── STEP 1: Liquidity check via QuickNode HTTP (~200ms) ──
@@ -4162,7 +4165,28 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
             print(f"⏭️ High liq {_liq_bnb:.0f} BNB (old token) — skip: {pair_address[:10]}")
             return
 
-        print(f"✅ Liq ok {_liq_bnb:.2f} BNB: {pair_address[:10]}")
+        # Layer 2: USD liquidity check (0ms — memory se price)
+        _bnb_price = market_cache.get("bnb_price", 0)
+        _liq_usd   = _liq_bnb * _bnb_price if _bnb_price else 0
+        if _bnb_price and _liq_usd < 500:
+            _scanner_stats["rej_low_liq"] += 1
+            print(f"⏭️ Low USD liq ${_liq_usd:.0f} — skip: {pair_address[:10]}")
+            with _pc_sniped_lock: _pc_sniped.discard(pair_address.lower())
+            return
+
+        # Layer 3: Token/BNB ratio check (0ms — already have reserves)
+        try:
+            _tok_res = (_res[1] / 1e18) if _t0 == WBNB.lower() else (_res[0] / 1e18)
+            _ratio   = _tok_res / _liq_bnb if _liq_bnb > 0 else 0
+            # Ratio > 10B = suspicious (fake/honeypot setup)
+            if _ratio > 10_000_000_000:
+                print(f"⏭️ Suspicious ratio {_ratio:.0e} — skip: {pair_address[:10]}")
+                with _pc_sniped_lock: _pc_sniped.discard(pair_address.lower())
+                return
+        except Exception:
+            pass
+
+        print(f"✅ Liq ok {_liq_bnb:.2f} BNB (${_liq_usd:.0f}): {pair_address[:10]}")
         _scanner_stats["pc_prefilter_pass"] += 1
     except Exception as e:
         print(f"⚠️ Liq check failed — skip: {pair_address[:10]} {e}")
