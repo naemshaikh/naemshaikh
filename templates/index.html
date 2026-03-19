@@ -4278,15 +4278,15 @@ setInterval(fetchNotifications, 10000);
     window._fmEventsData = events;
     _updateFMTabFromEvents(_scActiveFMTab || '24h');
     // ALL time counters — Supabase events se update karo (accurate)
-    const _fmAll  = events.length;
+    const _fmAll    = events.length;
     const _fmBought = events.filter(e => e.result === 'BUY').length;
-    const _fmRate = _fmAll > 0 ? Math.round(_fmBought/_fmAll*100) : 0;
-    const el = id => document.getElementById(id);
-    if(el('sc-fm-disc'))  el('sc-fm-disc').textContent  = _fmAll;
-    if(el('sc-fm-buy'))   el('sc-fm-buy').textContent   = _fmBought;
-    if(el('sc-fm-rate'))  el('sc-fm-rate').textContent  = _fmRate + '%';
-    if(el('sc-fm-rate2')) el('sc-fm-rate2').textContent = _fmRate + '%';
-    if(el('sc-fm-bar'))   el('sc-fm-bar').style.width   = Math.min(_fmRate*3,100) + '%';
+    const _fmRate   = _fmAll > 0 ? Math.round(_fmBought/_fmAll*100) : 0;
+    const _fmEl = id => document.getElementById(id);
+    if(_fmEl('sc-fm-disc'))  _fmEl('sc-fm-disc').textContent  = _fmAll;
+    if(_fmEl('sc-fm-buy'))   _fmEl('sc-fm-buy').textContent   = _fmBought;
+    if(_fmEl('sc-fm-rate'))  _fmEl('sc-fm-rate').textContent  = _fmRate + '%';
+    if(_fmEl('sc-fm-rate2')) _fmEl('sc-fm-rate2').textContent = _fmRate + '%';
+    if(_fmEl('sc-fm-bar'))   _fmEl('sc-fm-bar').style.width   = Math.min(_fmRate*3,100) + '%';
   }
 
   function downloadFMEvents() {
@@ -4417,12 +4417,12 @@ setInterval(fetchNotifications, 10000);
     const _pcBought = events.filter(e => e.result === 'BUY').length;
     const _pcPF     = events.filter(e => e.prefilter === 'PASS').length;
     const _pcRate   = _pcAll > 0 ? Math.round(_pcBought/_pcAll*100) : 0;
-    const elpc = id => document.getElementById(id);
-    if(elpc('sc-pc-disc')) elpc('sc-pc-disc').textContent = _pcAll;
-    if(elpc('sc-pc-pf'))   elpc('sc-pc-pf').textContent   = _pcPF;
-    if(elpc('sc-pc-buy'))  elpc('sc-pc-buy').textContent  = _pcBought;
-    if(elpc('sc-pc-rate')) elpc('sc-pc-rate').textContent = _pcRate + '%';
-    if(elpc('sc-pc-bar'))  elpc('sc-pc-bar').style.width  = Math.min(_pcRate*3,100) + '%';
+    const _pcEl = id => document.getElementById(id);
+    if(_pcEl('sc-pc-disc')) _pcEl('sc-pc-disc').textContent = _pcAll;
+    if(_pcEl('sc-pc-pf'))   _pcEl('sc-pc-pf').textContent   = _pcPF;
+    if(_pcEl('sc-pc-buy'))  _pcEl('sc-pc-buy').textContent  = _pcBought;
+    if(_pcEl('sc-pc-rate')) _pcEl('sc-pc-rate').textContent = _pcRate + '%';
+    if(_pcEl('sc-pc-bar'))  _pcEl('sc-pc-bar').style.width  = Math.min(_pcRate*3,100) + '%';
   }
 
   function downloadPCEvents() {
