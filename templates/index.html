@@ -567,7 +567,7 @@ function _checkLock(){
             </div>
           </div>
           <div id="pc-events-table" style="max-height:280px;overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;">
-            <div style="color:var(--txt3);text-align:center;padding:16px;font-size:12px;">Loading...</div>
+            <div style="color:var(--txt3);text-align:center;padding:16px;font-size:12px;">⏳ Refresh karo...</div>
           </div>
         </div>
 
@@ -687,7 +687,7 @@ function _checkLock(){
             </div>
           </div>
           <div id="fm-events-table" style="max-height:280px;overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;">
-            <div style="color:var(--txt3);text-align:center;padding:16px;font-size:12px;">Loading...</div>
+            <div style="color:var(--txt3);text-align:center;padding:16px;font-size:12px;">⏳ Refresh karo...</div>
           </div>
         </div>
 
@@ -4177,7 +4177,7 @@ setInterval(fetchNotifications, 10000);
         const events = d.events || [];
         const cnt = document.getElementById('pc-events-count');
         if (cnt) cnt.textContent = events.length + ' events';
-        renderPCEvents(events);
+        renderPCEvents(events.slice(0, 50));
         _updatePC24H(events);
         showToast && showToast('✅ PC Refreshed');
       })
@@ -4206,7 +4206,7 @@ setInterval(fetchNotifications, 10000);
         const events = d.events || [];
         const cnt = document.getElementById('fm-events-count');
         if (cnt) cnt.textContent = events.length + ' events';
-        renderFMEvents(events);
+        renderFMEvents(events.slice(0, 50));
         _updateFM24H(events);
         showToast && showToast('✅ FM Refreshed');
       })
@@ -4230,8 +4230,7 @@ setInterval(fetchNotifications, 10000);
         const events = d.events || [];
         const cnt = document.getElementById('fm-events-count');
         if (cnt) cnt.textContent = events.length + ' events';
-        renderFMEvents(events);
-        // 24H tab update
+        renderFMEvents(events.slice(0, 50));
         _updateFM24H(events);
       })
       .catch(e => {
@@ -4361,7 +4360,7 @@ setInterval(fetchNotifications, 10000);
         const events = d.events || [];
         const cnt = document.getElementById('pc-events-count');
         if (cnt) cnt.textContent = events.length + ' events';
-        renderPCEvents(events);
+        renderPCEvents(events.slice(0, 50));
         _updatePC24H(events);
       })
       .catch(e => {
