@@ -4046,7 +4046,10 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
     # ── STEP 1: Liquidity check via QuickNode HTTP (~200ms) ──
     _liq_bnb = 0.0
     try:
-        _qn_http = os.getenv("QUICKNODE_HTTP", BSC_RPC)
+        _qn_http = os.getenv("QUICKNODE_HTTP", "")
+        if not _qn_http:
+            print(f"⚠️ QUICKNODE_HTTP not set — skip: {pair_address[:10]}")
+            return
         _w3q = Web3(Web3.HTTPProvider(_qn_http, request_kwargs={"timeout": 3}))
         _pair_c = _w3q.eth.contract(
             address=_addr_cs,
