@@ -2385,6 +2385,27 @@ auto_trade_stats = {
 
 
 # ========== PROCESS NEW TOKEN ==========
+def _save_pc_event(token_addr, liq_bnb, prefilter, cl_score, cl_total, snipe_price, result, skip_reason, time_ms):
+    """PC event Supabase mein save karo"""
+    try:
+        if not supabase: return
+        supabase.table("pc_events").insert({
+            "token_address":   token_addr,
+            "token_short":     token_addr[:10],
+            "detected_at":     datetime.now(_IST).isoformat(),
+            "liquidity_bnb":   round(float(liq_bnb or 0), 6),
+            "prefilter":       prefilter or "",
+            "checklist_score": int(cl_score or 0),
+            "checklist_total": int(cl_total or 0),
+            "snipe_price":     float(snipe_price or 0),
+            "result":          result,
+            "skip_reason":     skip_reason or "",
+            "time_taken_ms":   int(time_ms or 0),
+            "mode":            TRADE_MODE,
+        }).execute()
+    except Exception as e:
+        print(f"⚠️ [PC] event save error: {e}")
+
 def _save_pc_event_bg(token_addr, liq_bnb, prefilter, cl_score, cl_total, snipe_price, result, skip_reason, time_ms):
     """PC event background save"""
     threading.Thread(target=_save_pc_event, args=(
@@ -4439,7 +4460,7 @@ def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, resul
         supabase.table("fm_events").insert({
             "token_address": token_addr,
             "token_short":   token_addr[:10],
-            "detected_at":   datetime.utcnow().isoformat(),
+            "detected_at":   datetime.now(_IST).isoformat(),
             "liquidity_bnb": round(float(liq_bnb or 0), 6),
             "grad_price":    float(grad_price or 0),
             "snipe_price":   float(snipe_price or 0),
