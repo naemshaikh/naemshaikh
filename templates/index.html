@@ -4211,8 +4211,9 @@ setInterval(fetchNotifications, 10000);
   function _updateFM24H(events) {
     const now = Date.now();
     const h24 = now - 86400000;
-    const _parseIST = d => new Date(d + (d.includes('+') || d.includes('Z') ? '' : '+05:30')).getTime();
-    const today = events.filter(e => _parseIST(e.detected_at) > h24);
+    // UTC timestamp — Z add karo agar missing hai
+    const _parseUTC = d => new Date(d.includes('Z') || d.includes('+') ? d : d + 'Z').getTime();
+    const today = events.filter(e => _parseUTC(e.detected_at) > h24);
     const disc  = today.length;
     const sniped = today.filter(e => e.result === 'BUY').length;
     const el = id => document.getElementById(id);
@@ -4238,6 +4239,8 @@ setInterval(fetchNotifications, 10000);
         ? '<span style="background:rgba(0,200,100,0.15);color:#00c864;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;">BUY ✅</span>'
         : '<span style="background:rgba(255,80,80,0.15);color:#ff5050;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;">SKIP ❌</span>';
       const t      = (e.detected_at||'').slice(11,16) ? toIST((e.detected_at||'').slice(11,16)) : '—';
+      const liq    = e.liquidity_bnb ? (+e.liquidity_bnb).toFixed(2)+' BNB' : '—';
+      const grad   = e.grad_price    ? (+e.grad_price).toExponential(3) : '—';
       const snipe  = e.snipe_price   ? (+e.snipe_price).toExponential(3) : '—';
       const pump   = e.pump_pct != null ? (e.pump_pct >= 0 ? '+' : '')+e.pump_pct+'%' : '—';
       const pumpC  = e.pump_pct > 0 ? '#00c864' : '#ff5050';
@@ -4275,9 +4278,10 @@ setInterval(fetchNotifications, 10000);
       </table></div>`;
     window._fmEventsData = events;
     _updateFMTabFromEvents(_scActiveFMTab || '24h');
-    // ALL time counters — Supabase events se update karo (accurate)
-    const _fmAll    = events.length;
-    const _fmBought = events.filter(e => e.result === 'BUY').length;
+    // ALL time counter — scanner-stats se accurate
+    const _ssD = await fetch('/scanner-stats').then(r=>r.json()).catch(()=>null);
+    const _fmAll    = _ssD ? (_ssD.fm?.discovered || events.length) : events.length;
+    const _fmBought = _ssD ? (_ssD.fm?.bought || events.filter(e=>e.result==='BUY').length) : events.filter(e=>e.result==='BUY').length;
     const _fmRate   = _fmAll > 0 ? Math.round(_fmBought/_fmAll*100) : 0;
     const _fmEl = id => document.getElementById(id);
     if(_fmEl('sc-fm-disc'))  _fmEl('sc-fm-disc').textContent  = _fmAll;
