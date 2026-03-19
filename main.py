@@ -4527,6 +4527,9 @@ _FM_WSS = []
 _FM_RPC = []
 
 # ── ABIs ──
+# Official helper contract — TokenManagerHelper3
+_FM_HELPER_ADDR = "0xF251F83e40a78868FcfA3FA4599Dad6494E46034"
+
 _FM_BC_ABI = [
     {"name":"buyTokenAMAP","type":"function","stateMutability":"payable",
      "inputs":[{"name":"token","type":"address"},{"name":"to","type":"address"},
@@ -4536,11 +4539,26 @@ _FM_BC_ABI = [
      "inputs":[{"name":"token","type":"address"},{"name":"amount","type":"uint256"},
                {"name":"minFunds","type":"uint256"}],
      "outputs":[{"name":"","type":"uint256"}]},
-    {"name":"tokenInfo","type":"function","stateMutability":"view",
+]
+
+# Official getTokenInfo ABI — 12 return values
+_FM_HELPER_ABI = [
+    {"name":"getTokenInfo","type":"function","stateMutability":"view",
      "inputs":[{"name":"token","type":"address"}],
-     "outputs":[{"name":"funds","type":"uint256"},{"name":"maxFunds","type":"uint256"},
-                {"name":"offers","type":"uint256"},{"name":"maxOffers","type":"uint256"},
-                {"name":"liquidityAdded","type":"bool"}]},
+     "outputs":[
+         {"name":"version","type":"uint256"},
+         {"name":"tokenManager","type":"address"},
+         {"name":"quote","type":"address"},
+         {"name":"lastPrice","type":"uint256"},
+         {"name":"tradingFeeRate","type":"uint256"},
+         {"name":"minTradingFee","type":"uint256"},
+         {"name":"launchTime","type":"uint256"},
+         {"name":"offers","type":"uint256"},
+         {"name":"maxOffers","type":"uint256"},
+         {"name":"funds","type":"uint256"},
+         {"name":"maxFunds","type":"uint256"},
+         {"name":"liquidityAdded","type":"bool"}
+     ]},
 ]
 _FM_ERC20_ABI = [
     {"name":"approve","type":"function","stateMutability":"nonpayable",
@@ -4567,17 +4585,33 @@ def _fm_get_w3():
     return None
 
 def _fm_get_token_info(token_addr, w3=None):
-    """Bonding curve tokenInfo fetch"""
+    """Official getTokenInfo via TokenManagerHelper3"""
     if not w3: w3 = _fm_get_w3()
     if not w3: return None
-    for factory in _FM_FACTORY_ADDRS:
-        try:
-            fc = w3.eth.contract(address=Web3.to_checksum_address(factory), abi=_FM_BC_ABI)
-            info = fc.functions.tokenInfo(Web3.to_checksum_address(token_addr)).call()
-            return {"funds": info[0], "maxFunds": info[1],
-                    "offers": info[2], "maxOffers": info[3], "liquidityAdded": info[4],
-                    "factory": factory}
-        except: continue
+    try:
+        helper = w3.eth.contract(
+            address=Web3.to_checksum_address(_FM_HELPER_ADDR),
+            abi=_FM_HELPER_ABI
+        )
+        info = helper.functions.getTokenInfo(Web3.to_checksum_address(token_addr)).call()
+        # info: version, tokenManager, quote, lastPrice, tradingFeeRate,
+        #       minTradingFee, launchTime, offers, maxOffers, funds, maxFunds, liquidityAdded
+        token_manager = info[1]
+        return {
+            "version":        info[0],
+            "tokenManager":   token_manager,
+            "quote":          info[2],
+            "lastPrice":      info[3],
+            "launchTime":     info[6],
+            "offers":         info[7],
+            "maxOffers":      info[8],
+            "funds":          info[9],
+            "maxFunds":       info[10],
+            "liquidityAdded": info[11],
+            "factory":        token_manager,  # use tokenManager for buy/sell
+        }
+    except Exception as e:
+        print(f"⚠️ [FM] getTokenInfo error: {str(e)[:60]}")
     return None
 
 def _fm_calc_progress(info):
