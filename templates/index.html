@@ -429,6 +429,7 @@ function _checkLock(){
         <button id="tab-notif-btn" onclick="switchLiveTab('notif')" style="flex:1;padding:9px 4px;font-size:10px;font-weight:800;border:none;background:transparent;color:var(--txt3);cursor:pointer;font-family:'Outfit',sans-serif;border-bottom:2px solid transparent;letter-spacing:0.3px;display:flex;align-items:center;justify-content:center;gap:4px;">
           🔔 NOTIF <span id="inline-notif-count" style="background:var(--red);color:#fff;font-size:8px;font-weight:800;padding:1px 5px;border-radius:8px;display:none;">0</span>
         </button>
+        <button id="inline-clear-btn" onclick="confirmClearNotifs()" title="Clear all notifications" style="display:none;padding:0 10px;border:none;background:transparent;color:var(--red);cursor:pointer;font-size:14px;flex-shrink:0;">🗑</button>
       </div>
       <!-- Logs Tab — taller -->
       <div id="tab-logs-content" style="flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;max-height:280px;">
@@ -1927,6 +1928,8 @@ let _liveTab = 'logs';
 
 function switchLiveTab(tab) {
   _liveTab = tab;
+  const clearBtn  = document.getElementById('inline-clear-btn');
+  if(clearBtn) clearBtn.style.display = tab === 'notif' ? 'flex' : 'none';
   const logsBtn   = document.getElementById('tab-logs-btn');
   const notifBtn  = document.getElementById('tab-notif-btn');
   const logsPane  = document.getElementById('tab-logs-content');
@@ -4106,6 +4109,29 @@ async function deleteNotif(e, id){
     _renderNotifList();
     _updateBellBlink();
   } catch(e2) {}
+}
+
+function confirmClearNotifs(){
+  // Simple inline confirm
+  const btn = document.getElementById('inline-clear-btn');
+  if(btn && btn.dataset.confirming === 'yes'){
+    clearAllNotifs();
+    btn.dataset.confirming = '';
+    btn.textContent = '🗑';
+    btn.style.color = 'var(--red)';
+    return;
+  }
+  // First tap — ask confirm
+  if(btn){
+    btn.dataset.confirming = 'yes';
+    btn.textContent = '✓?';
+    btn.style.color = '#ffbe00';
+    setTimeout(() => {
+      btn.dataset.confirming = '';
+      btn.textContent = '🗑';
+      btn.style.color = 'var(--red)';
+    }, 3000);  // 3s mein reset
+  }
 }
 
 async function clearAllNotifs(){
