@@ -567,7 +567,7 @@ function _checkLock(){
             </div>
           </div>
           <div id="pc-events-table" style="max-height:280px;overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;">
-            <div style="color:var(--txt3);text-align:center;padding:16px;font-size:12px;">⏳ Refresh karo...</div>
+            <div style="color:var(--txt3);text-align:center;padding:16px;font-size:12px;">⏳ Loading...</div>
           </div>
         </div>
 
@@ -687,7 +687,7 @@ function _checkLock(){
             </div>
           </div>
           <div id="fm-events-table" style="max-height:280px;overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;">
-            <div style="color:var(--txt3);text-align:center;padding:16px;font-size:12px;">⏳ Refresh karo...</div>
+            <div style="color:var(--txt3);text-align:center;padding:16px;font-size:12px;">⏳ Loading...</div>
           </div>
         </div>
 
@@ -4177,7 +4177,7 @@ setInterval(fetchNotifications, 10000);
         const events = d.events || [];
         const cnt = document.getElementById('pc-events-count');
         if (cnt) cnt.textContent = events.length + ' events';
-        renderPCEvents(events.slice(0, 50));
+        renderPCEvents(events);
         _updatePC24H(events);
         showToast && showToast('✅ PC Refreshed');
       })
@@ -4206,7 +4206,7 @@ setInterval(fetchNotifications, 10000);
         const events = d.events || [];
         const cnt = document.getElementById('fm-events-count');
         if (cnt) cnt.textContent = events.length + ' events';
-        renderFMEvents(events.slice(0, 50));
+        renderFMEvents(events);
         _updateFM24H(events);
         showToast && showToast('✅ FM Refreshed');
       })
@@ -4230,7 +4230,7 @@ setInterval(fetchNotifications, 10000);
         const events = d.events || [];
         const cnt = document.getElementById('fm-events-count');
         if (cnt) cnt.textContent = events.length + ' events';
-        renderFMEvents(events.slice(0, 50));
+        renderFMEvents(events);
         _updateFM24H(events);
       })
       .catch(e => {
@@ -4304,10 +4304,9 @@ setInterval(fetchNotifications, 10000);
       </table></div>`;
     window._fmEventsData = events;
     _updateFMTabFromEvents(_scActiveFMTab || '24h');
-    // ALL time counter — scanner-stats se accurate
-    const _ssD = await fetch('/scanner-stats').then(r=>r.json()).catch(()=>null);
-    const _fmAll    = _ssD ? (_ssD.fm?.discovered || events.length) : events.length;
-    const _fmBought = _ssD ? (_ssD.fm?.bought || events.filter(e=>e.result==='BUY').length) : events.filter(e=>e.result==='BUY').length;
+    // ALL time counter — events se directly
+    const _fmAll    = events.length;
+    const _fmBought = events.filter(e => e.result === 'BUY').length;
     const _fmRate   = _fmAll > 0 ? Math.round(_fmBought/_fmAll*100) : 0;
     const _fmEl = id => document.getElementById(id);
     if(_fmEl('sc-fm-disc'))  _fmEl('sc-fm-disc').textContent  = _fmAll;
@@ -4360,7 +4359,7 @@ setInterval(fetchNotifications, 10000);
         const events = d.events || [];
         const cnt = document.getElementById('pc-events-count');
         if (cnt) cnt.textContent = events.length + ' events';
-        renderPCEvents(events.slice(0, 50));
+        renderPCEvents(events);
         _updatePC24H(events);
       })
       .catch(e => {
@@ -4435,11 +4434,10 @@ setInterval(fetchNotifications, 10000);
       </table></div>`;
     window._pcEventsData = events;
     _updatePCTabFromEvents(_scActivePCTab || '24h');
-    // ALL time counters — scanner-stats se accurate count
-    const _ssData = await fetchJSON('/scanner-stats', {}, 5000);
-    const _pcAll    = _ssData ? (_ssData.pc?.discovered || events.length) : events.length;
+    // ALL time counters — events se directly
     const _pcBought = events.filter(e => e.result === 'BUY').length;
     const _pcPF     = events.filter(e => e.prefilter === 'PASS').length;
+    const _pcAll    = events.length;
     const _pcRate   = _pcAll > 0 ? Math.round(_pcBought/_pcAll*100) : 0;
     const _pcEl = id => document.getElementById(id);
     if(_pcEl('sc-pc-disc')) _pcEl('sc-pc-disc').textContent = _pcAll;
