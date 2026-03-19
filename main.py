@@ -4846,8 +4846,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         progress = _fm_calc_progress(info)
         if progress < 0:
             _skip("progress calc failed"); return
-        if progress > 25:
-            _skip(f"too late progress={progress:.1f}%>25%"); return
+        if progress > 10:
+            _skip(f"too late progress={progress:.1f}%>10%"); return
         # progress=0 allowed — fresh mint
 
         # 4. Raised BNB check
