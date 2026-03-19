@@ -7469,14 +7469,20 @@ def analyze_wallet(wallet_address):
         # Moralis se last 100 token transfers fetch karo
         r = requests.get(
             f"https://deep-index.moralis.io/api/v2.2/{wallet_address}/erc20/transfers",
-            params={"chain": "bsc", "limit": 100, "order": "DESC"},
+            params={"chain": "bsc", "limit": 100, "order": "DESC",
+                    "contract_addresses[]": ""},
             headers={"X-API-Key": MORALIS_API_KEY},
             timeout=15
         )
         if r.status_code != 200:
-            return jsonify({"error": f"Moralis error: {r.status_code}"})
+            return jsonify({"error": f"Moralis error: {r.status_code}", "status": r.status_code})
 
-        txs = r.json().get("result", [])
+        data = r.json()
+        txs = data.get("result", [])
+
+        # Filter out WBNB/BNB — sirf meme tokens
+        WBNB_ADDR = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
+        txs = [t for t in txs if t.get("token_address","").lower() != WBNB_ADDR.lower()]
 
         # Buy/Sell group karo per token
         tokens = {}
