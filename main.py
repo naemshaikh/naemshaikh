@@ -3950,6 +3950,8 @@ def feedback_validation_loop():
         gc.collect()
         time.sleep(1800)  # MEM FIX: 3600→1800
 
+_pair_to_token: dict = {}  # {pair_lower: {token, pair, ts}}
+
 def _memory_cleanup_loop():
     """Periodic cleanup — _pair_to_token + _rt_swap_data orphan entries remove karo"""
     time.sleep(60)
