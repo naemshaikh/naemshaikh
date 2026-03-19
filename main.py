@@ -4873,13 +4873,19 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if info["liquidityAdded"]:
             _skip("already graduated"); return
 
-        # 3. Progress check
+        # 3. MC check — $2k-$8k sweet spot (GMGN style)
         progress = _fm_calc_progress(info)
-        if progress < 0:
-            _skip("progress calc failed"); return
-        if progress > 7:
-            _skip(f"too late progress={progress:.1f}%>7%"); return
-        # progress=0 allowed — fresh mint
+        _last_price = info.get("lastPrice", 0)
+        _total_supply = 1_000_000_000  # FM fixed supply
+        _bnb_price = market_cache.get("bnb_price", 640)
+        if _last_price > 0 and _bnb_price > 0:
+            _mc_usd = (_last_price / 1e18) * _total_supply * _bnb_price
+            if _mc_usd < 2000:
+                _skip(f"MC too low ${_mc_usd:.0f} < $2k"); return
+            if _mc_usd > 8000:
+                _skip(f"MC too high ${_mc_usd:.0f} > $8k"); return
+        else:
+            _skip("MC calc failed — no price"); return
 
         # 4. Raised BNB check
         # quote = WBNB address means BNB raised, otherwise skip non-BNB pairs
