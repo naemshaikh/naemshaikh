@@ -4280,18 +4280,24 @@ setInterval(fetchNotifications, 10000);
     const data  = window._fmEventsData || [];
     const rows  = count === 'all' ? data : data.slice(0, parseInt(count));
     if (!rows.length) { showToast && showToast('FM data nahi hai abhi'); return; }
-    const headers = ['time','token_address','liquidity_bnb','grad_price','snipe_price','current_price','ath_price','ath_pct','current_pnl_pct','pump_pct','result','skip_reason','time_ms'];
+    const headers = ['time','token_name','token_address','status','liquidity_bnb','grad_price','snipe_price','exit_price','pnl_pct','pnl_bnb','ath_price','ath_pct','pump_pct','hold_minutes','exit_reason','sold_at','result','skip_reason','time_ms'];
     const csv = [headers.join(',')].concat(rows.map(e => [
       (e.detected_at||'').slice(0,19),
+      (e.token_name||e.token_address||'').replace(/,/g,';'),
       e.token_address||'',
+      e.status||'',
       e.liquidity_bnb||0,
       e.grad_price||0,
       e.snipe_price||0,
-      e.current_price||0,
+      e.exit_price||0,
+      e.pnl_pct||e.current_pnl_pct||0,
+      e.pnl_bnb||0,
       e.ath_price||0,
       e.ath_pct||0,
-      e.current_pnl_pct||0,
       e.pump_pct||0,
+      e.hold_minutes||0,
+      (e.exit_reason||'').replace(/,/g,';'),
+      (e.sold_at||'').slice(0,19),
       e.result||'',
       (e.skip_reason||'').replace(/,/g,';'),
       e.time_taken_ms||0
@@ -4399,21 +4405,25 @@ setInterval(fetchNotifications, 10000);
     const data  = window._pcEventsData || [];
     const rows  = count === 'all' ? data : data.slice(0, parseInt(count));
     if (!rows.length) { showToast && showToast('PC data nahi hai abhi'); return; }
-    const headers = ['time','token_address','liquidity_bnb','snipe_price','current_price','ath_price','ath_pct','current_pnl_pct','result','skip_reason','prefilter','checklist_score','checklist_total','time_ms'];
+    const headers = ['time','token_name','token_address','status','liquidity_bnb','snipe_price','exit_price','pnl_pct','pnl_bnb','ath_price','ath_pct','hold_minutes','exit_reason','sold_at','result','skip_reason','prefilter','time_ms'];
     const csv = [headers.join(',')].concat(rows.map(e => [
       (e.detected_at||'').slice(0,19),
+      (e.token_name||e.token_address||'').replace(/,/g,';'),
       e.token_address||'',
+      e.status||'',
       e.liquidity_bnb||0,
       e.snipe_price||0,
-      e.current_price||0,
+      e.exit_price||0,
+      e.pnl_pct||e.current_pnl_pct||0,
+      e.pnl_bnb||0,
       e.ath_price||0,
       e.ath_pct||0,
-      e.current_pnl_pct||0,
+      e.hold_minutes||0,
+      (e.exit_reason||'').replace(/,/g,';'),
+      (e.sold_at||'').slice(0,19),
       e.result||'',
       (e.skip_reason||'').replace(/,/g,';'),
       e.prefilter||'',
-      e.checklist_score||0,
-      e.checklist_total||0,
       e.time_taken_ms||0
     ].join(','))).join('\n');
     const a = document.createElement('a');

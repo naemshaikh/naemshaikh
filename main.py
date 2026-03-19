@@ -7289,6 +7289,65 @@ def auto_status():
 
 
 
+def _enrich_events(events):
+    """FM/PC events ko trade history se enrich karo — exit_price, pnl_pct, token_name, ATH"""
+    # Trade history index by address for fast lookup
+    _hist = auto_trade_stats.get("trade_history", [])
+    _hist_idx = {}
+    for t in _hist:
+        addr = t.get("address", "").lower()
+        if addr:
+            _hist_idx[addr] = t
+
+    for ev in events:
+        tok = ev.get("token_address", "")
+        if not tok:
+            continue
+        tok_lower = tok.lower()
+
+        # Token name from running positions or trade history
+        pos = auto_trade_stats.get("running_positions", {}).get(tok, {})
+        hist_t = _hist_idx.get(tok_lower, {})
+        ev["token_name"] = (
+            pos.get("token") or
+            hist_t.get("token") or
+            tok[:8]
+        )
+
+        if ev.get("result") != "BUY":
+            continue
+
+        # Open position — current price
+        if pos:
+            cur   = pos.get("current", 0)
+            entry = pos.get("entry", 0)
+            ev["current_price"]   = cur
+            ev["current_pnl_pct"] = round((cur - entry) / entry * 100, 2) if entry > 0 else 0
+            ev["status"] = "OPEN"
+        # Closed position — exit from trade history
+        elif hist_t:
+            ev["exit_price"]   = hist_t.get("exit_price", 0)
+            ev["pnl_pct"]      = hist_t.get("pnl_pct", 0)
+            ev["pnl_bnb"]      = hist_t.get("pnl_bnb", 0)
+            ev["exit_reason"]  = hist_t.get("exit_reason", "")
+            ev["sold_at"]      = hist_t.get("sold_at", "")
+            ev["hold_minutes"] = hist_t.get("hold_minutes", 0)
+            ev["result_trade"] = hist_t.get("result", "")
+            ev["status"]       = "CLOSED"
+            # current_pnl = closed pnl
+            ev["current_pnl_pct"] = hist_t.get("pnl_pct", 0)
+        else:
+            ev["status"] = "UNKNOWN"
+
+        # ATH from monitored positions
+        mon = monitored_positions.get(tok, {})
+        ath = mon.get("high", 0)
+        snipe = ev.get("snipe_price", 0)
+        ev["ath_price"] = ath
+        ev["ath_pct"]   = round((ath - snipe) / snipe * 100, 1) if ath and snipe and snipe > 0 else 0
+
+    return events
+
 @app.route("/fm-events")
 def fm_events_api():
     """FM event log — Supabase se all events + current price + ATH"""
@@ -7297,24 +7356,7 @@ def fm_events_api():
             return jsonify({"events": [], "error": "supabase not connected"})
         res = supabase.table("fm_events").select("*").order("detected_at", desc=True).limit(500).execute()
         events = res.data or []
-        for ev in events:
-            if ev.get("result") != "BUY":
-                continue
-            tok = ev.get("token_address", "")
-            if not tok: continue
-            pos = auto_trade_stats.get("running_positions", {}).get(tok, {})
-            if pos:
-                cur   = pos.get("current", 0)
-                entry = pos.get("entry", 0)
-                ev["current_price"]   = cur
-                ev["current_pnl_pct"] = round((cur - entry) / entry * 100, 2) if entry > 0 else 0
-            mon = monitored_positions.get(tok, {})
-            ev["ath_price"] = mon.get("high", 0)
-            snipe = ev.get("snipe_price", 0)
-            if ev["ath_price"] and snipe and snipe > 0:
-                ev["ath_pct"] = round((ev["ath_price"] - snipe) / snipe * 100, 1)
-            else:
-                ev["ath_pct"] = 0
+        events = _enrich_events(events)
         return jsonify({"events": events})
     except Exception as e:
         return jsonify({"events": [], "error": str(e)[:60]})
@@ -7328,30 +7370,7 @@ def pc_events_api():
         res = supabase.table("pc_events").select("*").order("detected_at", desc=True).limit(500).execute()
         events = res.data or []
 
-        # Current price + ATH fetch karo bought tokens ke liye (background)
-        bnb_price = market_cache.get("bnb_price", 0)
-        for ev in events:
-            if ev.get("result") != "BUY":
-                continue
-            tok = ev.get("token_address", "")
-            if not tok:
-                continue
-            # Current price from monitored positions
-            pos = auto_trade_stats.get("running_positions", {}).get(tok, {})
-            if pos:
-                cur = pos.get("current", 0)
-                entry = pos.get("entry", 0)
-                ev["current_price"] = cur
-                ev["current_pnl_pct"] = round((cur - entry) / entry * 100, 2) if entry > 0 else 0
-            # ATH from position high
-            mon = monitored_positions.get(tok, {})
-            ev["ath_price"] = mon.get("high", 0)
-            snipe = ev.get("snipe_price", 0)
-            if ev["ath_price"] and snipe and snipe > 0:
-                ev["ath_pct"] = round((ev["ath_price"] - snipe) / snipe * 100, 1)
-            else:
-                ev["ath_pct"] = 0
-
+        events = _enrich_events(events)
         return jsonify({"events": events})
     except Exception as e:
         return jsonify({"events": [], "error": str(e)[:60]})
