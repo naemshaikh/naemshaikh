@@ -4397,6 +4397,8 @@ setInterval(fetchNotifications, 10000);
         ? '<span style="background:rgba(0,200,100,0.15);color:#00c864;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;">BUY ✅</span>'
         : '<span style="background:rgba(255,80,80,0.15);color:#ff5050;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;">SKIP ❌</span>';
       const t      = e.detected_at ? new Date(_toUTC(e.detected_at)).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}) : '—';
+      const liq    = e.liquidity_bnb ? (+e.liquidity_bnb).toFixed(2)+' BNB' : '—';
+      const cl     = (e.checklist_score && e.checklist_total) ? `${e.checklist_score}/${e.checklist_total}` : '—';
       const snipe  = e.snipe_price ? (+e.snipe_price).toExponential(3) : '—';
       const ms     = e.time_taken_ms ? e.time_taken_ms+'ms' : '—';
       const reason = e.skip_reason || '—';
