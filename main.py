@@ -4154,7 +4154,7 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
         except Exception:
             _liq_bnb = min(_res[0], _res[1]) / 1e18
 
-        _min_liq = CHECKLIST_SETTINGS.get("min_liq_bnb", 2.0)
+        _min_liq = CHECKLIST_SETTINGS.get("min_liq_bnb", 5.0)
         if _liq_bnb < _min_liq:
             _scanner_stats["rej_low_liq"] += 1
             print(f"⏭️ Low liq {_liq_bnb:.2f} BNB — skip: {pair_address[:10]}")
@@ -4168,7 +4168,7 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
         # Layer 2: USD liquidity check (0ms — memory se price)
         _bnb_price = market_cache.get("bnb_price", 0)
         _liq_usd   = _liq_bnb * _bnb_price if _bnb_price else 0
-        if _bnb_price and _liq_usd < 500:
+        if _bnb_price and _liq_usd < 3000:
             _scanner_stats["rej_low_liq"] += 1
             print(f"⏭️ Low USD liq ${_liq_usd:.0f} — skip: {pair_address[:10]}")
             with _pc_sniped_lock: _pc_sniped.discard(pair_address.lower())
@@ -7457,6 +7457,96 @@ def health():
         "positions":     len(auto_trade_stats.get("running_positions", {})),
         "learning_cycles": brain.get("total_learning_cycles", 0),
     })
+
+
+@app.route("/analyze-wallet/<wallet_address>")
+def analyze_wallet(wallet_address):
+    """Wallet ka trade pattern analyze karo via Moralis"""
+    try:
+        if not MORALIS_API_KEY:
+            return jsonify({"error": "MORALIS_API_KEY not set"})
+
+        # Moralis se last 100 token transfers fetch karo
+        r = requests.get(
+            f"https://deep-index.moralis.io/api/v2.2/{wallet_address}/erc20/transfers",
+            params={"chain": "bsc", "limit": 100, "order": "DESC"},
+            headers={"X-API-Key": MORALIS_API_KEY},
+            timeout=15
+        )
+        if r.status_code != 200:
+            return jsonify({"error": f"Moralis error: {r.status_code}"})
+
+        txs = r.json().get("result", [])
+
+        # Buy/Sell group karo per token
+        tokens = {}
+        for t in txs:
+            sym  = t.get("token_symbol", "?")
+            addr = t.get("token_address", "")
+            direction = "BUY" if t.get("to_address","").lower() == wallet_address.lower() else "SELL"
+            ts   = t.get("block_timestamp", "")[:19]
+            val  = float(t.get("value_decimal") or 0)
+
+            key = addr.lower()
+            if key not in tokens:
+                tokens[key] = {"symbol": sym, "address": addr, "buys": [], "sells": []}
+            if direction == "BUY":
+                tokens[key]["buys"].append({"ts": ts, "val": val})
+            else:
+                tokens[key]["sells"].append({"ts": ts, "val": val})
+
+        # Analysis
+        results = []
+        for addr, data in tokens.items():
+            buys  = data["buys"]
+            sells = data["sells"]
+            if not buys:
+                continue
+
+            first_buy  = buys[-1]["ts"] if buys else ""
+            first_sell = sells[-1]["ts"] if sells else ""
+
+            # Hold time
+            hold_min = 0
+            if first_buy and first_sell:
+                from datetime import datetime as _dt
+                try:
+                    b = _dt.fromisoformat(first_buy)
+                    s = _dt.fromisoformat(first_sell)
+                    hold_min = round(abs((s - b).total_seconds()) / 60, 1)
+                except Exception:
+                    pass
+
+            results.append({
+                "symbol":     data["symbol"],
+                "address":    addr,
+                "buy_count":  len(buys),
+                "sell_count": len(sells),
+                "first_buy":  first_buy,
+                "first_sell": first_sell,
+                "hold_min":   hold_min,
+                "sold":       len(sells) > 0,
+            })
+
+        # Sort by first_buy desc
+        results.sort(key=lambda x: x["first_buy"], reverse=True)
+
+        # Summary stats
+        sold     = [r for r in results if r["sold"]]
+        not_sold = [r for r in results if not r["sold"]]
+        avg_hold = round(sum(r["hold_min"] for r in sold) / max(len(sold), 1), 1)
+
+        return jsonify({
+            "wallet":     wallet_address,
+            "total_tokens": len(results),
+            "sold":       len(sold),
+            "not_sold":   len(not_sold),
+            "avg_hold_min": avg_hold,
+            "trades":     results[:50],
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)[:100]})
 
 @app.route("/client-config")
 def client_config():
