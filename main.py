@@ -4186,6 +4186,28 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
         except Exception:
             pass
 
+        # Layer 4: LP Burn check (~100ms) — dev LP pull kar sakta hai?
+        try:
+            _DEAD = "0x000000000000000000000000000000000000dEaD"
+            _ERC20_BAL_ABI = [{"name":"balanceOf","type":"function","stateMutability":"view",
+                "inputs":[{"name":"account","type":"address"}],"outputs":[{"name":"","type":"uint256"}]}]
+            _lp_contract = _w3q.eth.contract(
+                address=Web3.to_checksum_address(_actual_pair),
+                abi=_ERC20_BAL_ABI
+            )
+            _burned = _lp_contract.functions.balanceOf(
+                Web3.to_checksum_address(_DEAD)
+            ).call()
+            if _burned <= 0:
+                print(f"⏭️ LP not burned — skip: {pair_address[:10]}")
+                with _pc_sniped_lock: _pc_sniped.discard(pair_address.lower())
+                return
+            print(f"🔥 LP burned ✅: {pair_address[:10]}")
+        except Exception as _lp_e:
+            print(f"⚠️ LP burn check failed — skip: {pair_address[:10]} {_lp_e}")
+            with _pc_sniped_lock: _pc_sniped.discard(pair_address.lower())
+            return
+
         print(f"✅ Liq ok {_liq_bnb:.2f} BNB (${_liq_usd:.0f}): {pair_address[:10]}")
         _scanner_stats["pc_prefilter_pass"] += 1
     except Exception as e:
@@ -4354,6 +4376,42 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
         threading.Thread(target=_bg_update, daemon=True).start()
 
         _register_position_pair(pair_address)
+
+        # ── POST-BUY: 30s buyer monitor ──
+        # Agar 30s mein koi external buyer nahi aaya → force sell
+        def _post_buy_monitor(token_addr, entry_px, sz_bnb):
+            try:
+                time.sleep(30)
+                # Check karo position abhi bhi hai?
+                if token_addr not in auto_trade_stats.get("running_positions", {}):
+                    return  # Already sold
+
+                # SwapMonitor se buyers check karo
+                with _rt_swap_lock:
+                    sd = _rt_swap_data.get(token_addr.lower(), {})
+
+                buy_times  = sd.get("buy_times", [])
+                _our_buy_ts = time.time() - 32  # 32s pehle hamare buy ka time
+
+                # Sirf hamare buy ke BAAD ke external buyers count karo
+                external_buys = [(t, a) for t, a in buy_times if t > _our_buy_ts]
+                external_count = len(external_buys)
+                external_vol   = sum(a for t, a in external_buys)
+
+                if external_count == 0:
+                    print(f"⚠️ No buyers in 30s — force exit: {token_addr[:10]}")
+                    _log("reject", token_addr[:8], "No buyers in 30s — force exit", token_addr)
+                    _auto_paper_sell(token_addr, "No buyers 30s ❌", 100.0)
+                else:
+                    print(f"✅ {external_count} buyers in 30s ({external_vol:.3f} BNB) — holding: {token_addr[:10]}")
+            except Exception as _e:
+                print(f"⚠️ Post-buy monitor error: {_e}")
+
+        threading.Thread(
+            target=_post_buy_monitor,
+            args=(pair_address, entry_price, size_bnb),
+            daemon=True
+        ).start()
 
     except Exception as e:
         print(f"⚠️ PC buy error: {e}")
