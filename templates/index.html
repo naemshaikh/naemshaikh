@@ -549,33 +549,35 @@ function _checkLock(){
 
       <div style="padding:10px 12px;display:flex;flex-direction:column;gap:10px;">
 
-        <!-- Queue -->
-        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--ink3);border-radius:8px;padding:8px 12px;">
-          <span style="font-size:9px;color:var(--txt3);font-weight:700;">QUEUE WAITING</span>
-          <div style="display:flex;align-items:baseline;gap:4px;">
-            <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:800;color:var(--ice);" id="sc-pc-queue">0</span>
-            <span style="font-size:9px;color:var(--txt3);">tokens</span>
-          
-          <!-- PC ALL EVENTS TABLE -->
-          <div style="margin-top:16px;background:rgba(91,159,214,0.04);border:1px solid rgba(91,159,214,0.12);border-radius:12px;padding:14px;">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px;">
+        <!-- PC ALL EVENTS TABLE — full width -->
+        <div style="background:rgba(91,159,214,0.04);border:1px solid rgba(91,159,214,0.12);border-radius:12px;padding:12px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
+            <div style="display:flex;align-items:center;gap:8px;">
               <span style="color:var(--ice);font-size:12px;font-weight:700;">⚡ PC — All Events</span>
-              <div style="display:flex;align-items:center;gap:6px;">
-                <span style="color:var(--txt3);font-size:10px;" id="pc-events-count">Auto refresh 30s</span>
-                <select id="pc-dl-count" style="font-size:10px;background:var(--ink3);color:var(--txt1);border:1px solid rgba(91,159,214,0.3);border-radius:6px;padding:2px 4px;cursor:pointer;">
-                  <option value="100">100</option>
-                  <option value="200">200</option>
-                  <option value="500">500</option>
-                  <option value="all">All</option>
-                </select>
-                <button onclick="downloadPCEvents()" style="font-size:10px;background:rgba(91,159,214,0.12);color:var(--ice);border:1px solid rgba(91,159,214,0.3);border-radius:6px;padding:3px 8px;cursor:pointer;">⬇ CSV</button>
-              </div>
+              <span style="color:var(--txt3);font-size:10px;" id="pc-events-count">Auto refresh 30s</span>
             </div>
-            <div id="pc-events-table" style="max-height:320px;overflow-y:auto;-webkit-overflow-scrolling:touch;">
-              <div style="color:var(--txt3);text-align:center;padding:16px;font-size:12px;">Loading...</div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <select id="pc-dl-count" style="font-size:10px;background:var(--ink3);color:var(--txt1);border:1px solid rgba(91,159,214,0.3);border-radius:6px;padding:2px 4px;cursor:pointer;">
+                <option value="100">100</option>
+                <option value="200">200</option>
+                <option value="500">500</option>
+                <option value="all">All</option>
+              </select>
+              <button onclick="downloadPCEvents()" style="font-size:10px;background:rgba(91,159,214,0.12);color:var(--ice);border:1px solid rgba(91,159,214,0.3);border-radius:6px;padding:3px 8px;cursor:pointer;">⬇ CSV</button>
             </div>
           </div>
-</div>
+          <div id="pc-events-table" style="max-height:280px;overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;">
+            <div style="color:var(--txt3);text-align:center;padding:16px;font-size:12px;">Loading...</div>
+          </div>
+        </div>
+
+        <!-- Queue — small bar below events -->
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--ink3);border-radius:8px;padding:6px 12px;">
+          <span style="font-size:9px;color:var(--txt3);font-weight:700;">⏳ QUEUE WAITING</span>
+          <div style="display:flex;align-items:baseline;gap:4px;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:800;color:var(--ice);" id="sc-pc-queue">0</span>
+            <span style="font-size:9px;color:var(--txt3);">tokens</span>
+          </div>
         </div>
 
         <!-- ALL TIME funnel stats — always visible -->
@@ -4389,17 +4391,21 @@ setInterval(fetchNotifications, 10000);
     const data  = window._pcEventsData || [];
     const rows  = count === 'all' ? data : data.slice(0, parseInt(count));
     if (!rows.length) { showToast && showToast('PC data nahi hai abhi'); return; }
-    const headers = ['time','token_address','liquidity_bnb','prefilter','checklist_score','checklist_total','snipe_price','result','skip_reason','time_ms'];
+    const headers = ['time','token_address','liquidity_bnb','snipe_price','current_price','ath_price','ath_pct','current_pnl_pct','result','skip_reason','prefilter','checklist_score','checklist_total','time_ms'];
     const csv = [headers.join(',')].concat(rows.map(e => [
       (e.detected_at||'').slice(0,19),
       e.token_address||'',
       e.liquidity_bnb||0,
+      e.snipe_price||0,
+      e.current_price||0,
+      e.ath_price||0,
+      e.ath_pct||0,
+      e.current_pnl_pct||0,
+      e.result||'',
+      (e.skip_reason||'').replace(/,/g,';'),
       e.prefilter||'',
       e.checklist_score||0,
       e.checklist_total||0,
-      e.snipe_price||0,
-      e.result||'',
-      (e.skip_reason||'').replace(/,/g,';'),
       e.time_taken_ms||0
     ].join(','))).join('\n');
     const a = document.createElement('a');
