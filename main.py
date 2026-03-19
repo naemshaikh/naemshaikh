@@ -4154,7 +4154,7 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
         except Exception:
             _liq_bnb = min(_res[0], _res[1]) / 1e18
 
-        _min_liq = CHECKLIST_SETTINGS.get("min_liq_bnb", 5.0)
+        _min_liq = CHECKLIST_SETTINGS.get("min_liq_bnb", 3.0)
         if _liq_bnb < _min_liq:
             _scanner_stats["rej_low_liq"] += 1
             print(f"⏭️ Low liq {_liq_bnb:.2f} BNB — skip: {pair_address[:10]}")
