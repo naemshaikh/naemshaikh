@@ -3143,7 +3143,9 @@ def auto_position_manager():
                         _pnl_high = pnl
 
                     # SL floor calculate karo pehle
-                    _sl_floor = (_pnl_high * 0.7) if _pnl_high >= 30 else -12.0
+                    # FM BC positions = sl_pct 20%, PC = 12%
+                    _entry_sl  = _pos_data.get("sl_pct", 12.0)
+                    _sl_floor  = (_pnl_high * 0.7) if _pnl_high >= 30 else -_entry_sl
 
                     # ══════════════════════════════════════════════════════
                     # PRO LADDER pehle → THEN TrailSL — ek hi chain mein
@@ -3165,11 +3167,11 @@ def auto_position_manager():
                         _auto_paper_sell(addr, f"TrailSL locked +{_sl_floor:.0f}% {'(vol fallback)' if not _has_vol else ''}", 100.0)
                         _trail_triggered = True
                         print(f"🔒 TrailSL: {addr[:10]} pnl={pnl:.1f}% floor={_sl_floor:.0f}% peak={_pnl_high:.0f}%")
-                    elif drop_hi <= -12.0:
-                        _auto_paper_sell(addr, f"TrailSL -12% entry {'(vol fallback)' if not _has_vol else ''}", 100.0)
+                    elif drop_hi <= -_entry_sl:
+                        _auto_paper_sell(addr, f"TrailSL -{_entry_sl:.0f}% entry {'(vol fallback)' if not _has_vol else ''}", 100.0)
                         _trail_triggered = True
-                        blacklist_token(addr, f"TrailSL -12% rebuy block")
-                        print(f"🔒 TrailSL entry: {addr[:10]} drop={drop_hi:.1f}%")
+                        blacklist_token(addr, f"TrailSL -{_entry_sl:.0f}% rebuy block")
+                        print(f"🔒 TrailSL entry: {addr[:10]} drop={drop_hi:.1f}% sl={_entry_sl:.0f}%")
 
                     # ── TRAILING TAKE PROFIT (GMGN style) ──
                     # TP hit hone ke baad price aur upar bhi ja sakta hai
@@ -4503,62 +4505,23 @@ BQ_WSS_URL       = "wss://streaming.bitquery.io/graphql"
 BQ_TOKEN_URL     = "https://oauth2.bitquery.io/oauth2/token"
 
 # ══════════════════════════════════════════════════════════════
-# FOUR.MEME BONDING CURVE SNIPER v1
+# FOUR.MEME BONDING CURVE SNIPER v2
 # Flow:
-#   1. Four.meme factory TokenCreated event (WSS)
-#   2. Bonding curve progress check (5-20% sweet spot)
-#   3. First buyers check (anti-bundler)
-#   4. BUY via bonding curve contract
-#   5. Monitor progress → exit before graduation
+#   1. Four.meme factory mint event (WSS)
+#   2. Parallel filters: progress + raised BNB + velocity +
+#      single wallet + dev history (on-chain) + honeypot sim
+#   3. BUY via bonding curve
+#   4. TP1/TP2/TP3/Moon + SL exit
 # ══════════════════════════════════════════════════════════════
 
-# Four.meme contracts
+# ── Constants ──
 _FM_FACTORY_ADDRS = [
     "0x5c952063c7fc8610ffdb798152d69f0b9550762b",
     "0x8b8cf6d0c2b5f4cb61da5e7dc94e52f4f1dd8d64",
     "0x48a31b72f77a2a90ebe24e5c4c88be43e2ad6beb",
 ]
-_FM_FACTORY_ADDR  = "0x5c952063c7fc8610ffdb798152d69f0b9550762b"
-
-# Four.meme bonding curve ABI
-_FM_BC_ABI = [
-    # Buy tokens from bonding curve
-    {"name": "buyTokenAMAP", "type": "function", "stateMutability": "payable",
-     "inputs": [
-         {"name": "token",     "type": "address"},
-         {"name": "to",        "type": "address"},
-         {"name": "funds",     "type": "uint256"},
-         {"name": "minAmount", "type": "uint256"}
-     ], "outputs": [{"name": "", "type": "uint256"}]},
-    # Sell tokens back to bonding curve
-    {"name": "sellToken", "type": "function", "stateMutability": "nonpayable",
-     "inputs": [
-         {"name": "token",  "type": "address"},
-         {"name": "amount", "type": "uint256"},
-         {"name": "minFunds","type": "uint256"}
-     ], "outputs": [{"name": "", "type": "uint256"}]},
-    # Get token info / progress
-    {"name": "tokenInfo", "type": "function", "stateMutability": "view",
-     "inputs": [{"name": "token", "type": "address"}],
-     "outputs": [
-         {"name": "funds",         "type": "uint256"},
-         {"name": "maxFunds",      "type": "uint256"},
-         {"name": "offers",        "type": "uint256"},
-         {"name": "maxOffers",     "type": "uint256"},
-         {"name": "liquidityAdded","type": "bool"}
-     ]},
-]
-
-# ERC20 approve ABI
-_FM_ERC20_APPROVE_ABI = [
-    {"name": "approve", "type": "function", "stateMutability": "nonpayable",
-     "inputs": [{"name": "spender", "type": "address"}, {"name": "amount", "type": "uint256"}],
-     "outputs": [{"name": "", "type": "bool"}]},
-    {"name": "balanceOf", "type": "function", "stateMutability": "view",
-     "inputs": [{"name": "account", "type": "address"}],
-     "outputs": [{"name": "", "type": "uint256"}]},
-]
-
+_FM_FACTORY_ADDR = "0x5c952063c7fc8610ffdb798152d69f0b9550762b"
+_FM_WBNB         = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
 _FM_WSS = [
     "wss://bsc-rpc.publicnode.com",
     "wss://bsc.drpc.org",
@@ -4570,54 +4533,175 @@ _FM_RPC = [
     "https://1rpc.io/bnb",
 ]
 
+# ── ABIs ──
+_FM_BC_ABI = [
+    {"name":"buyTokenAMAP","type":"function","stateMutability":"payable",
+     "inputs":[{"name":"token","type":"address"},{"name":"to","type":"address"},
+               {"name":"funds","type":"uint256"},{"name":"minAmount","type":"uint256"}],
+     "outputs":[{"name":"","type":"uint256"}]},
+    {"name":"sellToken","type":"function","stateMutability":"nonpayable",
+     "inputs":[{"name":"token","type":"address"},{"name":"amount","type":"uint256"},
+               {"name":"minFunds","type":"uint256"}],
+     "outputs":[{"name":"","type":"uint256"}]},
+    {"name":"tokenInfo","type":"function","stateMutability":"view",
+     "inputs":[{"name":"token","type":"address"}],
+     "outputs":[{"name":"funds","type":"uint256"},{"name":"maxFunds","type":"uint256"},
+                {"name":"offers","type":"uint256"},{"name":"maxOffers","type":"uint256"},
+                {"name":"liquidityAdded","type":"bool"}]},
+]
+_FM_ERC20_ABI = [
+    {"name":"approve","type":"function","stateMutability":"nonpayable",
+     "inputs":[{"name":"spender","type":"address"},{"name":"amount","type":"uint256"}],
+     "outputs":[{"name":"","type":"bool"}]},
+    {"name":"balanceOf","type":"function","stateMutability":"view",
+     "inputs":[{"name":"account","type":"address"}],
+     "outputs":[{"name":"","type":"uint256"}]},
+    {"name":"totalSupply","type":"function","stateMutability":"view",
+     "inputs":[],"outputs":[{"name":"","type":"uint256"}]},
+]
+
 _fm_sniped      = set()
 _fm_sniped_lock = threading.Lock()
 
-# TokenCreated event topic on four.meme factory
-_FM_TOKEN_CREATED_TOPIC = "0x9d239d3c62697aaa85f7e36b56a99f4c8b5a1d8ec9afe9c4a5b9e8c7f2d1b0a"
+# Dev history cache — on-chain results cache karo
+_fm_dev_cache      = {}
+_fm_dev_cache_lock = threading.Lock()
 
 def _fm_get_w3():
-    """QuickNode HTTP w3 instance"""
-    _qn = os.getenv("QUICKNODE_HTTP", "")
-    if _qn:
-        return Web3(Web3.HTTPProvider(_qn, request_kwargs={"timeout": 3}))
-    for rpc in _FM_RPC:
-        try:
-            w = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 3}))
-            return w
-        except Exception:
-            continue
+    """QuickNode ya fallback RPC"""
+    qn = os.getenv("QUICKNODE_HTTP","")
+    if qn: return Web3(Web3.HTTPProvider(qn, request_kwargs={"timeout":4}))
+    for r in _FM_RPC:
+        try: return Web3(Web3.HTTPProvider(r, request_kwargs={"timeout":3}))
+        except: continue
     return None
 
-def _fm_get_bonding_progress(token_addr):
-    """Bonding curve progress % check karo"""
+def _fm_get_token_info(token_addr, w3=None):
+    """Bonding curve tokenInfo fetch"""
+    if not w3: w3 = _fm_get_w3()
+    if not w3: return None
+    for factory in _FM_FACTORY_ADDRS:
+        try:
+            fc = w3.eth.contract(address=Web3.to_checksum_address(factory), abi=_FM_BC_ABI)
+            info = fc.functions.tokenInfo(Web3.to_checksum_address(token_addr)).call()
+            return {"funds": info[0], "maxFunds": info[1],
+                    "offers": info[2], "maxOffers": info[3], "liquidityAdded": info[4],
+                    "factory": factory}
+        except: continue
+    return None
+
+def _fm_calc_progress(info):
+    """Progress % = raised/max * 100"""
+    if not info or info["maxFunds"] <= 0: return -1
+    return round((info["funds"] / info["maxFunds"]) * 100, 2)
+
+def _fm_dev_history_onchain(dev_addr, w3=None):
+    """
+    Dev ka on-chain history check karo — fully on-chain, no API
+    Factory pe Transfer(mint) events filter by dev address
+    Returns: {"total": N, "rugged": N, "graduated": N}
+    """
+    # Cache check
+    dev_lower = dev_addr.lower()
+    with _fm_dev_cache_lock:
+        if dev_lower in _fm_dev_cache:
+            return _fm_dev_cache[dev_lower]
+
+    result = {"total": 0, "rugged": 0, "graduated": 0}
     try:
-        w = _fm_get_w3()
-        if not w: return -1, False
+        if not w3: w3 = _fm_get_w3()
+        if not w3: return result
+
+        # Transfer(mint) topic — from=0x000 means new token created
+        TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+        ZERO_PADDED    = "0x" + "0" * 64
+
+        current_block = w3.eth.block_number
+        from_block    = max(0, current_block - 200000)  # ~7 days
+
         for factory in _FM_FACTORY_ADDRS:
             try:
-                fc = w.eth.contract(
-                    address=Web3.to_checksum_address(factory),
-                    abi=_FM_BC_ABI
-                )
-                info = fc.functions.tokenInfo(
-                    Web3.to_checksum_address(token_addr)
-                ).call()
-                funds, max_funds, offers, max_offers, liq_added = info
-                if max_funds > 0:
-                    progress = round((funds / max_funds) * 100, 1)
-                    return progress, liq_added
-            except Exception:
-                continue
-        return -1, False
-    except Exception:
-        return -1, False
+                logs = w3.eth.get_logs({
+                    "address":   Web3.to_checksum_address(factory),
+                    "topics":    [TRANSFER_TOPIC, ZERO_PADDED],
+                    "fromBlock": from_block,
+                    "toBlock":   "latest",
+                })
+                # Filter by dev address in data or topics
+                dev_tokens = []
+                for log in logs:
+                    # to address = topics[2] last 40 chars
+                    to_addr = "0x" + log["topics"][2].hex()[-40:]
+                    if to_addr.lower() == dev_lower:
+                        token = log["address"]
+                        dev_tokens.append(token)
+
+                result["total"] += len(dev_tokens)
+
+                # Check each token status
+                for tok in dev_tokens[:10]:  # max 10 check
+                    try:
+                        info = _fm_get_token_info(tok, w3)
+                        if not info: continue
+                        if info["liquidityAdded"]:
+                            result["graduated"] += 1
+                        elif info["funds"] == 0:
+                            result["rugged"] += 1
+                    except: continue
+            except: continue
+
+    except Exception as e:
+        pass
+
+    # Cache result
+    with _fm_dev_cache_lock:
+        _fm_dev_cache[dev_lower] = result
+
+    return result
+
+def _fm_honeypot_sim(token_addr, factory_addr, w3=None):
+    """
+    Bonding curve pe honeypot sim:
+    Tiny buy → check tokens received → tiny sell test
+    """
+    try:
+        if not w3: w3 = _fm_get_w3()
+        if not w3: return True  # assume safe if no w3
+
+        fc = w3.eth.contract(address=Web3.to_checksum_address(factory_addr), abi=_FM_BC_ABI)
+        _tiny = int(0.001 * 1e18)  # 0.001 BNB
+
+        # Simulate buy via eth_call
+        buy_result = fc.functions.buyTokenAMAP(
+            Web3.to_checksum_address(token_addr),
+            Web3.to_checksum_address("0x000000000000000000000000000000000000dead"),
+            _tiny, 0
+        ).call({"value": _tiny})
+
+        if buy_result <= 0:
+            return False  # honeypot — buy fail
+
+        # Simulate sell
+        sell_result = fc.functions.sellToken(
+            Web3.to_checksum_address(token_addr),
+            buy_result, 0
+        ).call()
+
+        if sell_result <= 0:
+            return False  # honeypot — sell fail
+
+        return True  # safe
+
+    except Exception as e:
+        err = str(e).lower()
+        if "revert" in err or "honeypot" in err:
+            return False
+        return True  # other errors = proceed
 
 def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, result, skip_reason, time_ms):
-    """FM event Supabase mein save karo — async"""
+    """FM event Supabase mein save karo"""
     try:
         if not supabase: return
-        # Auto cleanup — 5000 se zyada ho to purane delete karo
         try:
             _cnt = supabase.table("fm_events").select("id", count="exact").execute()
             if (_cnt.count or 0) >= 5000:
@@ -4625,8 +4709,7 @@ def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, resul
                 _ids = [r["id"] for r in (_old.data or []) if r.get("id")]
                 if _ids:
                     supabase.table("fm_events").delete().in_("id", _ids).execute()
-        except Exception:
-            pass
+        except: pass
         supabase.table("fm_events").insert({
             "token_address": token_addr,
             "token_short":   token_addr[:10],
@@ -4643,16 +4726,13 @@ def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, resul
     except Exception as e:
         print(f"⚠️ [FM] event save error: {e}")
 
-def _fm_snipe(token_addr, pair_addr=""):
+def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
     """
-    Four.meme Bonding Curve Sniper
-    - Token abhi bonding curve pe hai (not graduated)
-    - Progress 5-20% = sweet spot
-    - Direct bonding curve se buy
+    Four.meme Bonding Curve Sniper v2
+    Parallel filters → buy → TP/SL exit
     """
     addr_lower = token_addr.lower()
     _t_start   = time.time()
-    _progress  = 0.0
 
     with _fm_sniped_lock:
         if addr_lower in _fm_sniped: return
@@ -4662,186 +4742,257 @@ def _fm_snipe(token_addr, pair_addr=""):
         ms = int((time.time() - _t_start) * 1000)
         print(f"⏭️ [FM] SKIP — {reason}: {token_addr[:10]}")
         threading.Thread(target=_save_fm_event, args=(
-            token_addr, 0, 0, 0, _progress, "SKIP", reason, ms
+            token_addr, 0, 0, 0, 0, "SKIP", reason, ms
         ), daemon=True).start()
 
     try:
-        if not AUTO_TRADE_ENABLED:
-            _skip("AUTO_TRADE disabled")
-            return
+        # ── Basic checks (0ms) ──
+        if not AUTO_TRADE_ENABLED: return
         if len(auto_trade_stats.get("running_positions", {})) >= AUTO_MAX_POSITIONS:
-            _skip("max positions reached")
-            return
+            _skip("max positions"); return
         sess = get_or_create_session(AUTO_SESSION_ID)
-        bal  = sess.get("paper_balance", 5.0)
-        if bal < AUTO_BUY_SIZE_BNB:
-            _skip(f"low balance {bal:.4f}")
-            return
+        if sess.get("paper_balance", 5.0) < AUTO_BUY_SIZE_BNB:
+            _skip("low balance"); return
         _ok, _msg = DataGuard.bnb_price_ok()
-        if not _ok:
-            _skip(f"DataGuard: {_msg}")
-            return
-        if is_token_blacklisted(token_addr):
-            _skip("blacklisted")
-            return
-        if any(t.get("address","").lower() == addr_lower for t in auto_trade_stats.get("trade_history", [])):
-            _skip("already traded")
-            return
-        if token_addr in auto_trade_stats.get("running_positions", {}):
-            _skip("already in positions")
-            return
+        if not _ok: _skip(f"DataGuard: {_msg}"); return
+        if is_token_blacklisted(token_addr): _skip("blacklisted"); return
+        if any(t.get("address","").lower() == addr_lower
+               for t in auto_trade_stats.get("trade_history", [])):
+            _skip("already traded"); return
 
-        # ── Bonding curve progress check ──
-        progress, liq_added = _fm_get_bonding_progress(token_addr)
+        # ── Dev blacklist check (0ms, memory) ──
+        if dev_addr and is_dev_blacklisted(dev_addr):
+            _skip(f"dev blacklisted: {dev_addr[:10]}"); return
 
-        if liq_added:
-            _skip("already graduated to PancakeSwap")
-            return
+        w3 = _fm_get_w3()
+        if not w3: _skip("no RPC"); return
+
+        # ── PARALLEL FILTERS (~200ms) ──
+        import concurrent.futures as _cf3
+
+        _info_res      = [None]
+        _dev_hist_res  = [None]
+        _hp_res        = [True]
+        _wallet_res    = [0.0]
+        _velocity_res  = [0.0]
+
+        def _f_info():
+            return _fm_get_token_info(token_addr, w3)
+
+        def _f_dev():
+            if not dev_addr: return {"total": 0, "rugged": 0, "graduated": 0}
+            return _fm_dev_history_onchain(dev_addr, w3)
+
+        def _f_hp(factory):
+            return _fm_honeypot_sim(token_addr, factory, w3)
+
+        def _f_wallet():
+            # Largest single wallet balance check
+            try:
+                tc = w3.eth.contract(address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
+                total = tc.functions.totalSupply().call()
+                # Check dev wallet balance
+                if dev_addr:
+                    dev_bal = tc.functions.balanceOf(Web3.to_checksum_address(dev_addr)).call()
+                    if total > 0:
+                        return round((dev_bal / total) * 100, 2)
+            except: pass
+            return 0.0
+
+        def _f_velocity():
+            # Buy speed — time since token created vs current progress
+            if detected_at <= 0: return 999.0
+            elapsed = time.time() - detected_at
+            return elapsed  # seconds since mint
+
+        with _cf3.ThreadPoolExecutor(max_workers=5) as ex:
+            f_info     = ex.submit(_f_info)
+            f_dev      = ex.submit(_f_dev)
+            f_wallet   = ex.submit(_f_wallet)
+            f_velocity = ex.submit(_f_velocity)
+
+            info = f_info.result(timeout=4)
+            if info:
+                f_hp = ex.submit(_f_hp, info.get("factory", _FM_FACTORY_ADDR))
+            else:
+                f_hp = ex.submit(lambda: True)
+
+            dev_hist      = f_dev.result(timeout=4)
+            wallet_pct    = f_wallet.result(timeout=3)
+            velocity_sec  = f_velocity.result(timeout=1)
+            hp_safe       = f_hp.result(timeout=3)
+
+        # ── FILTER CHECKS ──
+
+        # 1. Token info
+        if not info:
+            _skip("tokenInfo fetch failed"); return
+
+        # 2. Already graduated?
+        if info["liquidityAdded"]:
+            _skip("already graduated"); return
+
+        # 3. Progress check
+        progress = _fm_calc_progress(info)
         if progress < 0:
-            _skip("tokenInfo fetch failed")
-            return
-        if progress > 30:
-            _skip(f"too late — progress {progress:.1f}% > 30%")
-            return
+            _skip("progress calc failed"); return
+        if progress > 10:
+            _skip(f"too late progress={progress:.1f}%>10%"); return
         if progress < 1:
-            _skip(f"too early — progress {progress:.1f}% < 1%")
-            return
+            _skip(f"too early progress={progress:.1f}%<1%"); return
 
-        _progress = progress
-        print(f"✅ [FM] Progress {progress:.1f}% — bonding curve: {token_addr[:10]}")
+        # 4. Raised BNB check
+        raised_bnb = round(info["funds"] / 1e18, 4)
+        if raised_bnb > 1.0:
+            _skip(f"raised too much {raised_bnb:.2f} BNB"); return
+
+        # 5. Buy velocity — too fast = bot/bundler
+        if velocity_sec < 5 and progress > 3:
+            _skip(f"too fast {velocity_sec:.1f}s bot/bundler"); return
+
+        # 6. Single wallet dominance
+        if wallet_pct > 5.0:
+            _skip(f"dev wallet {wallet_pct:.1f}% > 5%"); return
+
+        # 7. Dev history check
+        if dev_hist["total"] >= 2:
+            rug_rate = dev_hist["rugged"] / dev_hist["total"]
+            if rug_rate > 0.5:
+                _skip(f"dev rug rate {rug_rate*100:.0f}% ({dev_hist['rugged']}/{dev_hist['total']})")
+                # Blacklist this dev
+                if dev_addr:
+                    blacklist_dev(dev_addr, f"four.meme rug rate {rug_rate*100:.0f}%")
+                return
+
+        # 8. Honeypot check
+        if not hp_safe:
+            _skip("honeypot sim failed"); return
+
+        print(f"✅ [FM] ALL PASS: progress={progress:.1f}% raised={raised_bnb:.3f}BNB vel={velocity_sec:.0f}s dev_rugs={dev_hist.get('rugged',0)} wallet={wallet_pct:.1f}%")
         _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
 
         # ── BUY ──
-        entry      = 0.0
         size_bnb   = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
         token_name = token_addr[:8]
+        entry      = 1e-12  # will be updated
 
         if TRADE_MODE == "real":
-            # Real buy via bonding curve contract
             try:
-                w = _fm_get_w3()
-                if not w:
-                    _skip("no RPC for real buy")
-                    return
-                fc = w.eth.contract(
-                    address=Web3.to_checksum_address(_FM_FACTORY_ADDR),
+                wallet_addr = BSC_WALLET or REAL_WALLET
+                pk = os.getenv("PRIVATE_KEY","")
+                if not wallet_addr or not pk:
+                    _skip("no wallet/key"); return
+                fc = w3.eth.contract(
+                    address=Web3.to_checksum_address(info["factory"]),
                     abi=_FM_BC_ABI
                 )
-                wallet_addr = BSC_WALLET or REAL_WALLET
-                if not wallet_addr:
-                    _skip("no wallet address")
-                    return
-                # buyTokenAMAP — BNB as value
                 tx = fc.functions.buyTokenAMAP(
                     Web3.to_checksum_address(token_addr),
                     Web3.to_checksum_address(wallet_addr),
-                    int(size_bnb * 1e18),
-                    0  # minAmount = 0 (max slippage)
+                    int(size_bnb * 1e18), 0
                 ).build_transaction({
-                    "from":  wallet_addr,
-                    "value": int(size_bnb * 1e18),
-                    "gas":   300000,
-                    "gasPrice": w.eth.gas_price,
-                    "nonce": w.eth.get_transaction_count(wallet_addr),
+                    "from":     wallet_addr,
+                    "value":    int(size_bnb * 1e18),
+                    "gas":      350000,
+                    "gasPrice": int(w3.eth.gas_price * 1.5),
+                    "nonce":    w3.eth.get_transaction_count(wallet_addr),
                 })
-                # Sign and send
                 from eth_account import Account
-                pk = os.getenv("PRIVATE_KEY", "")
-                if not pk:
-                    _skip("no private key")
-                    return
-                signed = Account.sign_transaction(tx, pk)
-                tx_hash = w.eth.send_raw_transaction(signed.raw_transaction)
-                receipt = w.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
+                signed   = Account.sign_transaction(tx, pk)
+                tx_hash  = w3.eth.send_raw_transaction(signed.raw_transaction)
+                receipt  = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
                 if receipt["status"] != 1:
-                    _skip("buy tx failed")
-                    return
-                print(f"✅ [FM] Real buy tx: {tx_hash.hex()[:12]}")
+                    _skip("buy tx failed"); return
+                print(f"✅ [FM] Real buy: {tx_hash.hex()[:12]}")
             except Exception as e:
-                _skip(f"real buy error: {str(e)[:40]}")
-                return
-
-        # Paper mode
-        if TRADE_MODE != "real":
-            sess["paper_balance"] = round(bal - size_bnb, 6)
-            # Simulate entry price
-            entry = size_bnb / 1e9  # rough estimate
+                _skip(f"real buy error: {str(e)[:40]}"); return
+        else:
+            sess["paper_balance"] = round(sess.get("paper_balance",5.0) - size_bnb, 6)
 
         ms = int((time.time() - _t_start) * 1000)
 
-        add_position_to_monitor(AUTO_SESSION_ID, token_addr, token_name, max(entry, 1e-12), size_bnb,
-                                stop_loss_pct=CHECKLIST_SETTINGS.get("sl_new", 15.0))
+        # ── ADD TO MONITOR ──
+        add_position_to_monitor(
+            AUTO_SESSION_ID, token_addr, token_name, entry, size_bnb,
+            stop_loss_pct=20.0
+        )
         auto_trade_stats["running_positions"][token_addr] = {
-            "token":          token_name,
-            "entry":          max(entry, 1e-12),
-            "size_bnb":       size_bnb,
-            "orig_size_bnb":  size_bnb,
-            "bought_usd":     round(size_bnb * market_cache.get("bnb_price", 0), 2),
-            "sl_pct":         CHECKLIST_SETTINGS.get("sl_new", 15.0),
-            "tp_sold":        0.0,
-            "banked_pnl_bnb": 0.0,
-            "bought_at":      datetime.utcnow().isoformat(),
-            "mode":           TRADE_MODE,
-            "fm_progress_at_buy": progress,
+            "token":            token_name,
+            "entry":            entry,
+            "size_bnb":         size_bnb,
+            "orig_size_bnb":    size_bnb,
+            "bought_usd":       round(size_bnb * market_cache.get("bnb_price",0), 2),
+            "sl_pct":           20.0,
+            "tp_sold":          0.0,
+            "banked_pnl_bnb":   0.0,
+            "bought_at":        datetime.utcnow().isoformat(),
+            "mode":             TRADE_MODE,
+            "fm_progress":      progress,
+            "fm_raised_bnb":    raised_bnb,
+            "fm_dev":           dev_addr[:10] if dev_addr else "",
             "buy_reasoning": {
-                "source":   "FM_BondingCurve_v1",
-                "strategy": "FourMeme_Early",
-                "progress": f"{progress:.1f}%",
+                "source":    "FM_BC_v2",
+                "progress":  f"{progress:.1f}%",
+                "raised":    f"{raised_bnb:.3f}BNB",
+                "dev_rugs":  dev_hist.get("rugged", 0),
+                "wallet_pct":wallet_pct,
             },
+            # TP levels
+            "tp1_done": False,  # +40% → 50% sell
+            "tp2_done": False,  # +100% → 25% sell
+            "tp3_done": False,  # +300% → 15% sell
+            # Moon bag 10% with TrailSL -30%
         }
         auto_trade_stats["total_auto_buys"] += 1
         _scanner_stats["fm_bought"] = _scanner_stats.get("fm_bought", 0) + 1
         threading.Thread(target=_persist_positions, daemon=True).start()
+
         _push_notif("success", "🚀 FM Bonding Curve!",
-                    f"{token_name} @ {progress:.1f}% progress | {size_bnb:.4f} BNB | {ms}ms",
+                    f"{token_name} prog={progress:.1f}% raised={raised_bnb:.2f}BNB | {ms}ms",
                     token_name, token_addr)
-        _log("buy", token_name, f"🚀 FM BC @ progress={progress:.1f}% {ms}ms", token_addr)
+        _log("buy", token_name,
+             f"🚀 FM BC v2 prog={progress:.1f}% raised={raised_bnb:.3f}BNB vel={velocity_sec:.0f}s {ms}ms",
+             token_addr)
         threading.Thread(target=_save_fm_event, args=(
-            token_addr, 0, 0, max(entry,1e-12), progress, "BUY", "", ms
+            token_addr, raised_bnb, 0, entry, progress, "BUY", "", ms
         ), daemon=True).start()
-        print(f"✅ [FM] BC SNIPED: {token_name} progress={progress:.1f}% {ms}ms")
+        print(f"✅ [FM] BC SNIPED: {token_name} prog={progress:.1f}% {ms}ms")
 
     except Exception as e:
         print(f"⚠️ [FM] snipe error: {e}")
         with _fm_sniped_lock: _fm_sniped.discard(addr_lower)
 
-_QN_WSS = os.getenv("QUICKNODE_WSS", "wss://blissful-dark-scion.bsc.quiknode.pro/15a13a747cf019149b7c43a1a0bbd2ce37179d15/")
+_QN_WSS = os.getenv("QUICKNODE_WSS","wss://blissful-dark-scion.bsc.quiknode.pro/15a13a747cf019149b7c43a1a0bbd2ce37179d15/")
 
 def poll_four_meme_v2():
     """
-    FM Bonding Curve Sniper v1
-    - Four.meme factory Transfer events listen karo
-    - Naya token detect hone pe bonding curve check
-    - Progress 5-30% = buy
+    FM Bonding Curve Sniper v2 — WSS detection
+    Four.meme factory Transfer(mint) events listen
     """
     import asyncio, json as _j
 
     try:
         import websockets as _ws
     except ImportError:
-        print("WARN [FM] websockets not installed")
-        return
+        print("WARN [FM] websockets not installed"); return
 
-    # Four.meme factory Transfer topic — naya token create hone pe
-    _FM_CREATE_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"  # Transfer event
-    _FM_ZERO_ADDR    = "0x0000000000000000000000000000000000000000"
+    TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+    ZERO_TOPIC     = "0x0000000000000000000000000000000000000000000000000000000000000000"
 
     async def _listen(url):
         async with _ws.connect(url, ping_interval=20, ping_timeout=15,
                                close_timeout=30, max_size=2**20) as ws:
-            # Subscribe to Transfer events from four.meme factories
             await ws.send(_j.dumps({
-                "id": 1, "jsonrpc": "2.0",
-                "method": "eth_subscribe",
+                "id": 1, "jsonrpc": "2.0", "method": "eth_subscribe",
                 "params": ["logs", {
                     "address": _FM_FACTORY_ADDRS,
-                    "topics": [_FM_CREATE_TOPIC]
+                    "topics":  [TRANSFER_TOPIC, ZERO_TOPIC]
                 }]
             }))
             ack = _j.loads(await asyncio.wait_for(ws.recv(), timeout=10))
             if ack.get("error"):
                 raise Exception(f"FM sub failed: {ack['error']}")
-            print(f"✅ [FM] Bonding Curve Sniper connected: {url[:35]}")
+            print(f"✅ [FM] BC Sniper v2 connected: {url[:40]}")
 
             while True:
                 try:
@@ -4853,44 +5004,44 @@ def poll_four_meme_v2():
                     topics = log.get("topics", [])
                     if len(topics) < 3: continue
 
-                    # Token address = contract address in log
-                    token_addr = log.get("address", "")
+                    # Token address = contract emitting event
+                    token_addr = log.get("address","")
                     if not token_addr: continue
 
-                    # from = 0x000 = mint = new token
-                    from_addr = "0x" + topics[1][-40:] if len(topics) > 1 else ""
-                    if from_addr.lower() != _FM_ZERO_ADDR.lower(): continue
+                    # to address = new token recipient = dev wallet
+                    dev_addr = "0x" + topics[2][-40:] if len(topics) > 2 else ""
 
-                    # Deduplicate
+                    # from = 0x000 = mint
+                    from_addr = "0x" + topics[1][-40:] if len(topics) > 1 else ""
+                    if from_addr.replace("0x","").replace("0","") != "":
+                        continue  # not mint
+
                     with _fm_sniped_lock:
                         if token_addr.lower() in _fm_sniped: continue
 
-                    print(f"🆕 [FM] New token: {token_addr[:10]}")
+                    print(f"🆕 [FM] New token: {token_addr[:10]} dev:{dev_addr[:10]}")
                     _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
 
-                    # Background mein snipe karo
+                    _now = time.time()
                     threading.Thread(
                         target=_fm_snipe,
-                        args=(token_addr,),
+                        args=(token_addr, dev_addr, _now),
                         daemon=True
                     ).start()
 
-                except asyncio.TimeoutError:
-                    continue
-                except Exception as e:
-                    raise e
+                except asyncio.TimeoutError: continue
+                except Exception as e: raise e
 
     async def _loop():
         idx = fails = 0
         endpoints = [_QN_WSS] + _FM_WSS
         while True:
             try:
-                url = endpoints[idx % len(endpoints)]
-                await _listen(url)
+                await _listen(endpoints[idx % len(endpoints)])
                 fails = 0
             except Exception as e:
                 fails += 1
-                wait = min(5 * fails, 60)
+                wait = min(5*fails, 60)
                 print(f"WARN [FM] fail #{fails}: {str(e)[:50]} retry {wait}s")
                 await asyncio.sleep(wait)
             idx += 1
@@ -4903,7 +5054,7 @@ def poll_four_meme_v2():
         finally: loop.close()
 
     threading.Thread(target=_run, daemon=True).start()
-    print("✅ [FM] Bonding Curve Sniper v1 started")
+    print("✅ [FM] Bonding Curve Sniper v2 started — progress+velocity+dev+wallet+honeypot")
 
 def poll_new_pairs():
     import asyncio, json as _json
