@@ -4202,10 +4202,11 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
         with _cf.ThreadPoolExecutor(max_workers=2) as _ex:
             _f_sim = _ex.submit(_run_sim)
             _f_tax = _ex.submit(_run_tax)
-            _sim_result = _f_sim.result(timeout=4)
-            _tax_result = _f_tax.result(timeout=4)
+            _sim_result = _f_sim.result(timeout=8)
+            _tax_result = _f_tax.result(timeout=8)
     except Exception as e:
         print(f"⚠️ Parallel checks error: {e}")
+        _sim_result = {"safe": False, "reason": f"parallel error: {str(e)[:60]}"}
 
     # Sim fail = honeypot — sirf confirmed honeypot blacklist karo, error nahi
     if not _sim_result.get("safe"):
@@ -4216,6 +4217,8 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
         # Sirf confirmed honeypot blacklist karo — error/timeout pe nahi
         if "honeypot" in reason.lower() or "revert" in reason.lower() or "high tax" in reason.lower():
             blacklist_token(pair_address, f"honeypot: {reason[:40]}")
+        elif "not run" in reason.lower() or "parallel error" in reason.lower() or "timeout" in reason.lower():
+            pass  # temporary error — blacklist mat karo
         return
 
     # Tax too high
