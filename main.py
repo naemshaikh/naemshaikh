@@ -4564,30 +4564,33 @@ _FM_ERC20_ABI = [
 ]
 
 def _fm_get_unique_buyers(token_addr, w3=None):
-    """Token pe unique buyers count karo via Transfer events"""
+    """Token pe unique buyers + recent buys (last 20 blocks ~60s) count karo"""
     try:
         if not w3: w3 = _fm_get_w3()
-        if not w3: return 0
+        if not w3: return 0, 0
         TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
         current = w3.eth.block_number
         logs = w3.eth.get_logs({
             "address": Web3.to_checksum_address(token_addr),
             "topics": [TRANSFER_TOPIC],
-            "fromBlock": current - 200,  # last ~10 mins
+            "fromBlock": current - 200,  # last ~10 mins total
             "toBlock": "latest",
         })
-        # Unique receivers (excluding 0x000 = mint, excluding dead)
         _ZERO = "0x0000000000000000000000000000000000000000"
         _DEAD = "0x000000000000000000000000000000000000dead"
         buyers = set()
+        recent_buys = 0  # last 20 blocks ~60s
         for log in logs:
             if len(log["topics"]) < 3: continue
             to_addr = "0x" + log["topics"][2].hex()[-40:].lower()
             if to_addr not in [_ZERO, _DEAD]:
                 buyers.add(to_addr)
-        return len(buyers)
+                # Recent buys — last 20 blocks
+                if log["blockNumber"] >= current - 20:
+                    recent_buys += 1
+        return len(buyers), recent_buys
     except:
-        return 0
+        return 0, 0
 
 _fm_sniped      = set()
 _fm_sniped_lock = threading.Lock()
@@ -4861,7 +4864,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             wallet_pct    = f_wallet.result(timeout=3)
             velocity_sec  = f_velocity.result(timeout=1)
             hp_safe       = f_hp.result(timeout=3)
-            unique_buyers = f_buyers.result(timeout=4)
+            unique_buyers, recent_buys = f_buyers.result(timeout=4)
 
         # ── FILTER CHECKS ──
 
@@ -4921,11 +4924,13 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if not hp_safe:
             _skip("honeypot sim failed"); return
 
-        # 9. Unique buyers check — min 3 real buyers
+        # 9. Unique buyers + momentum check
         if unique_buyers < 3:
             _skip(f"too few buyers {unique_buyers} < 3"); return
+        if recent_buys < 2:
+            _skip(f"no momentum — only {recent_buys} buys in last 60s"); return
 
-        print(f"✅ [FM] ALL PASS: progress={progress:.1f}% raised={raised_bnb:.3f}BNB vel={velocity_sec:.0f}s dev_rugs={dev_hist.get('rugged',0)} wallet={wallet_pct:.1f}%")
+        print(f"✅ [FM] ALL PASS: mc=${_mc_usd:.0f} raised={raised_bnb:.3f}BNB buyers={unique_buyers} recent={recent_buys} vel={velocity_sec:.0f}s")
         _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
 
         # ── BUY ──
