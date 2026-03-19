@@ -3945,622 +3945,264 @@ def _memory_cleanup_loop():
             print(f"⚠️ MemCleanup error: {e}")
         time.sleep(300)  # har 5 minute
 
-# ========== AUTO CHECK NEW PAIR ==========
+# ========== PC FAST SNIPER ==========
+# QuickNode WSS → PairCreated detect
+# Flow: Blacklist → Liq check → Parallel(sim + tax) → BUY
+# Speed: ~700ms total
+# ═══════════════════════════════════════════
+
+# Already sniped set — deduplicate
+_pc_sniped:      set            = set()
+_pc_sniped_lock: threading.Lock = threading.Lock()
+
+# Semaphore — max 5 parallel snipes
+_pc_sem = threading.Semaphore(5)
+
+def _pc_get_tax(token_address: str, w3_inst) -> float:
+    """
+    getAmountsOut tax check — on-chain, no API
+    0.001 BNB buy simulate → sell back → tax = difference %
+    Returns: tax % (0-100), -1 = error
+    """
+    try:
+        _ROUTER_ABI = [{
+            "name": "getAmountsOut",
+            "type": "function",
+            "stateMutability": "view",
+            "inputs": [
+                {"name": "amountIn",  "type": "uint256"},
+                {"name": "path",      "type": "address[]"}
+            ],
+            "outputs": [{"name": "amounts", "type": "uint256[]"}]
+        }]
+        router = w3_inst.eth.contract(
+            address=Web3.to_checksum_address(PANCAKE_ROUTER),
+            abi=_ROUTER_ABI
+        )
+        wbnb_cs  = Web3.to_checksum_address(WBNB)
+        token_cs = Web3.to_checksum_address(token_address)
+        amt_in   = int(0.001 * 1e18)  # 0.001 BNB
+
+        # Buy: BNB → Token
+        buy_out = router.functions.getAmountsOut(
+            amt_in, [wbnb_cs, token_cs]
+        ).call(block_identifier="latest")
+        tokens_out = buy_out[-1]
+        if tokens_out <= 0:
+            return -1
+
+        # Sell: Token → BNB
+        sell_out = router.functions.getAmountsOut(
+            tokens_out, [token_cs, wbnb_cs]
+        ).call(block_identifier="latest")
+        bnb_back = sell_out[-1]
+        if bnb_back <= 0:
+            return 100.0
+
+        tax = (1 - bnb_back / amt_in) * 100
+        return round(max(0, tax), 1)
+    except Exception:
+        return -1
+
+
 def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale_wallet: str = ""):
-    # Sabse pehle — token blacklist check (zero cost, instant)
+    """
+    PC Fast Sniper — max speed, on-chain only
+    ~700ms total: Blacklist(0ms) + Liq(200ms) + Parallel[Sim+Tax](300ms) + Buy(100ms)
+    """
+    _t_start = time.time()
+
+    # ── STEP 0: Instant blacklist checks (memory, 0ms) ──
     if is_token_blacklisted(pair_address):
         _scanner_stats["rej_blacklist"] += 1
-        _log("reject", pair_address[:8], "Blacklisted 24h — skip", pair_address)
-        print(f"🚫 Token blacklisted — skip: {pair_address[:10]}")
-        threading.Thread(target=_save_bot_decision, args=({
-            "token_address":       pair_address,
-            "token_name":          pair_address[:8],
-            "decision":            "PREFILTER_SKIP",
-            "prefilter_skip":      True,
-            "prefilter_reason":    "Token blacklisted 24h",
-            "reason":              "Blacklisted — auto skip",
-            "discovery_source":    "whale" if whale_triggered else "wss",
-            "bnb_price_at_entry":  market_cache.get("bnb_price", 0),
-            "fear_greed_at_entry": market_cache.get("fear_greed", 50),
-        },), daemon=True).start()
+        print(f"🚫 Blacklisted — skip: {pair_address[:10]}")
         return
+
     try:
-        if whale_triggered:
-            _log("whale", pair_address[:8], f"🐋 Whale follow — scanning ({whale_wallet[:8]})", pair_address)
-            print(f"🐋 WHALE FOLLOW scan: {pair_address[:10]} ← {whale_wallet[:10]}")
-        else:
-            _log("discover", pair_address[:8], "New pair — liquidity monitor start", pair_address)
-            print(f"👀 Liquidity monitor: {pair_address[:10]}")
+        _addr_cs = Web3.to_checksum_address(pair_address)
+    except Exception:
+        return
 
-        _prefetched_dex = None
+    _dev_addr = ""  # will check after GoPlus (background)
 
-        # ── STEP 1: Pre-filter — getReserves() liquidity check ──
-        # Sirf 1 RPC call ~200ms — 90% tokens yahan reject
-        if not whale_triggered:
-            try:
-                _min_liq = CHECKLIST_SETTINGS.get("min_liq_bnb", 3.0)
-                _actual_pair = _get_v2_pair(pair_address)
-                if not _actual_pair:
-                    print(f"⚠️ No pair found — proceeding: {pair_address[:10]}")
-                else:
-                    _pc_w3   = Web3(Web3.HTTPProvider("https://bsc-rpc.publicnode.com", request_kwargs={"timeout": 3}))
-                    _pc_c    = _pc_w3.eth.contract(
-                        address=Web3.to_checksum_address(_actual_pair),
-                        abi=PAIR_ABI_PRICE
-                    )
-                    _res     = _pc_c.functions.getReserves().call()
-                    try:
-                        _t0_addr = _pc_c.functions.token0().call().lower()
-                        _liq_bnb = (_res[0] / 1e18) if _t0_addr == WBNB.lower() else (_res[1] / 1e18)
-                    except Exception:
-                        _liq_bnb = min(_res[0], _res[1]) / 1e18
-                    if _liq_bnb < _min_liq:
-                        print(f"⏭️ Low liq {_liq_bnb:.2f} BNB — skip: {pair_address[:10]}")
-                        _log("reject", pair_address[:8], f"Low liq {_liq_bnb:.2f} BNB", pair_address)
-                        _scanner_stats["pc_prefilter_fail"] += 1
-                        _scanner_stats["rej_low_liq"] += 1
-                        return
-                    if _liq_bnb > 500:
-                        print(f"⏭️ Old/fake token liq={_liq_bnb:.0f} BNB — skip: {pair_address[:10]}")
-                        _log("reject", pair_address[:8], f"Too high liq {_liq_bnb:.0f} BNB", pair_address)
-                        _scanner_stats["pc_prefilter_fail"] += 1
-                        _scanner_stats["rej_high_liq"] += 1
-                        return
-                    _scanner_stats["pc_prefilter_pass"] += 1
-                    print(f"✅ Liq ok {_liq_bnb:.2f} BNB — checklist: {pair_address[:10]}")
-            except Exception as _le:
-                print(f"⚠️ Liq check failed — proceeding: {pair_address[:10]}")
-
-        # ── STEP 2: Parallel fetch — Honeypot + GoPlus + DexScreener SAATH MEIN ──
-        import concurrent.futures as _cf
-        _hp_data  = {}
-        _gp_data  = {}
-        _dex_json = {}
-
-        def _fetch_hp():
-            try: return _get_honeypot(pair_address)
-            except: return {}
-
-        def _fetch_gp():
-            try: return _get_goplus(pair_address)
-            except: return {}
-
-        def _fetch_dex():
-            try:
-                _r = requests.get(
-                    f"https://api.dexscreener.com/latest/dex/tokens/{pair_address}",
-                    timeout=6
-                )
-                if _r.status_code == 200:
-                    return _r.json() or {}
-            except: pass
-            return {}
-
-        with _cf.ThreadPoolExecutor(max_workers=3) as _ex:
-            _f_hp  = _ex.submit(_fetch_hp)
-            _f_gp  = _ex.submit(_fetch_gp)
-            _f_dex = _ex.submit(_fetch_dex)
-            _hp_data  = _f_hp.result(timeout=8)
-            _gp_data  = _f_gp.result(timeout=8)
-            _dex_json = _f_dex.result(timeout=8)
-
-        # Token too old check (6h+)
-        try:
-            _bp = [p for p in (_dex_json.get("pairs") or []) if p and p.get("chainId") == "bsc"]
-            if _bp:
-                _ct = _bp[0].get("pairCreatedAt", 0) or 0
-                if _ct and (time.time() - _ct / 1000) / 60 > 360:
-                    _scanner_stats["rej_too_old"] += 1
-                    _log("reject", pair_address[:8], "Token too old (6h+) — skip", pair_address)
-                    return
-                _prefetched_dex = _dex_json
-        except Exception:
-            pass
-
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # CHECKLIST STOPPED — On-chain simulation use ho raha hai
-        # Wapas enable karna ho toh is block ko uncomment karo
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        _final_name = pair_address[:8]
-        _fg         = market_cache.get("fear_greed", 50)
-
-        # On-chain simulation — fast ~300-500ms
-        print(f"🔬 [PC] On-chain sim: {pair_address[:10]}")
-        _sim = _onchain_sim(pair_address)
-        if not _sim["safe"]:
-            _scanner_stats["pc_checklist_fail"] += 1
-            print(f"🚫 [PC] Sim fail — {_sim['reason']}: {pair_address[:10]}")
-            _save_pc_event_bg(pair_address, _liq_bnb, "PASS", 0, 0, 0, "SKIP", f"onchain sim: {_sim['reason']}", int((time.time()-_t_process_start)*1000))
+    # ── Deduplicate ──
+    with _pc_sniped_lock:
+        if pair_address.lower() in _pc_sniped:
             return
-        print(f"✅ [PC] Sim passed — buying: {pair_address[:10]}")
-        _scanner_stats["pc_checklist_pass"] += 1
 
-        # Save decision
-        threading.Thread(target=_save_bot_decision, args=({
-            "token_address":      pair_address,
-            "token_name":         _final_name,
-            "decision":           "BUY",
-            "reason":             "On-chain sim passed",
-            "discovery_source":   "whale" if whale_triggered else "wss",
-            "bnb_price_at_entry": market_cache.get("bnb_price", 0),
-            "token_type":         "meme",
-        },), daemon=True).start()
-
-        # BUY
-        try:
-            _auto_paper_buy(pair_address, _final_name, 1, 1, {})
-        except Exception as e:
-            print(f"Auto buy error: {e}")
-
-        # ━━━ CHECKLIST CODE — FILE MEIN HAI, BAND HAI ━━━
-        # Wapas chalana ho toh yahan se end tak uncomment karo
-        if False:
-            result = {}
-            score = 0
-            total = 0
-
-        knowledge_base["bsc"]["new_tokens"] = knowledge_base["bsc"]["new_tokens"][-99:]
-        knowledge_base["bsc"]["new_tokens"].append({
-            "address": pair_address, "overall": overall,
-            "score": score, "total": total, "time": datetime.utcnow().isoformat()
-        })
-        knowledge_base["bsc"]["new_tokens"] = knowledge_base["bsc"]["new_tokens"][-20:]
-    finally:
-        pass  # semaphore removed — queue handles concurrency
-
-
-# ========== FOUR.MEME NEW TOKEN POLLER ==========
-# ══════════════════════════════════════════════════════════════
-# PANCAKESWAP MINT EVENT MONITOR
-# PairCreated → Mint event subscribe → turant snipe
-# Semaphore free — polling nahi, pure event driven
-# ══════════════════════════════════════════════════════════════
-
-# keccak256("Mint(address,uint256,uint256)") — PancakeSwap V2 AddLiquidity
-_PC_MINT_TOPIC = "0x4c209b5fc8ad50758f13e2e1088ba56a560dff690a1c6fef26394f4c03821c4f"
-
-# Pairs waiting for mint event
-# {pair_lower: {"token": addr, "registered_at": float}}
-_pc_mint_pending:      dict           = {}
-_pc_mint_pending_lock: threading.Lock = threading.Lock()
-_PC_MINT_TIMEOUT = 300  # 5 min
-
-def _pc_register_for_mint(pair_address: str, token_address: str = ""):
-    """Pair ko Mint event ke liye register karo"""
-    pair_lower = pair_address.lower()
-    token = token_address or pair_address  # token address nahi tha toh pair use karo
-    with _pc_mint_pending_lock:
-        if pair_lower not in _pc_mint_pending:
-            _pc_mint_pending[pair_lower] = {
-                "token":         token,
-                "registered_at": time.time(),
-            }
-    print(f"📝 [PC Mint] Registered: {pair_address[:10]}")
-
-    """
-    Dedicated Mint event monitor — publicnode WSS
-    Registered pairs ka Mint event sunna
-    Mint aaya → turant PC sniper queue mein daal do
-    """
-    import asyncio, json as _j
-    try:
-        import websockets as _ws
-    except ImportError:
-        return
-
-    async def _listen():
-        WSS = "wss://bsc-rpc.publicnode.com"
-        fail = 0
-        while True:
-            try:
-                async with _ws.connect(WSS, ping_interval=20, ping_timeout=15,
-                                        close_timeout=5, max_size=2**20) as ws:
-                    # Subscribe to Mint events
-                    await ws.send(_j.dumps({
-                        "id": 99, "method": "eth_subscribe",
-                        "params": ["logs", {"topics": [[_PC_MINT_TOPIC]]}],
-                        "jsonrpc": "2.0"
-                    }))
-                    await asyncio.wait_for(ws.recv(), timeout=10)
-                    print("✅ [PC Mint] Mint monitor connected!")
-                    fail = 0
-                    while True:
-                        msg  = await ws.recv()  # timeout=None
-                        data = _j.loads(msg)
-                        log  = (data.get("params") or {}).get("result") or {}
-                        if not log:
-                            continue
-                        pair_addr = log.get("address", "").lower()
-                        # Is pair registered hai?
-                        with _pc_mint_pending_lock:
-                            info = _pc_mint_pending.get(pair_addr)
-                        if not info:
-                            continue
-                        # Mint event aaya! — snipe karo
-                        token_addr = info["token"]
-                        print(f"🔥 [PC Mint] Mint detected: {pair_addr[:10]} → snipe!")
-                        with _pc_mint_pending_lock:
-                            _pc_mint_pending.pop(pair_addr, None)
-                        # Liq estimate — reserves se
-                        _liq_est = 5.0  # default estimate
-                        try:
-                            _w3t = Web3(Web3.HTTPProvider(
-                                "https://bsc-rpc.publicnode.com",
-                                request_kwargs={"timeout": 3}
-                            ))
-                            _pc_c = _w3t.eth.contract(
-                                address=Web3.to_checksum_address(pair_addr),
-                                abi=PAIR_ABI_PRICE
-                            )
-                            _res = _pc_c.functions.getReserves().call()
-                            _liq_est = max(_res[0], _res[1]) / 1e18
-                        except Exception:
-                            pass
-                        threading.Thread(
-                            target=_pc_add_to_snipe_queue,
-                            args=(token_addr, pair_addr, _liq_est),
-                            daemon=True
-                        ).start()
-            except Exception as e:
-                fail += 1
-                wait = min(2 * fail, 15)
-                print(f"⚠️ [PC Mint] reconnecting in {wait}s")
-                await asyncio.sleep(wait)
-
-    def _run():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(_listen())
-        except Exception as ex:
-            print(f"⚠️ [PC Mint] thread crashed: {ex}")
-        finally:
-            loop.close()
-
-    threading.Thread(target=_run, daemon=True).start()
-
-# Cleanup thread — expired pending pairs remove karo
-    while True:
-        try:
-            now = time.time()
-            with _pc_mint_pending_lock:
-                expired = [k for k, v in _pc_mint_pending.items()
-                           if now - v["registered_at"] > _PC_MINT_TIMEOUT]
-                for k in expired:
-                    _pc_mint_pending.pop(k, None)
-                    print(f"⏰ [PC Mint] Expired: {k[:10]}")
-        except Exception:
-            pass
-        time.sleep(30)
-
-# ══════════════════════════════════════════════════════════════
-# PANCAKESWAP FAST SNIPER — DEDICATED SYSTEM
-# Direct PancakeSwap listings ke liye
-# Checklist lite — sirf critical checks, max speed
-# ══════════════════════════════════════════════════════════════
-
-# PancakeSwap sniper queue
-# {addr_lower: {"address": str, "pair": str, "added_at": float, "liq_bnb": float}}
-_pc_snipe_queue:      dict            = {}
-_pc_snipe_queue_lock: threading.Lock  = threading.Lock()
-_PC_QUEUE_MAX     = 50
-_PC_QUEUE_TIMEOUT = 300   # 5 min
-
-# Dedicated semaphore — 6 simultaneous snipes
-_pc_snipe_sem = threading.Semaphore(6)
-
-# Already sniped
-_pc_sniped: set = set()
-
-def _pc_add_to_snipe_queue(token_address: str, pair_address: str, liq_bnb: float):
-    """Liquidity ok — snipe queue mein daal do"""
-    addr_lower = token_address.lower()
-    if addr_lower in _pc_sniped:
-        return
-    # Already traded check
-    if any(t.get("address","").lower() == addr_lower
+    # ── Already traded ──
+    if any(t.get("address","").lower() == pair_address.lower()
            for t in auto_trade_stats.get("trade_history", [])):
         return
-    with _pc_snipe_queue_lock:
-        if addr_lower in _pc_snipe_queue:
-            return
-        if len(_pc_snipe_queue) >= _PC_QUEUE_MAX:
-            return
-        _pc_snipe_queue[addr_lower] = {
-            "address":  token_address,
-            "pair":     pair_address,
-            "added_at": time.time(),
-            "liq_bnb":  liq_bnb,
-        }
-    print(f"⚡ [PC Sniper] Queue: {token_address[:10]} liq={liq_bnb:.2f} BNB")
-    # Background mein turant snipe karo
-    threading.Thread(
-        target=_pc_do_snipe,
-        args=(token_address, pair_address, liq_bnb),
-        daemon=True
-    ).start()
 
-def _save_pc_event(token_addr, liq_bnb, prefilter, cl_score, cl_total, snipe_price, result, skip_reason, time_ms):
-    """PC event Supabase mein save karo — async"""
+    # ── STEP 1: Liquidity check via QuickNode HTTP (~200ms) ──
+    _liq_bnb = 0.0
     try:
-        if not supabase: return
-        supabase.table("pc_events").insert({
-            "token_address":   token_addr,
-            "token_short":     token_addr[:10],
-            "detected_at":     datetime.utcnow().isoformat(),
-            "liquidity_bnb":   round(float(liq_bnb or 0), 6),
-            "prefilter":       prefilter or "",
-            "checklist_score": int(cl_score or 0),
-            "checklist_total": int(cl_total or 0),
-            "snipe_price":     float(snipe_price or 0),
-            "result":          result,
-            "skip_reason":     skip_reason or "",
-            "time_taken_ms":   int(time_ms or 0),
-            "mode":            TRADE_MODE,
-        }).execute()
-    except Exception as e:
-        print(f"⚠️ [PC] event save error: {e}")
-
-
-def _onchain_sim(token_address: str, w3_instance=None) -> dict:
-    """
-    On-chain honeypot simulation — eth_call only, no gas, no BNB
-    approve + sell simulate karo — revert = honeypot
-    Speed: ~300-500ms
-    Returns: {"safe": bool, "reason": str, "buy_tax": float, "sell_tax": float}
-    """
-    result = {"safe": False, "reason": "", "buy_tax": 0.0, "sell_tax": 0.0}
-    try:
-        _w3 = w3_instance or w3
-        token_cs  = Web3.to_checksum_address(token_address)
-        router_cs = Web3.to_checksum_address(PANCAKE_ROUTER)
-        wbnb_cs   = Web3.to_checksum_address(WBNB)
-
-        # Fake wallet for simulation
-        _SIM_WALLET = "0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF"
-        _SIM_WALLET_CS = Web3.to_checksum_address(_SIM_WALLET)
-
-        # ERC20 minimal ABI
-        _ERC20_ABI = [
-            {"name":"approve","type":"function","stateMutability":"nonpayable",
-             "inputs":[{"name":"spender","type":"address"},{"name":"amount","type":"uint256"}],
-             "outputs":[{"name":"","type":"bool"}]},
-            {"name":"balanceOf","type":"function","stateMutability":"view",
-             "inputs":[{"name":"account","type":"address"}],
-             "outputs":[{"name":"","type":"uint256"}]},
-        ]
-
-        token_contract = _w3.eth.contract(address=token_cs, abi=_ERC20_ABI)
-        router_contract = _w3.eth.contract(
-            address=router_cs,
-            abi=[{
-                "name":"swapExactTokensForETHSupportingFeeOnTransferTokens",
-                "type":"function","stateMutability":"nonpayable",
-                "inputs":[
-                    {"name":"amountIn","type":"uint256"},
-                    {"name":"amountOutMin","type":"uint256"},
-                    {"name":"path","type":"address[]"},
-                    {"name":"to","type":"address"},
-                    {"name":"deadline","type":"uint256"}
-                ],
-                "outputs":[]
-            }]
+        _qn_http = os.getenv("QUICKNODE_HTTP", BSC_RPC)
+        _w3q = Web3(Web3.HTTPProvider(_qn_http, request_kwargs={"timeout": 3}))
+        _pair_c = _w3q.eth.contract(
+            address=_addr_cs,
+            abi=PAIR_ABI_PRICE
         )
-
-        # Step 1: simulate approve (eth_call — no gas)
+        _res = _pair_c.functions.getReserves().call()
         try:
-            approve_data = token_contract.encodeABI(
-                fn_name="approve",
-                args=[router_cs, 2**256 - 1]
-            )
-            _w3.eth.call({
-                "from": _SIM_WALLET_CS,
-                "to":   token_cs,
-                "data": approve_data,
-            })
-        except Exception as e:
-            result["reason"] = f"approve fail: {str(e)[:60]}"
-            return result
-
-        # Step 2: simulate balanceOf
-        try:
-            _bal = token_contract.functions.balanceOf(_SIM_WALLET_CS).call()
+            _t0 = _pair_c.functions.token0().call().lower()
+            _liq_bnb = (_res[0] / 1e18) if _t0 == WBNB.lower() else (_res[1] / 1e18)
         except Exception:
-            _bal = 10 ** 18  # fallback amount
+            _liq_bnb = min(_res[0], _res[1]) / 1e18
 
-        if _bal <= 0:
-            _bal = 10 ** 18
+        _min_liq = CHECKLIST_SETTINGS.get("min_liq_bnb", 2.0)
+        if _liq_bnb < _min_liq:
+            _scanner_stats["rej_low_liq"] += 1
+            print(f"⏭️ Low liq {_liq_bnb:.2f} BNB — skip: {pair_address[:10]}")
+            _log("reject", pair_address[:8], f"Low liq {_liq_bnb:.2f} BNB", pair_address)
+            return
+        if _liq_bnb > 500:
+            _scanner_stats["rej_high_liq"] += 1
+            print(f"⏭️ High liq {_liq_bnb:.0f} BNB (old token) — skip: {pair_address[:10]}")
+            return
 
-        # Step 3: simulate sell (eth_call)
-        try:
-            sell_data = router_contract.encodeABI(
-                fn_name="swapExactTokensForETHSupportingFeeOnTransferTokens",
-                args=[
-                    _bal,
-                    0,
-                    [token_cs, wbnb_cs],
-                    _SIM_WALLET_CS,
-                    int(time.time()) + 300
-                ]
-            )
-            _w3.eth.call({
-                "from": _SIM_WALLET_CS,
-                "to":   router_cs,
-                "data": sell_data,
-            })
-        except Exception as e:
-            err = str(e)
-            if "TRANSFER_FAILED" in err or "TransferHelper" in err:
-                result["reason"] = "sell revert: transfer failed = honeypot"
-            elif "INSUFFICIENT_OUTPUT" in err:
-                result["reason"] = "sell revert: high tax"
-            else:
-                result["reason"] = f"sell revert: {err[:60]}"
-            return result
-
-        result["safe"] = True
-        result["reason"] = "simulation passed"
-        return result
-
+        print(f"✅ Liq ok {_liq_bnb:.2f} BNB: {pair_address[:10]}")
     except Exception as e:
-        result["reason"] = f"sim error: {str(e)[:80]}"
-        return result
+        print(f"⚠️ Liq check failed — proceeding: {pair_address[:10]} {e}")
 
-def _pc_do_snipe(token_address: str, pair_address: str, liq_bnb: float):
-    """
-    PancakeSwap fast snipe — parallel checks
-    Honeypot + GoPlus critical PARALLEL mein
-    """
-    addr_lower = token_address.lower()
-    _t_start   = time.time()
-    _cl_score  = 0
-    _cl_total  = 0
-
-    def _pc_skip(reason, prefilter="PASS"):
-        ms = int((time.time() - _t_start) * 1000)
-        threading.Thread(target=_save_pc_event, args=(
-            token_address, liq_bnb, prefilter, _cl_score, _cl_total, 0, "SKIP", reason, ms
-        ), daemon=True).start()
-
-    if not _pc_snipe_sem.acquire(blocking=False):
-        print(f"⏭️ [PC Sniper] Semaphore full — skip: {token_address[:10]}")
-        with _pc_snipe_queue_lock:
-            _pc_snipe_queue.pop(addr_lower, None)
-        _pc_skip("semaphore full")
+    # ── Basic checks ──
+    if not AUTO_TRADE_ENABLED:
         return
+    if len(auto_trade_stats.get("running_positions", {})) >= AUTO_MAX_POSITIONS:
+        return
+    sess = get_or_create_session(AUTO_SESSION_ID)
+    if sess.get("paper_balance", 5.0) < AUTO_BUY_SIZE_BNB:
+        return
+    _ok, _msg = DataGuard.bnb_price_ok()
+    if not _ok:
+        print(f"🛑 DataGuard: {_msg}")
+        return
+
+    # ── STEP 2: PARALLEL — On-chain sim + Tax check (~300ms) ──
+    import concurrent.futures as _cf
+    _sim_result = {"safe": False, "reason": "not run"}
+    _tax_result = -1.0
+
+    def _run_sim():
+        return _onchain_sim(pair_address, w3_instance=_w3q)
+
+    def _run_tax():
+        return _pc_get_tax(pair_address, _w3q)
+
     try:
-        print(f"🎯 [PC Sniper] Checking: {token_address[:10]}")
+        with _cf.ThreadPoolExecutor(max_workers=2) as _ex:
+            _f_sim = _ex.submit(_run_sim)
+            _f_tax = _ex.submit(_run_tax)
+            _sim_result = _f_sim.result(timeout=4)
+            _tax_result = _f_tax.result(timeout=4)
+    except Exception as e:
+        print(f"⚠️ Parallel checks error: {e}")
 
-        # ── ON-CHAIN SIMULATION — FAST PATH (~300-500ms) ──
-        # Honeypot API + GoPlus + Checklist = dead code (file mein hai, call nahi)
-        print(f"🔬 [PC Sniper] On-chain sim: {token_address[:10]}")
-        _sim = _onchain_sim(token_address)
-        if not _sim["safe"]:
-            print(f"🚫 [PC Sniper] Sim fail — {_sim['reason']}: {token_address[:10]}")
-            _pc_skip(f"onchain sim: {_sim['reason']}")
-            return
-        print(f"✅ [PC Sniper] Sim passed: {token_address[:10]}")
+    # Sim fail = honeypot
+    if not _sim_result.get("safe"):
+        _scanner_stats["pc_checklist_fail"] += 1
+        print(f"🚫 Sim fail — {_sim_result['reason']}: {pair_address[:10]}")
+        _log("reject", pair_address[:8], f"Sim fail: {_sim_result['reason']}", pair_address)
+        blacklist_token(pair_address, f"sim_fail: {_sim_result['reason']}")
+        return
 
-        # ━━━ DEAD CODE — file mein hai, call nahi hogi ━━━
-        # Honeypot.is API (~3-4s), GoPlus API (~3-4s), Checklist (~5-7s)
-        # Agar on-chain sim fail kare toh inhe wapas enable karo
-        if False:
-            _hp_result = {}
-            _gp_result = {}
-            _cl_score  = 0
-            _cl_total  = 0
+    # Tax too high
+    _max_tax = CHECKLIST_SETTINGS.get("max_sell_tax", 15.0)
+    if 0 <= _tax_result > _max_tax:
+        _scanner_stats["pc_checklist_fail"] += 1
+        print(f"🚫 High tax {_tax_result:.1f}% — skip: {pair_address[:10]}")
+        _log("reject", pair_address[:8], f"High tax {_tax_result:.1f}%", pair_address)
+        blacklist_token(pair_address, f"high_tax_{_tax_result:.0f}pct")
+        return
 
-        # ── Auto trade checks ──
-        if not AUTO_TRADE_ENABLED:
-            return
-        if len(auto_trade_stats.get("running_positions", {})) >= AUTO_MAX_POSITIONS:
-            print(f"🛑 [PC Sniper] Max positions — skip")
-            return
+    print(f"✅ Sim+Tax passed (tax={_tax_result:.1f}%): {pair_address[:10]}")
+    _scanner_stats["pc_checklist_pass"] += 1
 
-        sess = get_or_create_session(AUTO_SESSION_ID)
-        bal  = sess.get("paper_balance", 5.0)
-        if bal < AUTO_BUY_SIZE_BNB:
-            print(f"🛑 [PC Sniper] Low balance — skip")
-            return
+    # ── STEP 3: BUY (~100ms) ──
+    if not _pc_sem.acquire(blocking=False):
+        print(f"⏭️ Sem full — skip: {pair_address[:10]}")
+        return
 
-        _ok, _msg = DataGuard.bnb_price_ok()
-        if not _ok:
-            print(f"🛑 [PC Sniper] DataGuard: {_msg}")
-            return
-
-        # ── Price fetch ──
-        entry_price = get_token_price_bnb(token_address)
+    try:
+        entry_price = get_token_price_bnb(pair_address)
         if entry_price <= 0:
-            time.sleep(1)
-            entry_price = get_token_price_bnb(token_address)
+            time.sleep(0.5)
+            entry_price = get_token_price_bnb(pair_address)
         if entry_price <= 0 or entry_price > 1.0:
-            print(f"❌ [PC Sniper] Bad price — skip: {token_address[:10]}")
+            print(f"❌ Bad price — skip: {pair_address[:10]}")
             return
 
-        entry_price = entry_price * 1.005
-        size_bnb    = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
-        token_name  = token_address[:8]
+        size_bnb   = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
+        token_name = pair_address[:8]
 
         # Real mode
         if TRADE_MODE == "real":
-            _real = real_buy_token(token_address, size_bnb,
-                                   _tax_b if _gp_result else 0,
-                                   _tax_s if _gp_result else 0)
+            _real = real_buy_token(pair_address, size_bnb, 0, 0)
             if not _real.get("success"):
-                print(f"❌ [PC Sniper] Real buy failed: {_real.get('error')}")
+                print(f"❌ Real buy failed: {_real.get('error')}")
                 return
             if _real.get("entry_price", 0) > 0:
                 entry_price = _real["entry_price"]
 
         # Paper mode
         if TRADE_MODE != "real":
-            sess["paper_balance"] = round(bal - size_bnb, 6)
+            sess["paper_balance"] = round(sess.get("paper_balance", 5.0) - size_bnb, 6)
 
-        add_position_to_monitor(
-            AUTO_SESSION_ID, token_address, token_name,
-            entry_price, size_bnb,
-            stop_loss_pct=CHECKLIST_SETTINGS.get("sl_new", 12.0)
-        )
-        auto_trade_stats["running_positions"][token_address] = {
+        # Mark sniped
+        with _pc_sniped_lock:
+            _pc_sniped.add(pair_address.lower())
+
+        add_position_to_monitor(AUTO_SESSION_ID, pair_address, token_name, entry_price, size_bnb)
+        auto_trade_stats["running_positions"][pair_address] = {
             "token":          token_name,
             "entry":          entry_price,
             "size_bnb":       size_bnb,
             "orig_size_bnb":  size_bnb,
             "bought_usd":     round(size_bnb * market_cache.get("bnb_price", 0), 2),
-            "sl_pct":         CHECKLIST_SETTINGS.get("sl_new", 12.0),
-            "trail_pct":      20.0,
+            "sl_pct":         CHECKLIST_SETTINGS.get("sl_new", 20.0),
             "tp_sold":        0.0,
             "banked_pnl_bnb": 0.0,
             "bought_at":      datetime.utcnow().isoformat(),
-            "mode":           TRADE_MODE,
-            "buy_reasoning":  {
-                "source":          "PC_Fast_Sniper",
-                "strategy":        "PancakeSwap_Direct_Listing",
-                "assumption":      f"Direct PancakeSwap listing. Liq={liq_bnb:.2f} BNB. Fast snipe.",
-                "checklist_used":  False,
-                "honeypot_passed": True,
-                "goplus_critical": True,
-                "liq_bnb":         liq_bnb,
-                "bnb_at_buy":      market_cache.get("bnb_price", 0),
-            },
         }
         auto_trade_stats["total_auto_buys"] += 1
-        _pc_sniped.add(addr_lower)
+        auto_trade_stats["last_action"] = f"PC SNIPE {token_name}"
+        _scanner_stats["pc_bought"] += 1
         _persist_positions()
 
-        _push_notif("success", "⚡ PC Fast Snipe!",
-                    f"{token_name} @ {entry_price:.2e} BNB | Liq:{liq_bnb:.1f} BNB",
-                    token_name, token_address)
-        _log("buy", token_name, f"⚡ PC SNIPE @ {entry_price:.2e} BNB liq={liq_bnb:.1f}", token_address)
+        ms_total = int((time.time() - _t_start) * 1000)
+        print(f"⚡ PC SNIPED: {token_name} @ {entry_price:.2e} liq={_liq_bnb:.1f}BNB tax={_tax_result:.1f}% {ms_total}ms")
+        _log("buy", token_name, f"⚡ PC SNIPE {size_bnb:.4f}BNB @ {entry_price:.2e} liq={_liq_bnb:.1f} {ms_total}ms", pair_address)
+        _push_notif("success", "⚡ PC Sniped!", f"{token_name} @ {entry_price:.2e} | {ms_total}ms", token_name, pair_address)
 
-        threading.Thread(target=_save_bot_decision, args=({
-            "token_address":      token_address,
-            "token_name":         token_name,
-            "decision":           "BUY",
-            "reason":             f"PancakeSwap fast snipe. Liq={liq_bnb:.2f} BNB",
-            "thought":            f"PC direct listing. Liq={liq_bnb:.2f} BNB. Honeypot ok. GoPlus critical ok. Entry={entry_price:.2e}. BNB=${market_cache.get('bnb_price',0):.2f}. Mode={TRADE_MODE}.",
-            "discovery_source":   "pancakeswap_direct",
-            "bnb_price_at_entry": market_cache.get("bnb_price", 0),
-            "entry_price":        entry_price,
-            "token_type":         "meme",
-        },), daemon=True).start()
+        # ── Background: token name + Supabase save ──
+        def _bg_update():
+            try:
+                _r = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{pair_address}", timeout=6)
+                if _r.status_code == 200:
+                    _prs = [p for p in (_r.json().get("pairs") or []) if p and p.get("chainId") == "bsc"]
+                    if _prs:
+                        _bt = _prs[0].get("baseToken") or {}
+                        _name = _bt.get("symbol") or _bt.get("name") or token_name
+                        if _name and pair_address in auto_trade_stats["running_positions"]:
+                            auto_trade_stats["running_positions"][pair_address]["token"] = _name
+                            _log("discover", _name, f"Token name updated: {_name}", pair_address)
+            except Exception:
+                pass
+            try:
+                _save_pc_event(pair_address, _liq_bnb, "PASS", 1, 1, entry_price, "BUY", "", ms_total)
+            except Exception:
+                pass
+        threading.Thread(target=_bg_update, daemon=True).start()
 
-        ms_pc = int((time.time() - _t_start) * 1000)
-        threading.Thread(target=_save_pc_event, args=(
-            token_address, liq_bnb, "PASS", _cl_score, _cl_total, entry_price, "BUY", "", ms_pc
-        ), daemon=True).start()
-        print(f"✅ [PC Sniper] SNIPED: {token_name} @ {entry_price:.2e} liq={liq_bnb:.1f} {ms_pc}ms")
+        _register_position_pair(pair_address)
 
     except Exception as e:
-        print(f"⚠️ [PC Sniper] error: {e}")
+        print(f"⚠️ PC buy error: {e}")
     finally:
-        _pc_snipe_sem.release()
-        with _pc_snipe_queue_lock:
-            _pc_snipe_queue.pop(addr_lower, None)
+        _pc_sem.release()
 
-
-
-# ══════════════════════════════════════════════════════════════
+# ========== FOUR.MEME NEW TOKEN POLLER ==========# ══════════════════════════════════════════════════════════════
 
 # ══════════════════════════════════════════════════════════════
 # FOUR.MEME GRADUATION SNIPER v2
@@ -5095,7 +4737,11 @@ def poll_new_pairs():
     FACTORY    = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
     PAIR_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
     WBNB_LOWER = WBNB.lower()
-    WSS_ENDPOINTS = [
+    _QN_WSS_PC = os.getenv("QUICKNODE_WSS", "")
+    WSS_ENDPOINTS = []
+    if _QN_WSS_PC:
+        WSS_ENDPOINTS.append(_QN_WSS_PC)  # QuickNode first — fastest
+    WSS_ENDPOINTS += [
         "wss://bsc-rpc.publicnode.com",
         "wss://bsc.publicnode.com",
         "wss://bsc.drpc.org",
