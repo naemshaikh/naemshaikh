@@ -3966,6 +3966,69 @@ _pc_sniped_lock: threading.Lock = threading.Lock()
 # Semaphore — max 5 parallel snipes
 _pc_sem = threading.Semaphore(5)
 
+def _onchain_sim(token_address: str, w3_instance=None) -> dict:
+    """
+    On-chain honeypot sim — eth_call only, no gas, no BNB
+    approve + sell simulate → revert = honeypot
+    Speed: ~300-500ms
+    """
+    result = {"safe": False, "reason": ""}
+    try:
+        _w3 = w3_instance or w3
+        token_cs  = Web3.to_checksum_address(token_address)
+        router_cs = Web3.to_checksum_address(PANCAKE_ROUTER)
+        wbnb_cs   = Web3.to_checksum_address(WBNB)
+        _SIM_WALLET_CS = Web3.to_checksum_address("0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF")
+
+        _ERC20_ABI = [
+            {"name":"approve","type":"function","stateMutability":"nonpayable",
+             "inputs":[{"name":"spender","type":"address"},{"name":"amount","type":"uint256"}],
+             "outputs":[{"name":"","type":"bool"}]},
+            {"name":"balanceOf","type":"function","stateMutability":"view",
+             "inputs":[{"name":"account","type":"address"}],
+             "outputs":[{"name":"","type":"uint256"}]},
+        ]
+        token_contract = _w3.eth.contract(address=token_cs, abi=_ERC20_ABI)
+
+        # Step 1: approve simulate
+        approve_data = token_contract.encode_abi("approve", args=[router_cs, 2**256 - 1])
+        _w3.eth.call({"from": _SIM_WALLET_CS, "to": token_cs, "data": approve_data})
+
+        # Step 2: balanceOf
+        try:
+            _bal = token_contract.functions.balanceOf(_SIM_WALLET_CS).call()
+        except Exception:
+            _bal = 10 ** 18
+        if _bal <= 0:
+            _bal = 10 ** 18
+
+        # Step 3: sell simulate
+        _ROUTER_ABI = [{"name":"swapExactTokensForETHSupportingFeeOnTransferTokens",
+            "type":"function","stateMutability":"nonpayable",
+            "inputs":[{"name":"amountIn","type":"uint256"},{"name":"amountOutMin","type":"uint256"},
+                      {"name":"path","type":"address[]"},{"name":"to","type":"address"},{"name":"deadline","type":"uint256"}],
+            "outputs":[]}]
+        router_contract = _w3.eth.contract(address=router_cs, abi=_ROUTER_ABI)
+        sell_data = router_contract.encode_abi(
+            "swapExactTokensForETHSupportingFeeOnTransferTokens",
+            args=[_bal, 0, [token_cs, wbnb_cs], _SIM_WALLET_CS, int(time.time()) + 300]
+        )
+        _w3.eth.call({"from": _SIM_WALLET_CS, "to": router_cs, "data": sell_data})
+
+        result["safe"] = True
+        result["reason"] = "simulation passed"
+        return result
+    except Exception as e:
+        err = str(e)
+        if "TRANSFER_FAILED" in err or "TransferHelper" in err:
+            result["reason"] = "sell revert: honeypot"
+        elif "INSUFFICIENT_OUTPUT" in err:
+            result["reason"] = "sell revert: high tax"
+        else:
+            result["reason"] = f"approve fail: {err[:80]}"
+        return result
+
+
 def _pc_get_tax(token_address: str, w3_inst) -> float:
     """
     getAmountsOut tax check — on-chain, no API
@@ -4045,12 +4108,12 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
 
     # ── STEP 1: Liquidity check via QuickNode HTTP (~200ms) ──
     _liq_bnb = 0.0
+    _qn_http = os.getenv("QUICKNODE_HTTP", "")
+    if not _qn_http:
+        print(f"⚠️ QUICKNODE_HTTP not set — skip: {pair_address[:10]}")
+        return
+    _w3q = Web3(Web3.HTTPProvider(_qn_http, request_kwargs={"timeout": 3}))
     try:
-        _qn_http = os.getenv("QUICKNODE_HTTP", "")
-        if not _qn_http:
-            print(f"⚠️ QUICKNODE_HTTP not set — skip: {pair_address[:10]}")
-            return
-        _w3q = Web3(Web3.HTTPProvider(_qn_http, request_kwargs={"timeout": 3}))
         _pair_c = _w3q.eth.contract(
             address=_addr_cs,
             abi=PAIR_ABI_PRICE
@@ -4110,12 +4173,15 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
     except Exception as e:
         print(f"⚠️ Parallel checks error: {e}")
 
-    # Sim fail = honeypot
+    # Sim fail = honeypot — sirf confirmed honeypot blacklist karo, error nahi
     if not _sim_result.get("safe"):
         _scanner_stats["pc_checklist_fail"] += 1
-        print(f"🚫 Sim fail — {_sim_result['reason']}: {pair_address[:10]}")
-        _log("reject", pair_address[:8], f"Sim fail: {_sim_result['reason']}", pair_address)
-        blacklist_token(pair_address, f"sim_fail: {_sim_result['reason']}")
+        reason = _sim_result.get("reason", "")
+        print(f"🚫 Sim fail — {reason}: {pair_address[:10]}")
+        _log("reject", pair_address[:8], f"Sim fail: {reason}", pair_address)
+        # Sirf confirmed honeypot blacklist karo — error/timeout pe nahi
+        if "honeypot" in reason.lower() or "revert" in reason.lower() or "high tax" in reason.lower():
+            blacklist_token(pair_address, f"honeypot: {reason[:40]}")
         return
 
     # Tax too high
