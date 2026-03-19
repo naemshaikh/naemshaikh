@@ -4997,10 +4997,12 @@ def poll_four_meme_v2():
     async def _listen(url):
         async with _ws.connect(url, ping_interval=20, ping_timeout=15,
                                close_timeout=30, max_size=2**20) as ws:
+            # Filter: Transfer(from=0x000, to=FM_FACTORY) = new token mint on four.meme
+            FM_FACTORY_TOPIC = "0x0000000000000000000000005c952063c7fc8610ffdb798152d69f0b9550762b"
             await ws.send(_j.dumps({
                 "id": 1, "jsonrpc": "2.0", "method": "eth_subscribe",
                 "params": ["logs", {
-                    "topics": [TRANSFER_TOPIC, ZERO_TOPIC]
+                    "topics": [TRANSFER_TOPIC, ZERO_TOPIC, FM_FACTORY_TOPIC]
                 }]
             }))
             ack = _j.loads(await asyncio.wait_for(ws.recv(), timeout=10))
