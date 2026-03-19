@@ -4997,17 +4997,15 @@ def poll_four_meme_v2():
     async def _listen(url):
         async with _ws.connect(url, ping_interval=20, ping_timeout=15,
                                close_timeout=30, max_size=2**20) as ws:
-            # Filter: Transfer(from=0x000, to=any FM tokenManager)
-            # OR filter — V1, V2, V3 sab cover
-            FM_MANAGERS_TOPICS = [
-                "0x0000000000000000000000005c952063c7fc8610ffdb798152d69f0b9550762b",  # V1
-                "0x0000000000000000000000008b8cf6d0c2b5f4cb61da5e7dc94e52f4f1dd8d64",  # V2
-                "0x00000000000000000000000048a31b72f77a2a90ebe24e5c4c88be43e2ad6beb",  # V3
-            ]
+            # Official: TokenCreate event emitted by FM factory on new token creation
+            # factory address = log emitter (address filter)
+            # topic[0] = TokenCreate keccak hash
+            TOKEN_CREATE_TOPIC = "0x1f841ba14bb24ad3d2915d62d5fd21025e4b9b7bf1e85d622fb0a7dce809cdf2"
             await ws.send(_j.dumps({
                 "id": 1, "jsonrpc": "2.0", "method": "eth_subscribe",
                 "params": ["logs", {
-                    "topics": [TRANSFER_TOPIC, ZERO_TOPIC, FM_MANAGERS_TOPICS]
+                    "address": _FM_FACTORY_ADDRS,
+                    "topics":  [TOKEN_CREATE_TOPIC]
                 }]
             }))
             ack = _j.loads(await asyncio.wait_for(ws.recv(), timeout=10))
@@ -5023,19 +5021,20 @@ def poll_four_meme_v2():
                     if not log: continue
 
                     topics = log.get("topics", [])
-                    if len(topics) < 3: continue
+                    if not topics: continue
 
-                    # Token address = contract emitting event
-                    token_addr = log.get("address","")
-                    if not token_addr: continue
+                    # TokenCreate event:
+                    # log.address = factory contract
+                    # data contains: token_addr, dev_addr, amounts...
+                    # First 2 args in data = token address + dev address (32 bytes each)
+                    _data = log.get("data", "")
+                    if not _data or len(_data) < 130: continue
 
-                    # to address = new token recipient = dev wallet
-                    dev_addr = "0x" + topics[2][-40:] if len(topics) > 2 else ""
+                    # token address = first 32 bytes of data (last 20 bytes = address)
+                    token_addr = "0x" + _data[26:66]
+                    dev_addr   = "0x" + _data[90:130]
 
-                    # from = 0x000 = mint
-                    from_addr = "0x" + topics[1][-40:] if len(topics) > 1 else ""
-                    if from_addr.replace("0x","").replace("0","") != "":
-                        continue  # not mint
+                    if not token_addr or token_addr == "0x" + "0"*40: continue
 
                     with _fm_sniped_lock:
                         if token_addr.lower() in _fm_sniped: continue
