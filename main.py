@@ -4010,6 +4010,20 @@ _pc_sniped_lock: threading.Lock = threading.Lock()
 # Semaphore — max 5 parallel snipes
 _pc_sem = threading.Semaphore(5)
 
+# Global QuickNode w3 — ek baar banao, baar baar nahi
+_w3q_global = None
+_w3q_lock   = threading.Lock()
+
+def _get_w3q():
+    global _w3q_global
+    if _w3q_global and _w3q_global.is_connected():
+        return _w3q_global
+    with _w3q_lock:
+        qn = os.getenv("QUICKNODE_HTTP", "")
+        if not qn: return None
+        _w3q_global = Web3(Web3.HTTPProvider(qn, request_kwargs={"timeout": 4}))
+        return _w3q_global
+
 def _onchain_sim(token_address: str, w3_instance=None) -> dict:
     """
     Honeypot check via getAmountsOut — fast ~100ms, no encode_abi needed
@@ -4141,11 +4155,10 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
 
     # ── STEP 1: getPair (~100ms) ──
     _liq_bnb = 0.0
-    _qn_http = os.getenv("QUICKNODE_HTTP", "")
-    if not _qn_http:
+    _w3q = _get_w3q()
+    if not _w3q:
         print(f"⚠️ QUICKNODE_HTTP not set — skip: {pair_address[:10]}")
         return
-    _w3q = Web3(Web3.HTTPProvider(_qn_http, request_kwargs={"timeout": 3}))
 
     try:
         _factory_c = _w3q.eth.contract(
@@ -4208,18 +4221,44 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
         try: return _token_c.functions.balanceOf(_pair_cs).call()
         except: return 0
 
+    # Sim+Tax inline function — parallel mein chalega
+    def _get_sim_tax():
+        try:
+            _ROUTER_ABI_SIM = [{"name":"getAmountsOut","type":"function","stateMutability":"view",
+                "inputs":[{"name":"amountIn","type":"uint256"},{"name":"path","type":"address[]"}],
+                "outputs":[{"name":"amounts","type":"uint256[]"}]}]
+            _router_s  = _w3q.eth.contract(address=Web3.to_checksum_address(PANCAKE_ROUTER), abi=_ROUTER_ABI_SIM)
+            _wbnb_s    = Web3.to_checksum_address(WBNB)
+            _token_s   = Web3.to_checksum_address(pair_address)
+            _amt_in_s  = int(0.001 * 1e18)
+            _buy_s     = _router_s.functions.getAmountsOut(_amt_in_s, [_wbnb_s, _token_s]).call(block_identifier="latest")
+            _tokens_out_s = _buy_s[-1] if _buy_s else 0
+            if _tokens_out_s <= 0: return {"safe": False, "reason": "buy path fail"}, -1.0
+            _sell_s    = _router_s.functions.getAmountsOut(_tokens_out_s, [_token_s, _wbnb_s]).call(block_identifier="latest")
+            _bnb_back_s = _sell_s[-1] if _sell_s else 0
+            if _bnb_back_s <= 0: return {"safe": False, "reason": "sell revert: honeypot"}, -1.0
+            _tax_s = round((1 - _bnb_back_s / _amt_in_s) * 100, 1)
+            return {"safe": True, "reason": f"ok tax={_tax_s:.1f}%"}, _tax_s
+        except Exception as _se:
+            err = str(_se)
+            if "revert" in err.lower() or "INSUFFICIENT" in err:
+                return {"safe": False, "reason": "sell revert: honeypot"}, -1.0
+            return {"safe": False, "reason": f"check error: {err[:60]}"}, -1.0
+
     try:
-        with _cf2.ThreadPoolExecutor(max_workers=5) as _ex2:
+        with _cf2.ThreadPoolExecutor(max_workers=6) as _ex2:
             _f_res   = _ex2.submit(_get_reserves)
             _f_sup   = _ex2.submit(_get_total_supply)
             _f_own   = _ex2.submit(_get_owner)
             _f_burn  = _ex2.submit(_get_lp_burned)
             _f_tokl  = _ex2.submit(_get_token_in_lp)
+            _f_sim   = _ex2.submit(_get_sim_tax)
             _res_data, _t0 = _f_res.result(timeout=4)
             _total_supply   = _f_sup.result(timeout=4)
             _owner_addr     = _f_own.result(timeout=4)
             _lp_burned_bal  = _f_burn.result(timeout=4)
             _token_in_lp    = _f_tokl.result(timeout=4)
+            _sim_result, _tax_result = _f_sim.result(timeout=5)
     except Exception as e:
         print(f"⚠️ Parallel checks failed — skip: {pair_address[:10]} {e}")
         return
@@ -4296,54 +4335,7 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
         print(f"🛑 DataGuard: {_msg}")
         return
 
-    # ── STEP 2: Combined honeypot + tax check (~200ms) ──
-    # getAmountsOut: BNB→Token→BNB round trip
-    # Honeypot = sell revert, Tax = BNB diff %
-    _sim_result = {"safe": False, "reason": "not run"}
-    _tax_result = -1.0
-    try:
-        _ROUTER_ABI = [{
-            "name": "getAmountsOut", "type": "function", "stateMutability": "view",
-            "inputs": [{"name": "amountIn", "type": "uint256"}, {"name": "path", "type": "address[]"}],
-            "outputs": [{"name": "amounts", "type": "uint256[]"}]
-        }]
-        _router = _w3q.eth.contract(
-            address=Web3.to_checksum_address(PANCAKE_ROUTER), abi=_ROUTER_ABI
-        )
-        _wbnb_cs  = Web3.to_checksum_address(WBNB)
-        _token_cs = Web3.to_checksum_address(pair_address)
-        _amt_in   = int(0.001 * 1e18)  # 0.001 BNB
-
-        # Buy: BNB → Token
-        _buy = _router.functions.getAmountsOut(
-            _amt_in, [_wbnb_cs, _token_cs]
-        ).call(block_identifier="latest")
-        _tokens_out = _buy[-1] if _buy else 0
-
-        if _tokens_out <= 0:
-            _sim_result = {"safe": False, "reason": "buy path fail"}
-        else:
-            # Sell: Token → BNB
-            _sell = _router.functions.getAmountsOut(
-                _tokens_out, [_token_cs, _wbnb_cs]
-            ).call(block_identifier="latest")
-            _bnb_back = _sell[-1] if _sell else 0
-
-            if _bnb_back <= 0:
-                _sim_result = {"safe": False, "reason": "sell revert: honeypot"}
-            else:
-                _tax_result = round((1 - _bnb_back / _amt_in) * 100, 1)
-                _sim_result = {"safe": True, "reason": f"ok tax={_tax_result:.1f}%"}
-
-    except Exception as e:
-        err = str(e)
-        if "revert" in err.lower() or "INSUFFICIENT" in err:
-            _sim_result = {"safe": False, "reason": f"sell revert: honeypot"}
-        else:
-            _sim_result = {"safe": False, "reason": f"check error: {err[:60]}"}
-        print(f"⚠️ Sim+Tax error: {err[:80]}: {pair_address[:10]}")
-
-    # Sim fail = honeypot — sirf confirmed honeypot blacklist karo, error nahi
+    # Sim+Tax already parallel mein run ho gaya upar — seedha result check
     if not _sim_result.get("safe"):
         _scanner_stats["pc_checklist_fail"] += 1
         reason = _sim_result.get("reason", "")
