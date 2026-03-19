@@ -7480,8 +7480,26 @@ def analyze_wallet(wallet_address):
             return jsonify({"error": f"Moralis error: {r.status_code}"})
 
         txs = r.json().get("result", [])
-        # Filter WBNB
         txs = [t for t in txs if t.get("token_address","").lower() != WBNB_ADDR.lower()]
+
+        # Step 1b: Native txs — gas fees + BNB spent per tx
+        _tx_gas = {}
+        try:
+            r2 = requests.get(
+                f"https://deep-index.moralis.io/api/v2.2/{wallet_address}",
+                params={"chain": "bsc", "limit": 100, "order": "DESC"},
+                headers=_headers, timeout=15
+            )
+            if r2.status_code == 200:
+                for tx in r2.json().get("result", []):
+                    h         = tx.get("hash", "")
+                    gas_used  = int(tx.get("receipt_gas_used") or 0)
+                    gas_price = int(tx.get("gas_price") or 0)
+                    bnb_val   = round(int(tx.get("value") or 0) / 1e18, 6)
+                    gas_bnb   = round((gas_used * gas_price) / 1e18, 6)
+                    _tx_gas[h] = {"gas_bnb": gas_bnb, "bnb_spent": bnb_val}
+        except Exception:
+            pass
 
         # Step 2: Group by token
         tokens = {}
@@ -7489,15 +7507,20 @@ def analyze_wallet(wallet_address):
             sym  = t.get("token_symbol", "?")
             addr = t.get("token_address", "").lower()
             direction = "BUY" if t.get("to_address","").lower() == wallet_lower else "SELL"
-            ts   = t.get("block_timestamp", "")[:19]
-            val  = float(t.get("value_decimal") or 0)
+            ts       = t.get("block_timestamp", "")[:19]
+            val      = float(t.get("value_decimal") or 0)
+            tx_hash  = t.get("transaction_hash", "")
+            gas_info = _tx_gas.get(tx_hash, {})
+            gas_bnb  = gas_info.get("gas_bnb", 0)
+            bnb_spent = gas_info.get("bnb_spent", 0)
             if not addr: continue
             if addr not in tokens:
                 tokens[addr] = {"symbol": sym, "address": addr, "buys": [], "sells": []}
+            entry = {"ts": ts, "val": val, "gas_bnb": gas_bnb, "bnb_spent": bnb_spent, "tx": tx_hash}
             if direction == "BUY":
-                tokens[addr]["buys"].append({"ts": ts, "val": val})
+                tokens[addr]["buys"].append(entry)
             else:
-                tokens[addr]["sells"].append({"ts": ts, "val": val})
+                tokens[addr]["sells"].append(entry)
 
         # Step 3: Per token analysis + pool liquidity
         bnb_price = market_cache.get("bnb_price", 0)
@@ -7543,19 +7566,63 @@ def analyze_wallet(wallet_address):
             except Exception:
                 pass
 
+            # Gas calculation
+            total_gas_bnb   = round(sum(b.get("gas_bnb",0) for b in buys) + sum(s.get("gas_bnb",0) for s in sells), 6)
+            total_bnb_spent = round(sum(b.get("bnb_spent",0) for b in buys), 6)
+
+            # TP pattern — sell timing analysis
+            tp_pattern = "unknown"
+            if sells:
+                if len(sells) == 1:
+                    tp_pattern = "single_exit"
+                elif len(sells) == len(buys):
+                    tp_pattern = "scalping"  # same count buys/sells
+                elif len(sells) < len(buys):
+                    tp_pattern = "partial_sells"  # multiple TPs
+                else:
+                    tp_pattern = "multi_sell"
+
+                # Hold time buckets
+                if hold_min < 1:
+                    tp_pattern += "_<1min"
+                elif hold_min < 5:
+                    tp_pattern += "_1-5min"
+                elif hold_min < 15:
+                    tp_pattern += "_5-15min"
+                elif hold_min < 60:
+                    tp_pattern += "_15-60min"
+                else:
+                    tp_pattern += "_>1hr"
+
+            # Sell intervals (time between each sell)
+            sell_intervals = []
+            if len(sells) > 1:
+                try:
+                    from datetime import datetime as _dt3
+                    for i in range(1, len(sells)):
+                        t1 = _dt3.fromisoformat(sells[i-1]["ts"])
+                        t2 = _dt3.fromisoformat(sells[i]["ts"])
+                        sell_intervals.append(round(abs((t2-t1).total_seconds()), 1))
+                except Exception:
+                    pass
+
             results.append({
-                "symbol":      data["symbol"],
-                "address":     addr,
-                "buy_count":   len(buys),
-                "sell_count":  len(sells),
-                "first_buy":   first_buy,
-                "first_sell":  first_sell,
-                "last_sell":   last_sell,
-                "hold_min":    hold_min,
-                "sold":        len(sells) > 0,
-                "fully_sold":  len(sells) > 0 and last_sell != "",
-                "liq_bnb_now": liq_bnb,
-                "liq_usd_now": liq_usd,
+                "symbol":         data["symbol"],
+                "address":        addr,
+                "buy_count":      len(buys),
+                "sell_count":     len(sells),
+                "first_buy":      first_buy,
+                "first_sell":     first_sell,
+                "last_sell":      last_sell,
+                "hold_min":       hold_min,
+                "sold":           len(sells) > 0,
+                "fully_sold":     len(sells) > 0 and last_sell != "",
+                "liq_bnb_now":    liq_bnb,
+                "liq_usd_now":    liq_usd,
+                "total_gas_bnb":  total_gas_bnb,
+                "bnb_spent":      total_bnb_spent,
+                "tp_pattern":     tp_pattern,
+                "sell_intervals_sec": sell_intervals,
             })
 
         # Sort by first_buy desc (latest first)
