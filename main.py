@@ -3154,9 +3154,9 @@ def auto_position_manager():
                     # +150% → 15% sell → total 90% out
                     # TrailSL → sirf tab fire hoga jab ProTP nahi hua
                     # ══════════════════════════════════════════════════════
-                    if pnl >= 150 and tp_sold < 90:
-                        _auto_paper_sell(addr, f"ProTP +150% [90% banked] 🌙", 15.0)
-                        print(f"🌙 ProTP150: {addr[:10]} pnl={pnl:.1f}% tp_sold={tp_sold:.0f}%")
+                    if pnl >= 200 and tp_sold < 90:
+                        _auto_paper_sell(addr, f"ProTP +200% [90% banked] 🌙", 15.0)
+                        print(f"🌙 ProTP200: {addr[:10]} pnl={pnl:.1f}% tp_sold={tp_sold:.0f}%")
                     elif pnl >= 120 and tp_sold < 75:
                         _auto_paper_sell(addr, f"ProTP +120% [75% banked] 💰", 25.0)
                         print(f"💰 ProTP120: {addr[:10]} pnl={pnl:.1f}% tp_sold={tp_sold:.0f}%")
