@@ -7534,7 +7534,7 @@ def fm_events_api():
     try:
         if not supabase:
             return jsonify({"events": [], "error": "supabase not connected"})
-        res = supabase.table("fm_events").select("*").order("detected_at", desc=True).limit(500).execute()
+        res = supabase.table("fm_events").select("*").order("detected_at", desc=True).limit(1000).execute()
         events = res.data or []
         events = _enrich_events(events)
         return jsonify({"events": events})
@@ -7547,7 +7547,7 @@ def pc_events_api():
     try:
         if not supabase:
             return jsonify({"events": [], "error": "supabase not connected"})
-        res = supabase.table("pc_events").select("*").order("detected_at", desc=True).limit(500).execute()
+        res = supabase.table("pc_events").select("*").order("detected_at", desc=True).limit(1000).execute()
         events = res.data or []
 
         events = _enrich_events(events)
