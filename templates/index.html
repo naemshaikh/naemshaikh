@@ -4168,12 +4168,23 @@ setInterval(fetchNotifications, 10000);
     if (btn)  btn.disabled = true;
     if (icon) icon.textContent = '⏳';
     fetchScannerStats();
-    loadPCEvents();
-    setTimeout(() => {
-      if (btn)  btn.disabled = false;
-      if (icon) icon.textContent = '🔄';
-      showToast && showToast('✅ PC Refreshed');
-    }, 2000);
+    fetch('/pc-events')
+      .then(r => r.json())
+      .then(d => {
+        const events = d.events || [];
+        const cnt = document.getElementById('pc-events-count');
+        if (cnt) cnt.textContent = events.length + ' events';
+        renderPCEvents(events);
+        _updatePC24H(events);
+        showToast && showToast('✅ PC Refreshed');
+      })
+      .catch(() => {
+        showToast && showToast('❌ PC load failed');
+      })
+      .finally(() => {
+        if (btn)  btn.disabled = false;
+        if (icon) icon.textContent = '🔄';
+      });
   }
 
   function refreshFM() {
@@ -4182,12 +4193,23 @@ setInterval(fetchNotifications, 10000);
     if (btn)  btn.disabled = true;
     if (icon) icon.textContent = '⏳';
     fetchScannerStats();
-    loadFMEvents();
-    setTimeout(() => {
-      if (btn)  btn.disabled = false;
-      if (icon) icon.textContent = '🔄';
-      showToast && showToast('✅ FM Refreshed');
-    }, 2000);
+    fetch('/fm-events')
+      .then(r => r.json())
+      .then(d => {
+        const events = d.events || [];
+        const cnt = document.getElementById('fm-events-count');
+        if (cnt) cnt.textContent = events.length + ' events';
+        renderFMEvents(events);
+        _updateFM24H(events);
+        showToast && showToast('✅ FM Refreshed');
+      })
+      .catch(() => {
+        showToast && showToast('❌ FM load failed');
+      })
+      .finally(() => {
+        if (btn)  btn.disabled = false;
+        if (icon) icon.textContent = '🔄';
+      });
   }
 
   // ═══════════════════════════════════════════════
