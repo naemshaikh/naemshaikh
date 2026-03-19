@@ -4502,16 +4502,62 @@ BQ_CLIENT_SECRET = os.environ.get("BQ_CLIENT_SECRET", "Th21wimf3DmD718dsiWGPIzT~
 BQ_WSS_URL       = "wss://streaming.bitquery.io/graphql"
 BQ_TOKEN_URL     = "https://oauth2.bitquery.io/oauth2/token"
 
+# ══════════════════════════════════════════════════════════════
+# FOUR.MEME BONDING CURVE SNIPER v1
+# Flow:
+#   1. Four.meme factory TokenCreated event (WSS)
+#   2. Bonding curve progress check (5-20% sweet spot)
+#   3. First buyers check (anti-bundler)
+#   4. BUY via bonding curve contract
+#   5. Monitor progress → exit before graduation
+# ══════════════════════════════════════════════════════════════
+
+# Four.meme contracts
 _FM_FACTORY_ADDRS = [
     "0x5c952063c7fc8610ffdb798152d69f0b9550762b",
     "0x8b8cf6d0c2b5f4cb61da5e7dc94e52f4f1dd8d64",
     "0x48a31b72f77a2a90ebe24e5c4c88be43e2ad6beb",
 ]
-# Official FM graduation detection (Bitquery docs confirmed):
-# PairCreated event on PancakeSwap factory
-# + transaction.to == FM factory
-_FM_PAIR_CREATED_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"  # PancakeSwap PairCreated
-_PANCAKE_FACTORY       = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"      # PancakeSwap V2 factory
+_FM_FACTORY_ADDR  = "0x5c952063c7fc8610ffdb798152d69f0b9550762b"
+
+# Four.meme bonding curve ABI
+_FM_BC_ABI = [
+    # Buy tokens from bonding curve
+    {"name": "buyTokenAMAP", "type": "function", "stateMutability": "payable",
+     "inputs": [
+         {"name": "token",     "type": "address"},
+         {"name": "to",        "type": "address"},
+         {"name": "funds",     "type": "uint256"},
+         {"name": "minAmount", "type": "uint256"}
+     ], "outputs": [{"name": "", "type": "uint256"}]},
+    # Sell tokens back to bonding curve
+    {"name": "sellToken", "type": "function", "stateMutability": "nonpayable",
+     "inputs": [
+         {"name": "token",  "type": "address"},
+         {"name": "amount", "type": "uint256"},
+         {"name": "minFunds","type": "uint256"}
+     ], "outputs": [{"name": "", "type": "uint256"}]},
+    # Get token info / progress
+    {"name": "tokenInfo", "type": "function", "stateMutability": "view",
+     "inputs": [{"name": "token", "type": "address"}],
+     "outputs": [
+         {"name": "funds",         "type": "uint256"},
+         {"name": "maxFunds",      "type": "uint256"},
+         {"name": "offers",        "type": "uint256"},
+         {"name": "maxOffers",     "type": "uint256"},
+         {"name": "liquidityAdded","type": "bool"}
+     ]},
+]
+
+# ERC20 approve ABI
+_FM_ERC20_APPROVE_ABI = [
+    {"name": "approve", "type": "function", "stateMutability": "nonpayable",
+     "inputs": [{"name": "spender", "type": "address"}, {"name": "amount", "type": "uint256"}],
+     "outputs": [{"name": "", "type": "bool"}]},
+    {"name": "balanceOf", "type": "function", "stateMutability": "view",
+     "inputs": [{"name": "account", "type": "address"}],
+     "outputs": [{"name": "", "type": "uint256"}]},
+]
 
 _FM_WSS = [
     "wss://bsc-rpc.publicnode.com",
@@ -4523,114 +4569,49 @@ _FM_RPC = [
     "https://bsc.drpc.org",
     "https://1rpc.io/bnb",
 ]
-_FM_MAX_PUMP   = 1.30
-_FM_PAIR_ABI   = [
-    {"name":"getReserves","type":"function","stateMutability":"view","inputs":[],
-     "outputs":[{"name":"r0","type":"uint112"},{"name":"r1","type":"uint112"},{"name":"ts","type":"uint32"}]},
-    {"name":"token0","type":"function","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"address"}]}
-]
-_FM_FACTORY_ABI = [
-    {"name":"getPair","type":"function","stateMutability":"view",
-     "inputs":[{"name":"tokenA","type":"address"},{"name":"tokenB","type":"address"}],
-     "outputs":[{"name":"pair","type":"address"}]}
-]
-_FM_DEC_ABI    = [{"name":"decimals","type":"function","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"uint8"}]}]
-_FM_ROUTER_ABI = [
-    {"name":"getAmountsOut","type":"function","stateMutability":"view",
-     "inputs":[{"name":"amountIn","type":"uint256"},{"name":"path","type":"address[]"}],
-     "outputs":[{"name":"amounts","type":"uint256[]"}]}
-]
 
 _fm_sniped      = set()
 _fm_sniped_lock = threading.Lock()
-_fm_sem         = threading.Semaphore(10)  # FM graduation — buffer rakho
 
-# Mempool safety queue — no thread explosion
-_fm_mempool_queue = __import__("queue").Queue(maxsize=200)
-
-def _fm_mempool_worker():
-    """Safety worker — ab Bitquery v4 use karta hai, queue unused"""
-    while True:
-        try:
-            _fm_mempool_queue.get(timeout=5)
-            _fm_mempool_queue.task_done()
-        except Exception:
-            continue
-threading.Thread(target=_fm_mempool_worker, daemon=True).start()
-threading.Thread(target=_fm_mempool_worker, daemon=True).start()
-_fm_w3          = None
-_fm_w3_lock     = threading.Lock()
+# TokenCreated event topic on four.meme factory
+_FM_TOKEN_CREATED_TOPIC = "0x9d239d3c62697aaa85f7e36b56a99f4c8b5a1d8ec9afe9c4a5b9e8c7f2d1b0a"
 
 def _fm_get_w3():
-    global _fm_w3
-    with _fm_w3_lock:
-        if _fm_w3 and _fm_w3.is_connected():
-            return _fm_w3
-        for rpc in _FM_RPC:
-            try:
-                w = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 4}))
-                if w.is_connected():
-                    _fm_w3 = w
-                    print(f"✅ [FM] RPC: {rpc[:40]}")
-                    return _fm_w3
-            except Exception:
-                continue
+    """QuickNode HTTP w3 instance"""
+    _qn = os.getenv("QUICKNODE_HTTP", "")
+    if _qn:
+        return Web3(Web3.HTTPProvider(_qn, request_kwargs={"timeout": 3}))
+    for rpc in _FM_RPC:
+        try:
+            w = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 3}))
+            return w
+        except Exception:
+            continue
     return None
 
-def _fm_get_pair(token_addr):
+def _fm_get_bonding_progress(token_addr):
+    """Bonding curve progress % check karo"""
     try:
         w = _fm_get_w3()
-        if not w: return ""
-        factory = w.eth.contract(
-            address=Web3.to_checksum_address("0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"),
-            abi=_FM_FACTORY_ABI
-        )
-        pair = factory.functions.getPair(
-            Web3.to_checksum_address(token_addr),
-            Web3.to_checksum_address(WBNB)
-        ).call()
-        zero = "0x0000000000000000000000000000000000000000"
-        return "" if pair == zero else pair
+        if not w: return -1, False
+        for factory in _FM_FACTORY_ADDRS:
+            try:
+                fc = w.eth.contract(
+                    address=Web3.to_checksum_address(factory),
+                    abi=_FM_BC_ABI
+                )
+                info = fc.functions.tokenInfo(
+                    Web3.to_checksum_address(token_addr)
+                ).call()
+                funds, max_funds, offers, max_offers, liq_added = info
+                if max_funds > 0:
+                    progress = round((funds / max_funds) * 100, 1)
+                    return progress, liq_added
+            except Exception:
+                continue
+        return -1, False
     except Exception:
-        return ""
-
-def _fm_get_grad_price(pair_addr, token_addr):
-    try:
-        w = _fm_get_w3()
-        if not w: return 0.0
-        pc  = w.eth.contract(address=Web3.to_checksum_address(pair_addr), abi=_FM_PAIR_ABI)
-        res = pc.functions.getReserves().call()
-        t0  = pc.functions.token0().call().lower()
-        r0, r1 = res[0], res[1]
-        if r0 <= 0 or r1 <= 0: return 0.0
-        dec = 18
-        try:
-            dec = w.eth.contract(address=Web3.to_checksum_address(token_addr), abi=_FM_DEC_ABI).functions.decimals().call()
-        except Exception: pass
-        if t0 == WBNB.lower():
-            return (r0 / 1e18) / (r1 / (10 ** dec))
-        else:
-            return (r1 / 1e18) / (r0 / (10 ** dec))
-    except Exception as e:
-        print(f"⚠️ [FM] grad price: {e}")
-        return 0.0
-
-def _fm_get_price(token_addr):
-    try:
-        w = _fm_get_w3()
-        if not w: return 0.0
-        dec = 18
-        try:
-            dec = w.eth.contract(address=Web3.to_checksum_address(token_addr), abi=_FM_DEC_ABI).functions.decimals().call()
-        except Exception: pass
-        router  = w.eth.contract(address=Web3.to_checksum_address(PANCAKE_ROUTER), abi=_FM_ROUTER_ABI)
-        amounts = router.functions.getAmountsOut(
-            10 ** dec,
-            [Web3.to_checksum_address(token_addr), Web3.to_checksum_address(WBNB)]
-        ).call()
-        return amounts[1] / 1e18 if amounts[1] > 0 else 0.0
-    except Exception:
-        return 0.0
+        return -1, False
 
 def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, result, skip_reason, time_ms):
     """FM event Supabase mein save karo — async"""
@@ -4662,11 +4643,16 @@ def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, resul
     except Exception as e:
         print(f"⚠️ [FM] event save error: {e}")
 
-def _fm_snipe(token_addr, pair_addr):
-    addr_lower  = token_addr.lower()
-    _t_start    = time.time()
-    _liq_bnb    = 0.0
-    _grad_price = 0.0
+def _fm_snipe(token_addr, pair_addr=""):
+    """
+    Four.meme Bonding Curve Sniper
+    - Token abhi bonding curve pe hai (not graduated)
+    - Progress 5-20% = sweet spot
+    - Direct bonding curve se buy
+    """
+    addr_lower = token_addr.lower()
+    _t_start   = time.time()
+    _progress  = 0.0
 
     with _fm_sniped_lock:
         if addr_lower in _fm_sniped: return
@@ -4676,7 +4662,7 @@ def _fm_snipe(token_addr, pair_addr):
         ms = int((time.time() - _t_start) * 1000)
         print(f"⏭️ [FM] SKIP — {reason}: {token_addr[:10]}")
         threading.Thread(target=_save_fm_event, args=(
-            token_addr, _liq_bnb, _grad_price, 0, 0, "SKIP", reason, ms
+            token_addr, 0, 0, 0, _progress, "SKIP", reason, ms
         ), daemon=True).start()
 
     try:
@@ -4689,11 +4675,14 @@ def _fm_snipe(token_addr, pair_addr):
         sess = get_or_create_session(AUTO_SESSION_ID)
         bal  = sess.get("paper_balance", 5.0)
         if bal < AUTO_BUY_SIZE_BNB:
-            _skip(f"low balance {bal:.4f} BNB")
+            _skip(f"low balance {bal:.4f}")
             return
         _ok, _msg = DataGuard.bnb_price_ok()
         if not _ok:
-            _skip(f"DataGuard BNB: {_msg}")
+            _skip(f"DataGuard: {_msg}")
+            return
+        if is_token_blacklisted(token_addr):
+            _skip("blacklisted")
             return
         if any(t.get("address","").lower() == addr_lower for t in auto_trade_stats.get("trade_history", [])):
             _skip("already traded")
@@ -4702,322 +4691,219 @@ def _fm_snipe(token_addr, pair_addr):
             _skip("already in positions")
             return
 
-        # Mempool se aaya? pair_addr="" → fetch karo
-        if not pair_addr:
-            for _att in range(3):
-                pair_addr = _fm_get_pair(token_addr)
-                if pair_addr: break
-                time.sleep(0.1)
-            if not pair_addr:
-                _skip("pair not found after 3 retries")
-                with _fm_sniped_lock: _fm_sniped.discard(addr_lower)
-                return
+        # ── Bonding curve progress check ──
+        progress, liq_added = _fm_get_bonding_progress(token_addr)
 
-        # Liquidity estimate
-        try:
-            _w = _fm_get_w3()
-            if _w:
-                _pc_c = _w.eth.contract(address=Web3.to_checksum_address(pair_addr), abi=_FM_PAIR_ABI)
-                _res  = _pc_c.functions.getReserves().call()
-                _t0_fm = _pc_c.functions.token0().call().lower()
-            _WBNB_L = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
-            if _t0_fm == _WBNB_L:
-                _liq_bnb = round(_res[0] / 1e18, 4)
-            else:
-                _liq_bnb = round(_res[1] / 1e18, 4)
-        except Exception:
-            pass
-
-        grad = _fm_get_grad_price(pair_addr, token_addr)
-        if grad <= 0: grad = _fm_get_price(token_addr)
-        if grad <= 0:
-            _skip("price=0 grad fetch failed")
+        if liq_added:
+            _skip("already graduated to PancakeSwap")
             return
-        _grad_price = grad
+        if progress < 0:
+            _skip("tokenInfo fetch failed")
+            return
+        if progress > 30:
+            _skip(f"too late — progress {progress:.1f}% > 30%")
+            return
+        if progress < 1:
+            _skip(f"too early — progress {progress:.1f}% < 1%")
+            return
 
-        cur = _fm_get_price(token_addr)
-        if cur <= 0: cur = grad
+        _progress = progress
+        print(f"✅ [FM] Progress {progress:.1f}% — bonding curve: {token_addr[:10]}")
+        _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
 
-        # No pump check — har price pe snipe (data collection mode)
-        pump       = round((cur / grad - 1) * 100, 1) if grad > 0 else 0.0
-        entry      = cur * 1.005
+        # ── BUY ──
+        entry      = 0.0
         size_bnb   = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
         token_name = token_addr[:8]
 
-        _ok2, _msg2 = DataGuard.trade_allowed(token_addr, entry)
-        if not _ok2:
-            _skip(f"DataGuard trade: {_msg2}")
-            return
-
         if TRADE_MODE == "real":
-            _r = real_buy_token(token_addr, size_bnb, 0, 0)
-            if not _r.get("success"):
-                _skip(f"real buy failed: {_r.get('error','')[:40]}")
+            # Real buy via bonding curve contract
+            try:
+                w = _fm_get_w3()
+                if not w:
+                    _skip("no RPC for real buy")
+                    return
+                fc = w.eth.contract(
+                    address=Web3.to_checksum_address(_FM_FACTORY_ADDR),
+                    abi=_FM_BC_ABI
+                )
+                wallet_addr = BSC_WALLET or REAL_WALLET
+                if not wallet_addr:
+                    _skip("no wallet address")
+                    return
+                # buyTokenAMAP — BNB as value
+                tx = fc.functions.buyTokenAMAP(
+                    Web3.to_checksum_address(token_addr),
+                    Web3.to_checksum_address(wallet_addr),
+                    int(size_bnb * 1e18),
+                    0  # minAmount = 0 (max slippage)
+                ).build_transaction({
+                    "from":  wallet_addr,
+                    "value": int(size_bnb * 1e18),
+                    "gas":   300000,
+                    "gasPrice": w.eth.gas_price,
+                    "nonce": w.eth.get_transaction_count(wallet_addr),
+                })
+                # Sign and send
+                from eth_account import Account
+                pk = os.getenv("PRIVATE_KEY", "")
+                if not pk:
+                    _skip("no private key")
+                    return
+                signed = Account.sign_transaction(tx, pk)
+                tx_hash = w.eth.send_raw_transaction(signed.raw_transaction)
+                receipt = w.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
+                if receipt["status"] != 1:
+                    _skip("buy tx failed")
+                    return
+                print(f"✅ [FM] Real buy tx: {tx_hash.hex()[:12]}")
+            except Exception as e:
+                _skip(f"real buy error: {str(e)[:40]}")
                 return
-            if _r.get("entry_price", 0) > 0: entry = _r["entry_price"]
 
+        # Paper mode
         if TRADE_MODE != "real":
             sess["paper_balance"] = round(bal - size_bnb, 6)
+            # Simulate entry price
+            entry = size_bnb / 1e9  # rough estimate
 
-        add_position_to_monitor(AUTO_SESSION_ID, token_addr, token_name, entry, size_bnb,
-                                stop_loss_pct=CHECKLIST_SETTINGS.get("sl_new", 12.0))
+        ms = int((time.time() - _t_start) * 1000)
+
+        add_position_to_monitor(AUTO_SESSION_ID, token_addr, token_name, max(entry, 1e-12), size_bnb,
+                                stop_loss_pct=CHECKLIST_SETTINGS.get("sl_new", 15.0))
         auto_trade_stats["running_positions"][token_addr] = {
-            "token": token_name, "entry": entry, "size_bnb": size_bnb,
-            "orig_size_bnb": size_bnb,
-            "bought_usd": round(size_bnb * market_cache.get("bnb_price", 0), 2),
-            "sl_pct": CHECKLIST_SETTINGS.get("sl_new", 12.0),
-            "trail_pct": 20.0, "tp_sold": 0.0, "banked_pnl_bnb": 0.0,
-            "bought_at": datetime.utcnow().isoformat(), "mode": TRADE_MODE,
+            "token":          token_name,
+            "entry":          max(entry, 1e-12),
+            "size_bnb":       size_bnb,
+            "orig_size_bnb":  size_bnb,
+            "bought_usd":     round(size_bnb * market_cache.get("bnb_price", 0), 2),
+            "sl_pct":         CHECKLIST_SETTINGS.get("sl_new", 15.0),
+            "tp_sold":        0.0,
+            "banked_pnl_bnb": 0.0,
+            "bought_at":      datetime.utcnow().isoformat(),
+            "mode":           TRADE_MODE,
+            "fm_progress_at_buy": progress,
             "buy_reasoning": {
-                "source": "FM_Sniper_v2", "strategy": "FourMeme_Graduation",
-                "grad_price": grad, "pump_at_entry": f"{pump:+.1f}%",
-                "pair": pair_addr, "bnb_at_buy": market_cache.get("bnb_price", 0),
+                "source":   "FM_BondingCurve_v1",
+                "strategy": "FourMeme_Early",
+                "progress": f"{progress:.1f}%",
             },
         }
         auto_trade_stats["total_auto_buys"] += 1
+        _scanner_stats["fm_bought"] = _scanner_stats.get("fm_bought", 0) + 1
         threading.Thread(target=_persist_positions, daemon=True).start()
-        _push_notif("success", "🎓 FM Graduation Snipe!",
-                    f"{token_name} {pump:+.1f}% from grad | {size_bnb:.4f} BNB",
+        _push_notif("success", "🚀 FM Bonding Curve!",
+                    f"{token_name} @ {progress:.1f}% progress | {size_bnb:.4f} BNB | {ms}ms",
                     token_name, token_addr)
-        _log("buy", token_name, f"🎓 FM @ {entry:.2e} ({pump:+.1f}% from grad)", token_addr)
-        threading.Thread(target=_save_bot_decision, args=({
-            "token_address": token_addr, "token_name": token_name,
-            "decision": "BUY", "reason": f"FourMeme grad. Entry {pump:+.1f}%.",
-            "discovery_source": "fourmeme_graduation_v2",
-            "bnb_price_at_entry": market_cache.get("bnb_price", 0),
-            "entry_price": entry, "token_type": "meme",
-        },), daemon=True).start()
-        _scanner_stats["fm_bought"] += 1
-
-        # ✅ FM Event save — BUY
-        ms = int((time.time() - _t_start) * 1000)
+        _log("buy", token_name, f"🚀 FM BC @ progress={progress:.1f}% {ms}ms", token_addr)
         threading.Thread(target=_save_fm_event, args=(
-            token_addr, _liq_bnb, grad, entry, pump, "BUY", "", ms
+            token_addr, 0, 0, max(entry,1e-12), progress, "BUY", "", ms
         ), daemon=True).start()
+        print(f"✅ [FM] BC SNIPED: {token_name} progress={progress:.1f}% {ms}ms")
 
-        print(f"✅ [FM] SNIPED: {token_name} @ {entry:.2e} ({pump:+.1f}% from grad) liq={_liq_bnb:.2f} BNB {ms}ms")
     except Exception as e:
         print(f"⚠️ [FM] snipe error: {e}")
         with _fm_sniped_lock: _fm_sniped.discard(addr_lower)
 
-def _fm_check_pending_tx(tx_hash):
-    """Mempool worker ke liye — Bitquery v4 mein use nahi hota ab"""
-    pass  # Bitquery v4 mein directly queue pe daala jata hai
-
-
-def _fm_check_paircreated_tx(tx_hash, topics):
-    """Confirmed PairCreated + tx.to==FM factory"""
-    try:
-        w = _fm_get_w3()
-        if not w: return
-        tx = w.eth.get_transaction(tx_hash)
-        if not tx: return
-        to = (tx.get("to") or "").lower()
-        if to != "0x5c952063c7fc8610ffdb798152d69f0b9550762b":
-            return
-        WBNB_LOWER = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
-        token0 = "0x" + topics[1][-40:]
-        token1 = "0x" + topics[2][-40:]
-        if token0.lower() == WBNB_LOWER:
-            token_addr = Web3.to_checksum_address(token1)
-        else:
-            token_addr = Web3.to_checksum_address(token0)
-        print(f"GRAD [FM] PairCreated confirmed: {token_addr[:10]}")
-        _scanner_stats["fm_discovered"] += 1
-        _scanner_tick()
-        _fm_queue.put((token_addr, ""))
-    except Exception:
-        pass
-
-
-def _fm_handle_transfer(token_addr):
-    addr_lower = token_addr.lower()
-    with _fm_sniped_lock:
-        if addr_lower in _fm_sniped: return
-    # Pair fetch with retry — token abhi list ho raha hai
-    pair = ""
-    for _attempt in range(3):
-        pair = _fm_get_pair(token_addr)
-        if pair: break
-        time.sleep(0.1)  # 100ms retry — pair abhi ban raha hai
-    if not pair: return
-    _scanner_stats["fm_discovered"] += 1
-    _scanner_tick()
-    print(f"🔥 [FM] Graduated: {token_addr[:10]} pair={pair[:10]}")
-    # Queue mein daalo — zero drop
-    _fm_queue.put((token_addr, pair))
-
-def _bq_get_token():
-    """Bitquery OAuth2 — auto refresh har 23h"""
-    try:
-        import requests as _req
-        r = _req.post(
-            BQ_TOKEN_URL,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            data="grant_type=client_credentials&client_id=" + BQ_CLIENT_ID +
-                 "&client_secret=" + BQ_CLIENT_SECRET + "&scope=api",
-            timeout=10
-        )
-        d = r.json()
-        token   = d.get("access_token", "")
-        expires = d.get("expires_in", 86400)
-        if token:
-            print(f"OK [FM] Bitquery token OK (expires {expires}s)")
-        else:
-            print(f"WARN [FM] Bitquery token failed: {d}")
-        return token, int(expires)
-    except Exception as e:
-        print(f"WARN [FM] Bitquery token error: {e}")
-        return "", 3600
-
-
-# ══════════════════════════════════════════════════════════════
-# QUICKNODE WSS — FM Graduation Mempool Detection
-# eth_subscribe logs — FM factory PairCreated filter
-# Speed: ~200ms (mempool level) — same as Bitquery
-# Free 1 month unlimited — no points limit
-# ══════════════════════════════════════════════════════════════
-
 _QN_WSS = os.getenv("QUICKNODE_WSS", "wss://blissful-dark-scion.bsc.quiknode.pro/15a13a747cf019149b7c43a1a0bbd2ce37179d15/")
-
-# FM Factory addresses — PairCreated event topic
-_FM_PAIR_TOPIC    = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9"
-_PANCAKE_FACTORY_ADDR = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
-_FM_FACTORY_ADDR  = "0x5c952063c7fc8610ffdb798152d69f0b9550762b"
-_WBNB_LOWER       = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
-
 
 def poll_four_meme_v2():
     """
-    FM Sniper v5 — QuickNode WSS mempool detection
-    - eth_subscribe logs — PairCreated on PancakeSwap factory
-    - tx.to == FM factory filter (graduation only)
-    - Speed: ~200ms mempool level
-    - Zero downtime — infinite reconnect
-    - Confirmed fallback bhi parallel chal raha hai
+    FM Bonding Curve Sniper v1
+    - Four.meme factory Transfer events listen karo
+    - Naya token detect hone pe bonding curve check
+    - Progress 5-30% = buy
     """
-    import asyncio, json as _j, time as _t
+    import asyncio, json as _j
+
     try:
         import websockets as _ws
     except ImportError:
         print("WARN [FM] websockets not installed")
         return
 
-    async def _listen_qn(url):
-        """QuickNode WSS — PairCreated mempool events"""
-        async with _ws.connect(
-            url,
-            ping_interval=20, ping_timeout=15,
-            close_timeout=10, max_size=2**20
-        ) as ws:
-            # Subscribe to PancakeSwap factory PairCreated logs
+    # Four.meme factory Transfer topic — naya token create hone pe
+    _FM_CREATE_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"  # Transfer event
+    _FM_ZERO_ADDR    = "0x0000000000000000000000000000000000000000"
+
+    async def _listen(url):
+        async with _ws.connect(url, ping_interval=20, ping_timeout=15,
+                               close_timeout=30, max_size=2**20) as ws:
+            # Subscribe to Transfer events from four.meme factories
             await ws.send(_j.dumps({
                 "id": 1, "jsonrpc": "2.0",
                 "method": "eth_subscribe",
                 "params": ["logs", {
-                    "address": [_PANCAKE_FACTORY_ADDR],
-                    "topics":  [_FM_PAIR_TOPIC]
+                    "address": _FM_FACTORY_ADDRS,
+                    "topics": [_FM_CREATE_TOPIC]
                 }]
             }))
             ack = _j.loads(await asyncio.wait_for(ws.recv(), timeout=10))
             if ack.get("error"):
-                raise Exception(f"QN sub failed: {ack['error']}")
-            print(f"✅ [FM] QuickNode mempool connected!")
+                raise Exception(f"FM sub failed: {ack['error']}")
+            print(f"✅ [FM] Bonding Curve Sniper connected: {url[:35]}")
+
             while True:
                 try:
-                    msg    = await ws.recv()
-                    data   = _j.loads(msg)
-                    log    = (data.get("params") or {}).get("result") or {}
+                    msg  = await ws.recv()
+                    data = _j.loads(msg)
+                    log  = (data.get("params") or {}).get("result") or {}
                     if not log: continue
+
                     topics = log.get("topics", [])
                     if len(topics) < 3: continue
-                    tx_hash = log.get("transactionHash", "")
-                    if not tx_hash: continue
-                    # FM factory filter — background mein check karo
+
+                    # Token address = contract address in log
+                    token_addr = log.get("address", "")
+                    if not token_addr: continue
+
+                    # from = 0x000 = mint = new token
+                    from_addr = "0x" + topics[1][-40:] if len(topics) > 1 else ""
+                    if from_addr.lower() != _FM_ZERO_ADDR.lower(): continue
+
+                    # Deduplicate
+                    with _fm_sniped_lock:
+                        if token_addr.lower() in _fm_sniped: continue
+
+                    print(f"🆕 [FM] New token: {token_addr[:10]}")
+                    _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
+
+                    # Background mein snipe karo
                     threading.Thread(
-                        target=lambda h=tx_hash, t=topics: _fm_check_paircreated_tx(h, t),
+                        target=_fm_snipe,
+                        args=(token_addr,),
                         daemon=True
                     ).start()
+
                 except asyncio.TimeoutError:
                     continue
                 except Exception as e:
                     raise e
 
-    async def _loop_qn():
-        """Infinite reconnect — zero downtime"""
-        fails = 0
-        while True:
-            try:
-                await _listen_qn(_QN_WSS)
-                fails = 0
-            except Exception as e:
-                fails += 1
-                wait = min(3 * fails, 30)
-                print(f"WARN [FM] QN fail #{fails}: {str(e)[:80]} retry {wait}s")
-                await asyncio.sleep(wait)
-
-    async def _listen_confirmed(url):
-        """Fallback: PairCreated confirmed"""
-        async with _ws.connect(url, ping_interval=20, ping_timeout=15,
-                               close_timeout=30, max_size=2**20) as ws:
-            await ws.send(_j.dumps({
-                "id": 2, "jsonrpc": "2.0", "method": "eth_subscribe",
-                "params": ["logs", {"address": [_PANCAKE_FACTORY], "topics": [_FM_PAIR_CREATED_TOPIC]}]
-            }))
-            ack = _j.loads(await asyncio.wait_for(ws.recv(), timeout=10))
-            if ack.get("error"):
-                raise Exception("PairCreated sub failed: " + str(ack["error"]))
-            print(f"OK [FM] PairCreated fallback: {url[:35]}")
-            while True:
-                try:
-                    msg    = await ws.recv()
-                    data   = _j.loads(msg)
-                    log    = (data.get("params") or {}).get("result") or {}
-                    if not log: continue
-                    topics = log.get("topics", [])
-                    if len(topics) < 3: continue
-                    tx_hash = log.get("transactionHash", "")
-                    if not tx_hash: continue
-                    threading.Thread(
-                        target=lambda h=tx_hash, t=topics: _fm_check_paircreated_tx(h, t),
-                        daemon=True
-                    ).start()
-                except asyncio.TimeoutError:
-                    continue
-                except Exception as e:
-                    raise e
-
-    async def _loop_confirmed():
+    async def _loop():
         idx = fails = 0
+        endpoints = [_QN_WSS] + _FM_WSS
         while True:
             try:
-                url = _FM_WSS[idx % len(_FM_WSS)]
-                await _listen_confirmed(url)
+                url = endpoints[idx % len(endpoints)]
+                await _listen(url)
                 fails = 0
             except Exception as e:
                 fails += 1
                 wait = min(5 * fails, 60)
-                print(f"WARN [FM] Confirmed fail #{fails}: {str(e)[:50]} retry {wait}s")
+                print(f"WARN [FM] fail #{fails}: {str(e)[:50]} retry {wait}s")
                 await asyncio.sleep(wait)
             idx += 1
 
-    def _run_qn():
+    def _run():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        try: loop.run_until_complete(_loop_qn())
-        except Exception as ex: print(f"WARN [FM] QN crashed: {ex}")
+        try: loop.run_until_complete(_loop())
+        except Exception as ex: print(f"WARN [FM] crashed: {ex}")
         finally: loop.close()
 
-    def _run_confirmed():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try: loop.run_until_complete(_loop_confirmed())
-        except Exception as ex: print(f"WARN [FM] Confirmed crashed: {ex}")
-        finally: loop.close()
-
-    threading.Thread(target=_run_qn,        daemon=True).start()
-    threading.Thread(target=_run_confirmed,  daemon=True).start()
-    print("✅ [FM] Sniper v5 — QuickNode mempool + Confirmed fallback (dual stream)")
+    threading.Thread(target=_run, daemon=True).start()
+    print("✅ [FM] Bonding Curve Sniper v1 started")
 
 def poll_new_pairs():
     import asyncio, json as _json
