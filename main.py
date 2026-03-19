@@ -2449,38 +2449,41 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
                 del discovered_addresses[k]
     brain["total_tokens_discovered_ever"] += 1
 
-    token_name = "Unknown"
+    token_name   = token_address[:6]
     token_symbol = token_address[:6]
-    liquidity = 0
-    volume_24h = 0
-
-    try:
-        nr = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{token_address}", timeout=6)
-        if nr.status_code == 200:
-            _nj   = nr.json() or {}
-            _nraw = _nj.get("pairs") or []
-            if not isinstance(_nraw, list): _nraw = []
-            bsc_p = [p for p in _nraw if p and p.get("chainId") == "bsc"]
-            if bsc_p:
-                bsc_p.sort(key=lambda x: float(((x.get("liquidity") or {}).get("usd") or 0)), reverse=True)
-                bt = bsc_p[0].get("baseToken") or {}
-                token_name   = bt.get("name",   token_name)   or token_name
-                token_symbol = bt.get("symbol", token_symbol) or token_symbol
-                liquidity    = float(((bsc_p[0].get("liquidity") or {}).get("usd") or 0))
-                volume_24h   = float(((bsc_p[0].get("volume")    or {}).get("h24") or 0))
-    except Exception:
-        pass
 
     new_pairs_queue.append({
         "address":    token_address,
         "name":       token_name,
         "symbol":     token_symbol,
         "discovered": datetime.utcnow().isoformat(),
-        "liquidity":  liquidity,
-        "volume_24h": volume_24h,
+        "liquidity":  0,
+        "volume_24h": 0,
         "source":     source,
     })
-    print(f"🆕 [{source}] {token_symbol} | {token_name} ({token_address[:10]})")
+    print(f"🆕 [{source}] {token_address[:10]}")
+
+    # DexScreener naam — background mein, detection block nahi hoga
+    def _bg_name():
+        try:
+            nr = requests.get(
+                f"https://api.dexscreener.com/latest/dex/tokens/{token_address}",
+                timeout=5
+            )
+            if nr.status_code == 200:
+                _bsc = [p for p in (nr.json().get("pairs") or []) if p and p.get("chainId") == "bsc"]
+                if _bsc:
+                    bt = _bsc[0].get("baseToken") or {}
+                    _name = bt.get("symbol") or bt.get("name") or token_address[:6]
+                    # Update queue entry name
+                    for q in new_pairs_queue:
+                        if q.get("address") == token_address:
+                            q["name"]   = _name
+                            q["symbol"] = _name
+                            break
+        except Exception:
+            pass
+    threading.Thread(target=_bg_name, daemon=True).start()
     # Scanner stats
     if "fourmeme" not in source.lower() and "FM" not in source:
         _scanner_stats["pc_discovered"] += 1
