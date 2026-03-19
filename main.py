@@ -3989,64 +3989,50 @@ _pc_sem = threading.Semaphore(5)
 
 def _onchain_sim(token_address: str, w3_instance=None) -> dict:
     """
-    On-chain honeypot sim — eth_call only, no gas, no BNB
-    approve + sell simulate → revert = honeypot
-    Speed: ~300-500ms
+    Honeypot check via getAmountsOut — fast ~100ms, no encode_abi needed
+    Token sell path check: token → WBNB
+    Fail/revert = honeypot, success = safe
     """
     result = {"safe": False, "reason": ""}
     try:
-        _w3 = w3_instance or w3
-        token_cs  = Web3.to_checksum_address(token_address)
-        router_cs = Web3.to_checksum_address(PANCAKE_ROUTER)
-        wbnb_cs   = Web3.to_checksum_address(WBNB)
-        _SIM_WALLET_CS = Web3.to_checksum_address("0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF")
-
-        _ERC20_ABI = [
-            {"name":"approve","type":"function","stateMutability":"nonpayable",
-             "inputs":[{"name":"spender","type":"address"},{"name":"amount","type":"uint256"}],
-             "outputs":[{"name":"","type":"bool"}]},
-            {"name":"balanceOf","type":"function","stateMutability":"view",
-             "inputs":[{"name":"account","type":"address"}],
-             "outputs":[{"name":"","type":"uint256"}]},
-        ]
-        token_contract = _w3.eth.contract(address=token_cs, abi=_ERC20_ABI)
-
-        # Step 1: approve simulate
-        approve_data = token_contract.encode_abi("approve", args=[router_cs, 2**256 - 1])
-        _w3.eth.call({"from": _SIM_WALLET_CS, "to": token_cs, "data": approve_data})
-
-        # Step 2: balanceOf
-        try:
-            _bal = token_contract.functions.balanceOf(_SIM_WALLET_CS).call()
-        except Exception:
-            _bal = 10 ** 18
-        if _bal <= 0:
-            _bal = 10 ** 18
-
-        # Step 3: sell simulate
-        _ROUTER_ABI = [{"name":"swapExactTokensForETHSupportingFeeOnTransferTokens",
-            "type":"function","stateMutability":"nonpayable",
-            "inputs":[{"name":"amountIn","type":"uint256"},{"name":"amountOutMin","type":"uint256"},
-                      {"name":"path","type":"address[]"},{"name":"to","type":"address"},{"name":"deadline","type":"uint256"}],
-            "outputs":[]}]
-        router_contract = _w3.eth.contract(address=router_cs, abi=_ROUTER_ABI)
-        sell_data = router_contract.encode_abi(
-            "swapExactTokensForETHSupportingFeeOnTransferTokens",
-            args=[_bal, 0, [token_cs, wbnb_cs], _SIM_WALLET_CS, int(time.time()) + 300]
+        _w3      = w3_instance or w3
+        token_cs = Web3.to_checksum_address(token_address)
+        wbnb_cs  = Web3.to_checksum_address(WBNB)
+        _ROUTER_ABI = [{
+            "name": "getAmountsOut",
+            "type": "function",
+            "stateMutability": "view",
+            "inputs": [
+                {"name": "amountIn", "type": "uint256"},
+                {"name": "path",     "type": "address[]"}
+            ],
+            "outputs": [{"name": "amounts", "type": "uint256[]"}]
+        }]
+        router = _w3.eth.contract(
+            address=Web3.to_checksum_address(PANCAKE_ROUTER),
+            abi=_ROUTER_ABI
         )
-        _w3.eth.call({"from": _SIM_WALLET_CS, "to": router_cs, "data": sell_data})
+        # Small amount sell simulate: 1000 tokens → WBNB
+        # Honeypot = revert, Safe = returns value
+        amt_in = 10 ** 9  # 1000 tokens (9 decimals)
+        out = router.functions.getAmountsOut(
+            amt_in, [token_cs, wbnb_cs]
+        ).call(block_identifier="latest")
 
-        result["safe"] = True
-        result["reason"] = "simulation passed"
+        if out and len(out) >= 2 and out[-1] > 0:
+            result["safe"]   = True
+            result["reason"] = "sell path ok"
+        else:
+            result["reason"] = "sell path returns 0 — likely honeypot"
         return result
     except Exception as e:
         err = str(e)
-        if "TRANSFER_FAILED" in err or "TransferHelper" in err:
+        if "INSUFFICIENT_LIQUIDITY" in err:
+            result["reason"] = "no liquidity"
+        elif "execution reverted" in err or "revert" in err.lower():
             result["reason"] = "sell revert: honeypot"
-        elif "INSUFFICIENT_OUTPUT" in err:
-            result["reason"] = "sell revert: high tax"
         else:
-            result["reason"] = f"approve fail: {err[:80]}"
+            result["reason"] = f"sim error: {err[:80]}"
         return result
 
 
@@ -4187,26 +4173,52 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
         print(f"🛑 DataGuard: {_msg}")
         return
 
-    # ── STEP 2: PARALLEL — On-chain sim + Tax check (~300ms) ──
-    import concurrent.futures as _cf
+    # ── STEP 2: Combined honeypot + tax check (~200ms) ──
+    # getAmountsOut: BNB→Token→BNB round trip
+    # Honeypot = sell revert, Tax = BNB diff %
     _sim_result = {"safe": False, "reason": "not run"}
     _tax_result = -1.0
-
-    def _run_sim():
-        return _onchain_sim(pair_address, w3_instance=_w3q)
-
-    def _run_tax():
-        return _pc_get_tax(pair_address, _w3q)
-
     try:
-        with _cf.ThreadPoolExecutor(max_workers=2) as _ex:
-            _f_sim = _ex.submit(_run_sim)
-            _f_tax = _ex.submit(_run_tax)
-            _sim_result = _f_sim.result(timeout=8)
-            _tax_result = _f_tax.result(timeout=8)
+        _ROUTER_ABI = [{
+            "name": "getAmountsOut", "type": "function", "stateMutability": "view",
+            "inputs": [{"name": "amountIn", "type": "uint256"}, {"name": "path", "type": "address[]"}],
+            "outputs": [{"name": "amounts", "type": "uint256[]"}]
+        }]
+        _router = _w3q.eth.contract(
+            address=Web3.to_checksum_address(PANCAKE_ROUTER), abi=_ROUTER_ABI
+        )
+        _wbnb_cs  = Web3.to_checksum_address(WBNB)
+        _token_cs = Web3.to_checksum_address(pair_address)
+        _amt_in   = int(0.001 * 1e18)  # 0.001 BNB
+
+        # Buy: BNB → Token
+        _buy = _router.functions.getAmountsOut(
+            _amt_in, [_wbnb_cs, _token_cs]
+        ).call(block_identifier="latest")
+        _tokens_out = _buy[-1] if _buy else 0
+
+        if _tokens_out <= 0:
+            _sim_result = {"safe": False, "reason": "buy path fail"}
+        else:
+            # Sell: Token → BNB
+            _sell = _router.functions.getAmountsOut(
+                _tokens_out, [_token_cs, _wbnb_cs]
+            ).call(block_identifier="latest")
+            _bnb_back = _sell[-1] if _sell else 0
+
+            if _bnb_back <= 0:
+                _sim_result = {"safe": False, "reason": "sell revert: honeypot"}
+            else:
+                _tax_result = round((1 - _bnb_back / _amt_in) * 100, 1)
+                _sim_result = {"safe": True, "reason": f"ok tax={_tax_result:.1f}%"}
+
     except Exception as e:
-        print(f"⚠️ Parallel checks error: {e}")
-        _sim_result = {"safe": False, "reason": f"parallel error: {str(e)[:60]}"}
+        err = str(e)
+        if "revert" in err.lower() or "INSUFFICIENT" in err:
+            _sim_result = {"safe": False, "reason": f"sell revert: honeypot"}
+        else:
+            _sim_result = {"safe": False, "reason": f"check error: {err[:60]}"}
+        print(f"⚠️ Sim+Tax error: {err[:80]}: {pair_address[:10]}")
 
     # Sim fail = honeypot — sirf confirmed honeypot blacklist karo, error nahi
     if not _sim_result.get("safe"):
