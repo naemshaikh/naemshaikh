@@ -3157,9 +3157,9 @@ def auto_position_manager():
                     if pnl >= 150 and tp_sold < 90:
                         _auto_paper_sell(addr, f"ProTP +150% [90% banked] 🌙", 15.0)
                         print(f"🌙 ProTP150: {addr[:10]} pnl={pnl:.1f}% tp_sold={tp_sold:.0f}%")
-                    elif pnl >= 80 and tp_sold < 75:
-                        _auto_paper_sell(addr, f"ProTP +80% [75% banked] 💰", 25.0)
-                        print(f"💰 ProTP80: {addr[:10]} pnl={pnl:.1f}% tp_sold={tp_sold:.0f}%")
+                    elif pnl >= 120 and tp_sold < 75:
+                        _auto_paper_sell(addr, f"ProTP +120% [75% banked] 💰", 25.0)
+                        print(f"💰 ProTP120: {addr[:10]} pnl={pnl:.1f}% tp_sold={tp_sold:.0f}%")
                     elif pnl >= 40 and tp_sold < 50:
                         _auto_paper_sell(addr, f"ProTP +40% [50% banked] 🔒", 50.0)
                         print(f"🔒 ProTP40: {addr[:10]} pnl={pnl:.1f}%")
