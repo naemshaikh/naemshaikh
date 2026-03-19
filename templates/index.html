@@ -1191,7 +1191,9 @@ async function downloadTrades(count){
 }
 function setHF(f,el){histFilter=f;document.querySelectorAll('.hf').forEach(b=>b.classList.remove('on'));el.classList.add('on');fetchHistory();}
 async function fetchHistory(){
-  const d=await fetchJSON('/trade-history?filter='+histFilter,{},20000);if(!d)return;
+  const d=await fetchJSON('/trade-history?filter=all',{},20000);if(!d)return;
+  // Cache for PNL card 1D/7D/1M tabs
+  if(d.history) window._cachedTradeHistory = d.history;
   const wr=d.win_rate||0;
   document.getElementById('hs-total').textContent=d.total||0;
   const wrEl=document.getElementById('hs-wr');wrEl.textContent=wr+'%';wrEl.style.color=wr>=50?'var(--em)':'var(--red)';
@@ -2215,7 +2217,8 @@ window._renderPnlCard = function(_as){
     if(wrBar)  wrBar.style.width=wr+'%';
 
   } else {
-    var hist     = (_as&&_as.trade_history)||[];
+    // trade_history auto-stats mein nahi hai — /trade-history se fetch karo
+    var hist = window._cachedTradeHistory || [];
     var filtered = _pnlPeriodFilter(hist, period);
     var invested = filtered.reduce(function(s,t){ return s+parseFloat(t.size_bnb||0.01); },0);
     var pnlBnb   = filtered.reduce(function(s,t){ return s+parseFloat(t.pnl_bnb||0); },0);
