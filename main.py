@@ -2333,6 +2333,8 @@ monitor_lock = threading.Lock()
 
 # ========== AUTO TRADE STATS ==========  FIX 2: trade_history added
 AUTO_TRADE_ENABLED = True
+PC_SNIPER_ENABLED  = True   # PC PancakeSwap sniper
+FM_SNIPER_ENABLED  = True   # FM Bonding Curve sniper
 TRADE_MODE         = "paper"   # "paper" or "real"
 REAL_WALLET        = ""        # user wallet address
 
@@ -4323,7 +4325,7 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
     _scanner_stats["pc_prefilter_pass"] += 1
 
     # ── Basic checks ──
-    if not AUTO_TRADE_ENABLED:
+    if not AUTO_TRADE_ENABLED or not PC_SNIPER_ENABLED:
         return
     if len(auto_trade_stats.get("running_positions", {})) >= AUTO_MAX_POSITIONS:
         return
@@ -4784,7 +4786,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
     try:
         # ── Basic checks (0ms) ──
-        if not AUTO_TRADE_ENABLED: return
+        if not AUTO_TRADE_ENABLED or not FM_SNIPER_ENABLED: return
         if len(auto_trade_stats.get("running_positions", {})) >= AUTO_MAX_POSITIONS:
             _skip("max positions"); return
         sess = get_or_create_session(AUTO_SESSION_ID)
@@ -4927,8 +4929,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         # 9. Unique buyers + momentum check
         if unique_buyers < 3:
             _skip(f"too few buyers {unique_buyers} < 3"); return
-        if recent_buys < 2:
-            _skip(f"no momentum — only {recent_buys} buys in last 60s"); return
+        if recent_buys < 8:
+            _skip(f"low momentum — only {recent_buys} buys in last 60s"); return
 
         print(f"✅ [FM] ALL PASS: mc=${_mc_usd:.0f} raised={raised_bnb:.3f}BNB buyers={unique_buyers} recent={recent_buys} vel={velocity_sec:.0f}s")
         _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
@@ -7390,6 +7392,24 @@ def toggle_auto():
     return jsonify({"enabled": AUTO_TRADE_ENABLED, "status": status})
 
 @app.route("/set-trade-mode", methods=["POST"])
+def toggle_pc_sniper():
+    global PC_SNIPER_ENABLED
+    PC_SNIPER_ENABLED = not PC_SNIPER_ENABLED
+    print(f"⚡ PC Sniper {'STARTED' if PC_SNIPER_ENABLED else 'STOPPED'}")
+    return jsonify({"enabled": PC_SNIPER_ENABLED})
+
+@app.route('/toggle-fm', methods=['POST'])
+def toggle_fm_sniper():
+    global FM_SNIPER_ENABLED
+    FM_SNIPER_ENABLED = not FM_SNIPER_ENABLED
+    print(f"🎓 FM Sniper {'STARTED' if FM_SNIPER_ENABLED else 'STOPPED'}")
+    return jsonify({"enabled": FM_SNIPER_ENABLED})
+
+@app.route('/sniper-status', methods=['GET'])
+def sniper_status():
+    return jsonify({"pc": PC_SNIPER_ENABLED, "fm": FM_SNIPER_ENABLED})
+
+@app.route('/set-trade-mode', methods=['POST'])
 def set_trade_mode():
     global TRADE_MODE, REAL_WALLET
     data = request.get_json() or {}

@@ -829,6 +829,14 @@ function _checkLock(){
         <span>&#9646;&#9646;</span><span>STOP</span>
       </button>
     </div>
+    <div style="padding:8px 12px 0;display:flex;gap:8px;">
+      <button id="pc-sniper-btn" onclick="togglePcSniper()" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--green);background:var(--green);color:#000;font-weight:700;font-size:12px;cursor:pointer;">
+        ⚡ PC ON
+      </button>
+      <button id="fm-sniper-btn" onclick="toggleFmSniper()" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--green);background:var(--green);color:#000;font-weight:700;font-size:12px;cursor:pointer;">
+        🎓 FM ON
+      </button>
+    </div>
     <div class="ctrl-grid" style="margin-top:1px;">
       <button class="ctrl-btn danger" id="close-one-btn" onclick="closeOne()">
         <div class="ctrl-icon">&#128308;</div>
@@ -1532,6 +1540,7 @@ async function fetchStats(){
 
 // ─── INIT — retry on cold start ──────────────────────────────
 async function init(){
+  loadSniperStatus();
   dbg('🚀 Init started — SID='+SID.slice(0,12));
   setConn(false,'⏳ MrBlack server se connect ho rha hai...');
 
@@ -2736,6 +2745,35 @@ async function _doStopAuto(){
   if(!d){showToast('❌ Server error');_ctrlLog('Stop failed');return;}
   _setAutoUI(false);
   showToast('⏸️ Auto Trade STOPPED');_ctrlLog('⏸️ Auto Trade STOPPED');
+}
+
+async function togglePcSniper(){
+  const btn=document.getElementById('pc-sniper-btn');
+  const d=await fetchJSON('/toggle-pc',{method:'POST'},10000);
+  if(d && btn){
+    btn.style.background=d.enabled?'var(--green)':'var(--red)';
+    btn.style.borderColor=d.enabled?'var(--green)':'var(--red)';
+    btn.textContent=d.enabled?'⚡ PC ON':'⚡ PC OFF';
+    showToast(d.enabled?'⚡ PC Sniper STARTED':'⚡ PC Sniper STOPPED');
+  }
+}
+async function toggleFmSniper(){
+  const btn=document.getElementById('fm-sniper-btn');
+  const d=await fetchJSON('/toggle-fm',{method:'POST'},10000);
+  if(d && btn){
+    btn.style.background=d.enabled?'var(--green)':'var(--red)';
+    btn.style.borderColor=d.enabled?'var(--green)':'var(--red)';
+    btn.textContent=d.enabled?'🎓 FM ON':'🎓 FM OFF';
+    showToast(d.enabled?'🎓 FM Sniper STARTED':'🎓 FM Sniper STOPPED');
+  }
+}
+async function loadSniperStatus(){
+  const d=await fetchJSON('/sniper-status',{},5000);
+  if(!d) return;
+  const pcBtn=document.getElementById('pc-sniper-btn');
+  const fmBtn=document.getElementById('fm-sniper-btn');
+  if(pcBtn){pcBtn.style.background=d.pc?'var(--green)':'var(--red)';pcBtn.style.borderColor=d.pc?'var(--green)':'var(--red)';pcBtn.textContent=d.pc?'⚡ PC ON':'⚡ PC OFF';}
+  if(fmBtn){fmBtn.style.background=d.fm?'var(--green)':'var(--red)';fmBtn.style.borderColor=d.fm?'var(--green)':'var(--red)';fmBtn.textContent=d.fm?'🎓 FM ON':'🎓 FM OFF';}
 }
 
 async function closeOne(){
