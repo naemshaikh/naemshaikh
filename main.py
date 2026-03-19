@@ -4123,6 +4123,7 @@ def _pc_get_tax(token_address: str, w3_inst) -> float:
 
 
 def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale_wallet: str = ""):
+    if not PC_SNIPER_ENABLED: return  # PC stopped
     """
     PC Fast Sniper — max speed, on-chain only
     ~700ms total: Blacklist(0ms) + Liq(200ms) + Parallel[Sim+Tax](300ms) + Buy(100ms)
@@ -5090,6 +5091,8 @@ def poll_four_meme_v2():
                     dev_addr   = "0x" + _data[90:130]
 
                     if not token_addr or token_addr == "0x" + "0"*40: continue
+
+                    if not FM_SNIPER_ENABLED: continue  # FM stopped
 
                     with _fm_sniped_lock:
                         if token_addr.lower() in _fm_sniped: continue
