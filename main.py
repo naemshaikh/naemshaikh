@@ -4563,6 +4563,32 @@ _FM_ERC20_ABI = [
      "inputs":[],"outputs":[{"name":"","type":"uint256"}]},
 ]
 
+def _fm_get_unique_buyers(token_addr, w3=None):
+    """Token pe unique buyers count karo via Transfer events"""
+    try:
+        if not w3: w3 = _fm_get_w3()
+        if not w3: return 0
+        TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+        current = w3.eth.block_number
+        logs = w3.eth.get_logs({
+            "address": Web3.to_checksum_address(token_addr),
+            "topics": [TRANSFER_TOPIC],
+            "fromBlock": current - 200,  # last ~10 mins
+            "toBlock": "latest",
+        })
+        # Unique receivers (excluding 0x000 = mint, excluding dead)
+        _ZERO = "0x0000000000000000000000000000000000000000"
+        _DEAD = "0x000000000000000000000000000000000000dead"
+        buyers = set()
+        for log in logs:
+            if len(log["topics"]) < 3: continue
+            to_addr = "0x" + log["topics"][2].hex()[-40:].lower()
+            if to_addr not in [_ZERO, _DEAD]:
+                buyers.add(to_addr)
+        return len(buyers)
+    except:
+        return 0
+
 _fm_sniped      = set()
 _fm_sniped_lock = threading.Lock()
 
@@ -4815,11 +4841,15 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             elapsed = time.time() - detected_at
             return elapsed  # seconds since mint
 
-        with _cf3.ThreadPoolExecutor(max_workers=5) as ex:
+        def _f_buyers():
+            return _fm_get_unique_buyers(token_addr, w3)
+
+        with _cf3.ThreadPoolExecutor(max_workers=6) as ex:
             f_info     = ex.submit(_f_info)
             f_dev      = ex.submit(_f_dev)
             f_wallet   = ex.submit(_f_wallet)
             f_velocity = ex.submit(_f_velocity)
+            f_buyers   = ex.submit(_f_buyers)
 
             info = f_info.result(timeout=4)
             if info:
@@ -4831,6 +4861,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             wallet_pct    = f_wallet.result(timeout=3)
             velocity_sec  = f_velocity.result(timeout=1)
             hp_safe       = f_hp.result(timeout=3)
+            unique_buyers = f_buyers.result(timeout=4)
 
         # ── FILTER CHECKS ──
 
@@ -4851,6 +4882,11 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         # progress=0 allowed — fresh mint
 
         # 4. Raised BNB check
+        # quote = WBNB address means BNB raised, otherwise skip non-BNB pairs
+        _WBNB_LOWER = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
+        _quote = info.get("quote", "").lower()
+        if _quote and _quote != _WBNB_LOWER:
+            _skip(f"non-BNB pair — skip"); return
         raised_bnb = round(info["funds"] / 1e18, 4)
         if raised_bnb < 0.1:
             _skip(f"too early raised={raised_bnb:.4f} BNB < 0.1"); return
@@ -4878,6 +4914,10 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         # 8. Honeypot check
         if not hp_safe:
             _skip("honeypot sim failed"); return
+
+        # 9. Unique buyers check — min 3 real buyers
+        if unique_buyers < 3:
+            _skip(f"too few buyers {unique_buyers} < 3"); return
 
         print(f"✅ [FM] ALL PASS: progress={progress:.1f}% raised={raised_bnb:.3f}BNB vel={velocity_sec:.0f}s dev_rugs={dev_hist.get('rugged',0)} wallet={wallet_pct:.1f}%")
         _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
