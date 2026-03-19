@@ -4856,7 +4856,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             _skip(f"raised too much {raised_bnb:.2f} BNB"); return
 
         # 5. Buy velocity — sirf extreme fast block karo
-        if velocity_sec < 2 and progress > 5:
+        if velocity_sec < 0.5 and progress > 5:
             _skip(f"too fast {velocity_sec:.1f}s bot/bundler"); return
 
         # 6. Single wallet dominance
