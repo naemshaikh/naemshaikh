@@ -2389,6 +2389,16 @@ def _save_pc_event(token_addr, liq_bnb, prefilter, cl_score, cl_total, snipe_pri
     """PC event Supabase mein save karo"""
     try:
         if not supabase: return
+        # Auto cleanup — 5000 se zyada ho to purane delete karo
+        try:
+            _cnt = supabase.table("pc_events").select("id", count="exact").execute()
+            if (_cnt.count or 0) >= 5000:
+                _old = supabase.table("pc_events").select("id").order("detected_at", desc=False).limit(500).execute()
+                _ids = [r["id"] for r in (_old.data or []) if r.get("id")]
+                if _ids:
+                    supabase.table("pc_events").delete().in_("id", _ids).execute()
+        except Exception:
+            pass
         supabase.table("pc_events").insert({
             "token_address":   token_addr,
             "token_short":     token_addr[:10],
@@ -4626,6 +4636,16 @@ def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, resul
     """FM event Supabase mein save karo — async"""
     try:
         if not supabase: return
+        # Auto cleanup — 5000 se zyada ho to purane delete karo
+        try:
+            _cnt = supabase.table("fm_events").select("id", count="exact").execute()
+            if (_cnt.count or 0) >= 5000:
+                _old = supabase.table("fm_events").select("id").order("detected_at", desc=False).limit(500).execute()
+                _ids = [r["id"] for r in (_old.data or []) if r.get("id")]
+                if _ids:
+                    supabase.table("fm_events").delete().in_("id", _ids).execute()
+        except Exception:
+            pass
         supabase.table("fm_events").insert({
             "token_address": token_addr,
             "token_short":   token_addr[:10],
