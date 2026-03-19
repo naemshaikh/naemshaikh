@@ -4127,15 +4127,15 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
             _pc_sniped.discard(pair_address.lower())
         return
 
-    # ── STEP 1: Liquidity check via QuickNode HTTP (~200ms) ──
+    # ── STEP 1: getPair (~100ms) ──
     _liq_bnb = 0.0
     _qn_http = os.getenv("QUICKNODE_HTTP", "")
     if not _qn_http:
         print(f"⚠️ QUICKNODE_HTTP not set — skip: {pair_address[:10]}")
         return
     _w3q = Web3(Web3.HTTPProvider(_qn_http, request_kwargs={"timeout": 3}))
+
     try:
-        # QuickNode se pair lookup karo
         _factory_c = _w3q.eth.contract(
             address=Web3.to_checksum_address(PANCAKE_FACTORY),
             abi=FACTORY_ABI_PRICE
@@ -4146,76 +4146,129 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
         if not _actual_pair or _actual_pair == "0x0000000000000000000000000000000000000000":
             print(f"⚠️ No pair found — skip: {pair_address[:10]}")
             return
-        _pair_c = _w3q.eth.contract(
-            address=Web3.to_checksum_address(_actual_pair),
-            abi=PAIR_ABI_PRICE
-        )
-        _res = _pair_c.functions.getReserves().call()
+    except Exception as e:
+        print(f"⚠️ getPair failed — skip: {pair_address[:10]} {e}")
+        return
+
+    # ── STEP 2: PARALLEL CHECKS (~100ms) ──
+    # getReserves + totalSupply + owner + LP burn — sab ek saath
+    import concurrent.futures as _cf2
+
+    _DEAD     = "0x000000000000000000000000000000000000dEaD"
+    _ZERO     = "0x0000000000000000000000000000000000000000"
+    _pair_cs  = Web3.to_checksum_address(_actual_pair)
+    _token_cs = _addr_cs
+    _wbnb_cs  = Web3.to_checksum_address(WBNB)
+
+    _ERC20_ABI_EXT = [
+        {"name":"balanceOf","type":"function","stateMutability":"view",
+         "inputs":[{"name":"account","type":"address"}],"outputs":[{"name":"","type":"uint256"}]},
+        {"name":"totalSupply","type":"function","stateMutability":"view",
+         "inputs":[],"outputs":[{"name":"","type":"uint256"}]},
+        {"name":"owner","type":"function","stateMutability":"view",
+         "inputs":[],"outputs":[{"name":"","type":"address"}]},
+    ]
+
+    _pair_c   = _w3q.eth.contract(address=_pair_cs,  abi=PAIR_ABI_PRICE)
+    _token_c  = _w3q.eth.contract(address=_token_cs, abi=_ERC20_ABI_EXT)
+    _lp_c     = _w3q.eth.contract(address=_pair_cs,  abi=_ERC20_ABI_EXT)
+
+    def _get_reserves():
         try:
-            _t0 = _pair_c.functions.token0().call().lower()
-            _liq_bnb = (_res[0] / 1e18) if _t0 == WBNB.lower() else (_res[1] / 1e18)
-        except Exception:
-            _liq_bnb = min(_res[0], _res[1]) / 1e18
+            _res = _pair_c.functions.getReserves().call()
+            _t0  = _pair_c.functions.token0().call().lower()
+            return _res, _t0
+        except: return None, None
 
-        _min_liq = CHECKLIST_SETTINGS.get("min_liq_bnb", 3.0)
-        if _liq_bnb < _min_liq:
-            _scanner_stats["rej_low_liq"] += 1
-            print(f"⏭️ Low liq {_liq_bnb:.2f} BNB — skip: {pair_address[:10]}")
-            _log("reject", pair_address[:8], f"Low liq {_liq_bnb:.2f} BNB", pair_address)
-            return
-        if _liq_bnb > 500:
-            _scanner_stats["rej_high_liq"] += 1
-            print(f"⏭️ High liq {_liq_bnb:.0f} BNB (old token) — skip: {pair_address[:10]}")
-            return
+    def _get_total_supply():
+        try: return _token_c.functions.totalSupply().call()
+        except: return 0
 
-        # Layer 2: USD liquidity check (0ms — memory se price)
-        _bnb_price = market_cache.get("bnb_price", 0)
-        _liq_usd   = _liq_bnb * _bnb_price if _bnb_price else 0
-        if _bnb_price and _liq_usd < 3000:
-            _scanner_stats["rej_low_liq"] += 1
-            print(f"⏭️ Low USD liq ${_liq_usd:.0f} — skip: {pair_address[:10]}")
+    def _get_owner():
+        try: return _token_c.functions.owner().call().lower()
+        except: return ""
+
+    def _get_lp_burned():
+        try: return _lp_c.functions.balanceOf(Web3.to_checksum_address(_DEAD)).call()
+        except: return 0
+
+    def _get_token_in_lp():
+        try: return _token_c.functions.balanceOf(_pair_cs).call()
+        except: return 0
+
+    try:
+        with _cf2.ThreadPoolExecutor(max_workers=5) as _ex2:
+            _f_res   = _ex2.submit(_get_reserves)
+            _f_sup   = _ex2.submit(_get_total_supply)
+            _f_own   = _ex2.submit(_get_owner)
+            _f_burn  = _ex2.submit(_get_lp_burned)
+            _f_tokl  = _ex2.submit(_get_token_in_lp)
+            _res_data, _t0 = _f_res.result(timeout=4)
+            _total_supply   = _f_sup.result(timeout=4)
+            _owner_addr     = _f_own.result(timeout=4)
+            _lp_burned_bal  = _f_burn.result(timeout=4)
+            _token_in_lp    = _f_tokl.result(timeout=4)
+    except Exception as e:
+        print(f"⚠️ Parallel checks failed — skip: {pair_address[:10]} {e}")
+        return
+
+    if _res_data is None:
+        print(f"⚠️ getReserves failed — skip: {pair_address[:10]}")
+        return
+
+    # ── BNB Liquidity check ──
+    try:
+        _liq_bnb = (_res_data[0] / 1e18) if _t0 == WBNB.lower() else (_res_data[1] / 1e18)
+    except:
+        _liq_bnb = min(_res_data[0], _res_data[1]) / 1e18
+
+    _min_liq = CHECKLIST_SETTINGS.get("min_liq_bnb", 3.0)
+    if _liq_bnb < _min_liq:
+        _scanner_stats["rej_low_liq"] += 1
+        print(f"⏭️ Low liq {_liq_bnb:.2f} BNB — skip: {pair_address[:10]}")
+        _log("reject", pair_address[:8], f"Low liq {_liq_bnb:.2f} BNB", pair_address)
+        with _pc_sniped_lock: _pc_sniped.discard(pair_address.lower())
+        return
+    if _liq_bnb > 500:
+        _scanner_stats["rej_high_liq"] += 1
+        print(f"⏭️ High liq {_liq_bnb:.0f} BNB — skip: {pair_address[:10]}")
+        with _pc_sniped_lock: _pc_sniped.discard(pair_address.lower())
+        return
+
+    # ── USD liq check ──
+    _bnb_price = market_cache.get("bnb_price", 0)
+    _liq_usd   = _liq_bnb * _bnb_price if _bnb_price else 0
+    if _bnb_price and _liq_usd < 3000:
+        _scanner_stats["rej_low_liq"] += 1
+        print(f"⏭️ Low USD liq ${_liq_usd:.0f} — skip: {pair_address[:10]}")
+        with _pc_sniped_lock: _pc_sniped.discard(pair_address.lower())
+        return
+
+    # ── Token % in LP check (min 80%) ──
+    if _total_supply > 0 and _token_in_lp > 0:
+        _tok_pct = (_token_in_lp / _total_supply) * 100
+        if _tok_pct < 80.0:
+            print(f"⏭️ Token in LP {_tok_pct:.1f}% < 80% — skip: {pair_address[:10]}")
             with _pc_sniped_lock: _pc_sniped.discard(pair_address.lower())
             return
+        print(f"✅ Token in LP: {_tok_pct:.1f}%")
 
-        # Layer 3: Token/BNB ratio check (0ms — already have reserves)
-        try:
-            _tok_res = (_res[1] / 1e18) if _t0 == WBNB.lower() else (_res[0] / 1e18)
-            _ratio   = _tok_res / _liq_bnb if _liq_bnb > 0 else 0
-            # Ratio > 10B = suspicious (fake/honeypot setup)
-            if _ratio > 10_000_000_000:
-                print(f"⏭️ Suspicious ratio {_ratio:.0e} — skip: {pair_address[:10]}")
-                with _pc_sniped_lock: _pc_sniped.discard(pair_address.lower())
-                return
-        except Exception:
-            pass
+    # ── Owner renounce check ──
+    _owner_renounced = _owner_addr in ["", _DEAD.lower(), _ZERO.lower()]
+    if not _owner_renounced:
+        print(f"⚠️ Owner not renounced ({_owner_addr[:10]}) — proceeding with caution")
+    else:
+        print(f"✅ Owner renounced")
 
-        # Layer 4: LP Burn check (~100ms) — dev LP pull kar sakta hai?
-        # Note: Naye tokens mein LP turant burn nahi hoti — fail pe proceed karo
-        _lp_burned = False
-        try:
-            _DEAD = "0x000000000000000000000000000000000000dEaD"
-            _ERC20_BAL_ABI = [{"name":"balanceOf","type":"function","stateMutability":"view",
-                "inputs":[{"name":"account","type":"address"}],"outputs":[{"name":"","type":"uint256"}]}]
-            _lp_contract = _w3q.eth.contract(
-                address=Web3.to_checksum_address(_actual_pair),
-                abi=_ERC20_BAL_ABI
-            )
-            _burned = _lp_contract.functions.balanceOf(
-                Web3.to_checksum_address(_DEAD)
-            ).call()
-            _lp_burned = _burned > 0
-            if _lp_burned:
-                print(f"🔥 LP burned ✅: {pair_address[:10]}")
-            else:
-                print(f"⚠️ LP not burned — proceeding with caution: {pair_address[:10]}")
-        except Exception as _lp_e:
-            print(f"⚠️ LP burn check error — proceeding: {pair_address[:10]}")
+    # ── LP Burn check ──
+    _lp_burned = _lp_burned_bal > 0
+    if _lp_burned:
+        print(f"🔥 LP burned ✅")
+    else:
+        print(f"⚠️ LP not burned — proceeding")
 
-        print(f"✅ Liq ok {_liq_bnb:.2f} BNB (${_liq_usd:.0f}): {pair_address[:10]}")
-        _scanner_stats["pc_prefilter_pass"] += 1
-    except Exception as e:
-        print(f"⚠️ Liq check failed — skip: {pair_address[:10]} {e}")
-        return  # QuickNode fail = skip, no bad entry
+    print(f"✅ Liq ok {_liq_bnb:.2f} BNB (${_liq_usd:.0f}): {pair_address[:10]}")
+    _scanner_stats["pc_prefilter_pass"] += 1
 
     # ── Basic checks ──
     if not AUTO_TRADE_ENABLED:
@@ -4291,7 +4344,7 @@ def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale
         return
 
     # Tax too high
-    _max_tax = CHECKLIST_SETTINGS.get("max_sell_tax", 15.0)
+    _max_tax = CHECKLIST_SETTINGS.get("max_sell_tax", 8.0)
     if _tax_result >= 0 and _tax_result > _max_tax:
         _scanner_stats["pc_checklist_fail"] += 1
         print(f"🚫 High tax {_tax_result:.1f}% — skip: {pair_address[:10]}")
