@@ -4805,7 +4805,7 @@ def _fm_honeypot_sim(token_addr, factory_addr, w3=None):
         return True  # other errors = proceed
 
 def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, result, skip_reason, time_ms,
-                   buyers_at_entry=0, momentum_pct=0.0, volume_change=0.0, pump_at_entry=0.0):
+                   buyers_at_entry=0, momentum_pct=0.0, volume_change=0.0, pump_at_entry=0.0, dev_wallet_pct=0.0):
     """FM event Supabase mein save karo — extra analytics data bhi"""
     try:
         if not supabase: return
@@ -4834,6 +4834,7 @@ def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, resul
             "momentum_pct":     round(float(momentum_pct or 0), 2),
             "volume_change":    round(float(volume_change or 0), 6),
             "pump_at_entry":    round(float(pump_at_entry or 0), 2),
+            "dev_wallet_pct":   round(float(dev_wallet_pct or 0), 2),
         }).execute()
 
         # Post-skip tracking — 5 min baad price check karo
@@ -4938,13 +4939,16 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             _skip(f"pump at entry {_pump_at_entry:.1f}% > 10%"); return
 
         # 4. Dev wallet check (Ankr — free)
+        _dev_wallet_pct = 0.0
         if dev_addr:
             try:
                 _tc = _w3a.eth.contract(address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
                 _total = _tc.functions.totalSupply().call()
                 _dev_bal = _tc.functions.balanceOf(Web3.to_checksum_address(dev_addr)).call()
-                if _total > 0 and (_dev_bal / _total * 100) > 10:
-                    _skip(f"dev wallet too high {_dev_bal/_total*100:.0f}%"); return
+                if _total > 0:
+                    _dev_wallet_pct = round(_dev_bal / _total * 100, 2)
+                    if _dev_wallet_pct > 10:
+                        _skip(f"dev wallet too high {_dev_wallet_pct:.0f}%"); return
             except Exception as _de:
                 print(f"⚠️ [FM] dev check error: {str(_de)[:50]}")
 
@@ -5068,9 +5072,10 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             token_addr, 0, 0, entry, _momentum_pct, "BUY", "", ms
         ), kwargs={
             "buyers_at_entry": _buyers_at_entry,
-            "momentum_pct":   _momentum_pct,
-            "volume_change":  round(_funds_diff, 6),
-            "pump_at_entry":  _pump_at_entry,
+            "momentum_pct":    _momentum_pct,
+            "volume_change":   round(_funds_diff, 6),
+            "pump_at_entry":   _pump_at_entry,
+            "dev_wallet_pct":  _dev_wallet_pct,
         }, daemon=True).start()
         print(f"✅ [FM] BC SNIPED: {token_name} mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}% {ms}ms")
 
