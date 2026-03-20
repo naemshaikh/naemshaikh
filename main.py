@@ -6339,18 +6339,19 @@ def _startup_once():
             # ── FM Workers: 3 active + 5 hot-standby = 8 total ──
             def _fm_worker(worker_id, is_standby=False):
                 if is_standby:
-                    time.sleep(2)  # standby workers thoda late start
+                    time.sleep(2)
                 while True:
                     try:
                         token_addr, pair_addr = _fm_queue.get(timeout=5)
-                        threading.Thread(
-                            target=_fm_snipe,
-                            args=(token_addr, pair_addr),
-                            daemon=True
-                        ).start()
+                        if FM_SNIPER_ENABLED:
+                            threading.Thread(
+                                target=_fm_snipe,
+                                args=(token_addr, pair_addr),
+                                daemon=True
+                            ).start()
                         _fm_queue.task_done()
                     except:
-                        continue  # timeout = normal, loop chalta rahe
+                        continue
 
             for i in range(3):
                 threading.Thread(target=_fm_worker, args=(i, False), daemon=True).start()
@@ -6368,7 +6369,9 @@ def _startup_once():
                     try:
                         token_address = _discovery_queue.get(timeout=10)
                         try:
-                            _auto_check_new_pair(token_address)
+                            # PC sniper off hai to queue drain karo, process mat karo
+                            if PC_SNIPER_ENABLED:
+                                _auto_check_new_pair(token_address)
                         except Exception as _we:
                             print(f"⚠️ PC worker error: {_we}")
                         _discovery_queue.task_done()
@@ -7509,6 +7512,8 @@ def scanner_stats():
             "fm_buy":  _sum(last1d, "fm_buy"),
         },
         "history_points": len(hist),
+        "pc_enabled": PC_SNIPER_ENABLED,
+        "fm_enabled": FM_SNIPER_ENABLED,
         "rejections": {
             "low_liq":   _scanner_stats["rej_low_liq"],
             "high_liq":  _scanner_stats["rej_high_liq"],

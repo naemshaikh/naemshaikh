@@ -1841,12 +1841,29 @@ async function fetchScannerStats() {
     if(el('sc-fm-rate2')) el('sc-fm-rate2').textContent = fmRate + '%';
     if(el('sc-fm-bar'))   el('sc-fm-bar').style.width   = Math.min(fmRate * 3, 100) + '%';
 
-    // Tab data
-    _updateScPCTab(d);
-    _updateScFMTab(d);
+    // Update sniper status badges + buttons from backend state
     _updateSniperStatus(d);
 
   } catch(e) {}
+}
+
+function _updateSniperStatus(d) {
+  if (!d) return;
+  // PC status badge
+  const pcLbl = document.getElementById('pc-status-lbl');
+  if (pcLbl) {
+    pcLbl.textContent = d.pc_enabled ? 'RUNNING' : 'STOPPED';
+    pcLbl.style.color = d.pc_enabled ? 'var(--em)' : 'var(--red)';
+  }
+  // FM status badge
+  const fmLbl = document.getElementById('fm-status-lbl');
+  if (fmLbl) {
+    fmLbl.textContent = d.fm_enabled ? 'RUNNING' : 'STOPPED';
+    fmLbl.style.color = d.fm_enabled ? 'var(--em)' : 'var(--red)';
+  }
+  // Sync buttons
+  if (typeof _setPcBtn === 'function') _setPcBtn(d.pc_enabled);
+  if (typeof _setFmBtn === 'function') _setFmBtn(d.fm_enabled);
 }
 
 // Page load pe cache se restore karo
