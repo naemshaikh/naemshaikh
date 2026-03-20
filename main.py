@@ -6397,7 +6397,7 @@ def _startup_once():
 
             threading.Thread(target=_run, daemon=True).start()
 
-        threading.Thread(target=_delayed(poll_new_pairs,        10),  daemon=True).start()
+        # threading.Thread(target=_delayed(poll_new_pairs, 10), daemon=True).start()  # PC only — disabled
         threading.Thread(target=_delayed(poll_four_meme_v2, 15), daemon=True).start()  # 🎓 FM v2
         # ⚡ PC Fast Sniper — background mein chalta hai, _pc_add_to_snipe_queue se trigger hota hai
         # threading.Thread(target=_delayed(start_swap_monitor, 20), daemon=True).start()  # PC only — disabled
