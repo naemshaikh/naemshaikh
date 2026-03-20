@@ -4817,11 +4817,13 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _velocity_res  = [0.0]
 
         def _f_info():
-            return _fm_get_token_info(token_addr, w3)
+            # Ankr for tokenInfo — QuickNode save karo buy ke liye
+            _w3_ankr = Web3(Web3.HTTPProvider("https://rpc.ankr.com/bsc", request_kwargs={"timeout": 5}))
+            return _fm_get_token_info(token_addr, _w3_ankr)
 
         with _cf3.ThreadPoolExecutor(max_workers=1) as ex:
             f_info = ex.submit(_f_info)
-            info   = f_info.result(timeout=4)
+            info   = f_info.result(timeout=6)
 
         # ── FILTER CHECKS ──
 
