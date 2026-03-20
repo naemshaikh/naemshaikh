@@ -6351,7 +6351,7 @@ def _startup_once():
         threading.Thread(target=_delayed(continuous_learning,   25),  daemon=True).start()
         threading.Thread(target=_delayed(auto_position_manager, 30),  daemon=True).start()
         threading.Thread(target=_delayed(_memory_cleanup_loop,  60),  daemon=True).start()  # MEM FIX
-        threading.Thread(target=_delayed(_whale_follow_loop,   120),  daemon=True).start()  # WHALE FOLLOW
+        # threading.Thread(target=_delayed(_whale_follow_loop, 120), daemon=True).start()  # PC only — disabled
 
 
         def _startup_restore():
