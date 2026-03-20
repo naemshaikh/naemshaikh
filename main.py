@@ -4589,7 +4589,7 @@ _FM_HELPER_ADDR = "0xF251F83e40a78868FcfA3FA4599Dad6494E46034"
 
 _FM_BC_ABI = [
     {"name":"buyTokenAMAP","type":"function","stateMutability":"payable",
-     "inputs":[{"name":"token","type":"address"},{"name":"to","type":"address"},
+     "inputs":[{"name":"token","type":"address"},
                {"name":"funds","type":"uint256"},{"name":"minAmount","type":"uint256"}],
      "outputs":[{"name":"","type":"uint256"}]},
     {"name":"sellToken","type":"function","stateMutability":"nonpayable",
@@ -4962,16 +4962,15 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 pk = os.getenv("WALLET_PRIVATE_KEY", "") or os.getenv("PRIVATE_KEY", "")
                 if not wallet_addr or not pk:
                     _skip("no wallet/key"); return
-                # Version-aware: V1 = buyTokenAMAP, V2 = same but different manager
-                _mgr_addr = info.get("tokenManager", info.get("factory", _FM_FACTORY_ADDR))
+                # Grok confirmed: buyTokenAMAP(token, funds, minAmount) payable
                 fc = w3.eth.contract(
-                    address=Web3.to_checksum_address(_mgr_addr),
+                    address=Web3.to_checksum_address(_FM_FACTORY_ADDR),
                     abi=_FM_BC_ABI
                 )
                 tx = fc.functions.buyTokenAMAP(
                     Web3.to_checksum_address(token_addr),
-                    Web3.to_checksum_address(wallet_addr),
-                    int(size_bnb * 1e18), 0
+                    int(size_bnb * 1e18),
+                    0  # minAmount = 0 (max slippage)
                 ).build_transaction({
                     "from":     wallet_addr,
                     "value":    int(size_bnb * 1e18),
@@ -5082,7 +5081,7 @@ def poll_four_meme_v2():
     New token = Transfer(from=0x000) on factory contract
     """
     # BSCScan confirmed: 0x0a5575b3... = new token creation event on Four.meme factory
-    TOKEN_CREATE_TOPIC = "0x0a5575b3648bae2210cee56bf33254cc1ddfbc7bf637c0af2ac18b14fb1bae19"
+    TOKEN_CREATE_TOPIC = "0x396d5e902b675b032348d3d2e9517ee8f0c4a926603fbc075d3d282ff00cad20"
 
     _seen = set()
 
@@ -5129,16 +5128,11 @@ def poll_four_meme_v2():
                     _data   = log.get("data", "")
                     _topics = log.get("topics", [])
 
-                    # Token address = first 32 bytes of data
-                    token_addr = ""
-                    if _data and len(_data) >= 66:
-                        token_addr = "0x" + _data[26:66]
+                    # Grok confirmed: creator=data[26:66], token=data[90:130]
+                    if not _data or len(_data) < 130: continue
+                    dev_addr   = "0x" + _data[26:66]   # creator/dev
+                    token_addr = "0x" + _data[90:130]  # token CA
                     if not token_addr or token_addr.lower() in _seen: continue
-
-                    # Dev address = second 32 bytes of data
-                    dev_addr = ""
-                    if _data and len(_data) >= 130:
-                        dev_addr = "0x" + _data[90:130]
 
                     _seen.add(token_addr.lower())
                     if len(_seen) > 1000: _seen.clear()
