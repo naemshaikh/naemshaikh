@@ -3307,6 +3307,20 @@ def price_monitor_loop():
         for addr, pos in _snap:
             try:
                 current = get_token_price_bnb(addr)
+                # FM bonding curve tokens — PancakeSwap pe nahi hain, getTokenInfo se price lo
+                if current <= 0 and pos.get("buy_reasoning", {}).get("source") == "FM_BC_v2":
+                    try:
+                        _fm_info = _fm_get_token_info(addr)
+                        if _fm_info and _fm_info.get("lastPrice", 0) > 0:
+                            _bnb_p = market_cache.get("bnb_price", 640)
+                            _quote = _fm_info.get("quote", "").lower()
+                            _USDT_L = "0x55d398326f99059ff775485246999027b3197955"
+                            _BUSD_L = "0xe9e7cea3dedca5984780bafc599bd69add087d56"
+                            if _quote in [_USDT_L, _BUSD_L]:
+                                current = (_fm_info["lastPrice"] / 1e18) / _bnb_p if _bnb_p > 0 else 0
+                            else:
+                                current = _fm_info["lastPrice"] / 1e18
+                    except: pass
                 if current <= 0:
                     continue
                 # Sanity check: 10000x se zyada spike = stale/wrong price, ignore karo
