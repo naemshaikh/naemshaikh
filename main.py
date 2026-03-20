@@ -5171,7 +5171,12 @@ def poll_four_meme_v2():
 
     async def _loop():
         idx = fails = 0
-        endpoints = [_QN_WSS]
+        # QuickNode subscription limit hit hoti hai — free RPC use karo
+        endpoints = [
+            "wss://bsc-rpc.publicnode.com",
+            "wss://bsc.drpc.org",
+            "wss://bsc.publicnode.com",
+        ]
         while not _fm_stop_event.is_set():
             try:
                 await _listen(endpoints[idx % len(endpoints)])
