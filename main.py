@@ -5093,12 +5093,13 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             except: return None
 
         import concurrent.futures as _cf3
-        _ex   = _cf3.ThreadPoolExecutor(max_workers=5)
+        _ex   = _cf3.ThreadPoolExecutor(max_workers=6)
         _pf_g = _ex.submit(_fetch_gas)
         _pf_n = _ex.submit(_fetch_nonce)
         _w1   = _ex.submit(_momentum_worker, 0.0)
         _w2   = _ex.submit(_momentum_worker, 0.2)
         _w3f  = _ex.submit(_momentum_worker, 0.4)
+        _ub_f = _ex.submit(_fm_get_unique_buyers, token_addr, _w3_qn or w3)  # parallel buyers check
 
         _info2      = None
         _price2     = 0
@@ -5118,8 +5119,11 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     _price2 = _res["price"]
                     _funds2 = _res["funds"]
                     if _pass_count >= 2:
-                        # 2/3 workers pass — check buyers
-                        _ub, _ = _fm_get_unique_buyers(token_addr, _w3_qn or w3)
+                        # get buyers result — already running in parallel
+                        try:
+                            _ub, _ = _ub_f.result(timeout=1)
+                        except:
+                            _ub = 0
                         if _ub < 5:
                             _ex.shutdown(wait=False)
                             _skip(f"not enough buyers {_ub}/5"); return
