@@ -2335,6 +2335,39 @@ monitor_lock = threading.Lock()
 AUTO_TRADE_ENABLED = True
 PC_SNIPER_ENABLED  = True   # PC PancakeSwap sniper
 FM_SNIPER_ENABLED  = True   # FM Bonding Curve sniper
+
+# Stop events for full WSS shutdown
+_fm_stop_event = threading.Event()
+_pc_stop_event = threading.Event()
+
+def _load_sniper_state():
+    """Supabase se sniper state load karo — restart pe same state rahega"""
+    global PC_SNIPER_ENABLED, FM_SNIPER_ENABLED
+    if not supabase: return
+    try:
+        res = supabase.table("memory").select("positions").eq("session_id", "SNIPER_STATE").execute()
+        if res.data:
+            state = json.loads(res.data[0].get("positions") or "{}")
+            PC_SNIPER_ENABLED = state.get("pc", True)
+            FM_SNIPER_ENABLED = state.get("fm", True)
+            print(f"✅ Sniper state loaded — PC:{PC_SNIPER_ENABLED} FM:{FM_SNIPER_ENABLED}")
+    except Exception as e:
+        print(f"⚠️ Sniper state load error: {e}")
+
+def _save_sniper_state():
+    """Sniper state Supabase mein save karo"""
+    if not supabase: return
+    try:
+        supabase.table("memory").upsert({
+            "session_id": "SNIPER_STATE",
+            "role": "system",
+            "content": "",
+            "history": json.dumps([]),
+            "positions": json.dumps({"pc": PC_SNIPER_ENABLED, "fm": FM_SNIPER_ENABLED}),
+            "updated_at": datetime.utcnow().isoformat()
+        }, on_conflict="session_id").execute()
+    except Exception as e:
+        print(f"⚠️ Sniper state save error: {e}")
 TRADE_MODE         = "paper"   # "paper" or "real"
 REAL_WALLET        = ""        # user wallet address
 
@@ -5101,16 +5134,18 @@ def poll_four_meme_v2():
     async def _loop():
         idx = fails = 0
         endpoints = [_QN_WSS]
-        while True:
+        while not _fm_stop_event.is_set():
             try:
                 await _listen(endpoints[idx % len(endpoints)])
                 fails = 0
             except Exception as e:
+                if _fm_stop_event.is_set(): break
                 fails += 1
                 wait = min(5*fails, 60)
                 print(f"WARN [FM] fail #{fails}: {str(e)[:50]} retry {wait}s")
                 await asyncio.sleep(wait)
             idx += 1
+        print("🛑 [FM] WSS stopped")
 
     def _run():
         loop = asyncio.new_event_loop()
@@ -6248,7 +6283,13 @@ def _startup_once():
             threading.Thread(target=_run, daemon=True).start()
 
         # threading.Thread(target=_delayed(poll_new_pairs, 10), daemon=True).start()  # PC only — disabled
-        threading.Thread(target=_delayed(poll_four_meme_v2, 15), daemon=True).start()  # 🎓 FM v2
+        # Load sniper state from DB — restart pe same ON/OFF state
+        _load_sniper_state()
+
+        if FM_SNIPER_ENABLED:
+            threading.Thread(target=_delayed(poll_four_meme_v2, 15), daemon=True).start()  # 🎓 FM v2
+        else:
+            print("🛑 FM Sniper OFF (saved state) — skipping WSS")
         # ⚡ PC Fast Sniper — background mein chalta hai, _pc_add_to_snipe_queue se trigger hota hai
         # threading.Thread(target=_delayed(start_swap_monitor, 20), daemon=True).start()  # PC only — disabled
 
@@ -7219,13 +7260,22 @@ def toggle_pc_sniper():
     global PC_SNIPER_ENABLED
     PC_SNIPER_ENABLED = not PC_SNIPER_ENABLED
     print(f"⚡ PC Sniper {'STARTED' if PC_SNIPER_ENABLED else 'STOPPED'}")
+    threading.Thread(target=_save_sniper_state, daemon=True).start()
     return jsonify({"enabled": PC_SNIPER_ENABLED})
 
 @app.route('/toggle-fm', methods=['POST'])
 def toggle_fm_sniper():
     global FM_SNIPER_ENABLED
     FM_SNIPER_ENABLED = not FM_SNIPER_ENABLED
-    print(f"🎓 FM Sniper {'STARTED' if FM_SNIPER_ENABLED else 'STOPPED'}")
+    if not FM_SNIPER_ENABLED:
+        _fm_stop_event.set()
+        print("🛑 FM Sniper STOPPED — WSS closing")
+    else:
+        _fm_stop_event.clear()
+        # FM restart karo
+        threading.Thread(target=poll_four_meme_v2, daemon=True).start()
+        print("✅ FM Sniper STARTED — WSS reconnecting")
+    threading.Thread(target=_save_sniper_state, daemon=True).start()
     return jsonify({"enabled": FM_SNIPER_ENABLED})
 
 @app.route('/sniper-status', methods=['GET'])
