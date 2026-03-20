@@ -4935,8 +4935,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _offers    = info.get("offers", 0)
         _maxOffers = info.get("maxOffers", 1)
         _pump_at_entry = round((_offers / max(_maxOffers, 1)) * 100, 1) if _maxOffers > 0 else 0
-        if _pump_at_entry > 10:
-            _skip(f"pump at entry {_pump_at_entry:.1f}% > 10%"); return
+        if _pump_at_entry > 20:
+            _skip(f"pump at entry {_pump_at_entry:.1f}% > 20%"); return
 
         # 4. Dev wallet check (Ankr — free)
         _dev_wallet_pct = 0.0
