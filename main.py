@@ -5066,14 +5066,17 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _MIN_PRICE_MV = 1.005   # 0.5% minimum price move
         _MIN_BNB_FLOW = 0.05    # 0.05 BNB flow vs baseline
 
-        def _prefetch():
+        def _fetch_gas():
             try:
-                _w3p = _w3_qn or w3
-                _pre_gas[0] = _fm_get_cached_gas(_w3p)
+                _pre_gas[0] = _fm_get_cached_gas(_w3_qn or w3)
+            except: pass
+
+        def _fetch_nonce():
+            try:
                 if TRADE_MODE == "real":
                     _wa = BSC_WALLET or REAL_WALLET
                     if _wa:
-                        _pre_nonce[0] = _w3p.eth.get_transaction_count(_wa, "pending")
+                        _pre_nonce[0] = (_w3_qn or w3).eth.get_transaction_count(_wa, "pending")
             except: pass
 
         def _momentum_worker(_delay):
@@ -5090,11 +5093,12 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             except: return None
 
         import concurrent.futures as _cf3
-        _ex = _cf3.ThreadPoolExecutor(max_workers=4)
-        _pf = _ex.submit(_prefetch)
-        _w1 = _ex.submit(_momentum_worker, 0.0)
-        _w2 = _ex.submit(_momentum_worker, 0.2)
-        _w3f = _ex.submit(_momentum_worker, 0.4)
+        _ex   = _cf3.ThreadPoolExecutor(max_workers=5)
+        _pf_g = _ex.submit(_fetch_gas)
+        _pf_n = _ex.submit(_fetch_nonce)
+        _w1   = _ex.submit(_momentum_worker, 0.0)
+        _w2   = _ex.submit(_momentum_worker, 0.2)
+        _w3f  = _ex.submit(_momentum_worker, 0.4)
 
         _info2      = None
         _price2     = 0
@@ -5123,7 +5127,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         break
             except: continue
 
-        _pf.result(timeout=1)
+        _pf_g.result(timeout=1)
+        _pf_n.result(timeout=1)
         _ex.shutdown(wait=False)
 
         if not _moved or not _info2:
