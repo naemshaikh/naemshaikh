@@ -5058,10 +5058,13 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _price1 = _info1_fresh.get("lastPrice", 0)
         _funds1 = _info1_fresh.get("funds", 0)
 
-        # Dynamic momentum detection — movement milte hi buy, max 2s wait
+        # Parallel momentum workers — 3 workers simultaneously
+        # 2/3 pass = confirmed momentum → BUY (~700ms total)
         _pre_gas   = [0]
         _pre_nonce = [0]
-        _w3_qn     = _get_w3q()  # QuickNode for momentum polling
+        _w3_qn     = _get_w3q()
+        _MIN_PRICE_MV = 1.005   # 0.5% minimum price move
+        _MIN_BNB_FLOW = 0.05    # 0.05 BNB flow vs baseline
 
         def _prefetch():
             try:
@@ -5073,59 +5076,58 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         _pre_nonce[0] = _w3p.eth.get_transaction_count(_wa, "pending")
             except: pass
 
-        import concurrent.futures as _cf3
-        _pf_ex = _cf3.ThreadPoolExecutor(max_workers=1)
-        _pf    = _pf_ex.submit(_prefetch)
-
-        # Poll every 200ms — 2 consecutive confirmations chahiye, max 2s
-        # Criteria:
-        #   1. price > price1 × 1.005  (min 0.5% up)
-        #   2. funds diff > 0.05 BNB per poll  (real buying pressure)
-        #   3. 2 consecutive polls dono pass karein (no fluke)
-        _info2        = None
-        _price2       = 0
-        _funds2       = 0
-        _t_momentum   = time.time()
-        _moved        = False
-        _consec       = 0          # consecutive confirmation counter
-        _prev_funds   = _funds1    # track per-poll funds delta
-        _MIN_PRICE_MV = 1.005      # 0.5% minimum price move
-        _MIN_BNB_FLOW = 0.05       # 0.05 BNB per 200ms poll
-        while time.time() - _t_momentum < 2.0:
-            time.sleep(0.2)
+        def _momentum_worker(_delay):
             try:
+                if _delay > 0: time.sleep(_delay)
                 _snap = _fm_get_token_info(token_addr, _w3_qn or w3)
-                if not _snap: _consec = 0; continue
-                if _snap.get("liquidityAdded"):
-                    _pf_ex.shutdown(wait=False)
-                    _skip("graduated during momentum"); return
+                if not _snap: return None
+                if _snap.get("liquidityAdded"): return "graduated"
                 _p = _snap.get("lastPrice", 0)
                 _f = _snap.get("funds", 0)
-                _price_ok = _p >= _price1 * _MIN_PRICE_MV
-                _funds_ok = (_f - _prev_funds) / 1e18 >= _MIN_BNB_FLOW
-                if _price_ok and _funds_ok:
-                    _consec += 1
-                    _info2   = _snap
-                    _price2  = _p
-                    _funds2  = _f
-                    if _consec >= 2:
-                        # Unique buyers check — min 5 real buyers
+                if _p >= _price1 * _MIN_PRICE_MV and (_f - _funds1) / 1e18 >= _MIN_BNB_FLOW:
+                    return {"snap": _snap, "price": _p, "funds": _f}
+                return None
+            except: return None
+
+        import concurrent.futures as _cf3
+        _ex = _cf3.ThreadPoolExecutor(max_workers=4)
+        _pf = _ex.submit(_prefetch)
+        _w1 = _ex.submit(_momentum_worker, 0.0)
+        _w2 = _ex.submit(_momentum_worker, 0.2)
+        _w3f = _ex.submit(_momentum_worker, 0.4)
+
+        _info2      = None
+        _price2     = 0
+        _funds2     = 0
+        _moved      = False
+        _pass_count = 0
+
+        for _fut in _cf3.as_completed([_w1, _w2, _w3f], timeout=2.0):
+            try:
+                _res = _fut.result()
+                if _res == "graduated":
+                    _ex.shutdown(wait=False)
+                    _skip("graduated during momentum"); return
+                if _res:
+                    _pass_count += 1
+                    _info2  = _res["snap"]
+                    _price2 = _res["price"]
+                    _funds2 = _res["funds"]
+                    if _pass_count >= 2:
+                        # 2/3 workers pass — check buyers
                         _ub, _ = _fm_get_unique_buyers(token_addr, _w3_qn or w3)
                         if _ub < 5:
-                            _skip(f"not enough buyers {_ub}/5"); 
-                            _pf_ex.shutdown(wait=False); return
+                            _ex.shutdown(wait=False)
+                            _skip(f"not enough buyers {_ub}/5"); return
                         _moved = True
-                        break  # 2 consecutive confirms + 5 buyers — real momentum ✅
-                else:
-                    _consec = 0  # reset on any fail
-                _prev_funds = _f
-            except: _consec = 0; continue
+                        break
+            except: continue
 
         _pf.result(timeout=1)
-        _pf_ex.shutdown(wait=False)
+        _ex.shutdown(wait=False)
 
         if not _moved or not _info2:
-            _skip("no momentum in 2s"); return
+            _skip("no momentum — workers failed"); return
 
         _funds_diff = (_funds2 - _funds1) / 1e18
 
