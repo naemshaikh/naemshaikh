@@ -7394,7 +7394,7 @@ def toggle_auto():
     print(f"🤖 Auto Trade toggled: {status}")
     return jsonify({"enabled": AUTO_TRADE_ENABLED, "status": status})
 
-@app.route("/set-trade-mode", methods=["POST"])
+@app.route("/toggle-pc", methods=["POST"])
 def toggle_pc_sniper():
     global PC_SNIPER_ENABLED
     PC_SNIPER_ENABLED = not PC_SNIPER_ENABLED

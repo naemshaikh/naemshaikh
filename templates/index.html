@@ -525,6 +525,14 @@ function _checkLock(){
 
   <!-- ══ PANCAKESWAP CARD ══ -->
   <div style="padding:0 12px 10px;">
+    <!-- PC Toggle Button — above card -->
+    <div style="display:flex;justify-content:center;margin-bottom:8px;">
+      <button id="pc-sniper-btn" onclick="togglePcSniper()" style="display:flex;align-items:center;gap:8px;padding:8px 24px;border-radius:30px;border:1.5px solid rgba(91,159,214,0.6);background:linear-gradient(135deg,rgba(91,159,214,0.15),rgba(91,159,214,0.05));color:var(--ice);font-size:11px;font-weight:800;cursor:pointer;font-family:'Outfit',sans-serif;letter-spacing:0.5px;box-shadow:0 0 12px rgba(91,159,214,0.15);transition:all 0.2s;">
+        <span style="font-size:14px;">⚡</span>
+        <span id="pc-btn-label">PC SNIPER — ON</span>
+        <span id="pc-btn-dot" style="width:7px;height:7px;border-radius:50%;background:var(--em);box-shadow:0 0 6px var(--em);"></span>
+      </button>
+    </div>
     <div style="background:var(--ink2);border:1px solid rgba(91,159,214,0.3);border-radius:var(--r);overflow:hidden;">
       <!-- PC Header -->
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--line);background:rgba(91,159,214,0.05);">
@@ -538,7 +546,7 @@ function _checkLock(){
             <div id="pc-status-dot" style="width:6px;height:6px;border-radius:50%;background:var(--em);box-shadow:0 0 6px var(--em);animation:blink 2s infinite;"></div>
             <span id="pc-status-lbl" style="font-size:8px;font-weight:800;color:var(--em);">RUNNING</span>
           </div>
-          <button id="pc-sniper-btn" onclick="togglePcSniper()" style="padding:4px 12px;border-radius:20px;border:1px solid var(--em);background:var(--em-dim);color:var(--em);font-size:9px;font-weight:800;cursor:pointer;font-family:'Outfit',sans-serif;">⚡ ON</button>
+
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
           <span style="font-size:8px;color:var(--txt3);" id="pc-updated">—</span>
@@ -646,6 +654,14 @@ function _checkLock(){
 
   <!-- ══ FOURMEME CARD ══ -->
   <div style="padding:0 12px 10px;">
+    <!-- FM Toggle Button — above card -->
+    <div style="display:flex;justify-content:center;margin-bottom:8px;">
+      <button id="fm-sniper-btn" onclick="toggleFmSniper()" style="display:flex;align-items:center;gap:8px;padding:8px 24px;border-radius:30px;border:1.5px solid rgba(212,168,71,0.6);background:linear-gradient(135deg,rgba(212,168,71,0.15),rgba(212,168,71,0.05));color:var(--gold);font-size:11px;font-weight:800;cursor:pointer;font-family:'Outfit',sans-serif;letter-spacing:0.5px;box-shadow:0 0 12px rgba(212,168,71,0.15);transition:all 0.2s;">
+        <span style="font-size:14px;">🎓</span>
+        <span id="fm-btn-label">FM SNIPER — ON</span>
+        <span id="fm-btn-dot" style="width:7px;height:7px;border-radius:50%;background:var(--em);box-shadow:0 0 6px var(--em);"></span>
+      </button>
+    </div>
     <div style="background:var(--ink2);border:1px solid rgba(212,168,71,0.3);border-radius:var(--r);overflow:hidden;">
       <!-- FM Header -->
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--line);background:rgba(212,168,71,0.05);">
@@ -659,7 +675,7 @@ function _checkLock(){
             <div id="fm-status-dot" style="width:6px;height:6px;border-radius:50%;background:var(--em);box-shadow:0 0 6px var(--em);animation:blink 2s infinite;"></div>
             <span id="fm-status-lbl" style="font-size:8px;font-weight:800;color:var(--em);">RUNNING</span>
           </div>
-          <button id="fm-sniper-btn" onclick="toggleFmSniper()" style="padding:4px 12px;border-radius:20px;border:1px solid var(--gold);background:rgba(212,168,71,0.1);color:var(--gold);font-size:9px;font-weight:800;cursor:pointer;font-family:'Outfit',sans-serif;">🎓 ON</button>
+
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
           <span style="font-size:8px;color:var(--txt3);" id="fm-updated">—</span>
@@ -2734,55 +2750,69 @@ async function _doStopAuto(){
   showToast('⏸️ Auto Trade STOPPED');_ctrlLog('⏸️ Auto Trade STOPPED');
 }
 
+function _setPcBtn(on){
+  const btn=document.getElementById('pc-sniper-btn');
+  const lbl=document.getElementById('pc-btn-label');
+  const dot=document.getElementById('pc-btn-dot');
+  if(!btn) return;
+  if(on){
+    btn.style.borderColor='rgba(91,159,214,0.6)';
+    btn.style.background='linear-gradient(135deg,rgba(91,159,214,0.15),rgba(91,159,214,0.05))';
+    btn.style.color='var(--ice)';
+    btn.style.boxShadow='0 0 12px rgba(91,159,214,0.15)';
+    if(lbl) lbl.textContent='PC SNIPER — ON';
+    if(dot){dot.style.background='var(--em)';dot.style.boxShadow='0 0 6px var(--em)';}
+  } else {
+    btn.style.borderColor='rgba(255,80,80,0.5)';
+    btn.style.background='rgba(255,80,80,0.08)';
+    btn.style.color='var(--red)';
+    btn.style.boxShadow='0 0 12px rgba(255,80,80,0.1)';
+    if(lbl) lbl.textContent='PC SNIPER — OFF';
+    if(dot){dot.style.background='var(--red)';dot.style.boxShadow='0 0 6px var(--red)';}
+  }
+}
+function _setFmBtn(on){
+  const btn=document.getElementById('fm-sniper-btn');
+  const lbl=document.getElementById('fm-btn-label');
+  const dot=document.getElementById('fm-btn-dot');
+  if(!btn) return;
+  if(on){
+    btn.style.borderColor='rgba(212,168,71,0.6)';
+    btn.style.background='linear-gradient(135deg,rgba(212,168,71,0.15),rgba(212,168,71,0.05))';
+    btn.style.color='var(--gold)';
+    btn.style.boxShadow='0 0 12px rgba(212,168,71,0.15)';
+    if(lbl) lbl.textContent='FM SNIPER — ON';
+    if(dot){dot.style.background='var(--em)';dot.style.boxShadow='0 0 6px var(--em)';}
+  } else {
+    btn.style.borderColor='rgba(255,80,80,0.5)';
+    btn.style.background='rgba(255,80,80,0.08)';
+    btn.style.color='var(--red)';
+    btn.style.boxShadow='0 0 12px rgba(255,80,80,0.1)';
+    if(lbl) lbl.textContent='FM SNIPER — OFF';
+    if(dot){dot.style.background='var(--red)';dot.style.boxShadow='0 0 6px var(--red)';}
+  }
+}
 async function togglePcSniper(){
   const btn=document.getElementById('pc-sniper-btn');
-  if(btn){btn.disabled=true;btn.style.opacity='0.6';}
+  if(btn){btn.disabled=true;btn.style.opacity='0.5';}
   try{
     const d=await fetchJSON('/toggle-pc',{method:'POST'},10000);
-    if(d && btn){
-      const on=d.enabled;
-      btn.style.background=on?'var(--em-dim)':'rgba(255,80,80,0.15)';
-      btn.style.borderColor=on?'var(--em)':'var(--red)';
-      btn.style.color=on?'var(--em)':'var(--red)';
-      btn.textContent=on?'⚡ ON':'⚡ OFF';
-      showToast(on?'⚡ PC Sniper STARTED':'⚡ PC Sniper STOPPED');
-    }
+    if(d){ _setPcBtn(d.enabled); showToast(d.enabled?'⚡ PC Sniper STARTED':'⚡ PC Sniper STOPPED'); }
   }finally{if(btn){btn.disabled=false;btn.style.opacity='1';}}
 }
 async function toggleFmSniper(){
   const btn=document.getElementById('fm-sniper-btn');
-  if(btn){btn.disabled=true;btn.style.opacity='0.6';}
+  if(btn){btn.disabled=true;btn.style.opacity='0.5';}
   try{
     const d=await fetchJSON('/toggle-fm',{method:'POST'},10000);
-    if(d && btn){
-      const on=d.enabled;
-      btn.style.background=on?'rgba(212,168,71,0.1)':'rgba(255,80,80,0.15)';
-      btn.style.borderColor=on?'var(--gold)':'var(--red)';
-      btn.style.color=on?'var(--gold)':'var(--red)';
-      btn.textContent=on?'🎓 ON':'🎓 OFF';
-      showToast(on?'🎓 FM Sniper STARTED':'🎓 FM Sniper STOPPED');
-    }
+    if(d){ _setFmBtn(d.enabled); showToast(d.enabled?'🎓 FM Sniper STARTED':'🎓 FM Sniper STOPPED'); }
   }finally{if(btn){btn.disabled=false;btn.style.opacity='1';}}
 }
 async function loadSniperStatus(){
   const d=await fetchJSON('/sniper-status',{},5000);
   if(!d) return;
-  const pcBtn=document.getElementById('pc-sniper-btn');
-  const fmBtn=document.getElementById('fm-sniper-btn');
-  if(pcBtn){
-    const on=d.pc;
-    pcBtn.style.background=on?'var(--em-dim)':'rgba(255,80,80,0.15)';
-    pcBtn.style.borderColor=on?'var(--em)':'var(--red)';
-    pcBtn.style.color=on?'var(--em)':'var(--red)';
-    pcBtn.textContent=on?'⚡ ON':'⚡ OFF';
-  }
-  if(fmBtn){
-    const on=d.fm;
-    fmBtn.style.background=on?'rgba(212,168,71,0.1)':'rgba(255,80,80,0.15)';
-    fmBtn.style.borderColor=on?'var(--gold)':'var(--red)';
-    fmBtn.style.color=on?'var(--gold)':'var(--red)';
-    fmBtn.textContent=on?'🎓 ON':'🎓 OFF';
-  }
+  _setPcBtn(d.pc);
+  _setFmBtn(d.fm);
 }
 
 async function closeOne(){
