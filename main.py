@@ -4804,8 +4804,9 @@ def _fm_honeypot_sim(token_addr, factory_addr, w3=None):
             return False
         return True  # other errors = proceed
 
-def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, result, skip_reason, time_ms):
-    """FM event Supabase mein save karo"""
+def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, result, skip_reason, time_ms,
+                   buyers_at_entry=0, momentum_pct=0.0, volume_change=0.0, pump_at_entry=0.0):
+    """FM event Supabase mein save karo — extra analytics data bhi"""
     try:
         if not supabase: return
         try:
@@ -4817,18 +4818,44 @@ def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, resul
                     supabase.table("fm_events").delete().in_("id", _ids).execute()
         except: pass
         supabase.table("fm_events").insert({
-            "token_address": token_addr,
-            "token_short":   token_addr[:10],
-            "detected_at":   datetime.now(_IST).isoformat(),
-            "liquidity_bnb": round(float(liq_bnb or 0), 6),
-            "grad_price":    float(grad_price or 0),
-            "snipe_price":   float(snipe_price or 0),
-            "pump_pct":      round(float(pump_pct or 0), 2),
-            "result":        result,
-            "skip_reason":   skip_reason or "",
-            "time_taken_ms": int(time_ms or 0),
-            "mode":          TRADE_MODE,
+            "token_address":    token_addr,
+            "token_short":      token_addr[:10],
+            "detected_at":      datetime.now(_IST).isoformat(),
+            "liquidity_bnb":    round(float(liq_bnb or 0), 6),
+            "grad_price":       float(grad_price or 0),
+            "snipe_price":      float(snipe_price or 0),
+            "pump_pct":         round(float(pump_pct or 0), 2),
+            "result":           result,
+            "skip_reason":      skip_reason or "",
+            "time_taken_ms":    int(time_ms or 0),
+            "mode":             TRADE_MODE,
+            # Extra analytics
+            "buyers_at_entry":  int(buyers_at_entry or 0),
+            "momentum_pct":     round(float(momentum_pct or 0), 2),
+            "volume_change":    round(float(volume_change or 0), 6),
+            "pump_at_entry":    round(float(pump_at_entry or 0), 2),
         }).execute()
+
+        # Post-skip tracking — 5 min baad price check karo
+        if result == "SKIP" and skip_reason != "blacklisted":
+            def _check_skip_ath(ta):
+                try:
+                    time.sleep(300)  # 5 min wait
+                    _w = _fm_get_w3()
+                    if not _w: return
+                    _info = _fm_get_token_info(ta, _w)
+                    if not _info: return
+                    _lp = _info.get("lastPrice", 0)
+                    if _lp <= 0: return
+                    # Compare with saved snipe_price
+                    if snipe_price > 0:
+                        _ath_pct = round((_lp / snipe_price - 1) * 100, 1)
+                        if _ath_pct > 10:
+                            print(f"📊 [FM] Post-skip ATH: {ta[:10]} +{_ath_pct:.1f}% (skip: {skip_reason[:30]})")
+                except: pass
+            if snipe_price > 0:
+                threading.Thread(target=_check_skip_ath, args=(token_addr,), daemon=True).start()
+
     except Exception as e:
         print(f"⚠️ [FM] event save error: {e}")
 
@@ -5038,7 +5065,11 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
              token_addr)
         threading.Thread(target=_save_fm_event, args=(
             token_addr, 0, 0, entry, _momentum_pct, "BUY", "", ms
-        ), daemon=True).start()
+        ), kwargs={
+            "momentum_pct":   _momentum_pct,
+            "volume_change":  round(_funds_diff, 6),
+            "pump_at_entry":  _pump_at_entry,
+        }, daemon=True).start()
         print(f"✅ [FM] BC SNIPED: {token_name} mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}% {ms}ms")
 
         # ── POST-BUY: 30s buyer monitor — agar koi nahi aaya toh force exit ──
