@@ -4804,30 +4804,13 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if dev_addr and is_dev_blacklisted(dev_addr):
             _skip(f"dev blacklisted: {dev_addr[:10]}"); return
 
-        w3 = _fm_get_w3()
-        if not w3: _skip("no RPC"); return
-
-        # ── PARALLEL FILTERS (~200ms) ──
-        import concurrent.futures as _cf3
-
-        _info_res      = [None]
-        _dev_hist_res  = [None]
-        _hp_res        = [True]
-        _wallet_res    = [0.0]
-        _velocity_res  = [0.0]
-
-        def _f_info():
-            # Ankr for tokenInfo — QuickNode save karo buy ke liye
-            _w3_ankr = Web3(Web3.HTTPProvider("https://rpc.ankr.com/bsc", request_kwargs={"timeout": 5}))
-            return _fm_get_token_info(token_addr, _w3_ankr)
-
-        with _cf3.ThreadPoolExecutor(max_workers=1) as ex:
-            f_info = ex.submit(_f_info)
-            info   = f_info.result(timeout=6)
-
-        # ── FILTER CHECKS ──
+        # ════════════════════════════════════════
+        # STAGE 1 — PRE-FILTER (Ankr — free)
+        # ════════════════════════════════════════
+        _w3a = Web3(Web3.HTTPProvider("https://rpc.ankr.com/bsc", request_kwargs={"timeout": 6}))
 
         # 1. Token info
+        info = _fm_get_token_info(token_addr, _w3a)
         if not info:
             _skip("tokenInfo fetch failed"); return
 
@@ -4835,41 +4818,83 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if info["liquidityAdded"]:
             _skip("already graduated"); return
 
-        # 3. MC check — $2k-$10k sweet spot (GMGN style)
-        progress = _fm_calc_progress(info)
-        _last_price = info.get("lastPrice", 0)
-        _total_supply = 1_000_000_000  # FM fixed supply
-        _bnb_price = market_cache.get("bnb_price", 640)
-        _quote_for_mc = info.get("quote", "").lower()
+        # 3. MC < $10k
+        _last_price   = info.get("lastPrice", 0)
+        _total_supply = 1_000_000_000
+        _bnb_price    = market_cache.get("bnb_price", 640)
+        _quote_mc     = info.get("quote", "").lower()
         _USDT_L = "0x55d398326f99059ff775485246999027b3197955"
         _BUSD_L = "0xe9e7cea3dedca5984780bafc599bd69add087d56"
         if _last_price > 0:
-            if _quote_for_mc in [_USDT_L, _BUSD_L]:
-                # USDT/BUSD — lastPrice already in USD
+            if _quote_mc in [_USDT_L, _BUSD_L]:
                 _mc_usd = (_last_price / 1e18) * _total_supply
             else:
-                # BNB — convert to USD
                 _mc_usd = (_last_price / 1e18) * _total_supply * _bnb_price
             if _mc_usd > 10000:
                 _skip(f"MC too high ${_mc_usd:.0f} > $10k"); return
         else:
-            _skip("MC calc failed — no price"); return
+            _skip("MC calc failed"); return
 
-        # 4. Price momentum check — free RPC use karo (QuickNode save)
+        # 4. Dev checks (Ankr — free)
+        if dev_addr:
+            try:
+                # 4a. Dev wallet < 10%
+                _tc = _w3a.eth.contract(address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
+                _total = _tc.functions.totalSupply().call()
+                _dev_bal = _tc.functions.balanceOf(Web3.to_checksum_address(dev_addr)).call()
+                if _total > 0 and (_dev_bal / _total * 100) > 10:
+                    _skip(f"dev wallet too high {_dev_bal/_total*100:.0f}%"); return
+
+                # 4b. Dev ne pehle kitne tokens banaye + rug history
+                TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+                ZERO_PADDED    = "0x" + "0" * 64
+                _cur = _w3a.eth.block_number
+                _dev_logs = _w3a.eth.get_logs({
+                    "address": Web3.to_checksum_address(_FM_FACTORY_ADDRS[0]),
+                    "topics":  [TRANSFER_TOPIC, ZERO_PADDED,
+                                "0x" + dev_addr.lower()[2:].zfill(64)],
+                    "fromBlock": max(0, _cur - 200000),
+                    "toBlock":  "latest",
+                })
+                _dev_tokens = [log["address"] for log in _dev_logs]
+                if len(_dev_tokens) >= 5:
+                    _skip(f"dev created {len(_dev_tokens)} tokens >= 5"); return
+
+                # 4c. Rug history — check prev tokens
+                _rugged = 0
+                for _prev_tok in _dev_tokens[:5]:
+                    try:
+                        _prev_info = _fm_get_token_info(_prev_tok, _w3a)
+                        if _prev_info and not _prev_info["liquidityAdded"] and _prev_info["funds"] == 0:
+                            _rugged += 1
+                    except: continue
+                if _rugged >= 2:
+                    blacklist_dev(dev_addr, f"FM rug history {_rugged} rugs")
+                    _skip(f"dev rug history {_rugged} rugs"); return
+
+            except Exception as _de:
+                print(f"⚠️ [FM] dev check error: {str(_de)[:50]}")
+
+        print(f"✅ [FM] Stage1 PASS: mc=${_mc_usd:.0f}")
+
+        # ════════════════════════════════════════
+        # STAGE 2 — MOMENTUM (QuickNode)
+        # ════════════════════════════════════════
+        w3 = _fm_get_w3()
+        if not w3: _skip("no QuickNode RPC"); return
+
         _price1 = info.get("lastPrice", 0)
         time.sleep(10)
-        # Ankr for momentum check — QuickNode save karo buy ke liye
-        _w3_ankr = Web3(Web3.HTTPProvider("https://rpc.ankr.com/bsc", request_kwargs={"timeout": 5}))
-        _info2 = _fm_get_token_info(token_addr, _w3_ankr)
+
+        _info2 = _fm_get_token_info(token_addr, w3)
         if not _info2:
             _skip("momentum check failed"); return
         if _info2["liquidityAdded"]:
-            _skip("graduated during momentum check"); return
+            _skip("graduated during wait"); return
         _price2 = _info2.get("lastPrice", 0)
         if _price2 <= _price1:
-            _skip(f"no momentum — price flat/down"); return
-        _momentum_pct = round((_price2 - _price1) / _price1 * 100, 1) if _price1 > 0 else 0
-        print(f"✅ [FM] Momentum: +{_momentum_pct:.1f}% in 10s")
+            _skip("no momentum — price flat/down"); return
+        _momentum_pct = round((_price2 - _price1) / max(_price1, 1) * 100, 1)
 
         print(f"✅ [FM] ALL PASS: mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}%")
         _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
