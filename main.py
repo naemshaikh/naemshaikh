@@ -4986,7 +4986,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         # ════════════════════════════════════════
         # STAGE 1 — PRE-FILTER (parallel)
         # ════════════════════════════════════════
-        _w3a = _get_w3q() or Web3(Web3.HTTPProvider("https://bsc-rpc.publicnode.com", request_kwargs={"timeout": 6}))
+        _w3a = Web3(Web3.HTTPProvider("https://bsc-rpc.publicnode.com", request_kwargs={"timeout": 6}))
 
         _info_res    = [None]
         _dev_pct_res = [0.0]
