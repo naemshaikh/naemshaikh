@@ -4853,11 +4853,12 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         else:
             _skip("MC calc failed — no price"); return
 
-        # 4. Price momentum check — price badhna chahiye
-        # 10 seconds baad dobara check karo — flat = bundler/fake, rising = genuine
+        # 4. Price momentum check — free RPC use karo (QuickNode save)
         _price1 = info.get("lastPrice", 0)
         time.sleep(10)
-        _info2 = _fm_get_token_info(token_addr, w3)
+        # Free public RPC for momentum check — no QuickNode cost
+        _w3_free = Web3(Web3.HTTPProvider("https://bsc-rpc.publicnode.com", request_kwargs={"timeout": 5}))
+        _info2 = _fm_get_token_info(token_addr, _w3_free)
         if not _info2:
             _skip("momentum check failed"); return
         if _info2["liquidityAdded"]:
