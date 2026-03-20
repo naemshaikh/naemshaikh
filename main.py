@@ -5288,150 +5288,118 @@ _QN_WSS = os.getenv("QUICKNODE_WSS","wss://blissful-dark-scion.bsc.quiknode.pro/
 
 def poll_four_meme_v2():
     """
-    FM Bonding Curve Sniper v2 — TokenCreate event detection
-    QuickNode WSS → FM factory TokenCreate event
+    FM Bonding Curve Sniper v2 — HTTP Polling
+    Four.meme factory TokenCreate event via eth_getLogs
     """
-    import asyncio, json as _j
-
-    try:
-        import websockets as _ws
-    except ImportError:
-        print("WARN [FM] websockets not installed"); return
-
-    FACTORY_ADDR       = "0x5c952063c7fc8610ffdb798152d69f0b9550762b"
-    CREATE_SELECTOR    = "0x2537486f"  # createToken(bytes,bytes) - Grok confirmed
-    TOKEN_CREATE_TOPIC = "0x396d5e902b675b032348d3d2e9517ee8f0c4a926603fbc075d3d282ff00cad20"
-    _seen = set()
-    _seen_lock = threading.Lock()
-
-    def _handle_new_token(token_addr, dev_addr="", source=""):
-        """Common handler for both mempool and confirmed"""
-        if not token_addr: return
-        tok_lower = token_addr.lower()
-        with _seen_lock:
-            if tok_lower in _seen: return
-            _seen.add(tok_lower)
-        if len(_seen) > 1000: _seen.clear()
-
-        if not FM_SNIPER_ENABLED: return
-        with _fm_sniped_lock:
-            if tok_lower in _fm_sniped: return
-
-        print(f"🆕 [FM] {source} New token: {token_addr[:10]} dev:{dev_addr[:10] if dev_addr else '?'}")
-        _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
-
-        _now = time.time()
-        threading.Thread(
-            target=_fm_snipe,
-            args=(token_addr, dev_addr, _now),
-            daemon=True
-        ).start()
-    # ── BACKUP: Confirmed TokenCreate event ──
-    async def _listen_confirmed(url):
-        async with _ws.connect(url, ping_interval=20, ping_timeout=15,
-                               close_timeout=30, max_size=2**20) as ws:
-            await ws.send(_j.dumps({
-                "id": 2, "jsonrpc": "2.0", "method": "eth_subscribe",
-                "params": ["logs", {
-                    "address": FACTORY_ADDR,
-                    "topics":  [TOKEN_CREATE_TOPIC]
-                }]
-            }))
-            ack = _j.loads(await asyncio.wait_for(ws.recv(), timeout=10))
-            if ack.get("error"):
-                raise Exception(f"Confirmed sub failed: {ack['error']}")
-            print(f"✅ [FM] Confirmed WSS connected: {url[:40]}")
-
-            while True:
-                try:
-                    msg  = await ws.recv()
-                    data = _j.loads(msg)
-                    log  = (data.get("params") or {}).get("result") or {}
-                    if not log: continue
-
-                    _data = log.get("data", "")
-                    if not _data: continue
-                    _data_hex = _data.hex() if hasattr(_data, "hex") else str(_data)
-                    if _data_hex.startswith("0x"): _data_hex = _data_hex[2:]
-                    if len(_data_hex) < 128: continue
-
-                    dev_addr   = "0x" + _data_hex[24:64]
-                    token_addr = "0x" + _data_hex[88:128]
-
-                    _handle_new_token(token_addr, dev_addr, "Confirmed")
-
-                except asyncio.TimeoutError: continue
-                except Exception as e: raise e
-
-    # ── Confirmed WSS loop — Chainstack + public fallbacks ──
-    _cs_wss = os.getenv("BSC_WSS", "")
-    _CONFIRMED_ENDPOINTS = []
-    if _cs_wss: _CONFIRMED_ENDPOINTS.append(_cs_wss)
-    _CONFIRMED_ENDPOINTS += [
-        "wss://bsc-rpc.publicnode.com",
-        "wss://bsc.publicnode.com",
-        "wss://bsc.drpc.org",
+    TOKEN_CREATE_SIGS = [
+        ("0xb9d10aa6e0d565720d9f16b6d742668c3406afc3f2592b890549f66f78033b2c",
+         "TokenCreate(address,address,uint256,uint256,uint256,uint256,string,string)"),
+        ("0x3d96f13f99c3b0aca975bfbf0f185997444b7b43cd455e82b759dae94e99d3f7",
+         "TokenCreate(address,address,uint256,uint256,uint256)"),
+        ("0xed5b6552bf32030112553a7a7c5ba303430906006a8b80d86928cafbcc4c8e7d",
+         "TokenCreate(address,address,uint256,uint256)"),
+        ("0x396d5e902b675b032348d3d2e9517ee8f0c4a926603fbc075d3d282ff00cad20",
+         "TokenCreate confirmed topic"),
     ]
 
-    async def _confirmed_loop():
-        idx = 0
-        fails = 0
-        while True:
-            url = _CONFIRMED_ENDPOINTS[idx % len(_CONFIRMED_ENDPOINTS)]
+    _seen      = set()
+    _seen_lock = threading.Lock()
+    _active_topic = [None]
+
+    def _poll_loop():
+        print("✅ [FM] HTTP Polling started — TokenCreate event")
+        _free_rpcs = [
+            "https://bsc-rpc.publicnode.com",
+            "https://bsc.drpc.org",
+            "https://1rpc.io/bnb",
+        ]
+        _rpc_idx = [0]
+
+        def _get_free_w3():
+            rpc = _free_rpcs[_rpc_idx[0] % len(_free_rpcs)]
+            return Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 5}))
+
+        while not _fm_stop_event.is_set():
             try:
-                await _listen_confirmed(url)
-                fails = 0
+                if not FM_SNIPER_ENABLED:
+                    time.sleep(3)
+                    continue
+
+                w3 = _get_free_w3()
+                if not w3:
+                    time.sleep(5)
+                    continue
+
+                current    = w3.eth.block_number
+                from_block = current - 2  # last ~6s
+
+                topics_to_try = [_active_topic[0]] if _active_topic[0] else [t[0] for t in TOKEN_CREATE_SIGS]
+
+                for topic_hash in topics_to_try:
+                    try:
+                        logs = w3.eth.get_logs({
+                            "address":   Web3.to_checksum_address(_FM_FACTORY_ADDR),
+                            "topics":    [[topic_hash]],
+                            "fromBlock": from_block,
+                            "toBlock":   "latest",
+                        })
+
+                        if logs and _active_topic[0] != topic_hash:
+                            print(f"✅ [FM] TokenCreate topic active: {topic_hash[:10]}")
+                            _active_topic[0] = topic_hash
+
+                        for log in logs:
+                            _data   = log.get("data", "")
+                            _topics = log.get("topics", [])
+
+                            token_addr = ""
+                            if _data and len(_data) >= 66:
+                                token_addr = "0x" + _data[26:66]
+                            elif len(_topics) > 1:
+                                token_addr = "0x" + _topics[1][-40:]
+
+                            if not token_addr: continue
+
+                            with _seen_lock:
+                                if token_addr.lower() in _seen: continue
+                                _seen.add(token_addr.lower())
+                            if len(_seen) > 1000: _seen.clear()
+
+                            dev_addr = ""
+                            if _data and len(_data) >= 130:
+                                dev_addr = "0x" + _data[90:130]
+                            elif len(_topics) > 2:
+                                dev_addr = "0x" + _topics[2][-40:]
+
+                            if not FM_SNIPER_ENABLED: continue
+                            with _fm_sniped_lock:
+                                if token_addr.lower() in _fm_sniped: continue
+
+                            print(f"🆕 [FM] TokenCreate: {token_addr[:10]} dev:{dev_addr[:10]}")
+                            _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
+
+                            _now = time.time()
+                            threading.Thread(
+                                target=_fm_snipe,
+                                args=(token_addr, dev_addr, _now),
+                                daemon=True
+                            ).start()
+                        break
+
+                    except Exception as _le:
+                        continue
+
             except Exception as e:
-                fails += 1
-                wait = min(10 * fails, 60)
-                print(f"⚠️ [FM] Confirmed WSS fail #{fails} — retry {wait}s: {str(e)[:60]}")
-                await asyncio.sleep(wait)
-            idx += 1
+                err = str(e)
+                if "429" in err or "Too Many" in err:
+                    _rpc_idx[0] += 1
+                print(f"⚠️ [FM] poll error: {err[:60]}")
 
-    def _run_confirmed():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(_confirmed_loop())
-        except Exception as ex:
-            print(f"⚠️ [FM] Confirmed thread: {ex}")
-        finally:
-            loop.close()
+            time.sleep(3)  # har 3s poll karo
 
-    threading.Thread(target=_run_confirmed, daemon=True).start()
-    print("✅ [FM] Confirmed WSS detection started")
-    """Naya position open hua — pair address dhundo aur register karo"""
-    try:
-        # Agar pair already known hai (from dex_data) — instant, no BSC call needed
-        if known_pair and known_pair != "0x0000000000000000000000000000000000000000":
-            pair = known_pair
-        else:
-            # BSC call — thread mein karo taaki buy flow block na ho
-            threading.Thread(target=_register_position_pair, args=(token_address, None), daemon=True).start()
-            return
-        if not pair or pair == "0x0000000000000000000000000000000000000000":
-            return
-        # Find out if WBNB is token0 or token1 in this pair
-        pc    = w3.eth.contract(address=Web3.to_checksum_address(pair), abi=PAIR_ABI_PRICE)
-        t0    = pc.functions.token0().call().lower()
-        wbnb_is_t0 = (t0 == WBNB.lower())
-        with _rt_swap_lock:
-            _pair_to_token[pair.lower()] = {
-                "token":          token_address.lower(),
-                "token0_is_wbnb": wbnb_is_t0,
-                "pair":           pair
-            }
-            if token_address.lower() not in _rt_swap_data:
-                _rt_swap_data[token_address.lower()] = {
-                    "buys": 0, "sells": 0,
-                    "ts":   time.time(),
-                    "pair": pair
-                }
-        print(f"📊 SwapMonitor: registered {token_address[:10]}... pair={pair[:10]}... wbnb_t0={wbnb_is_t0}")
-        # Trigger WSS re-subscribe
-        _swap_monitor_resubscribe.set()
-    except Exception as e:
-        print(f"⚠️ SwapMonitor register error: {e}")
+    threading.Thread(target=_poll_loop, daemon=True).start()
+    print("✅ [FM] Bonding Curve Sniper v2 started — HTTP polling TokenCreate")
+
 
 def _unregister_position_pair(token_address: str):
     """Position close hua — cleanup"""
