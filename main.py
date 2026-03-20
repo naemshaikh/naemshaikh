@@ -4884,8 +4884,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if info["liquidityAdded"]:
             _skip("already graduated"); return
 
-        # 3. MC < $10k
+        # 3. MC < $10k + pump at entry < 10%
         _last_price   = info.get("lastPrice", 0)
+        _launch_price = info.get("lastPrice", 0)  # Will compare after 2s
         _total_supply = 1_000_000_000
         _bnb_price    = market_cache.get("bnb_price", 640)
         _quote_mc     = info.get("quote", "").lower()
@@ -4900,6 +4901,14 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _skip(f"MC too high ${_mc_usd:.0f} > $10k"); return
         else:
             _skip("MC calc failed"); return
+
+        # Pump at entry check — data se confirmed: < 10% = better profit
+        # offers = tokens sold, maxOffers = total supply for sale
+        _offers    = info.get("offers", 0)
+        _maxOffers = info.get("maxOffers", 1)
+        _pump_at_entry = round((_offers / max(_maxOffers, 1)) * 100, 1) if _maxOffers > 0 else 0
+        if _pump_at_entry > 10:
+            _skip(f"pump at entry {_pump_at_entry:.1f}% > 10%"); return
 
         # 4. Dev wallet check (Ankr — free)
         if dev_addr:
