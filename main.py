@@ -4819,11 +4819,6 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         def _f_info():
             return _fm_get_token_info(token_addr, w3)
 
-        def _f_hp(factory):
-            # Use tokenManager (correct manager contract for this token)
-            mgr = info.get("tokenManager", factory) if info else factory
-            return _fm_honeypot_sim(token_addr, mgr, w3)
-
         def _f_wallet():
             # Largest single wallet balance check
             try:
@@ -4847,14 +4842,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             f_velocity = ex.submit(_f_velocity)
 
             info = f_info.result(timeout=4)
-            if info:
-                f_hp = ex.submit(_f_hp, info.get("factory", _FM_FACTORY_ADDR))
-            else:
-                f_hp = ex.submit(lambda: True)
-
             wallet_pct    = f_wallet.result(timeout=3)
             velocity_sec  = f_velocity.result(timeout=1)
-            hp_safe       = f_hp.result(timeout=3)
 
         # ── FILTER CHECKS ──
 
@@ -4917,9 +4906,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if wallet_pct > 20.0:
             _skip(f"dev wallet {wallet_pct:.1f}% > 20%"); return
 
-        # 7. Honeypot check
-        if not hp_safe:
-            _skip("honeypot sim failed"); return
+        # 7. Honeypot check — skipped for FM bonding curve (not applicable)
 
         # 9. Unique buyers check — min 3
         unique_buyers, _ = _fm_get_unique_buyers(token_addr, w3)
