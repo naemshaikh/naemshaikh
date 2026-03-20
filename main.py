@@ -5073,132 +5073,112 @@ _QN_WSS = os.getenv("QUICKNODE_WSS","wss://blissful-dark-scion.bsc.quiknode.pro/
 
 def poll_four_meme_v2():
     """
-    FM Bonding Curve Sniper v2 — WSS detection
-    Four.meme factory Transfer(mint) events listen
+    FM Bonding Curve Sniper v2 — HTTP Polling
+    Four.meme factory TokenCreate event via eth_getLogs
+    Confirmed from Bitquery official docs
     """
-    import asyncio, json as _j
+    # TokenCreate event — all possible signatures
+    # Will try each until one returns results
+    TOKEN_CREATE_SIGS = [
+        ("0xb9d10aa6e0d565720d9f16b6d742668c3406afc3f2592b890549f66f78033b2c",
+         "TokenCreate(address,address,uint256,uint256,uint256,uint256,string,string)"),
+        ("0x3d96f13f99c3b0aca975bfbf0f185997444b7b43cd455e82b759dae94e99d3f7",
+         "TokenCreate(address,address,uint256,uint256,uint256)"),
+        ("0xed5b6552bf32030112553a7a7c5ba303430906006a8b80d86928cafbcc4c8e7d",
+         "TokenCreate(address,address,uint256,uint256)"),
+    ]
 
-    try:
-        import websockets as _ws
-    except ImportError:
-        print("WARN [FM] websockets not installed"); return
+    _seen = set()
+    _active_topic = [None]  # Which topic hash is working
 
-    TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
-    ZERO_TOPIC     = "0x0000000000000000000000000000000000000000000000000000000000000000"
-
-    async def _listen(url):
-        async with _ws.connect(url, ping_interval=20, ping_timeout=15,
-                               close_timeout=30, max_size=2**20) as ws:
-            # Transfer(from, to, value) — from=0x000 = mint = new token
-            # Subscribe to ALL transfers on FM factory addresses
-            # Filter mint (from=zero) in code
-            TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
-            await ws.send(_j.dumps({
-                "id": 1, "jsonrpc": "2.0", "method": "eth_subscribe",
-                "params": ["logs", {
-                    "address": _FM_FACTORY_ADDR,
-                    "topics":  [[TRANSFER_TOPIC]]
-                }]
-            }))
-            ack = _j.loads(await asyncio.wait_for(ws.recv(), timeout=10))
-            if ack.get("error"):
-                raise Exception(f"FM sub failed: {ack['error']}")
-            print(f"✅ [FM] BC Sniper v2 connected: {url[:40]}")
-
-            while True:
-                try:
-                    msg  = await ws.recv()
-                    data = _j.loads(msg)
-                    log  = (data.get("params") or {}).get("result") or {}
-                    if not log: continue
-
-                    topics = log.get("topics", [])
-                    if len(topics) < 3: continue
-
-                    # Transfer event:
-                    # topics[1] = from address (padded 32 bytes)
-                    # topics[2] = to address (padded 32 bytes)
-                    # log.address = TOKEN contract address
-                    from_addr = "0x" + topics[1][-40:]
-                    ZERO      = "0x0000000000000000000000000000000000000000"
-                    if from_addr.lower() != ZERO.lower():
-                        continue  # Not a mint, skip
-
-                    # Token = contract emitting the event
-                    token_addr = log.get("address", "")
-                    if not token_addr: continue
-
-                    # Dev = recipient of minted tokens
-                    dev_addr = "0x" + topics[2][-40:]
-
-                    if not FM_SNIPER_ENABLED: continue
-
-                    with _fm_sniped_lock:
-                        if token_addr.lower() in _fm_sniped: continue
-
-                    # Quick FM verify — getTokenInfo call karo
-                    # Non-FM tokens quickly fail karte hain
-                    def _try_snipe(ta, da, ts):
-                        try:
-                            if not FM_SNIPER_ENABLED or _fm_stop_event.is_set(): return
-                            _w = _fm_get_w3()
-                            if not _w: return
-                            hc = _w.eth.contract(
-                                address=Web3.to_checksum_address(_FM_HELPER_ADDR),
-                                abi=_FM_HELPER_ABI
-                            )
-                            _info = hc.functions.getTokenInfo(
-                                Web3.to_checksum_address(ta)
-                            ).call()
-                            # version=0 ya maxFunds=0 = not FM token
-                            if not _info or _info[0] == 0 or _info[10] == 0:
-                                return
-                            print(f"🆕 [FM] New token: {ta[:10]} dev:{da[:10]}")
-                            _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
-                            _fm_snipe(ta, da, ts)
-                        except: return
-
-                    _now = time.time()
-                    threading.Thread(
-                        target=_try_snipe,
-                        args=(token_addr, dev_addr, _now),
-                        daemon=True
-                    ).start()
-
-                except asyncio.TimeoutError: continue
-                except Exception as e: raise e
-                if _fm_stop_event.is_set(): break
-
-    async def _loop():
-        idx = fails = 0
-        endpoints = [
-            _QN_WSS,  # QuickNode first
-            "wss://bsc-rpc.publicnode.com",
-            "wss://bsc.drpc.org",
-            "wss://bsc.publicnode.com",
-        ]
+    def _poll_loop():
+        print("✅ [FM] HTTP Polling started — TokenCreate event")
         while not _fm_stop_event.is_set():
             try:
-                await _listen(endpoints[idx % len(endpoints)])
-                fails = 0
+                if not FM_SNIPER_ENABLED:
+                    time.sleep(3)
+                    continue
+
+                w3 = _fm_get_w3()
+                if not w3:
+                    time.sleep(5)
+                    continue
+
+                current = w3.eth.block_number
+                from_block = current - 2  # last ~6s
+
+                # Try active topic first, else try all
+                topics_to_try = []
+                if _active_topic[0]:
+                    topics_to_try = [_active_topic[0]]
+                else:
+                    topics_to_try = [t[0] for t in TOKEN_CREATE_SIGS]
+
+                for topic_hash in topics_to_try:
+                    try:
+                        logs = w3.eth.get_logs({
+                            "address":   Web3.to_checksum_address(_FM_FACTORY_ADDR),
+                            "topics":    [[topic_hash]],
+                            "fromBlock": from_block,
+                            "toBlock":   "latest",
+                        })
+
+                        if logs and _active_topic[0] != topic_hash:
+                            sig = next((s[1] for s in TOKEN_CREATE_SIGS if s[0] == topic_hash), "")
+                            print(f"✅ [FM] TokenCreate found! topic={topic_hash[:10]} sig={sig[:30]}")
+                            _active_topic[0] = topic_hash
+
+                        for log in logs:
+                            # Token address = first address in data or topics
+                            _data = log.get("data","")
+                            _topics = log.get("topics",[])
+
+                            # Token address from data (first 32 bytes = address)
+                            token_addr = ""
+                            if _data and len(_data) >= 66:
+                                token_addr = "0x" + _data[26:66]
+                            elif len(_topics) > 1:
+                                token_addr = "0x" + _topics[1][-40:]
+
+                            if not token_addr or token_addr.lower() in _seen:
+                                continue
+
+                            # Dev address
+                            dev_addr = ""
+                            if _data and len(_data) >= 130:
+                                dev_addr = "0x" + _data[90:130]
+                            elif len(_topics) > 2:
+                                dev_addr = "0x" + _topics[2][-40:]
+
+                            _seen.add(token_addr.lower())
+                            if len(_seen) > 1000: _seen.clear()
+
+                            with _fm_sniped_lock:
+                                if token_addr.lower() in _fm_sniped: continue
+
+                            print(f"🆕 [FM] TokenCreate: {token_addr[:10]} dev:{dev_addr[:10]}")
+                            _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
+
+                            _now = time.time()
+                            threading.Thread(
+                                target=_fm_snipe,
+                                args=(token_addr, dev_addr, _now),
+                                daemon=True
+                            ).start()
+                        break  # kaam kiya — break
+
+                    except Exception as _le:
+                        continue  # next topic try karo
+
             except Exception as e:
-                if _fm_stop_event.is_set(): break
-                fails += 1
-                wait = min(5*fails, 60)
-                print(f"WARN [FM] fail #{fails}: {str(e)[:50]} retry {wait}s")
-                await asyncio.sleep(wait)
-            idx += 1
-        print("🛑 [FM] WSS stopped")
+                print(f"⚠️ [FM] poll error: {str(e)[:60]}")
 
-    def _run():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try: loop.run_until_complete(_loop())
-        except Exception as ex: print(f"WARN [FM] crashed: {ex}")
-        finally: loop.close()
+            time.sleep(3)  # har 3s poll karo
 
-    threading.Thread(target=_run, daemon=True).start()
-    print("✅ [FM] Bonding Curve Sniper v2 started — progress+velocity+dev+wallet+honeypot")
+    threading.Thread(target=_poll_loop, daemon=True).start()
+    print("✅ [FM] Bonding Curve Sniper v2 started — HTTP polling TokenCreate")
+
+
 
 def _register_position_pair(token_address: str, known_pair: str = None):
     """Naya position open hua — pair address dhundo aur register karo"""
