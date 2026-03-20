@@ -5171,9 +5171,8 @@ def poll_four_meme_v2():
 
     async def _loop():
         idx = fails = 0
-        # QuickNode free trial = WSS subscribe nahi karta
-        # Free RPC use karo FM detection ke liye
         endpoints = [
+            _QN_WSS,  # QuickNode first
             "wss://bsc-rpc.publicnode.com",
             "wss://bsc.drpc.org",
             "wss://bsc.publicnode.com",
