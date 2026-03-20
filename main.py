@@ -5363,20 +5363,18 @@ def poll_four_meme_v2():
 
                         for log in logs:
                             _data   = log.get("data", "")
-                            _topics = log.get("topics", [])
+                            # Data structure (Grok verified on-chain):
+                            # [0:32]  = creator/dev address
+                            # [32:64] = token address
+                            _data_hex = _data.hex() if hasattr(_data, "hex") else str(_data)
+                            if _data_hex.startswith("0x"): _data_hex = _data_hex[2:]
 
-                            token_addr = ""
-                            if _data and len(_data) >= 66:
-                                token_addr = "0x" + _data[26:66]
-                            elif len(_topics) > 1:
-                                token_addr = "0x" + _topics[1][-40:]
+                            if len(_data_hex) < 128: continue
+
+                            dev_addr   = "0x" + _data_hex[24:64]    # first 32 bytes = creator
+                            token_addr = "0x" + _data_hex[88:128]   # second 32 bytes = token
+
                             if not token_addr: continue
-
-                            dev_addr = ""
-                            if _data and len(_data) >= 130:
-                                dev_addr = "0x" + _data[90:130]
-                            elif len(_topics) > 2:
-                                dev_addr = "0x" + _topics[2][-40:]
 
                             _handle_token(token_addr, dev_addr)
                         break
