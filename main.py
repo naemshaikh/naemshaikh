@@ -5046,6 +5046,42 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         ), daemon=True).start()
         print(f"✅ [FM] BC SNIPED: {token_name} prog={progress:.1f}% {ms}ms")
 
+        # ── POST-BUY: 30s buyer monitor — agar koi nahi aaya toh force exit ──
+        def _fm_post_buy_monitor(ta, t_name):
+            try:
+                time.sleep(30)
+                if ta not in auto_trade_stats.get("running_positions", {}):
+                    return  # Already sold
+                # Transfer events check karo — hamare buy ke baad new buyers?
+                _w3 = _fm_get_w3()
+                if not _w3: return
+                TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+                _cur = _w3.eth.block_number
+                _logs = _w3.eth.get_logs({
+                    "address": Web3.to_checksum_address(ta),
+                    "topics": [TRANSFER_TOPIC],
+                    "fromBlock": _cur - 20,  # last ~60s
+                    "toBlock": "latest",
+                })
+                _ZERO = "0x0000000000000000000000000000000000000000"
+                _DEAD = "0x000000000000000000000000000000000000dead"
+                new_buyers = set()
+                for log in _logs:
+                    if len(log["topics"]) < 3: continue
+                    to_addr = "0x" + log["topics"][2].hex()[-40:].lower()
+                    if to_addr not in [_ZERO, _DEAD]:
+                        new_buyers.add(to_addr)
+
+                if len(new_buyers) < 2:
+                    print(f"⚠️ [FM] No new buyers in 30s — force exit: {ta[:10]}")
+                    _auto_paper_sell(ta, "FM No buyers 30s ❌", 100.0)
+                else:
+                    print(f"✅ [FM] {len(new_buyers)} buyers in 30s — holding: {ta[:10]}")
+            except Exception as _fe:
+                print(f"⚠️ [FM] post-buy monitor error: {_fe}")
+
+        threading.Thread(target=_fm_post_buy_monitor, args=(token_addr, token_name), daemon=True).start()
+
     except Exception as e:
         print(f"⚠️ [FM] snipe error: {e}")
         with _fm_sniped_lock: _fm_sniped.discard(addr_lower)
