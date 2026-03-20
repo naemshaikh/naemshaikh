@@ -2979,18 +2979,39 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     if TRADE_MODE == "real":
         _buy_tax_s  = float(pos.get("buy_tax",  0) or 0)
         _sell_tax_s = float(pos.get("sell_tax", 0) or 0)
-        _real_sell  = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
+        _source     = pos.get("source", "")
+
+        # FM Bonding Curve token — check karo graduated hua ya nahi
+        if _source == "FM_BC":
+            _fm_factory = pos.get("fm_factory", _FM_FACTORY_ADDR)
+            _w3_sell    = _fm_get_w3()
+            _graduated  = False
+            if _w3_sell:
+                try:
+                    _info_sell = _fm_get_token_info(address, _w3_sell)
+                    _graduated = _info_sell.get("liquidityAdded", False) if _info_sell else False
+                except: pass
+
+            if not _graduated:
+                # Still on bonding curve → FM sellToken()
+                print(f"🎓 [FM] Selling via bonding curve: {address[:10]}")
+                _real_sell = _fm_real_sell_bc(address, sell_pct, _fm_factory, _w3_sell)
+            else:
+                # Graduated → PancakeSwap
+                print(f"🎓 [FM] Token graduated → PancakeSwap sell: {address[:10]}")
+                _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
+        else:
+            _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
+
         if not _real_sell.get("success"):
             print(f"⚠️ REAL SELL failed: {_real_sell.get('error','?')} — continuing paper tracking")
         else:
             print(f"✅ REAL SELL: tx={_real_sell.get('tx_hash','')[:20]} BNB={_real_sell.get('bnb_received',0):.4f}")
-            # ── Actual gas receipt se tp_events update karo ──
             _actual_gas_used = _real_sell.get("gas_used", 0)
             _gas_price_wei   = _real_sell.get("gas_price", 0)
             if _actual_gas_used and _gas_price_wei:
                 _actual_gas_bnb = (_actual_gas_used * _gas_price_wei) / 1e18
                 _actual_gas_usd = round(_actual_gas_bnb * market_cache.get("bnb_price", 0), 4)
-                # Last tp_event update karo actual gas se
                 if pos.get("tp_events"):
                     pos["tp_events"][-1]["gas_bnb"] = round(_actual_gas_bnb, 8)
                     pos["tp_events"][-1]["gas_usd"]  = _actual_gas_usd
@@ -4824,6 +4845,50 @@ def _fm_honeypot_sim(token_addr, factory_addr, w3=None):
             return False
         return True  # other errors = proceed
 
+def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=None) -> dict:
+    """FM Bonding Curve pe real sell — token graduated nahi hua"""
+    result = {"success": False, "tx_hash": "", "bnb_received": 0.0, "error": ""}
+    try:
+        pk = os.getenv("WALLET_PRIVATE_KEY", "") or os.getenv("PRIVATE_KEY", "")
+        wallet_addr = BSC_WALLET or REAL_WALLET
+        if not wallet_addr or not pk:
+            result["error"] = "no wallet/key"; return result
+        if not w3: w3 = _fm_get_w3()
+        if not w3: result["error"] = "no RPC"; return result
+
+        # Token balance
+        _tc    = w3.eth.contract(address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
+        _bal   = _tc.functions.balanceOf(Web3.to_checksum_address(wallet_addr)).call()
+        _amt   = int(_bal * sell_pct / 100)
+        if _amt <= 0: result["error"] = "zero balance"; return result
+
+        # sellToken(token, amount, minFunds=0)
+        fc  = w3.eth.contract(address=Web3.to_checksum_address(factory_addr), abi=_FM_BC_ABI)
+        tx  = fc.functions.sellToken(
+            Web3.to_checksum_address(token_addr),
+            _amt,
+            0  # minFunds = 0
+        ).build_transaction({
+            "from":     wallet_addr,
+            "gas":      300000,
+            "gasPrice": int(_fm_get_cached_gas(w3) * 1.5),
+            "nonce":    w3.eth.get_transaction_count(wallet_addr, "pending"),
+        })
+        from eth_account import Account
+        signed  = Account.sign_transaction(tx, pk)
+        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
+        if receipt["status"] != 1:
+            result["error"] = "sell tx reverted"; return result
+        result["success"]  = True
+        result["tx_hash"]  = tx_hash.hex()
+        result["gas_used"] = receipt["gasUsed"]
+        print(f"✅ [FM] BC Sell: {tx_hash.hex()[:12]}")
+        return result
+    except Exception as e:
+        result["error"] = str(e)[:60]
+        return result
+
 def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, result, skip_reason, time_ms,
                    buyers_at_entry=0, momentum_pct=0.0, volume_change=0.0, pump_at_entry=0.0, dev_wallet_pct=0.0):
     """FM event Supabase mein save karo — extra analytics data bhi"""
@@ -5095,6 +5160,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             "banked_pnl_bnb":   0.0,
             "bought_at":        datetime.utcnow().isoformat(),
             "mode":             TRADE_MODE,
+            "source":           "FM_BC",   # ← sell ke time check karo
+            "fm_factory":       _FM_FACTORY_ADDR,
             "fm_mc_usd":        round(_mc_usd, 0),
             "fm_momentum":      _momentum_pct,
             "fm_dev":           dev_addr[:10] if dev_addr else "",
