@@ -5331,12 +5331,12 @@ def poll_four_meme_v2():
         """Continuous worker — always polling, no sleep"""
         print(f"✅ [FM] Poll worker {worker_id} started: {rpc_url[:30]}")
         _last_block = [0]
+        w3 = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 5}))
         while not _fm_stop_event.is_set():
             try:
                 if not FM_SNIPER_ENABLED:
                     time.sleep(1); continue
 
-                w3 = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 5}))
                 current = w3.eth.block_number
 
                 # Same block — no new tokens, skip
