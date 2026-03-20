@@ -5184,10 +5184,20 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 from eth_account import Account
                 signed   = Account.sign_transaction(tx, pk)
                 tx_hash  = _w3_buy.eth.send_raw_transaction(signed.raw_transaction)
-                receipt  = _w3_buy.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
-                if receipt["status"] != 1:
-                    _skip("buy tx failed"); return
-                print(f"✅ [FM] Real buy: {tx_hash.hex()[:12]}")
+                print(f"✅ [FM] Real buy sent: {tx_hash.hex()[:12]}")
+
+                # Receipt wait background mein — 30s hang nahi hoga
+                def _wait_receipt(_th, _w3b, _addr):
+                    try:
+                        _r = _w3b.eth.wait_for_transaction_receipt(_th, timeout=30)
+                        if _r["status"] == 1:
+                            print(f"✅ [FM] Buy confirmed: {_th.hex()[:12]}")
+                        else:
+                            print(f"⚠️ [FM] Buy failed onchain: {_th.hex()[:12]}")
+                            _auto_paper_sell(_addr, "buy tx failed onchain", 100.0)
+                    except Exception as _re:
+                        print(f"⚠️ [FM] Receipt timeout: {str(_re)[:40]}")
+                threading.Thread(target=_wait_receipt, args=(tx_hash, _w3_buy, token_addr), daemon=True).start()
             except Exception as e:
                 _skip(f"real buy error: {str(e)[:40]}"); return
         else:
