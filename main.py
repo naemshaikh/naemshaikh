@@ -4853,7 +4853,22 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         else:
             _skip("MC calc failed — no price"); return
 
-        print(f"✅ [FM] ALL PASS: mc=${_mc_usd:.0f}")
+        # 4. Price momentum check — price badhna chahiye
+        # 10 seconds baad dobara check karo — flat = bundler/fake, rising = genuine
+        _price1 = info.get("lastPrice", 0)
+        time.sleep(10)
+        _info2 = _fm_get_token_info(token_addr, w3)
+        if not _info2:
+            _skip("momentum check failed"); return
+        if _info2["liquidityAdded"]:
+            _skip("graduated during momentum check"); return
+        _price2 = _info2.get("lastPrice", 0)
+        if _price2 <= _price1:
+            _skip(f"no momentum — price flat/down"); return
+        _momentum_pct = round((_price2 - _price1) / _price1 * 100, 1) if _price1 > 0 else 0
+        print(f"✅ [FM] Momentum: +{_momentum_pct:.1f}% in 10s")
+
+        print(f"✅ [FM] ALL PASS: mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}%")
         _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
 
         # ── BUY ──
