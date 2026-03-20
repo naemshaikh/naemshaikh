@@ -4835,43 +4835,14 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         else:
             _skip("MC calc failed"); return
 
-        # 4. Dev checks (Ankr — free)
+        # 4. Dev wallet check (Ankr — free)
         if dev_addr:
             try:
-                # 4a. Dev wallet < 10%
                 _tc = _w3a.eth.contract(address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
                 _total = _tc.functions.totalSupply().call()
                 _dev_bal = _tc.functions.balanceOf(Web3.to_checksum_address(dev_addr)).call()
                 if _total > 0 and (_dev_bal / _total * 100) > 10:
                     _skip(f"dev wallet too high {_dev_bal/_total*100:.0f}%"); return
-
-                # 4b. Dev ne pehle kitne tokens banaye + rug history
-                TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
-                ZERO_PADDED    = "0x" + "0" * 64
-                _cur = _w3a.eth.block_number
-                _dev_logs = _w3a.eth.get_logs({
-                    "address": Web3.to_checksum_address(_FM_FACTORY_ADDRS[0]),
-                    "topics":  [TRANSFER_TOPIC, ZERO_PADDED,
-                                "0x" + dev_addr.lower()[2:].zfill(64)],
-                    "fromBlock": max(0, _cur - 200000),
-                    "toBlock":  "latest",
-                })
-                _dev_tokens = [log["address"] for log in _dev_logs]
-                if len(_dev_tokens) >= 5:
-                    _skip(f"dev created {len(_dev_tokens)} tokens >= 5"); return
-
-                # 4c. Rug history — check prev tokens
-                _rugged = 0
-                for _prev_tok in _dev_tokens[:5]:
-                    try:
-                        _prev_info = _fm_get_token_info(_prev_tok, _w3a)
-                        if _prev_info and not _prev_info["liquidityAdded"] and _prev_info["funds"] == 0:
-                            _rugged += 1
-                    except: continue
-                if _rugged >= 2:
-                    blacklist_dev(dev_addr, f"FM rug history {_rugged} rugs")
-                    _skip(f"dev rug history {_rugged} rugs"); return
-
             except Exception as _de:
                 print(f"⚠️ [FM] dev check error: {str(_de)[:50]}")
 
