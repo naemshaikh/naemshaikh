@@ -4857,7 +4857,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _price1 = info.get("lastPrice", 0)
         time.sleep(10)
         # Free public RPC for momentum check — no QuickNode cost
-        _w3_free = Web3(Web3.HTTPProvider("https://bsc-rpc.publicnode.com", request_kwargs={"timeout": 5}))
+        _w3_free = Web3(Web3.HTTPProvider("https://rpc.ankr.com/bsc", request_kwargs={"timeout": 5}))
         _info2 = _fm_get_token_info(token_addr, _w3_free)
         if not _info2:
             _skip("momentum check failed"); return
