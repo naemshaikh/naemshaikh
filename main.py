@@ -4948,11 +4948,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if not hp_safe:
             _skip("honeypot sim failed"); return
 
-        # 9. Unique buyers + momentum check
+        # 9. Unique buyers check — min 3
         if unique_buyers < 3:
             _skip(f"too few buyers {unique_buyers} < 3"); return
-        if recent_buys < 8:
-            _skip(f"low momentum — only {recent_buys} buys in last 60s"); return
 
         print(f"✅ [FM] ALL PASS: mc=${_mc_usd:.0f} raised={raised_bnb:.3f}BNB buyers={unique_buyers} recent={recent_buys} vel={velocity_sec:.0f}s")
         _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
