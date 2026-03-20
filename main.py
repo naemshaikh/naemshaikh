@@ -5171,11 +5171,11 @@ def poll_four_meme_v2():
 
     async def _loop():
         idx = fails = 0
-        # QuickNode subscription limit hit hoti hai — free RPC use karo
+        # QuickNode FM ke liye — fastest detection
         endpoints = [
-            "wss://bsc-rpc.publicnode.com",
+            _QN_WSS,  # QuickNode primary
+            "wss://bsc-rpc.publicnode.com",  # fallback
             "wss://bsc.drpc.org",
-            "wss://bsc.publicnode.com",
         ]
         while not _fm_stop_event.is_set():
             try:
