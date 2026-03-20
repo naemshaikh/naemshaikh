@@ -5077,29 +5077,44 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _pf_ex = _cf3.ThreadPoolExecutor(max_workers=1)
         _pf    = _pf_ex.submit(_prefetch)
 
-        # Poll every 200ms — movement detect hote hi break, max 2s
-        _info2       = None
-        _price2      = 0
-        _funds2      = 0
-        _t_momentum  = time.time()
-        _moved       = False
+        # Poll every 200ms — 2 consecutive confirmations chahiye, max 2s
+        # Criteria:
+        #   1. price > price1 × 1.005  (min 0.5% up)
+        #   2. funds diff > 0.05 BNB per poll  (real buying pressure)
+        #   3. 2 consecutive polls dono pass karein (no fluke)
+        _info2        = None
+        _price2       = 0
+        _funds2       = 0
+        _t_momentum   = time.time()
+        _moved        = False
+        _consec       = 0          # consecutive confirmation counter
+        _prev_funds   = _funds1    # track per-poll funds delta
+        _MIN_PRICE_MV = 1.005      # 0.5% minimum price move
+        _MIN_BNB_FLOW = 0.05       # 0.05 BNB per 200ms poll
         while time.time() - _t_momentum < 2.0:
             time.sleep(0.2)
             try:
                 _snap = _fm_get_token_info(token_addr, _w3_qn or w3)
-                if not _snap: continue
+                if not _snap: _consec = 0; continue
                 if _snap.get("liquidityAdded"):
                     _pf_ex.shutdown(wait=False)
                     _skip("graduated during momentum"); return
                 _p = _snap.get("lastPrice", 0)
                 _f = _snap.get("funds", 0)
-                if _p > _price1 and _f > _funds1:
-                    _info2  = _snap
-                    _price2 = _p
-                    _funds2 = _f
-                    _moved  = True
-                    break  # Movement detected — buy immediately
-            except: continue
+                _price_ok = _p >= _price1 * _MIN_PRICE_MV
+                _funds_ok = (_f - _prev_funds) / 1e18 >= _MIN_BNB_FLOW
+                if _price_ok and _funds_ok:
+                    _consec += 1
+                    _info2   = _snap
+                    _price2  = _p
+                    _funds2  = _f
+                    if _consec >= 2:
+                        _moved = True
+                        break  # 2 consecutive confirms — real momentum ✅
+                else:
+                    _consec = 0  # reset on any fail
+                _prev_funds = _f
+            except: _consec = 0; continue
 
         _pf.result(timeout=1)
         _pf_ex.shutdown(wait=False)
