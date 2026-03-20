@@ -5064,7 +5064,7 @@ def poll_four_meme_v2():
                 "id": 1, "jsonrpc": "2.0", "method": "eth_subscribe",
                 "params": ["logs", {
                     "address": _FM_FACTORY_ADDRS,
-                    "topics":  [TOKEN_CREATE_TOPIC]
+                    "topics":  [[TOKEN_CREATE_TOPIC]]
                 }]
             }))
             ack = _j.loads(await asyncio.wait_for(ws.recv(), timeout=10))
