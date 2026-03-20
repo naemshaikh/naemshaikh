@@ -4984,27 +4984,43 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             _skip(f"dev blacklisted: {dev_addr[:10]}"); return
 
         # ════════════════════════════════════════
-        # STAGE 1 — PRE-FILTER (Free RPC)
+        # STAGE 1 — PRE-FILTER (parallel)
         # ════════════════════════════════════════
         _w3a = Web3(Web3.HTTPProvider("https://bsc-rpc.publicnode.com", request_kwargs={"timeout": 6}))
 
-        # 1. Token info
-        info = _fm_get_token_info(token_addr, _w3a)
+        _info_res    = [None]
+        _dev_pct_res = [0.0]
+
+        def _fetch_token_info():
+            _info_res[0] = _fm_get_token_info(token_addr, _w3a)
+
+        def _fetch_dev_balance():
+            if not dev_addr: return
+            try:
+                _tc    = _w3a.eth.contract(address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
+                _total = _tc.functions.totalSupply().call()
+                _dev_b = _tc.functions.balanceOf(Web3.to_checksum_address(dev_addr)).call()
+                if _total > 0:
+                    _dev_pct_res[0] = round(_dev_b / _total * 100, 2)
+            except: pass
+
+        import concurrent.futures as _cf1
+        with _cf1.ThreadPoolExecutor(max_workers=2) as _ex1:
+            _f1 = _ex1.submit(_fetch_token_info)
+            _f2 = _ex1.submit(_fetch_dev_balance)
+            _f1.result(); _f2.result()
+
+        info = _info_res[0]
         if not info:
             _skip("tokenInfo fetch failed"); return
-
-        # 2. Already graduated?
         if info["liquidityAdded"]:
             _skip("already graduated"); return
 
-        # 3. Fee rate check — 0ms, data already in info
         _fee_rate = info.get("tradingFeeRate", 0)
-        if _fee_rate > 300:  # 3% = 300 basis points
+        if _fee_rate > 300:
             _skip(f"high fee {_fee_rate/100:.1f}% > 3%"); return
 
-        # 3. MC < $10k + pump at entry < 10%
         _last_price   = info.get("lastPrice", 0)
-        _launch_price = info.get("lastPrice", 0)  # Will compare after 2s
         _total_supply = 1_000_000_000
         _bnb_price    = market_cache.get("bnb_price", 640)
         _quote_mc     = info.get("quote", "").lower()
@@ -5020,43 +5036,26 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         else:
             _skip("MC calc failed"); return
 
-        # Pump at entry check — data se confirmed: < 10% = better profit
-        # offers = tokens sold, maxOffers = total supply for sale
         _offers    = info.get("offers", 0)
         _maxOffers = info.get("maxOffers", 1)
-        _pump_at_entry = round((_offers / max(_maxOffers, 1)) * 100, 1) if _maxOffers > 0 else 0
+        _pump_at_entry = round((_offers / max(_maxOffers, 1)) * 100, 1)
         if _pump_at_entry > 20:
             _skip(f"pump at entry {_pump_at_entry:.1f}% > 20%"); return
 
-        # 4. Dev wallet check (Ankr — free)
-        _dev_wallet_pct = 0.0
-        if dev_addr:
-            try:
-                _tc = _w3a.eth.contract(address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
-                _total = _tc.functions.totalSupply().call()
-                _dev_bal = _tc.functions.balanceOf(Web3.to_checksum_address(dev_addr)).call()
-                if _total > 0:
-                    _dev_wallet_pct = round(_dev_bal / _total * 100, 2)
-                    if _dev_wallet_pct > 10:
-                        _skip(f"dev wallet too high {_dev_wallet_pct:.0f}%"); return
-            except Exception as _de:
-                print(f"⚠️ [FM] dev check error: {str(_de)[:50]}")
+        if _dev_pct_res[0] > 10:
+            _skip(f"dev wallet too high {_dev_pct_res[0]:.0f}%"); return
 
         print(f"✅ [FM] Stage1 PASS: mc=${_mc_usd:.0f}")
 
         # ════════════════════════════════════════
-        # STAGE 2 — MOMENTUM (Free RPC)
+        # STAGE 2 — MOMENTUM
+        # Stage 1 info as baseline — no extra call
         # ════════════════════════════════════════
         w3 = _fm_get_w3()
         if not w3: _skip("no RPC for momentum"); return
 
-        # Fresh snapshot ABHI lo — Stage 1 ka stale data use nahi karna
-        _info1_fresh = _fm_get_token_info(token_addr, w3)
-        if not _info1_fresh: _skip("momentum snapshot failed"); return
-        if _info1_fresh["liquidityAdded"]: _skip("graduated before momentum check"); return
-
-        _price1 = _info1_fresh.get("lastPrice", 0)
-        _funds1 = _info1_fresh.get("funds", 0)
+        _price1 = info.get("lastPrice", 0)
+        _funds1 = info.get("funds", 0)
 
         # Parallel momentum workers — 3 workers simultaneously
         # 2/3 pass = confirmed momentum → BUY (~700ms total)
