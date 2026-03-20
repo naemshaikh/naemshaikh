@@ -4902,8 +4902,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if not w3: _skip("no QuickNode RPC"); return
 
         _price1 = info.get("lastPrice", 0)
-        # 10s wait for momentum — non-blocking
-        time.sleep(10)
+        _funds1 = info.get("funds", 0)
+        # 2s wait — momentum check
+        time.sleep(2)
 
         _info2 = _fm_get_token_info(token_addr, w3)
         if not _info2:
@@ -4911,8 +4912,17 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if _info2["liquidityAdded"]:
             _skip("graduated during wait"); return
         _price2 = _info2.get("lastPrice", 0)
+        _funds2 = _info2.get("funds", 0)
+
+        # Price momentum check
         if _price2 <= _price1:
             _skip("no momentum — price flat/down"); return
+
+        # Volume momentum — BNB raised badha?
+        _funds_diff = (_funds2 - _funds1) / 1e18
+        if _funds_diff <= 0:
+            _skip("no volume — no new buyers in 2s"); return
+
         _momentum_pct = round((_price2 - _price1) / max(_price1, 1) * 100, 1)
 
         print(f"✅ [FM] ALL PASS: mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}%")
