@@ -4819,10 +4819,6 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         def _f_info():
             return _fm_get_token_info(token_addr, w3)
 
-        def _f_dev():
-            if not dev_addr: return {"total": 0, "rugged": 0, "graduated": 0}
-            return _fm_dev_history_onchain(dev_addr, w3)
-
         def _f_hp(factory):
             # Use tokenManager (correct manager contract for this token)
             mgr = info.get("tokenManager", factory) if info else factory
@@ -4842,20 +4838,13 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             return 0.0
 
         def _f_velocity():
-            # Buy speed — time since token created vs current progress
             if detected_at <= 0: return 999.0
-            elapsed = time.time() - detected_at
-            return elapsed  # seconds since mint
+            return time.time() - detected_at
 
-        def _f_buyers():
-            return _fm_get_unique_buyers(token_addr, w3)
-
-        with _cf3.ThreadPoolExecutor(max_workers=6) as ex:
+        with _cf3.ThreadPoolExecutor(max_workers=4) as ex:
             f_info     = ex.submit(_f_info)
-            f_dev      = ex.submit(_f_dev)
             f_wallet   = ex.submit(_f_wallet)
             f_velocity = ex.submit(_f_velocity)
-            f_buyers   = ex.submit(_f_buyers)
 
             info = f_info.result(timeout=4)
             if info:
@@ -4863,11 +4852,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             else:
                 f_hp = ex.submit(lambda: True)
 
-            dev_hist      = f_dev.result(timeout=4)
             wallet_pct    = f_wallet.result(timeout=3)
             velocity_sec  = f_velocity.result(timeout=1)
             hp_safe       = f_hp.result(timeout=3)
-            unique_buyers, recent_buys = f_buyers.result(timeout=4)
 
         # ── FILTER CHECKS ──
 
@@ -4932,25 +4919,16 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if wallet_pct > 20.0:
             _skip(f"dev wallet {wallet_pct:.1f}% > 20%"); return
 
-        # 7. Dev history check
-        if dev_hist["total"] >= 2:
-            rug_rate = dev_hist["rugged"] / dev_hist["total"]
-            if rug_rate > 0.5:
-                _skip(f"dev rug rate {rug_rate*100:.0f}% ({dev_hist['rugged']}/{dev_hist['total']})")
-                # Blacklist this dev
-                if dev_addr:
-                    blacklist_dev(dev_addr, f"four.meme rug rate {rug_rate*100:.0f}%")
-                return
-
-        # 8. Honeypot check
+        # 7. Honeypot check
         if not hp_safe:
             _skip("honeypot sim failed"); return
 
-        # 9. Unique buyers check — min 3
+        # 9. Unique buyers check — min 3 (last check — saves RPC calls)
+        unique_buyers, _ = _fm_get_unique_buyers(token_addr, w3)
         if unique_buyers < 3:
             _skip(f"too few buyers {unique_buyers} < 3"); return
 
-        print(f"✅ [FM] ALL PASS: mc=${_mc_usd:.0f} raised={raised_bnb:.3f}BNB buyers={unique_buyers} recent={recent_buys} vel={velocity_sec:.0f}s")
+        print(f"✅ [FM] ALL PASS: mc=${_mc_usd:.0f} raised={raised_bnb:.3f}BNB buyers={unique_buyers} vel={velocity_sec:.0f}s")
         _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
 
         # ── BUY ──
