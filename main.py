@@ -4819,31 +4819,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         def _f_info():
             return _fm_get_token_info(token_addr, w3)
 
-        def _f_wallet():
-            # Largest single wallet balance check
-            try:
-                tc = w3.eth.contract(address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
-                total = tc.functions.totalSupply().call()
-                # Check dev wallet balance
-                if dev_addr:
-                    dev_bal = tc.functions.balanceOf(Web3.to_checksum_address(dev_addr)).call()
-                    if total > 0:
-                        return round((dev_bal / total) * 100, 2)
-            except: pass
-            return 0.0
-
-        def _f_velocity():
-            if detected_at <= 0: return 999.0
-            return time.time() - detected_at
-
-        with _cf3.ThreadPoolExecutor(max_workers=4) as ex:
-            f_info     = ex.submit(_f_info)
-            f_wallet   = ex.submit(_f_wallet)
-            f_velocity = ex.submit(_f_velocity)
-
-            info = f_info.result(timeout=4)
-            wallet_pct    = f_wallet.result(timeout=3)
-            velocity_sec  = f_velocity.result(timeout=1)
+        with _cf3.ThreadPoolExecutor(max_workers=1) as ex:
+            f_info = ex.submit(_f_info)
+            info   = f_info.result(timeout=4)
 
         # ── FILTER CHECKS ──
 
@@ -4875,81 +4853,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         else:
             _skip("MC calc failed — no price"); return
 
-        # 4. Raised check — BNB + USDT/CAKE pairs support
-        _WBNB_LOWER  = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
-        _USDT_LOWER  = "0x55d398326f99059ff775485246999027b3197955"
-        _BUSD_LOWER  = "0xe9e7cea3dedca5984780bafc599bd69add087d56"
-        _CAKE_LOWER  = "0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82"
-        _quote = info.get("quote", "").lower()
-        _bnb_price = market_cache.get("bnb_price", 640)
-
-        if _quote == _WBNB_LOWER:
-            raised_bnb = round(info["funds"] / 1e18, 4)
-        elif _quote in [_USDT_LOWER, _BUSD_LOWER]:
-            # USDT/BUSD — convert to BNB equivalent
-            raised_usd = info["funds"] / 1e18
-            raised_bnb = round(raised_usd / _bnb_price, 4) if _bnb_price > 0 else 0
-        elif _quote == _CAKE_LOWER:
-            # CAKE — approximate via price (skip for now, too complex)
-            _skip("CAKE pair — skip"); return
-        else:
-            _skip(f"unknown quote — skip"); return
-
-        if raised_bnb > 5.0:
-            _skip(f"raised too much {raised_bnb:.2f} BNB"); return
-
-        # 5. Buy velocity — sirf extreme fast block karo
-        if velocity_sec < 0.5 and progress > 5:
-            _skip(f"too fast {velocity_sec:.1f}s bot/bundler"); return
-
-        # 6. Single wallet dominance
-        if wallet_pct > 20.0:
-            _skip(f"dev wallet {wallet_pct:.1f}% > 20%"); return
-
-        # 7. Honeypot check — skipped for FM bonding curve (not applicable)
-
-        # 9. Unique buyers check — min 3
-        unique_buyers, _ = _fm_get_unique_buyers(token_addr, w3)
-        if unique_buyers < 3:
-            _skip(f"too few buyers {unique_buyers} < 3"); return
-
-        # 10. Top holders check — top 10 wallets < 40% total supply (last — heavy call)
-        try:
-            TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
-            _cur = w3.eth.block_number
-            _logs = w3.eth.get_logs({
-                "address": Web3.to_checksum_address(token_addr),
-                "topics": [TRANSFER_TOPIC],
-                "fromBlock": max(0, _cur - 500),
-                "toBlock": "latest",
-            })
-            _ZERO = "0x0000000000000000000000000000000000000000"
-            _DEAD = "0x000000000000000000000000000000000000dead"
-            _tc = w3.eth.contract(address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
-            _total = _tc.functions.totalSupply().call()
-            # Unique holders
-            _holders = set()
-            for log in _logs:
-                if len(log["topics"]) < 3: continue
-                to_addr = "0x" + log["topics"][2].hex()[-40:].lower()
-                if to_addr not in [_ZERO, _DEAD]:
-                    _holders.add(to_addr)
-            # Check top holders
-            if _total > 0 and len(_holders) > 0:
-                _bals = []
-                for h in list(_holders)[:15]:  # max 15 check
-                    try:
-                        b = _tc.functions.balanceOf(Web3.to_checksum_address(h)).call()
-                        _bals.append(b)
-                    except: pass
-                _bals.sort(reverse=True)
-                _top10_pct = sum(_bals[:10]) / _total * 100
-                if _top10_pct > 40:
-                    _skip(f"top10 holders {_top10_pct:.0f}% > 40%"); return
-        except Exception as _te:
-            pass  # check fail = proceed
-
-        print(f"✅ [FM] ALL PASS: mc=${_mc_usd:.0f} raised={raised_bnb:.3f}BNB buyers={unique_buyers} vel={velocity_sec:.0f}s")
+        print(f"✅ [FM] ALL PASS: mc=${_mc_usd:.0f}")
         _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
 
         # ── BUY ──
