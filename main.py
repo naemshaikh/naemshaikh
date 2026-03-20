@@ -4879,13 +4879,21 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if info["liquidityAdded"]:
             _skip("already graduated"); return
 
-        # 3. MC check — $2k-$8k sweet spot (GMGN style)
+        # 3. MC check — $2k-$10k sweet spot (GMGN style)
         progress = _fm_calc_progress(info)
         _last_price = info.get("lastPrice", 0)
         _total_supply = 1_000_000_000  # FM fixed supply
         _bnb_price = market_cache.get("bnb_price", 640)
-        if _last_price > 0 and _bnb_price > 0:
-            _mc_usd = (_last_price / 1e18) * _total_supply * _bnb_price
+        _quote_for_mc = info.get("quote", "").lower()
+        _USDT_L = "0x55d398326f99059ff775485246999027b3197955"
+        _BUSD_L = "0xe9e7cea3dedca5984780bafc599bd69add087d56"
+        if _last_price > 0:
+            if _quote_for_mc in [_USDT_L, _BUSD_L]:
+                # USDT/BUSD — lastPrice already in USD
+                _mc_usd = (_last_price / 1e18) * _total_supply
+            else:
+                # BNB — convert to USD
+                _mc_usd = (_last_price / 1e18) * _total_supply * _bnb_price
             if _mc_usd < 2000:
                 _skip(f"MC too low ${_mc_usd:.0f} < $2k"); return
             if _mc_usd > 10000:
