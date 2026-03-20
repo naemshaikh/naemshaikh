@@ -4666,8 +4666,12 @@ _fm_dev_cache_lock = threading.Lock()
 
 # Global FM w3 — PC wala hi reuse karo
 def _fm_get_w3():
-    """Reuse global QuickNode w3"""
-    return _get_w3q()
+    """Free RPC — polling aur filters ke liye"""
+    for rpc in ["https://bsc-rpc.publicnode.com", "https://bsc.drpc.org", "https://1rpc.io/bnb"]:
+        try:
+            return Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 5}))
+        except: continue
+    return None
 
 def _fm_get_token_info(token_addr, w3=None):
     """Official getTokenInfo via TokenManagerHelper3"""
