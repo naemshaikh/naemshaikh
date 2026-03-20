@@ -5130,8 +5130,11 @@ def poll_four_meme_v2():
 
                     # Grok confirmed: creator=data[26:66], token=data[90:130]
                     if not _data or len(_data) < 130: continue
-                    dev_addr   = "0x" + _data[26:66]   # creator/dev
-                    token_addr = "0x" + _data[90:130]  # token CA
+                    _data_hex = _data.hex() if hasattr(_data, 'hex') else str(_data)
+                    if _data_hex.startswith('0x'): _data_hex = _data_hex[2:]
+                    if len(_data_hex) < 128: continue
+                    dev_addr   = "0x" + _data_hex[24:64]   # creator/dev
+                    token_addr = "0x" + _data_hex[88:128]  # token CA
                     if not token_addr or token_addr.lower() in _seen: continue
 
                     _seen.add(token_addr.lower())
