@@ -5078,32 +5078,23 @@ _QN_WSS = os.getenv("QUICKNODE_WSS","wss://blissful-dark-scion.bsc.quiknode.pro/
 def poll_four_meme_v2():
     """
     FM Bonding Curve Sniper v2 — HTTP Polling
-    Four.meme factory TokenCreate event via eth_getLogs
-    Confirmed from Bitquery official docs
+    Bitquery docs confirmed:
+    New token = Transfer(from=0x000) on factory contract
     """
-    # TokenCreate event — all possible signatures
-    # Will try each until one returns results
-    TOKEN_CREATE_SIGS = [
-        ("0xb9d10aa6e0d565720d9f16b6d742668c3406afc3f2592b890549f66f78033b2c",
-         "TokenCreate(address,address,uint256,uint256,uint256,uint256,string,string)"),
-        ("0x3d96f13f99c3b0aca975bfbf0f185997444b7b43cd455e82b759dae94e99d3f7",
-         "TokenCreate(address,address,uint256,uint256,uint256)"),
-        ("0xed5b6552bf32030112553a7a7c5ba303430906006a8b80d86928cafbcc4c8e7d",
-         "TokenCreate(address,address,uint256,uint256)"),
-    ]
+    TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+    ZERO_PADDED    = "0x" + "0" * 64
 
     _seen = set()
-    _active_topic = [None]  # Which topic hash is working
 
     def _poll_loop():
-        print("✅ [FM] HTTP Polling started — TokenCreate event")
-        # Free RPC use karo — QuickNode rate limit hogi polling pe
+        print("✅ [FM] HTTP Polling started — Transfer(mint) on factory")
         _free_rpcs = [
             "https://bsc-rpc.publicnode.com",
             "https://bsc.drpc.org",
             "https://1rpc.io/bnb",
         ]
         _rpc_idx = [0]
+        _last_block = [0]
 
         def _get_free_w3():
             rpc = _free_rpcs[_rpc_idx[0] % len(_free_rpcs)]
@@ -5116,88 +5107,64 @@ def poll_four_meme_v2():
                     continue
 
                 w3 = _get_free_w3()
-                if not w3:
-                    time.sleep(5)
+                current = w3.eth.block_number
+
+                if _last_block[0] == 0:
+                    _last_block[0] = current - 2
+
+                if current <= _last_block[0]:
+                    time.sleep(2)
                     continue
 
-                current = w3.eth.block_number
-                from_block = current - 2  # last ~6s
+                logs = w3.eth.get_logs({
+                    "address":   Web3.to_checksum_address(_FM_FACTORY_ADDR),
+                    "topics":    [[TRANSFER_TOPIC], [ZERO_PADDED]],
+                    "fromBlock": _last_block[0] + 1,
+                    "toBlock":   current,
+                })
 
-                # Try active topic first, else try all
-                topics_to_try = []
-                if _active_topic[0]:
-                    topics_to_try = [_active_topic[0]]
-                else:
-                    topics_to_try = [t[0] for t in TOKEN_CREATE_SIGS]
+                _last_block[0] = current
 
-                for topic_hash in topics_to_try:
-                    try:
-                        logs = w3.eth.get_logs({
-                            "address":   Web3.to_checksum_address(_FM_FACTORY_ADDR),
-                            "topics":    [[topic_hash]],
-                            "fromBlock": from_block,
-                            "toBlock":   "latest",
-                        })
+                for log in logs:
+                    _topics = log.get("topics", [])
+                    if len(_topics) < 3: continue
 
-                        if logs and _active_topic[0] != topic_hash:
-                            sig = next((s[1] for s in TOKEN_CREATE_SIGS if s[0] == topic_hash), "")
-                            print(f"✅ [FM] TokenCreate found! topic={topic_hash[:10]} sig={sig[:30]}")
-                            _active_topic[0] = topic_hash
+                    from_raw = _topics[1].hex() if hasattr(_topics[1], "hex") else str(_topics[1])
+                    if from_raw.replace("0x","").replace("0","") != "":
+                        continue
 
-                        for log in logs:
-                            # Token address = first address in data or topics
-                            _data = log.get("data","")
-                            _topics = log.get("topics",[])
+                    token_addr = log.get("address", "")
+                    if not token_addr or token_addr.lower() in _seen: continue
 
-                            # Token address from data (first 32 bytes = address)
-                            token_addr = ""
-                            if _data and len(_data) >= 66:
-                                token_addr = "0x" + _data[26:66]
-                            elif len(_topics) > 1:
-                                token_addr = "0x" + _topics[1][-40:]
+                    dev_raw = _topics[2].hex() if hasattr(_topics[2], "hex") else str(_topics[2])
+                    dev_addr = "0x" + dev_raw[-40:]
 
-                            if not token_addr or token_addr.lower() in _seen:
-                                continue
+                    _seen.add(token_addr.lower())
+                    if len(_seen) > 1000: _seen.clear()
 
-                            # Dev address
-                            dev_addr = ""
-                            if _data and len(_data) >= 130:
-                                dev_addr = "0x" + _data[90:130]
-                            elif len(_topics) > 2:
-                                dev_addr = "0x" + _topics[2][-40:]
+                    with _fm_sniped_lock:
+                        if token_addr.lower() in _fm_sniped: continue
 
-                            _seen.add(token_addr.lower())
-                            if len(_seen) > 1000: _seen.clear()
+                    print(f"🆕 [FM] New token: {token_addr[:10]} dev:{dev_addr[:10]}")
+                    _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
 
-                            with _fm_sniped_lock:
-                                if token_addr.lower() in _fm_sniped: continue
-
-                            print(f"🆕 [FM] TokenCreate: {token_addr[:10]} dev:{dev_addr[:10]}")
-                            _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
-
-                            _now = time.time()
-                            threading.Thread(
-                                target=_fm_snipe,
-                                args=(token_addr, dev_addr, _now),
-                                daemon=True
-                            ).start()
-                        break  # kaam kiya — break
-
-                    except Exception as _le:
-                        continue  # next topic try karo
+                    _now = time.time()
+                    threading.Thread(
+                        target=_fm_snipe,
+                        args=(token_addr, dev_addr, _now),
+                        daemon=True
+                    ).start()
 
             except Exception as e:
                 err = str(e)
                 if "429" in err or "Too Many" in err:
-                    _rpc_idx[0] += 1  # next RPC try karo
+                    _rpc_idx[0] += 1
                 print(f"⚠️ [FM] poll error: {err[:60]}")
 
-            time.sleep(3)  # har 3s poll karo
+            time.sleep(3)
 
     threading.Thread(target=_poll_loop, daemon=True).start()
-    print("✅ [FM] Bonding Curve Sniper v2 started — HTTP polling TokenCreate")
-
-
+    print("✅ [FM] Bonding Curve Sniper v2 started — Transfer(mint) polling")
 
 def _register_position_pair(token_address: str, known_pair: str = None):
     """Naya position open hua — pair address dhundo aur register karo"""
