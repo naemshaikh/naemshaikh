@@ -5288,8 +5288,8 @@ _QN_WSS = os.getenv("QUICKNODE_WSS","wss://blissful-dark-scion.bsc.quiknode.pro/
 
 def poll_four_meme_v2():
     """
-    FM Bonding Curve Sniper v2 — HTTP Polling
-    Four.meme factory TokenCreate event via eth_getLogs
+    FM Bonding Curve Sniper v2 — Continuous Parallel Polling
+    3 workers always running — no sleep, max coverage
     """
     TOKEN_CREATE_SIGS = [
         ("0xb9d10aa6e0d565720d9f16b6d742668c3406afc3f2592b890549f66f78033b2c",
@@ -5306,32 +5306,45 @@ def poll_four_meme_v2():
     _seen_lock = threading.Lock()
     _active_topic = [None]
 
-    def _poll_loop():
-        print("✅ [FM] HTTP Polling started — TokenCreate event")
-        _free_rpcs = [
-            "https://bsc-rpc.publicnode.com",
-            "https://bsc.drpc.org",
-            "https://1rpc.io/bnb",
-        ]
-        _rpc_idx = [0]
+    # 3 different RPCs — each worker uses own RPC
+    _RPCS = [
+        "https://bsc-rpc.publicnode.com",
+        "https://bsc.drpc.org",
+        "https://1rpc.io/bnb",
+    ]
 
-        def _get_free_w3():
-            rpc = _free_rpcs[_rpc_idx[0] % len(_free_rpcs)]
-            return Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 5}))
+    def _handle_token(token_addr, dev_addr):
+        with _seen_lock:
+            if token_addr.lower() in _seen: return
+            _seen.add(token_addr.lower())
+        if len(_seen) > 1000: _seen.clear()
 
+        if not FM_SNIPER_ENABLED: return
+        with _fm_sniped_lock:
+            if token_addr.lower() in _fm_sniped: return
+
+        print(f"🆕 [FM] TokenCreate: {token_addr[:10]} dev:{dev_addr[:10] if dev_addr else '?'}")
+        _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
+        threading.Thread(target=_fm_snipe, args=(token_addr, dev_addr, time.time()), daemon=True).start()
+
+    def _worker(rpc_url, worker_id):
+        """Continuous worker — always polling, no sleep"""
+        print(f"✅ [FM] Poll worker {worker_id} started: {rpc_url[:30]}")
+        _last_block = [0]
         while not _fm_stop_event.is_set():
             try:
                 if not FM_SNIPER_ENABLED:
-                    time.sleep(3)
-                    continue
+                    time.sleep(1); continue
 
-                w3 = _get_free_w3()
-                if not w3:
-                    time.sleep(5)
-                    continue
+                w3 = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 5}))
+                current = w3.eth.block_number
 
-                current    = w3.eth.block_number
-                from_block = current - 2  # last ~6s
+                # Same block — no new tokens, skip
+                if current == _last_block[0]:
+                    time.sleep(0.5); continue
+
+                from_block    = max(_last_block[0] + 1, current - 2)
+                _last_block[0] = current
 
                 topics_to_try = [_active_topic[0]] if _active_topic[0] else [t[0] for t in TOKEN_CREATE_SIGS]
 
@@ -5345,7 +5358,7 @@ def poll_four_meme_v2():
                         })
 
                         if logs and _active_topic[0] != topic_hash:
-                            print(f"✅ [FM] TokenCreate topic active: {topic_hash[:10]}")
+                            print(f"✅ [FM] Active topic: {topic_hash[:10]}")
                             _active_topic[0] = topic_hash
 
                         for log in logs:
@@ -5357,13 +5370,7 @@ def poll_four_meme_v2():
                                 token_addr = "0x" + _data[26:66]
                             elif len(_topics) > 1:
                                 token_addr = "0x" + _topics[1][-40:]
-
                             if not token_addr: continue
-
-                            with _seen_lock:
-                                if token_addr.lower() in _seen: continue
-                                _seen.add(token_addr.lower())
-                            if len(_seen) > 1000: _seen.clear()
 
                             dev_addr = ""
                             if _data and len(_data) >= 130:
@@ -5371,34 +5378,23 @@ def poll_four_meme_v2():
                             elif len(_topics) > 2:
                                 dev_addr = "0x" + _topics[2][-40:]
 
-                            if not FM_SNIPER_ENABLED: continue
-                            with _fm_sniped_lock:
-                                if token_addr.lower() in _fm_sniped: continue
-
-                            print(f"🆕 [FM] TokenCreate: {token_addr[:10]} dev:{dev_addr[:10]}")
-                            _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
-
-                            _now = time.time()
-                            threading.Thread(
-                                target=_fm_snipe,
-                                args=(token_addr, dev_addr, _now),
-                                daemon=True
-                            ).start()
+                            _handle_token(token_addr, dev_addr)
                         break
 
-                    except Exception as _le:
-                        continue
+                    except Exception: continue
 
             except Exception as e:
                 err = str(e)
                 if "429" in err or "Too Many" in err:
-                    _rpc_idx[0] += 1
-                print(f"⚠️ [FM] poll error: {err[:60]}")
+                    time.sleep(2)
+                else:
+                    time.sleep(0.5)
 
-            time.sleep(3)  # har 3s poll karo
+    # 3 workers — each on different RPC, always running
+    for i, rpc in enumerate(_RPCS):
+        threading.Thread(target=_worker, args=(rpc, i+1), daemon=True).start()
 
-    threading.Thread(target=_poll_loop, daemon=True).start()
-    print("✅ [FM] Bonding Curve Sniper v2 started — HTTP polling TokenCreate")
+    print("✅ [FM] 3 parallel poll workers started — continuous, no sleep")
 
 
 def _unregister_position_pair(token_address: str):
