@@ -304,6 +304,21 @@ def get_token_price_bnb(token_address: str) -> float:
         if amt3[2] > 0: return _cache_return(amt3[2] / 1e18)
     except: pass
 
+    # Path 4: Bonding curve fallback (FM tokens not on PancakeSwap yet)
+    try:
+        info = _fm_get_token_info(token_address)
+        if info and info.get("lastPrice", 0) > 0 and not info.get("liquidityAdded"):
+            _bnb_p = market_cache.get("bnb_price", 640)
+            # lastPrice = price in quote token (BNB or USDT)
+            _lp = info["lastPrice"] / 1e18
+            _quote = info.get("quote","").lower()
+            _USDT_L = "0x55d398326f99059ff775485246999027b3197955"
+            _BUSD_L = "0xe9e7cea3dedca5984780bafc599bd69add087d56"
+            if _quote in [_USDT_L, _BUSD_L]:
+                _lp = _lp / _bnb_p if _bnb_p else _lp
+            return _cache_return(_lp)
+    except: pass
+
     return 0.0
 
 def get_token_price_bnb_full(token_address: str) -> float:
