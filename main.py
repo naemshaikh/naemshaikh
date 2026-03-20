@@ -5058,40 +5058,56 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _price1 = _info1_fresh.get("lastPrice", 0)
         _funds1 = _info1_fresh.get("funds", 0)
 
-        # 2s wait mein gas + nonce pre-fetch karo parallel — buy ke time 0ms
+        # Dynamic momentum detection — movement milte hi buy, max 2s wait
         _pre_gas   = [0]
         _pre_nonce = [0]
+        _w3_qn     = _get_w3q()  # QuickNode for momentum polling
+
         def _prefetch():
             try:
-                _pre_gas[0]   = _fm_get_cached_gas(w3)
+                _w3p = _w3_qn or w3
+                _pre_gas[0] = _fm_get_cached_gas(_w3p)
                 if TRADE_MODE == "real":
                     _wa = BSC_WALLET or REAL_WALLET
                     if _wa:
-                        _pre_nonce[0] = w3.eth.get_transaction_count(_wa, "pending")
+                        _pre_nonce[0] = _w3p.eth.get_transaction_count(_wa, "pending")
             except: pass
+
         import concurrent.futures as _cf3
-        with _cf3.ThreadPoolExecutor(max_workers=1) as _ex3:
-            _pf = _ex3.submit(_prefetch)
-            # 2s wait — actual momentum window
-            time.sleep(2)
-            _pf.result(timeout=1)  # wait for prefetch to complete
+        _pf_ex = _cf3.ThreadPoolExecutor(max_workers=1)
+        _pf    = _pf_ex.submit(_prefetch)
 
-        _info2 = _fm_get_token_info(token_addr, w3)
-        if not _info2:
-            _skip("momentum check failed"); return
-        if _info2["liquidityAdded"]:
-            _skip("graduated during wait"); return
-        _price2 = _info2.get("lastPrice", 0)
-        _funds2 = _info2.get("funds", 0)
+        # Poll every 200ms — movement detect hote hi break, max 2s
+        _info2       = None
+        _price2      = 0
+        _funds2      = 0
+        _t_momentum  = time.time()
+        _moved       = False
+        while time.time() - _t_momentum < 2.0:
+            time.sleep(0.2)
+            try:
+                _snap = _fm_get_token_info(token_addr, _w3_qn or w3)
+                if not _snap: continue
+                if _snap.get("liquidityAdded"):
+                    _pf_ex.shutdown(wait=False)
+                    _skip("graduated during momentum"); return
+                _p = _snap.get("lastPrice", 0)
+                _f = _snap.get("funds", 0)
+                if _p > _price1 and _f > _funds1:
+                    _info2  = _snap
+                    _price2 = _p
+                    _funds2 = _f
+                    _moved  = True
+                    break  # Movement detected — buy immediately
+            except: continue
 
-        # Price momentum check
-        if _price2 <= _price1:
-            _skip("no momentum — price flat/down"); return
+        _pf.result(timeout=1)
+        _pf_ex.shutdown(wait=False)
 
-        # Volume momentum — BNB raised badha?
+        if not _moved or not _info2:
+            _skip("no momentum in 2s"); return
+
         _funds_diff = (_funds2 - _funds1) / 1e18
-        if _funds_diff <= 0:
-            _skip("no volume — no new buyers in 2s"); return
 
         _momentum_pct = round((_price2 - _price1) / max(_price1, 1) * 100, 1)
 
@@ -5113,8 +5129,10 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 pk = os.getenv("WALLET_PRIVATE_KEY", "") or os.getenv("PRIVATE_KEY", "")
                 if not wallet_addr or not pk:
                     _skip("no wallet/key"); return
-                # QuickNode HTTP for buy tx — faster, fallback to free RPC
-                _w3_buy = _get_w3q() or w3
+                # QuickNode HTTP for buy tx — no fallback, speed critical
+                _w3_buy = _get_w3q()
+                if not _w3_buy:
+                    _skip("QuickNode not available"); return
                 # Grok confirmed: buyTokenAMAP(token, funds, minAmount) payable
                 fc = _w3_buy.eth.contract(
                     address=Web3.to_checksum_address(_FM_FACTORY_ADDR),
