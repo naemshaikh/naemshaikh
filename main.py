@@ -5077,7 +5077,7 @@ def poll_four_meme_v2():
             await ws.send(_j.dumps({
                 "id": 1, "jsonrpc": "2.0", "method": "eth_subscribe",
                 "params": ["logs", {
-                    "address": _FM_FACTORY_ADDRS,
+                    "address": _FM_FACTORY_ADDRS[0],
                     "topics":  [TOKEN_CREATE_TOPIC]
                 }]
             }))
