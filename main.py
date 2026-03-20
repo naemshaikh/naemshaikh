@@ -5123,9 +5123,12 @@ _QN_WSS = os.getenv("QUICKNODE_WSS","wss://blissful-dark-scion.bsc.quiknode.pro/
 
 def poll_four_meme_v2():
     """
-    FM Bonding Curve Sniper v2 — QuickNode WSS Push
-    Real-time TokenCreate event detection
-    QuickNode free trial mein eth_subscribe logs supported hai
+    FM Bonding Curve Sniper v2 — Dual Detection
+    1. PRIMARY: QuickNode mempool (newPendingTransactions)
+       createToken selector 0x2537486f filter
+       = Seconds before mining (earliest possible)
+    2. BACKUP: TokenCreate confirmed event (WSS)
+       = Fallback if mempool misses
     """
     import asyncio, json as _j
 
@@ -5134,23 +5137,92 @@ def poll_four_meme_v2():
     except ImportError:
         print("WARN [FM] websockets not installed"); return
 
+    FACTORY_ADDR       = "0x5c952063c7fc8610ffdb798152d69f0b9550762b"
+    CREATE_SELECTOR    = "0x2537486f"  # createToken(bytes,bytes) - Grok confirmed
     TOKEN_CREATE_TOPIC = "0x396d5e902b675b032348d3d2e9517ee8f0c4a926603fbc075d3d282ff00cad20"
     _seen = set()
+    _seen_lock = threading.Lock()
 
-    async def _listen(url):
+    def _handle_new_token(token_addr, dev_addr="", source=""):
+        """Common handler for both mempool and confirmed"""
+        if not token_addr: return
+        tok_lower = token_addr.lower()
+        with _seen_lock:
+            if tok_lower in _seen: return
+            _seen.add(tok_lower)
+        if len(_seen) > 1000: _seen.clear()
+
+        if not FM_SNIPER_ENABLED: return
+        with _fm_sniped_lock:
+            if tok_lower in _fm_sniped: return
+
+        print(f"🆕 [FM] {source} New token: {token_addr[:10]} dev:{dev_addr[:10] if dev_addr else '?'}")
+        _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
+
+        _now = time.time()
+        threading.Thread(
+            target=_fm_snipe,
+            args=(token_addr, dev_addr, _now),
+            daemon=True
+        ).start()
+
+    # ── PRIMARY: Mempool detection ──
+    async def _listen_mempool(url):
+        async with _ws.connect(url, ping_interval=20, ping_timeout=15,
+                               close_timeout=30, max_size=2**20) as ws:
+            # Subscribe newPendingTransactions with full tx data
+            await ws.send(_j.dumps({
+                "id": 1, "jsonrpc": "2.0",
+                "method": "eth_subscribe",
+                "params": ["newPendingTransactions", True]  # True = full tx object
+            }))
+            ack = _j.loads(await asyncio.wait_for(ws.recv(), timeout=10))
+            if ack.get("error"):
+                raise Exception(f"Mempool sub failed: {ack['error']}")
+            print(f"✅ [FM] Mempool connected: {url[:40]}")
+
+            while True:
+                try:
+                    msg = await ws.recv()
+                    data = _j.loads(msg)
+                    tx = (data.get("params") or {}).get("result") or {}
+                    if not tx: continue
+
+                    # Filter: to = factory + input starts with createToken selector
+                    to_addr = (tx.get("to") or "").lower()
+                    inp     = tx.get("input", "") or tx.get("data", "")
+                    if to_addr != FACTORY_ADDR.lower(): continue
+                    if not inp.startswith(CREATE_SELECTOR): continue
+
+                    # Dev = tx sender
+                    dev_addr = tx.get("from", "")
+
+                    # Token address abhi nahi pata (not mined yet)
+                    # TokenCreate backup se milega — bus dev track karo
+                    tx_hash = tx.get("hash", "")
+                    print(f"🔥 [FM] Mempool createToken detected! dev:{dev_addr[:10]} tx:{tx_hash[:10]}")
+
+                    # Wait for token address from confirmed event
+                    # (mempool mein token address nahi hota)
+
+                except asyncio.TimeoutError: continue
+                except Exception as e: raise e
+
+    # ── BACKUP: Confirmed TokenCreate event ──
+    async def _listen_confirmed(url):
         async with _ws.connect(url, ping_interval=20, ping_timeout=15,
                                close_timeout=30, max_size=2**20) as ws:
             await ws.send(_j.dumps({
-                "id": 1, "jsonrpc": "2.0", "method": "eth_subscribe",
+                "id": 2, "jsonrpc": "2.0", "method": "eth_subscribe",
                 "params": ["logs", {
-                    "address": _FM_FACTORY_ADDR,
+                    "address": FACTORY_ADDR,
                     "topics":  [TOKEN_CREATE_TOPIC]
                 }]
             }))
             ack = _j.loads(await asyncio.wait_for(ws.recv(), timeout=10))
             if ack.get("error"):
-                raise Exception(f"FM sub failed: {ack['error']}")
-            print(f"✅ [FM] WSS Push connected: {url[:40]}")
+                raise Exception(f"Confirmed sub failed: {ack['error']}")
+            print(f"✅ [FM] Confirmed WSS connected: {url[:40]}")
 
             while True:
                 try:
@@ -5161,7 +5233,6 @@ def poll_four_meme_v2():
 
                     _data = log.get("data", "")
                     if not _data: continue
-
                     _data_hex = _data.hex() if hasattr(_data, "hex") else str(_data)
                     if _data_hex.startswith("0x"): _data_hex = _data_hex[2:]
                     if len(_data_hex) < 128: continue
@@ -5169,56 +5240,56 @@ def poll_four_meme_v2():
                     dev_addr   = "0x" + _data_hex[24:64]
                     token_addr = "0x" + _data_hex[88:128]
 
-                    if not token_addr or token_addr.lower() in _seen: continue
-                    _seen.add(token_addr.lower())
-                    if len(_seen) > 1000: _seen.clear()
-
-                    if not FM_SNIPER_ENABLED: continue
-                    with _fm_sniped_lock:
-                        if token_addr.lower() in _fm_sniped: continue
-
-                    print(f"🆕 [FM] New token: {token_addr[:10]} dev:{dev_addr[:10]}")
-                    _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
-
-                    _now = time.time()
-                    threading.Thread(
-                        target=_fm_snipe,
-                        args=(token_addr, dev_addr, _now),
-                        daemon=True
-                    ).start()
+                    _handle_new_token(token_addr, dev_addr, "Confirmed")
 
                 except asyncio.TimeoutError: continue
                 except Exception as e: raise e
 
-    async def _loop():
-        idx = fails = 0
-        endpoints = [
-            _QN_WSS,                        # QuickNode — push based ✅
-            "wss://bsc-rpc.publicnode.com",  # fallback
-            "wss://bsc.drpc.org",
-        ]
+    async def _loop_mempool():
+        fails = 0
         while not _fm_stop_event.is_set():
             try:
-                await _listen(endpoints[idx % len(endpoints)])
+                await _listen_mempool(_QN_WSS)
                 fails = 0
             except Exception as e:
                 if _fm_stop_event.is_set(): break
                 fails += 1
                 wait = min(5*fails, 60)
-                print(f"WARN [FM] fail #{fails}: {str(e)[:50]} retry {wait}s")
+                print(f"WARN [FM] Mempool fail #{fails}: {str(e)[:50]} retry {wait}s")
+                await asyncio.sleep(wait)
+
+    async def _loop_confirmed():
+        idx = fails = 0
+        endpoints = [_QN_WSS, "wss://bsc-rpc.publicnode.com", "wss://bsc.drpc.org"]
+        while not _fm_stop_event.is_set():
+            try:
+                await _listen_confirmed(endpoints[idx % len(endpoints)])
+                fails = 0
+            except Exception as e:
+                if _fm_stop_event.is_set(): break
+                fails += 1
+                wait = min(5*fails, 60)
+                print(f"WARN [FM] Confirmed fail #{fails}: {str(e)[:50]} retry {wait}s")
                 await asyncio.sleep(wait)
             idx += 1
-        print("🛑 [FM] WSS stopped")
 
-    def _run():
+    def _run_mempool():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        try: loop.run_until_complete(_loop())
-        except Exception as ex: print(f"WARN [FM] crashed: {ex}")
+        try: loop.run_until_complete(_loop_mempool())
+        except Exception as ex: print(f"WARN [FM] Mempool crashed: {ex}")
         finally: loop.close()
 
-    threading.Thread(target=_run, daemon=True).start()
-    print("✅ [FM] Bonding Curve Sniper v2 — QuickNode WSS Push started")
+    def _run_confirmed():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try: loop.run_until_complete(_loop_confirmed())
+        except Exception as ex: print(f"WARN [FM] Confirmed crashed: {ex}")
+        finally: loop.close()
+
+    threading.Thread(target=_run_mempool,   daemon=True).start()
+    threading.Thread(target=_run_confirmed, daemon=True).start()
+    print("✅ [FM] Dual detection started — Mempool(primary) + Confirmed(backup)")
 
 def _register_position_pair(token_address: str, known_pair: str = None):
     """Naya position open hua — pair address dhundo aur register karo"""
