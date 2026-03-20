@@ -4955,14 +4955,20 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         print(f"✅ [FM] Stage1 PASS: mc=${_mc_usd:.0f}")
 
         # ════════════════════════════════════════
-        # STAGE 2 — MOMENTUM (QuickNode)
+        # STAGE 2 — MOMENTUM (Free RPC)
         # ════════════════════════════════════════
         w3 = _fm_get_w3()
-        if not w3: _skip("no QuickNode RPC"); return
+        if not w3: _skip("no RPC for momentum"); return
 
-        _price1 = info.get("lastPrice", 0)
-        _funds1 = info.get("funds", 0)
-        # 2s wait — momentum check
+        # Fresh snapshot ABHI lo — Stage 1 ka stale data use nahi karna
+        _info1_fresh = _fm_get_token_info(token_addr, w3)
+        if not _info1_fresh: _skip("momentum snapshot failed"); return
+        if _info1_fresh["liquidityAdded"]: _skip("graduated before momentum check"); return
+
+        _price1 = _info1_fresh.get("lastPrice", 0)
+        _funds1 = _info1_fresh.get("funds", 0)
+
+        # 2s wait — actual momentum window
         time.sleep(2)
 
         _info2 = _fm_get_token_info(token_addr, w3)
