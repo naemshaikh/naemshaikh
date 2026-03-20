@@ -4856,8 +4856,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         # 4. Price momentum check — free RPC use karo (QuickNode save)
         _price1 = info.get("lastPrice", 0)
         time.sleep(10)
-        # Global w3 (Chainstack/Ankr) for momentum check — no QuickNode cost
-        _info2 = _fm_get_token_info(token_addr, w3)
+        # Ankr for momentum check — QuickNode save karo buy ke liye
+        _w3_ankr = Web3(Web3.HTTPProvider("https://rpc.ankr.com/bsc", request_kwargs={"timeout": 5}))
+        _info2 = _fm_get_token_info(token_addr, _w3_ankr)
         if not _info2:
             _skip("momentum check failed"); return
         if _info2["liquidityAdded"]:
