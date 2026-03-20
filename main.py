@@ -4710,13 +4710,14 @@ def _fm_get_token_info(token_addr, w3=None):
             "tokenManager":   token_manager,
             "quote":          info[2],
             "lastPrice":      info[3],
+            "tradingFeeRate": info[4],
             "launchTime":     info[6],
             "offers":         info[7],
             "maxOffers":      info[8],
             "funds":          info[9],
             "maxFunds":       info[10],
             "liquidityAdded": info[11],
-            "factory":        token_manager,  # use tokenManager for buy/sell
+            "factory":        token_manager,
         }
     except Exception as e:
         print(f"⚠️ [FM] getTokenInfo error: {str(e)[:60]}")
@@ -4930,6 +4931,11 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         # 2. Already graduated?
         if info["liquidityAdded"]:
             _skip("already graduated"); return
+
+        # 3. Fee rate check — 0ms, data already in info
+        _fee_rate = info.get("tradingFeeRate", 0)
+        if _fee_rate > 300:  # 3% = 300 basis points
+            _skip(f"high fee {_fee_rate/100:.1f}% > 3%"); return
 
         # 3. MC < $10k + pump at entry < 10%
         _last_price   = info.get("lastPrice", 0)
