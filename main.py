@@ -4893,15 +4893,28 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         else:
             _skip("MC calc failed — no price"); return
 
-        # 4. Raised BNB check
-        # quote = WBNB address means BNB raised, otherwise skip non-BNB pairs
-        _WBNB_LOWER = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
+        # 4. Raised check — BNB + USDT/CAKE pairs support
+        _WBNB_LOWER  = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
+        _USDT_LOWER  = "0x55d398326f99059ff775485246999027b3197955"
+        _BUSD_LOWER  = "0xe9e7cea3dedca5984780bafc599bd69add087d56"
+        _CAKE_LOWER  = "0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82"
         _quote = info.get("quote", "").lower()
-        if _quote and _quote != _WBNB_LOWER:
-            _skip(f"non-BNB pair — skip"); return
-        raised_bnb = round(info["funds"] / 1e18, 4)
-        if raised_bnb < 0.1:
-            _skip(f"too early raised={raised_bnb:.4f} BNB < 0.1"); return
+        _bnb_price = market_cache.get("bnb_price", 640)
+
+        if _quote == _WBNB_LOWER:
+            raised_bnb = round(info["funds"] / 1e18, 4)
+        elif _quote in [_USDT_LOWER, _BUSD_LOWER]:
+            # USDT/BUSD — convert to BNB equivalent
+            raised_usd = info["funds"] / 1e18
+            raised_bnb = round(raised_usd / _bnb_price, 4) if _bnb_price > 0 else 0
+        elif _quote == _CAKE_LOWER:
+            # CAKE — approximate via price (skip for now, too complex)
+            _skip("CAKE pair — skip"); return
+        else:
+            _skip(f"unknown quote — skip"); return
+
+        if raised_bnb < 0.05:
+            _skip(f"too early raised={raised_bnb:.4f} BNB < 0.05"); return
         if raised_bnb > 5.0:
             _skip(f"raised too much {raised_bnb:.2f} BNB"); return
 
