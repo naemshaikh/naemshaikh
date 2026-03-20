@@ -5045,6 +5045,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if _dev_pct_res[0] > 10:
             _skip(f"dev wallet too high {_dev_pct_res[0]:.0f}%"); return
 
+        _dev_wallet_pct = _dev_pct_res[0]  # for _save_fm_event later
+
         print(f"✅ [FM] Stage1 PASS: mc=${_mc_usd:.0f}")
 
         # ════════════════════════════════════════
@@ -5193,8 +5195,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         ms = int((time.time() - _t_start) * 1000)
 
-        # Unique buyers at buy time
-        _buyers_at_entry, _ = _fm_get_unique_buyers(token_addr, _fm_get_w3())
+        # Reuse buyers count from momentum check — no extra call needed
+        _buyers_at_entry = _ub
         add_position_to_monitor(
             AUTO_SESSION_ID, token_addr, token_name, entry, size_bnb,
             stop_loss_pct=20.0
