@@ -5171,11 +5171,12 @@ def poll_four_meme_v2():
 
     async def _loop():
         idx = fails = 0
-        # QuickNode FM ke liye — fastest detection
+        # QuickNode free trial = WSS subscribe nahi karta
+        # Free RPC use karo FM detection ke liye
         endpoints = [
-            _QN_WSS,  # QuickNode primary
-            "wss://bsc-rpc.publicnode.com",  # fallback
+            "wss://bsc-rpc.publicnode.com",
             "wss://bsc.drpc.org",
+            "wss://bsc.publicnode.com",
         ]
         while not _fm_stop_event.is_set():
             try:
