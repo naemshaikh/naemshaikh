@@ -5109,8 +5109,13 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     _price2  = _p
                     _funds2  = _f
                     if _consec >= 2:
+                        # Unique buyers check — min 5 real buyers
+                        _ub, _ = _fm_get_unique_buyers(token_addr, _w3_qn or w3)
+                        if _ub < 5:
+                            _skip(f"not enough buyers {_ub}/5"); 
+                            _pf_ex.shutdown(wait=False); return
                         _moved = True
-                        break  # 2 consecutive confirms — real momentum ✅
+                        break  # 2 consecutive confirms + 5 buyers — real momentum ✅
                 else:
                     _consec = 0  # reset on any fail
                 _prev_funds = _f
