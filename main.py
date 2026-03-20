@@ -4579,6 +4579,25 @@ _FM_FACTORY_ADDRS = [
     "0x48a31b72f77a2a90ebe24e5c4c88be43e2ad6beb",
 ]
 _FM_FACTORY_ADDR = "0x5c952063c7fc8610ffdb798152d69f0b9550762b"
+
+# ── Gas price cache — buy ke time fast ──
+_fm_gas_cache = {"price": 0, "ts": 0}
+_fm_gas_lock  = threading.Lock()
+
+def _fm_get_cached_gas(w3):
+    """Har 10s mein gas price update — buy ke time 0ms"""
+    import time as _t
+    with _fm_gas_lock:
+        if _t.time() - _fm_gas_cache["ts"] < 10 and _fm_gas_cache["price"] > 0:
+            return _fm_gas_cache["price"]
+    try:
+        gp = w3.eth.gas_price
+        with _fm_gas_lock:
+            _fm_gas_cache["price"] = gp
+            _fm_gas_cache["ts"]    = _t.time()
+        return gp
+    except:
+        return 3_000_000_000  # 3 gwei fallback
 _FM_WBNB         = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
 _FM_WSS = []
 _FM_RPC = []
@@ -4968,8 +4987,23 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _price1 = _info1_fresh.get("lastPrice", 0)
         _funds1 = _info1_fresh.get("funds", 0)
 
-        # 2s wait — actual momentum window
-        time.sleep(2)
+        # 2s wait mein gas + nonce pre-fetch karo parallel — buy ke time 0ms
+        _pre_gas   = [0]
+        _pre_nonce = [0]
+        def _prefetch():
+            try:
+                _pre_gas[0]   = _fm_get_cached_gas(w3)
+                if TRADE_MODE == "real":
+                    _wa = BSC_WALLET or REAL_WALLET
+                    if _wa:
+                        _pre_nonce[0] = w3.eth.get_transaction_count(_wa, "pending")
+            except: pass
+        import concurrent.futures as _cf3
+        with _cf3.ThreadPoolExecutor(max_workers=1) as _ex3:
+            _pf = _ex3.submit(_prefetch)
+            # 2s wait — actual momentum window
+            time.sleep(2)
+            _pf.result(timeout=1)  # wait for prefetch to complete
 
         _info2 = _fm_get_token_info(token_addr, w3)
         if not _info2:
@@ -5021,8 +5055,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     "from":     wallet_addr,
                     "value":    int(size_bnb * 1e18),
                     "gas":      400000,
-                    "gasPrice": int(w3.eth.gas_price * 1.5),
-                    "nonce":    w3.eth.get_transaction_count(wallet_addr),
+                    "gasPrice": int((_pre_gas[0] or _fm_get_cached_gas(w3)) * 1.5),
+                    "nonce":    _pre_nonce[0] or w3.eth.get_transaction_count(wallet_addr, "pending"),
                 })
                 from eth_account import Account
                 signed   = Account.sign_transaction(tx, pk)
