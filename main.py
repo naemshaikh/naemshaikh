@@ -5093,13 +5093,25 @@ def poll_four_meme_v2():
 
     def _poll_loop():
         print("✅ [FM] HTTP Polling started — TokenCreate event")
+        # Free RPC use karo — QuickNode rate limit hogi polling pe
+        _free_rpcs = [
+            "https://bsc-rpc.publicnode.com",
+            "https://bsc.drpc.org",
+            "https://1rpc.io/bnb",
+        ]
+        _rpc_idx = [0]
+
+        def _get_free_w3():
+            rpc = _free_rpcs[_rpc_idx[0] % len(_free_rpcs)]
+            return Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 5}))
+
         while not _fm_stop_event.is_set():
             try:
                 if not FM_SNIPER_ENABLED:
                     time.sleep(3)
                     continue
 
-                w3 = _fm_get_w3()
+                w3 = _get_free_w3()
                 if not w3:
                     time.sleep(5)
                     continue
@@ -5171,7 +5183,10 @@ def poll_four_meme_v2():
                         continue  # next topic try karo
 
             except Exception as e:
-                print(f"⚠️ [FM] poll error: {str(e)[:60]}")
+                err = str(e)
+                if "429" in err or "Too Many" in err:
+                    _rpc_idx[0] += 1  # next RPC try karo
+                print(f"⚠️ [FM] poll error: {err[:60]}")
 
             time.sleep(3)  # har 3s poll karo
 
