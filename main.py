@@ -4986,7 +4986,12 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         # ════════════════════════════════════════
         # STAGE 1 — PRE-FILTER (parallel)
         # ════════════════════════════════════════
-        _w3a = Web3(Web3.HTTPProvider("https://bsc-rpc.publicnode.com", request_kwargs={"timeout": 6}))
+        _w3a = None
+        for _rpc in ["https://bsc-rpc.publicnode.com", "https://bsc.drpc.org", "https://1rpc.io/bnb"]:
+            try:
+                _w3a = Web3(Web3.HTTPProvider(_rpc, request_kwargs={"timeout": 6}))
+                if _w3a.is_connected(): break
+            except: continue
 
         _info_res    = [None]
         _dev_pct_res = [0.0]
