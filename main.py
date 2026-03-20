@@ -5104,6 +5104,7 @@ def poll_four_meme_v2():
                     # Non-FM tokens quickly fail karte hain
                     def _try_snipe(ta, da, ts):
                         try:
+                            if not FM_SNIPER_ENABLED or _fm_stop_event.is_set(): return
                             _w = _fm_get_w3()
                             if not _w: return
                             hc = _w.eth.contract(
@@ -5130,6 +5131,7 @@ def poll_four_meme_v2():
 
                 except asyncio.TimeoutError: continue
                 except Exception as e: raise e
+                if _fm_stop_event.is_set(): break
 
     async def _loop():
         idx = fails = 0
