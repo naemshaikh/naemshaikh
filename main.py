@@ -4894,8 +4894,6 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             else:
                 # BNB — convert to USD
                 _mc_usd = (_last_price / 1e18) * _total_supply * _bnb_price
-            if _mc_usd < 2000:
-                _skip(f"MC too low ${_mc_usd:.0f} < $2k"); return
             if _mc_usd > 10000:
                 _skip(f"MC too high ${_mc_usd:.0f} > $10k"); return
         else:
