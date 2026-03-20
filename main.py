@@ -5070,15 +5070,15 @@ def poll_four_meme_v2():
     async def _listen(url):
         async with _ws.connect(url, ping_interval=20, ping_timeout=15,
                                close_timeout=30, max_size=2**20) as ws:
-            # Official: TokenCreate event emitted by FM factory on new token creation
-            # factory address = log emitter (address filter)
-            # topic[0] = TokenCreate keccak hash
-            TOKEN_CREATE_TOPIC = "0x0a5575b3648bae2210cee56bf33254cc1ddfbc7bf637c0af2ac18b14fb1bae19"
+            # Transfer(from, to, value) — from=0x000 = mint = new token
+            # Subscribe to ALL transfers on FM factory addresses
+            # Filter mint (from=zero) in code
+            TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
             await ws.send(_j.dumps({
                 "id": 1, "jsonrpc": "2.0", "method": "eth_subscribe",
                 "params": ["logs", {
                     "address": _FM_FACTORY_ADDRS,
-                    "topics":  [TOKEN_CREATE_TOPIC]
+                    "topics":  [TRANSFER_TOPIC]
                 }]
             }))
             ack = _j.loads(await asyncio.wait_for(ws.recv(), timeout=10))
@@ -5094,22 +5094,25 @@ def poll_four_meme_v2():
                     if not log: continue
 
                     topics = log.get("topics", [])
-                    if not topics: continue
+                    if len(topics) < 3: continue
 
-                    # TokenCreate event:
-                    # log.address = factory contract
-                    # data contains: token_addr, dev_addr, amounts...
-                    # First 2 args in data = token address + dev address (32 bytes each)
-                    _data = log.get("data", "")
-                    if not _data or len(_data) < 130: continue
+                    # Transfer event:
+                    # topics[1] = from address (padded 32 bytes)
+                    # topics[2] = to address (padded 32 bytes)
+                    # log.address = TOKEN contract address
+                    from_addr = "0x" + topics[1][-40:]
+                    ZERO      = "0x0000000000000000000000000000000000000000"
+                    if from_addr.lower() != ZERO.lower():
+                        continue  # Not a mint, skip
 
-                    # token address = first 32 bytes of data (last 20 bytes = address)
-                    token_addr = "0x" + _data[26:66]
-                    dev_addr   = "0x" + _data[90:130]
+                    # Token = contract emitting the event
+                    token_addr = log.get("address", "")
+                    if not token_addr: continue
 
-                    if not token_addr or token_addr == "0x" + "0"*40: continue
+                    # Dev = recipient of minted tokens
+                    dev_addr = "0x" + topics[2][-40:]
 
-                    if not FM_SNIPER_ENABLED: continue  # FM stopped
+                    if not FM_SNIPER_ENABLED: continue
 
                     with _fm_sniped_lock:
                         if token_addr.lower() in _fm_sniped: continue
