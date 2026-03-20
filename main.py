@@ -5113,8 +5113,10 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 pk = os.getenv("WALLET_PRIVATE_KEY", "") or os.getenv("PRIVATE_KEY", "")
                 if not wallet_addr or not pk:
                     _skip("no wallet/key"); return
+                # QuickNode HTTP for buy tx — faster, fallback to free RPC
+                _w3_buy = _get_w3q() or w3
                 # Grok confirmed: buyTokenAMAP(token, funds, minAmount) payable
-                fc = w3.eth.contract(
+                fc = _w3_buy.eth.contract(
                     address=Web3.to_checksum_address(_FM_FACTORY_ADDR),
                     abi=_FM_BC_ABI
                 )
@@ -5126,13 +5128,13 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     "from":     wallet_addr,
                     "value":    int(size_bnb * 1e18),
                     "gas":      400000,
-                    "gasPrice": int((_pre_gas[0] or _fm_get_cached_gas(w3)) * 1.5),
-                    "nonce":    _pre_nonce[0] or w3.eth.get_transaction_count(wallet_addr, "pending"),
+                    "gasPrice": int((_pre_gas[0] or _fm_get_cached_gas(_w3_buy)) * 1.5),
+                    "nonce":    _pre_nonce[0] or _w3_buy.eth.get_transaction_count(wallet_addr, "pending"),
                 })
                 from eth_account import Account
                 signed   = Account.sign_transaction(tx, pk)
-                tx_hash  = w3.eth.send_raw_transaction(signed.raw_transaction)
-                receipt  = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
+                tx_hash  = _w3_buy.eth.send_raw_transaction(signed.raw_transaction)
+                receipt  = _w3_buy.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
                 if receipt["status"] != 1:
                     _skip("buy tx failed"); return
                 print(f"✅ [FM] Real buy: {tx_hash.hex()[:12]}")
