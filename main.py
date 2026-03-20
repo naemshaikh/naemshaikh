@@ -4902,6 +4902,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if not w3: _skip("no QuickNode RPC"); return
 
         _price1 = info.get("lastPrice", 0)
+        # 10s wait for momentum — non-blocking
         time.sleep(10)
 
         _info2 = _fm_get_token_info(token_addr, w3)
@@ -4979,36 +4980,29 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             "banked_pnl_bnb":   0.0,
             "bought_at":        datetime.utcnow().isoformat(),
             "mode":             TRADE_MODE,
-            "fm_progress":      progress,
-            "fm_raised_bnb":    raised_bnb,
+            "fm_mc_usd":        round(_mc_usd, 0),
+            "fm_momentum":      _momentum_pct,
             "fm_dev":           dev_addr[:10] if dev_addr else "",
             "buy_reasoning": {
                 "source":    "FM_BC_v2",
-                "progress":  f"{progress:.1f}%",
-                "raised":    f"{raised_bnb:.3f}BNB",
-                "dev_rugs":  dev_hist.get("rugged", 0),
-                "wallet_pct":wallet_pct,
+                "mc_usd":    f"${_mc_usd:.0f}",
+                "momentum":  f"+{_momentum_pct:.1f}%",
             },
-            # TP levels
-            "tp1_done": False,  # +40% → 50% sell
-            "tp2_done": False,  # +100% → 25% sell
-            "tp3_done": False,  # +300% → 15% sell
-            # Moon bag 10% with TrailSL -30%
         }
         auto_trade_stats["total_auto_buys"] += 1
         _scanner_stats["fm_bought"] = _scanner_stats.get("fm_bought", 0) + 1
         threading.Thread(target=_persist_positions, daemon=True).start()
 
         _push_notif("success", "🚀 FM Bonding Curve!",
-                    f"{token_name} prog={progress:.1f}% raised={raised_bnb:.2f}BNB | {ms}ms",
+                    f"{token_name} mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}% | {ms}ms",
                     token_name, token_addr)
         _log("buy", token_name,
-             f"🚀 FM BC v2 prog={progress:.1f}% raised={raised_bnb:.3f}BNB vel={velocity_sec:.0f}s {ms}ms",
+             f"🚀 FM BC v2 mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}% {ms}ms",
              token_addr)
         threading.Thread(target=_save_fm_event, args=(
-            token_addr, raised_bnb, 0, entry, progress, "BUY", "", ms
+            token_addr, 0, 0, entry, _momentum_pct, "BUY", "", ms
         ), daemon=True).start()
-        print(f"✅ [FM] BC SNIPED: {token_name} prog={progress:.1f}% {ms}ms")
+        print(f"✅ [FM] BC SNIPED: {token_name} mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}% {ms}ms")
 
         # ── POST-BUY: 30s buyer monitor — agar koi nahi aaya toh force exit ──
         def _fm_post_buy_monitor(ta, t_name):
