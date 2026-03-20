@@ -5028,7 +5028,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         ms = int((time.time() - _t_start) * 1000)
 
-        # ── ADD TO MONITOR ──
+        # Unique buyers at buy time
+        _buyers_at_entry, _ = _fm_get_unique_buyers(token_addr, _fm_get_w3())
         add_position_to_monitor(
             AUTO_SESSION_ID, token_addr, token_name, entry, size_bnb,
             stop_loss_pct=20.0
@@ -5066,6 +5067,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         threading.Thread(target=_save_fm_event, args=(
             token_addr, 0, 0, entry, _momentum_pct, "BUY", "", ms
         ), kwargs={
+            "buyers_at_entry": _buyers_at_entry,
             "momentum_pct":   _momentum_pct,
             "volume_change":  round(_funds_diff, 6),
             "pump_at_entry":  _pump_at_entry,
