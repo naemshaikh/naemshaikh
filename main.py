@@ -4867,9 +4867,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             _skip(f"dev blacklisted: {dev_addr[:10]}"); return
 
         # ════════════════════════════════════════
-        # STAGE 1 — PRE-FILTER (Ankr — free)
+        # STAGE 1 — PRE-FILTER (Free RPC)
         # ════════════════════════════════════════
-        _w3a = Web3(Web3.HTTPProvider("https://rpc.ankr.com/bsc", request_kwargs={"timeout": 6}))
+        _w3a = Web3(Web3.HTTPProvider("https://bsc-rpc.publicnode.com", request_kwargs={"timeout": 6}))
 
         # 1. Token info
         info = _fm_get_token_info(token_addr, _w3a)
