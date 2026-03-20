@@ -5081,13 +5081,13 @@ def poll_four_meme_v2():
     Bitquery docs confirmed:
     New token = Transfer(from=0x000) on factory contract
     """
-    TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
-    ZERO_PADDED    = "0x" + "0" * 64
+    # BSCScan confirmed: 0x0a5575b3... = new token creation event on Four.meme factory
+    TOKEN_CREATE_TOPIC = "0x0a5575b3648bae2210cee56bf33254cc1ddfbc7bf637c0af2ac18b14fb1bae19"
 
     _seen = set()
 
     def _poll_loop():
-        print("✅ [FM] HTTP Polling started — Transfer(mint) on factory")
+        print("✅ [FM] HTTP Polling started — TokenCreate confirmed BSCScan")
         _free_rpcs = [
             "https://bsc-rpc.publicnode.com",
             "https://bsc.drpc.org",
@@ -5118,7 +5118,7 @@ def poll_four_meme_v2():
 
                 logs = w3.eth.get_logs({
                     "address":   Web3.to_checksum_address(_FM_FACTORY_ADDR),
-                    "topics":    [[TRANSFER_TOPIC], [ZERO_PADDED]],
+                    "topics":    [[TOKEN_CREATE_TOPIC]],
                     "fromBlock": _last_block[0] + 1,
                     "toBlock":   current,
                 })
@@ -5126,18 +5126,19 @@ def poll_four_meme_v2():
                 _last_block[0] = current
 
                 for log in logs:
+                    _data   = log.get("data", "")
                     _topics = log.get("topics", [])
-                    if len(_topics) < 3: continue
 
-                    from_raw = _topics[1].hex() if hasattr(_topics[1], "hex") else str(_topics[1])
-                    if from_raw.replace("0x","").replace("0","") != "":
-                        continue
-
-                    token_addr = log.get("address", "")
+                    # Token address = first 32 bytes of data
+                    token_addr = ""
+                    if _data and len(_data) >= 66:
+                        token_addr = "0x" + _data[26:66]
                     if not token_addr or token_addr.lower() in _seen: continue
 
-                    dev_raw = _topics[2].hex() if hasattr(_topics[2], "hex") else str(_topics[2])
-                    dev_addr = "0x" + dev_raw[-40:]
+                    # Dev address = second 32 bytes of data
+                    dev_addr = ""
+                    if _data and len(_data) >= 130:
+                        dev_addr = "0x" + _data[90:130]
 
                     _seen.add(token_addr.lower())
                     if len(_seen) > 1000: _seen.clear()
@@ -5164,7 +5165,7 @@ def poll_four_meme_v2():
             time.sleep(3)
 
     threading.Thread(target=_poll_loop, daemon=True).start()
-    print("✅ [FM] Bonding Curve Sniper v2 started — Transfer(mint) polling")
+    print("✅ [FM] Bonding Curve Sniper v2 started — TokenCreate BSCScan confirmed")
 
 def _register_position_pair(token_address: str, known_pair: str = None):
     """Naya position open hua — pair address dhundo aur register karo"""
