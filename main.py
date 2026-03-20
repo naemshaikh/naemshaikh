@@ -5311,7 +5311,43 @@ def poll_four_meme_v2():
                 except asyncio.TimeoutError: continue
                 except Exception as e: raise e
 
-def _register_position_pair(token_address: str, known_pair: str = None):
+    # ── Confirmed WSS loop — Chainstack + public fallbacks ──
+    _cs_wss = os.getenv("BSC_WSS", "")
+    _CONFIRMED_ENDPOINTS = []
+    if _cs_wss: _CONFIRMED_ENDPOINTS.append(_cs_wss)
+    _CONFIRMED_ENDPOINTS += [
+        "wss://bsc-rpc.publicnode.com",
+        "wss://bsc.publicnode.com",
+        "wss://bsc.drpc.org",
+    ]
+
+    async def _confirmed_loop():
+        idx = 0
+        fails = 0
+        while True:
+            url = _CONFIRMED_ENDPOINTS[idx % len(_CONFIRMED_ENDPOINTS)]
+            try:
+                await _listen_confirmed(url)
+                fails = 0
+            except Exception as e:
+                fails += 1
+                wait = min(10 * fails, 60)
+                print(f"⚠️ [FM] Confirmed WSS fail #{fails} — retry {wait}s: {str(e)[:60]}")
+                await asyncio.sleep(wait)
+            idx += 1
+
+    def _run_confirmed():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(_confirmed_loop())
+        except Exception as ex:
+            print(f"⚠️ [FM] Confirmed thread: {ex}")
+        finally:
+            loop.close()
+
+    threading.Thread(target=_run_confirmed, daemon=True).start()
+    print("✅ [FM] Confirmed WSS detection started")
     """Naya position open hua — pair address dhundo aur register karo"""
     try:
         # Agar pair already known hai (from dex_data) — instant, no BSC call needed
