@@ -4700,6 +4700,69 @@ def _fm_get_unique_buyers(token_addr, w3=None):
 _fm_sniped      = set()
 _fm_sniped_lock = threading.Lock()
 
+# ── Global Monitor Box ──
+_fm_monitor_box      = {}   # {token_addr: {price1, funds1, added_at, result, done}}
+_fm_monitor_box_lock = threading.Lock()
+
+def _fm_monitor_box_worker():
+    """Single loop — monitors all tokens in box every 1s"""
+    _qn_url = os.getenv("QUICKNODE_HTTP", "")
+    _MIN_PRICE_MV = 1.001
+    _MIN_BNB_FLOW = 0.001
+    _EXPIRE_SEC   = 30  # 30s window
+
+    def _w3():
+        if _qn_url:
+            return Web3(Web3.HTTPProvider(_qn_url, request_kwargs={"timeout": 4}))
+        return _fm_get_w3()
+
+    print("✅ [FM] Monitor box worker started")
+    while True:
+        try:
+            with _fm_monitor_box_lock:
+                tokens = list(_fm_monitor_box.items())
+
+            for addr, data in tokens:
+                try:
+                    # Expire check
+                    if time.time() - data["added_at"] > _EXPIRE_SEC:
+                        with _fm_monitor_box_lock:
+                            _fm_monitor_box.pop(addr, None)
+                        data["done"].set()
+                        continue
+
+                    snap = _fm_get_token_info(addr, _w3())
+                    if not snap: continue
+
+                    if snap.get("liquidityAdded"):
+                        with _fm_monitor_box_lock:
+                            _fm_monitor_box.pop(addr, None)
+                        data["done"].set()
+                        continue
+
+                    _p = snap.get("lastPrice", 0)
+                    _f = snap.get("funds", 0)
+                    _price_ok = _p >= data["price1"] * _MIN_PRICE_MV
+                    _funds_ok = (_f - data["funds1"]) / 1e18 >= _MIN_BNB_FLOW
+
+                    if _price_ok and _funds_ok:
+                        print(f"✅ [FM] Box momentum: {addr[:10]} price+{(_p/data['price1']-1)*100:.2f}%")
+                        data["result"] = {"snap": snap, "price": _p, "funds": _f}
+                        with _fm_monitor_box_lock:
+                            _fm_monitor_box.pop(addr, None)
+                        data["done"].set()
+
+                except Exception as _e:
+                    print(f"⚠️ [FM] box monitor error: {str(_e)[:50]}")
+
+        except Exception as _e:
+            print(f"⚠️ [FM] box worker error: {str(_e)[:50]}")
+
+        time.sleep(1)
+
+# Start box worker thread
+threading.Thread(target=_fm_monitor_box_worker, daemon=True).start()
+
 # Dev history cache — on-chain results cache karo
 _fm_dev_cache      = {}
 _fm_dev_cache_lock = threading.Lock()
@@ -5053,73 +5116,52 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         print(f"✅ [FM] Stage1 PASS: mc=${_mc_usd:.0f}")
 
         # ════════════════════════════════════════
-        # STAGE 2 — MOMENTUM MONITOR
-        # 10 min monitor, 1s polling, QuickNode
+        # STAGE 2 — GLOBAL MONITOR BOX
+        # 30s window, 1s poll, QuickNode
         # ════════════════════════════════════════
-        _qn_url = os.getenv("QUICKNODE_HTTP", "")
-        _MIN_PRICE_MV = 1.001   # 0.1% minimum price move
-        _MIN_BNB_FLOW = 0.001   # any BNB flow
-
-        def _get_fresh_w3():
-            if _qn_url:
-                return Web3(Web3.HTTPProvider(_qn_url, request_kwargs={"timeout": 4}))
-            return _fm_get_w3()
-
         _price1 = info.get("lastPrice", 0)
         _funds1 = info.get("funds", 0)
-
         _pre_gas   = [0]
         _pre_nonce = [0]
-        _momentum_result = [None]
-        _monitor_done = threading.Event()
 
+        # Gas + nonce prefetch parallel
         def _prefetch_gas_nonce():
             try:
-                _w3p = _get_fresh_w3()
-                _pre_gas[0] = _fm_get_cached_gas(_w3p)
+                _qn = _get_w3q() or _fm_get_w3()
+                _pre_gas[0] = _fm_get_cached_gas(_qn)
                 if TRADE_MODE == "real":
                     _wa = BSC_WALLET or REAL_WALLET
                     if _wa:
-                        _pre_nonce[0] = _w3p.eth.get_transaction_count(_wa, "pending")
+                        _pre_nonce[0] = _qn.eth.get_transaction_count(_wa, "pending")
             except: pass
+        threading.Thread(target=_prefetch_gas_nonce, daemon=True).start()
 
-        def _monitor_loop():
-            _t_end = time.time() + 600  # 10 min
-            while time.time() < _t_end:
-                try:
-                    _w3m = _get_fresh_w3()
-                    _snap = _fm_get_token_info(token_addr, _w3m)
-                    if not _snap:
-                        time.sleep(1); continue
-                    if _snap.get("liquidityAdded"):
-                        print(f"🎓 [FM] Graduated during monitor: {token_addr[:10]}")
-                        _monitor_done.set(); return
-                    _p = _snap.get("lastPrice", 0)
-                    _f = _snap.get("funds", 0)
-                    _price_ok = _p >= _price1 * _MIN_PRICE_MV
-                    _funds_ok = (_f - _funds1) / 1e18 >= _MIN_BNB_FLOW
-                    if _price_ok and _funds_ok:
-                        print(f"✅ [FM] Momentum detected: price+{(_p/_price1-1)*100:.2f}% funds+{(_f-_funds1)/1e18:.4f}BNB")
-                        _momentum_result[0] = {"snap": _snap, "price": _p, "funds": _f}
-                        _monitor_done.set(); return
-                except Exception as _me:
-                    print(f"⚠️ [FM] monitor error: {str(_me)[:60]}")
-                time.sleep(1)
-            # 10 min expired
-            _monitor_done.set()
+        # Add to global monitor box
+        _done_event = threading.Event()
+        _result_holder = {"result": None, "done": _done_event}
+        with _fm_monitor_box_lock:
+            _fm_monitor_box[token_addr] = {
+                "price1":   _price1,
+                "funds1":   _funds1,
+                "added_at": time.time(),
+                "result":   None,
+                "done":     _done_event,
+            }
 
-        # Start monitor + prefetch in parallel
-        _mt = threading.Thread(target=_monitor_loop, daemon=True)
-        _pt = threading.Thread(target=_prefetch_gas_nonce, daemon=True)
-        _mt.start(); _pt.start()
-        _monitor_done.wait(timeout=601)
+        # Wait for momentum or 30s expire
+        _done_event.wait(timeout=32)
 
-        if not _momentum_result[0]:
-            _skip("no momentum in 10min"); return
+        with _fm_monitor_box_lock:
+            _box_data = _fm_monitor_box.pop(token_addr, None)
 
-        _snap2  = _momentum_result[0]["snap"]
-        _price2 = _momentum_result[0]["price"]
-        _funds2 = _momentum_result[0]["funds"]
+        _mr = (_box_data or {}).get("result") if _box_data else None
+
+        if not _mr:
+            _skip("no momentum in 30s"); return
+
+        _snap2  = _mr["snap"]
+        _price2 = _mr["price"]
+        _funds2 = _mr["funds"]
 
         # Unique buyers check
         try:
