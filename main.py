@@ -5141,7 +5141,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             except: pass
         threading.Thread(target=_prefetch_gas_nonce, daemon=True).start()
 
-        # ── Inline momentum monitor — 30s, 1s poll, QuickNode ──
+        # ── Inline momentum monitor — 30s, 2s poll, QuickNode ──
         _qn_url = os.getenv("QUICKNODE_HTTP", "")
         _MIN_PRICE_MV = 1.0005
         _MIN_BNB_FLOW = 0.0005
@@ -5155,7 +5155,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         while time.time() < _t_end:
             try:
                 _snap = _fm_get_token_info(token_addr, _w3m)
-                if not _snap: time.sleep(1); continue
+                if not _snap: time.sleep(2); continue
                 if _snap.get("liquidityAdded"):
                     _skip("graduated during monitor"); return
                 _p = _snap.get("lastPrice", 0)
@@ -5169,7 +5169,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     break
             except Exception as _me:
                 print(f"⚠️ [FM] monitor error: {str(_me)[:60]}", flush=True)
-            time.sleep(1)
+            time.sleep(2)
 
         if not _snap2:
             _skip("no momentum in 30s"); return
