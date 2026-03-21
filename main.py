@@ -5109,8 +5109,6 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _offers    = info.get("offers", 0)
         _maxOffers = info.get("maxOffers", 1)
         _pump_at_entry = round((_offers / max(_maxOffers, 1)) * 100, 1)
-        if _pump_at_entry < 5:
-            _skip(f"too early pump={_pump_at_entry:.1f}% < 5%"); return
 
         if _dev_pct_res[0] > 10:
             _skip(f"dev wallet too high {_dev_pct_res[0]:.0f}%"); return
