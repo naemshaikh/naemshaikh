@@ -4700,6 +4700,57 @@ def _fm_get_unique_buyers(token_addr, w3=None):
 _fm_sniped      = set()
 _fm_sniped_lock = threading.Lock()
 
+# ── FM Momentum Queue ──
+import queue as _queue_mod2
+_fm_snipe_queue = _queue_mod2.Queue()
+
+def _fm_momentum_queue_worker():
+    """Process tokens one by one — 2s monitor each, QuickNode, no 429"""
+    _qn_url = os.getenv("QUICKNODE_HTTP", "")
+    _MIN_PRICE_MV = 1.0005
+    _MIN_BNB_FLOW = 0.0005
+
+    def _w3():
+        if _qn_url:
+            return Web3(Web3.HTTPProvider(_qn_url, request_kwargs={"timeout": 4}))
+        return _fm_get_w3()
+
+    print("✅ [FM] Momentum queue worker started", flush=True)
+    _w3m = _w3()
+
+    while True:
+        try:
+            item = _fm_snipe_queue.get(timeout=5)
+        except: continue
+
+        token_addr = item["token_addr"]
+        price1     = item["price1"]
+        funds1     = item["funds1"]
+        event      = item["event"]
+        result     = item["result"]
+
+        try:
+            _t_end = time.time() + 2  # 2s window
+            while time.time() < _t_end:
+                try:
+                    snap = _fm_get_token_info(token_addr, _w3m)
+                    if snap and not snap.get("liquidityAdded"):
+                        _p = snap.get("lastPrice", 0)
+                        _f = snap.get("funds", 0)
+                        print(f"[MON] {token_addr[-8:]} p:{_p} f+:{(_f-funds1)/1e18:.4f}", flush=True)
+                        if _p >= price1 * _MIN_PRICE_MV and (_f - funds1) / 1e18 >= _MIN_BNB_FLOW:
+                            print(f"✅ [FM] Momentum! {token_addr[:10]}", flush=True)
+                            result[0] = {"snap": snap, "price": _p, "funds": _f}
+                            break
+                except Exception as _e:
+                    print(f"⚠️ [FM] queue monitor: {str(_e)[:50]}", flush=True)
+                time.sleep(0.5)
+        finally:
+            event.set()
+            _fm_snipe_queue.task_done()
+
+threading.Thread(target=_fm_momentum_queue_worker, daemon=True).start()
+
 # Dev history cache — on-chain results cache karo
 _fm_dev_cache      = {}
 _fm_dev_cache_lock = threading.Lock()
@@ -5073,38 +5124,24 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             except: pass
         threading.Thread(target=_prefetch_gas_nonce, daemon=True).start()
 
-        # ── Inline momentum monitor — 30s, 2s poll, QuickNode ──
-        _qn_url = os.getenv("QUICKNODE_HTTP", "")
-        _MIN_PRICE_MV = 1.0005
-        _MIN_BNB_FLOW = 0.0005
-        _w3m = Web3(Web3.HTTPProvider(_qn_url, request_kwargs={"timeout": 4})) if _qn_url else _fm_get_w3()
+        # ── Queue-based momentum monitor — 2s window, QuickNode ──
+        _result_event = threading.Event()
+        _momentum_data = [None]
+        _fm_snipe_queue.put({
+            "token_addr": token_addr,
+            "price1":     _price1,
+            "funds1":     _funds1,
+            "event":      _result_event,
+            "result":     _momentum_data,
+        })
+        _result_event.wait(timeout=120)  # max wait in queue
 
-        _snap2  = None
-        _price2 = 0
-        _funds2 = 0
-        _t_end  = time.time() + 5
+        if not _momentum_data[0]:
+            _skip("no momentum in 2s"); return
 
-        while time.time() < _t_end:
-            try:
-                _snap = _fm_get_token_info(token_addr, _w3m)
-                if not _snap: time.sleep(2); continue
-                if _snap.get("liquidityAdded"):
-                    _skip("graduated during monitor"); return
-                _p = _snap.get("lastPrice", 0)
-                _f = _snap.get("funds", 0)
-                print(f"[MON] {token_addr[-8:]} price:{_p} funds_diff:{(_f-_funds1)/1e18:.4f}", flush=True)
-                if _p >= _price1 * _MIN_PRICE_MV and (_f - _funds1) / 1e18 >= _MIN_BNB_FLOW:
-                    print(f"✅ [FM] Momentum! {token_addr[:10]} price+{(_p/_price1-1)*100:.3f}%", flush=True)
-                    _snap2  = _snap
-                    _price2 = _p
-                    _funds2 = _f
-                    break
-            except Exception as _me:
-                print(f"⚠️ [FM] monitor error: {str(_me)[:60]}", flush=True)
-            time.sleep(2)
-
-        if not _snap2:
-            _skip("no momentum in 30s"); return
+        _snap2  = _momentum_data[0]["snap"]
+        _price2 = _momentum_data[0]["price"]
+        _funds2 = _momentum_data[0]["funds"]
 
         # Unique buyers check
         try:
