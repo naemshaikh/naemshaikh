@@ -5093,14 +5093,24 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 if _delay > 0: time.sleep(_delay)
                 _w3m = _get_fresh_w3()
                 _snap = _fm_get_token_info(token_addr, _w3m)
-                if not _snap: return None
+                if not _snap:
+                    print(f"⚠️ [FM] momentum worker {_delay}s — getTokenInfo returned None")
+                    return None
                 if _snap.get("liquidityAdded"): return "graduated"
                 _p = _snap.get("lastPrice", 0)
                 _f = _snap.get("funds", 0)
-                if _p >= _price1 * _MIN_PRICE_MV and (_f - _funds1) / 1e18 >= _MIN_BNB_FLOW:
+                _price_ok = _p >= _price1 * _MIN_PRICE_MV
+                _funds_ok = (_f - _funds1) / 1e18 >= _MIN_BNB_FLOW
+                if not _price_ok:
+                    print(f"⚠️ [FM] momentum {_delay}s — price fail: {_p} vs {_price1}")
+                if not _funds_ok:
+                    print(f"⚠️ [FM] momentum {_delay}s — funds fail: {(_f-_funds1)/1e18:.4f} BNB")
+                if _price_ok and _funds_ok:
                     return {"snap": _snap, "price": _p, "funds": _f}
                 return None
-            except: return None
+            except Exception as _me:
+                print(f"⚠️ [FM] momentum worker {_delay}s error: {str(_me)[:60]}")
+                return None
 
         import concurrent.futures as _cf3
         _ex   = _cf3.ThreadPoolExecutor(max_workers=6)
