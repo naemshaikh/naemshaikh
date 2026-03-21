@@ -4716,11 +4716,12 @@ def _fm_monitor_box_worker():
             return Web3(Web3.HTTPProvider(_qn_url, request_kwargs={"timeout": 4}))
         return _fm_get_w3()
 
-    print("✅ [FM] Monitor box worker started")
+    print("✅ [FM] Monitor box worker started", flush=True)
     while True:
         try:
             with _fm_monitor_box_lock:
                 tokens = list(_fm_monitor_box.items())
+            print(f"[FM-WORKER] box check: {len(tokens)} tokens", flush=True)
 
             for addr, data in tokens:
                 try:
@@ -5150,6 +5151,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 "result":   None,
                 "done":     _done_event,
             }
+
+        print(f"✅ Added to monitor box: {token_addr[-8:]} | box size: {len(_fm_monitor_box)}", flush=True)
 
         # Wait for momentum or 30s expire
         _done_event.wait(timeout=32)
