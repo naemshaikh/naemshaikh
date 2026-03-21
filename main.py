@@ -5090,13 +5090,14 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _quote_mc     = info.get("quote", "").lower()
         _USDT_L = "0x55d398326f99059ff775485246999027b3197955"
         _BUSD_L = "0xe9e7cea3dedca5984780bafc599bd69add087d56"
+        _WBNB_L = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
         if _last_price > 0:
             if _quote_mc in [_USDT_L, _BUSD_L]:
-                # USDT/BUSD — price already in USD
                 _mc_usd = (_last_price / 1e18) * _total_supply
-            else:
-                # BNB or any other quote — convert to USD
+            elif _quote_mc == _WBNB_L or _quote_mc == "":
                 _mc_usd = (_last_price / 1e18) * _total_supply * _bnb_price
+            else:
+                _skip("unsupported quote — skip"); return
             if _mc_usd > 15000:
                 _skip(f"MC too high ${_mc_usd:.0f} > $15k"); return
         else:
