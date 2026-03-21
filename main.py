@@ -4707,9 +4707,9 @@ _fm_monitor_box_lock = threading.Lock()
 def _fm_monitor_box_worker():
     """Single loop — monitors all tokens in box every 1s"""
     _qn_url = os.getenv("QUICKNODE_HTTP", "")
-    _MIN_PRICE_MV = 1.001
-    _MIN_BNB_FLOW = 0.001
-    _EXPIRE_SEC   = 30  # 30s window
+    _MIN_PRICE_MV = 1.0005  # loosened from 1.001
+    _MIN_BNB_FLOW = 0.0005  # loosened from 0.001
+    _EXPIRE_SEC   = 30
 
     def _w3():
         if _qn_url:
@@ -4724,7 +4724,6 @@ def _fm_monitor_box_worker():
 
             for addr, data in tokens:
                 try:
-                    # Expire check
                     if time.time() - data["added_at"] > _EXPIRE_SEC:
                         with _fm_monitor_box_lock:
                             _fm_monitor_box.pop(addr, None)
@@ -4732,7 +4731,9 @@ def _fm_monitor_box_worker():
                         continue
 
                     snap = _fm_get_token_info(addr, _w3())
-                    if not snap: continue
+                    if not snap:
+                        print(f"[DEBUG] {addr[-8:]} → snap None")
+                        continue
 
                     if snap.get("liquidityAdded"):
                         with _fm_monitor_box_lock:
@@ -4745,16 +4746,20 @@ def _fm_monitor_box_worker():
                     _price_ok = _p >= data["price1"] * _MIN_PRICE_MV
                     _funds_ok = (_f - data["funds1"]) / 1e18 >= _MIN_BNB_FLOW
 
+                    print(f"[DEBUG] {addr[-8:]} | price:{_p:.10f}(was {data['price1']:.10f})→{_price_ok} | BNB:{(_f-data['funds1'])/1e18:.6f}→{_funds_ok}")
+
                     if _price_ok and _funds_ok:
-                        print(f"✅ [FM] Box momentum: {addr[:10]} price+{(_p/data['price1']-1)*100:.2f}%")
                         data["result"] = {"snap": snap, "price": _p, "funds": _f}
-                        data["done"].set()  # signal done, _fm_snipe will pop
+                        data["done"].set()
+                        with _fm_monitor_box_lock:
+                            _fm_monitor_box.pop(addr, None)
+                        print(f"✅ [FM] MOMENTUM HIT: {addr[:10]} price+{(_p/data['price1']-1)*100:.3f}%")
 
                 except Exception as _e:
-                    print(f"⚠️ [FM] box monitor error: {str(_e)[:50]}")
+                    print(f"⚠️ [FM] box monitor error: {str(_e)[:80]}")
 
         except Exception as _e:
-            print(f"⚠️ [FM] box worker error: {str(_e)[:50]}")
+            print(f"⚠️ [FM] box worker error: {str(_e)[:80]}")
 
         time.sleep(1)
 
