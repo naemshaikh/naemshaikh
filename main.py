@@ -4728,6 +4728,14 @@ def _fm_momentum_queue_worker():
         funds1     = item["funds1"]
         event      = item["event"]
         result     = item["result"]
+        queued_at  = item.get("queued_at", time.time())
+
+        # Stale token — queue mein 15s se zyada wait kiya = skip
+        if time.time() - queued_at > 15:
+            print(f"⏭️ [FM] Stale token skip: {token_addr[:10]}", flush=True)
+            event.set()
+            _fm_snipe_queue.task_done()
+            continue
 
         try:
             _t_end = time.time() + 10  # 10s window
@@ -5139,6 +5147,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             "funds1":     _funds1,
             "event":      _result_event,
             "result":     _momentum_data,
+            "queued_at":  time.time(),
         })
         _result_event.wait(timeout=120)  # max wait in queue
 
