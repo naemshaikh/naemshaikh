@@ -4730,7 +4730,7 @@ def _fm_momentum_queue_worker():
         result     = item["result"]
 
         try:
-            _t_end = time.time() + 2  # 2s window
+            _t_end = time.time() + 5  # 5s window
             while time.time() < _t_end:
                 try:
                     snap = _fm_get_token_info(token_addr, _w3m)
@@ -5113,7 +5113,16 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _pre_nonce = [0]
 
         # Gas + nonce prefetch parallel
-        # gas/nonce buy ke waqt lenge — prefetch hataya (QuickNode 429 avoid)
+        def _prefetch_gas_nonce():
+            try:
+                _qn = _get_w3q() or _fm_get_w3()
+                _pre_gas[0] = _fm_get_cached_gas(_qn)
+                if TRADE_MODE == "real":
+                    _wa = BSC_WALLET or REAL_WALLET
+                    if _wa:
+                        _pre_nonce[0] = _qn.eth.get_transaction_count(_wa, "pending")
+            except: pass
+        threading.Thread(target=_prefetch_gas_nonce, daemon=True).start()
 
         # ── Queue-based momentum monitor — 2s window, QuickNode ──
         _result_event = threading.Event()
