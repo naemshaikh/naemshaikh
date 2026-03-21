@@ -4748,9 +4748,7 @@ def _fm_monitor_box_worker():
                     if _price_ok and _funds_ok:
                         print(f"✅ [FM] Box momentum: {addr[:10]} price+{(_p/data['price1']-1)*100:.2f}%")
                         data["result"] = {"snap": snap, "price": _p, "funds": _f}
-                        with _fm_monitor_box_lock:
-                            _fm_monitor_box.pop(addr, None)
-                        data["done"].set()
+                        data["done"].set()  # signal done, _fm_snipe will pop
 
                 except Exception as _e:
                     print(f"⚠️ [FM] box monitor error: {str(_e)[:50]}")
@@ -5154,7 +5152,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         with _fm_monitor_box_lock:
             _box_data = _fm_monitor_box.pop(token_addr, None)
 
-        _mr = (_box_data or {}).get("result") if _box_data else None
+        _mr = _box_data.get("result") if _box_data else None
 
         if not _mr:
             _skip("no momentum in 30s"); return
