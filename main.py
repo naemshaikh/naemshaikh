@@ -5115,57 +5115,39 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         print(f"✅ [FM] Stage1 PASS: mc=${_mc_usd:.0f}")
 
         # ════════════════════════════════════════
-        # STAGE 2 — GLOBAL MONITOR BOX
-        # 30s window, 1s poll, QuickNode
+        # STAGE 2 — MOMENTUM CHECK (simple)
+        # 10s window, 1s poll, QuickNode
         # ════════════════════════════════════════
         _price1 = info.get("lastPrice", 0)
         _funds1 = info.get("funds", 0)
-        _pre_gas   = [0]
-        _pre_nonce = [0]
+        w3 = _fm_get_w3()
+        if not w3: _skip("no RPC"); return
 
-        # Gas + nonce prefetch parallel
-        def _prefetch_gas_nonce():
+        _price2 = 0
+        _funds2 = 0
+        _snap2  = None
+        _t_end  = time.time() + 10
+
+        while time.time() < _t_end:
             try:
-                _qn = _get_w3q() or _fm_get_w3()
-                _pre_gas[0] = _fm_get_cached_gas(_qn)
-                if TRADE_MODE == "real":
-                    _wa = BSC_WALLET or REAL_WALLET
-                    if _wa:
-                        _pre_nonce[0] = _qn.eth.get_transaction_count(_wa, "pending")
-            except: pass
-        threading.Thread(target=_prefetch_gas_nonce, daemon=True).start()
+                _snap2 = _fm_get_token_info(token_addr, w3)
+                if _snap2:
+                    if _snap2.get("liquidityAdded"):
+                        _skip("graduated during momentum check"); return
+                    _price2 = _snap2.get("lastPrice", 0)
+                    _funds2 = _snap2.get("funds", 0)
+                    _funds_diff = (_funds2 - _funds1) / 1e18
+                    if _price2 > _price1 and _funds_diff > 0:
+                        print(f"✅ [FM] Momentum found! price+{round((_price2-_price1)/max(_price1,1)*100,1)}% funds+{_funds_diff:.4f}BNB")
+                        break
+            except Exception as _me:
+                print(f"⚠️ [FM] momentum error: {str(_me)[:50]}")
+            time.sleep(1)
 
-        # ── Queue-based momentum monitor — 2s window, QuickNode ──
-        _result_event = threading.Event()
-        _momentum_data = [None]
-        _fm_snipe_queue.put({
-            "token_addr": token_addr,
-            "price1":     _price1,
-            "funds1":     _funds1,
-            "event":      _result_event,
-            "result":     _momentum_data,
-            "queued_at":  time.time(),
-        })
-        _result_event.wait(timeout=120)  # max wait in queue
-
-        if not _momentum_data[0]:
+        if not _price2 or _price2 <= _price1:
             _skip("no momentum in 10s"); return
 
-        _snap2  = _momentum_data[0]["snap"]
-        _price2 = _momentum_data[0]["price"]
-        _funds2 = _momentum_data[0]["funds"]
-
-        # Unique buyers check
-        try:
-            _ub, _ = _fm_get_unique_buyers(token_addr, _get_w3q() or _fm_get_w3())
-        except:
-            _ub = 0
-        if _ub < 3:
-            _skip(f"not enough buyers {_ub}/3"); return
-
-        _info2  = _snap2
-        _funds_diff = (_funds2 - _funds1) / 1e18
-
+        _funds_diff   = (_funds2 - _funds1) / 1e18
         _momentum_pct = round((_price2 - _price1) / max(_price1, 1) * 100, 1)
 
         print(f"✅ [FM] ALL PASS: mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}%")
