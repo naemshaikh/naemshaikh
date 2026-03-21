@@ -5053,20 +5053,10 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         print(f"✅ [FM] Stage1 PASS: mc=${_mc_usd:.0f}")
 
         # ════════════════════════════════════════
-        # STAGE 2 — MOMENTUM
-        # Stage 1 info as baseline — no extra call
+        # STAGE 2 — MOMENTUM MONITOR
+        # 10 min monitor, 1s polling, QuickNode
         # ════════════════════════════════════════
-        w3 = _fm_get_w3()
-        if not w3: _skip("no RPC for momentum"); return
-
-        _price1 = info.get("lastPrice", 0)
-        _funds1 = info.get("funds", 0)
-
-        # Parallel momentum workers — 3 workers simultaneously
-        # 2/3 pass = confirmed momentum → BUY (~700ms total)
-        _pre_gas   = [0]
-        _pre_nonce = [0]
-        _qn_url    = os.getenv("QUICKNODE_HTTP", "")
+        _qn_url = os.getenv("QUICKNODE_HTTP", "")
         _MIN_PRICE_MV = 1.001   # 0.1% minimum price move
         _MIN_BNB_FLOW = 0.001   # any BNB flow
 
@@ -5075,89 +5065,72 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 return Web3(Web3.HTTPProvider(_qn_url, request_kwargs={"timeout": 4}))
             return _fm_get_w3()
 
-        def _fetch_gas():
-            try:
-                _pre_gas[0] = _fm_get_cached_gas(_get_fresh_w3())
-            except: pass
+        _price1 = info.get("lastPrice", 0)
+        _funds1 = info.get("funds", 0)
 
-        def _fetch_nonce():
+        _pre_gas   = [0]
+        _pre_nonce = [0]
+        _momentum_result = [None]
+        _monitor_done = threading.Event()
+
+        def _prefetch_gas_nonce():
             try:
+                _w3p = _get_fresh_w3()
+                _pre_gas[0] = _fm_get_cached_gas(_w3p)
                 if TRADE_MODE == "real":
                     _wa = BSC_WALLET or REAL_WALLET
                     if _wa:
-                        _pre_nonce[0] = _get_fresh_w3().eth.get_transaction_count(_wa, "pending")
+                        _pre_nonce[0] = _w3p.eth.get_transaction_count(_wa, "pending")
             except: pass
 
-        def _momentum_worker(_delay):
-            try:
-                if _delay > 0: time.sleep(_delay)
-                _w3m = _get_fresh_w3()
-                _snap = _fm_get_token_info(token_addr, _w3m)
-                if not _snap:
-                    print(f"⚠️ [FM] momentum worker {_delay}s — getTokenInfo returned None")
-                    return None
-                if _snap.get("liquidityAdded"): return "graduated"
-                _p = _snap.get("lastPrice", 0)
-                _f = _snap.get("funds", 0)
-                _price_ok = _p >= _price1 * _MIN_PRICE_MV
-                _funds_ok = (_f - _funds1) / 1e18 >= _MIN_BNB_FLOW
-                if not _price_ok:
-                    print(f"⚠️ [FM] momentum {_delay}s — price fail: {_p} vs {_price1}")
-                if not _funds_ok:
-                    print(f"⚠️ [FM] momentum {_delay}s — funds fail: {(_f-_funds1)/1e18:.4f} BNB")
-                if _price_ok and _funds_ok:
-                    return {"snap": _snap, "price": _p, "funds": _f}
-                return None
-            except Exception as _me:
-                print(f"⚠️ [FM] momentum worker {_delay}s error: {str(_me)[:60]}")
-                return None
+        def _monitor_loop():
+            _t_end = time.time() + 600  # 10 min
+            while time.time() < _t_end:
+                try:
+                    _w3m = _get_fresh_w3()
+                    _snap = _fm_get_token_info(token_addr, _w3m)
+                    if not _snap:
+                        time.sleep(1); continue
+                    if _snap.get("liquidityAdded"):
+                        print(f"🎓 [FM] Graduated during monitor: {token_addr[:10]}")
+                        _monitor_done.set(); return
+                    _p = _snap.get("lastPrice", 0)
+                    _f = _snap.get("funds", 0)
+                    _price_ok = _p >= _price1 * _MIN_PRICE_MV
+                    _funds_ok = (_f - _funds1) / 1e18 >= _MIN_BNB_FLOW
+                    if _price_ok and _funds_ok:
+                        print(f"✅ [FM] Momentum detected: price+{(_p/_price1-1)*100:.2f}% funds+{(_f-_funds1)/1e18:.4f}BNB")
+                        _momentum_result[0] = {"snap": _snap, "price": _p, "funds": _f}
+                        _monitor_done.set(); return
+                except Exception as _me:
+                    print(f"⚠️ [FM] monitor error: {str(_me)[:60]}")
+                time.sleep(1)
+            # 10 min expired
+            _monitor_done.set()
 
-        import concurrent.futures as _cf3
-        _ex   = _cf3.ThreadPoolExecutor(max_workers=6)
-        _pf_g = _ex.submit(_fetch_gas)
-        _pf_n = _ex.submit(_fetch_nonce)
-        _w1   = _ex.submit(_momentum_worker, 0.0)
-        _w2   = _ex.submit(_momentum_worker, 0.2)
-        _w3f  = _ex.submit(_momentum_worker, 0.4)
-        _ub_f = _ex.submit(_fm_get_unique_buyers, token_addr, _get_fresh_w3())
+        # Start monitor + prefetch in parallel
+        _mt = threading.Thread(target=_monitor_loop, daemon=True)
+        _pt = threading.Thread(target=_prefetch_gas_nonce, daemon=True)
+        _mt.start(); _pt.start()
+        _monitor_done.wait(timeout=601)
 
-        _info2      = None
-        _price2     = 0
-        _funds2     = 0
-        _moved      = False
-        _pass_count = 0
+        if not _momentum_result[0]:
+            _skip("no momentum in 10min"); return
 
-        for _fut in _cf3.as_completed([_w1, _w2, _w3f], timeout=2.0):
-            try:
-                _res = _fut.result()
-                if _res == "graduated":
-                    _ex.shutdown(wait=False)
-                    _skip("graduated during momentum"); return
-                if _res:
-                    _pass_count += 1
-                    _info2  = _res["snap"]
-                    _price2 = _res["price"]
-                    _funds2 = _res["funds"]
-                    if _pass_count >= 2:
-                        # get buyers result — already running in parallel
-                        try:
-                            _ub, _ = _ub_f.result(timeout=1)
-                        except:
-                            _ub = 0
-                        if _ub < 3:
-                            _ex.shutdown(wait=False)
-                            _skip(f"not enough buyers {_ub}/5"); return
-                        _moved = True
-                        break
-            except: continue
+        _snap2  = _momentum_result[0]["snap"]
+        _price2 = _momentum_result[0]["price"]
+        _funds2 = _momentum_result[0]["funds"]
 
-        _pf_g.result(timeout=1)
-        _pf_n.result(timeout=1)
-        _ex.shutdown(wait=False)
+        # Unique buyers check
+        try:
+            _ub, _ = _fm_get_unique_buyers(token_addr, _get_fresh_w3())
+        except:
+            _ub = 0
+        if _ub < 3:
+            _skip(f"not enough buyers {_ub}/3"); return
 
-        if not _moved or not _info2:
-            _skip("no momentum — workers failed"); return
-
+        _info2  = _snap2
+        _funds_diff = (_funds2 - _funds1) / 1e18
         _funds_diff = (_funds2 - _funds1) / 1e18
 
         _momentum_pct = round((_price2 - _price1) / max(_price1, 1) * 100, 1)
