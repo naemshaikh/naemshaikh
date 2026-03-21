@@ -5113,16 +5113,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _pre_nonce = [0]
 
         # Gas + nonce prefetch parallel
-        def _prefetch_gas_nonce():
-            try:
-                _qn = _get_w3q() or _fm_get_w3()
-                _pre_gas[0] = _fm_get_cached_gas(_qn)
-                if TRADE_MODE == "real":
-                    _wa = BSC_WALLET or REAL_WALLET
-                    if _wa:
-                        _pre_nonce[0] = _qn.eth.get_transaction_count(_wa, "pending")
-            except: pass
-        threading.Thread(target=_prefetch_gas_nonce, daemon=True).start()
+        # gas/nonce buy ke waqt lenge — prefetch hataya (QuickNode 429 avoid)
 
         # ── Queue-based momentum monitor — 2s window, QuickNode ──
         _result_event = threading.Event()
