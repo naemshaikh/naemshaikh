@@ -4730,7 +4730,7 @@ def _fm_momentum_queue_worker():
         result     = item["result"]
 
         try:
-            _t_end = time.time() + 5  # 5s window
+            _t_end = time.time() + 10  # 10s window
             while time.time() < _t_end:
                 try:
                     snap = _fm_get_token_info(token_addr, _w3m)
