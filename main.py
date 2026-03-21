@@ -5215,8 +5215,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         ms = int((time.time() - _t_start) * 1000)
 
-        # Reuse buyers count from momentum check — no extra call needed
-        _buyers_at_entry = _ub
+        _buyers_at_entry = 0  # buyers count not tracked in simple momentum
         add_position_to_monitor(
             AUTO_SESSION_ID, token_addr, token_name, entry, size_bnb,
             stop_loss_pct=20.0
