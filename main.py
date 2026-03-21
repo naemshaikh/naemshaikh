@@ -5163,14 +5163,13 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         # Unique buyers check
         try:
-            _ub, _ = _fm_get_unique_buyers(token_addr, _get_fresh_w3())
+            _ub, _ = _fm_get_unique_buyers(token_addr, _get_w3q() or _fm_get_w3())
         except:
             _ub = 0
         if _ub < 3:
             _skip(f"not enough buyers {_ub}/3"); return
 
         _info2  = _snap2
-        _funds_diff = (_funds2 - _funds1) / 1e18
         _funds_diff = (_funds2 - _funds1) / 1e18
 
         _momentum_pct = round((_price2 - _price1) / max(_price1, 1) * 100, 1)
