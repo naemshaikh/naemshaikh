@@ -5066,13 +5066,18 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         # 2/3 pass = confirmed momentum → BUY (~700ms total)
         _pre_gas   = [0]
         _pre_nonce = [0]
-        _w3_qn     = _get_w3q()
+        _qn_url    = os.getenv("QUICKNODE_HTTP", "")
         _MIN_PRICE_MV = 1.0001  # any price move
         _MIN_BNB_FLOW = 0.001   # any BNB flow
 
+        def _get_fresh_w3():
+            if _qn_url:
+                return Web3(Web3.HTTPProvider(_qn_url, request_kwargs={"timeout": 4}))
+            return _fm_get_w3()
+
         def _fetch_gas():
             try:
-                _pre_gas[0] = _fm_get_cached_gas(_w3_qn or w3)
+                _pre_gas[0] = _fm_get_cached_gas(_get_fresh_w3())
             except: pass
 
         def _fetch_nonce():
@@ -5080,13 +5085,14 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 if TRADE_MODE == "real":
                     _wa = BSC_WALLET or REAL_WALLET
                     if _wa:
-                        _pre_nonce[0] = (_w3_qn or w3).eth.get_transaction_count(_wa, "pending")
+                        _pre_nonce[0] = _get_fresh_w3().eth.get_transaction_count(_wa, "pending")
             except: pass
 
         def _momentum_worker(_delay):
             try:
                 if _delay > 0: time.sleep(_delay)
-                _snap = _fm_get_token_info(token_addr, _w3_qn or w3)
+                _w3m = _get_fresh_w3()
+                _snap = _fm_get_token_info(token_addr, _w3m)
                 if not _snap: return None
                 if _snap.get("liquidityAdded"): return "graduated"
                 _p = _snap.get("lastPrice", 0)
@@ -5103,7 +5109,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _w1   = _ex.submit(_momentum_worker, 0.0)
         _w2   = _ex.submit(_momentum_worker, 0.2)
         _w3f  = _ex.submit(_momentum_worker, 0.4)
-        _ub_f = _ex.submit(_fm_get_unique_buyers, token_addr, _w3_qn or w3)  # parallel buyers check
+        _ub_f = _ex.submit(_fm_get_unique_buyers, token_addr, _get_fresh_w3())
 
         _info2      = None
         _price2     = 0
