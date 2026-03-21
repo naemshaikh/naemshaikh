@@ -5082,7 +5082,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _snap2  = None
         _price2 = 0
         _funds2 = 0
-        _t_end  = time.time() + 30
+        _t_end  = time.time() + 5
 
         while time.time() < _t_end:
             try:
