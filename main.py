@@ -5128,7 +5128,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                             _ub, _ = _ub_f.result(timeout=1)
                         except:
                             _ub = 0
-                        if _ub < 5:
+                        if _ub < 3:
                             _ex.shutdown(wait=False)
                             _skip(f"not enough buyers {_ub}/5"); return
                         _moved = True
