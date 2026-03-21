@@ -4717,6 +4717,7 @@ def _fm_monitor_box_worker():
         return _fm_get_w3()
 
     print("✅ [FM] Monitor box worker started", flush=True)
+    _w3_instance = _w3()  # ek baar banao
     while True:
         try:
             with _fm_monitor_box_lock:
@@ -4731,7 +4732,7 @@ def _fm_monitor_box_worker():
                         data["done"].set()
                         continue
 
-                    snap = _fm_get_token_info(addr, _w3())
+                    snap = _fm_get_token_info(addr, _w3_instance)
                     if not snap:
                         print(f"[DEBUG] {addr[-8:]} → snap None")
                         continue
