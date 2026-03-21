@@ -5152,7 +5152,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _result_event.wait(timeout=120)  # max wait in queue
 
         if not _momentum_data[0]:
-            _skip("no momentum in 2s"); return
+            _skip("no momentum in 10s"); return
 
         _snap2  = _momentum_data[0]["snap"]
         _price2 = _momentum_data[0]["price"]
