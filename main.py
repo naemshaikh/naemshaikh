@@ -5067,7 +5067,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _pre_gas   = [0]
         _pre_nonce = [0]
         _qn_url    = os.getenv("QUICKNODE_HTTP", "")
-        _MIN_PRICE_MV = 1.0001  # any price move
+        _MIN_PRICE_MV = 1.001   # 0.1% minimum price move
         _MIN_BNB_FLOW = 0.001   # any BNB flow
 
         def _get_fresh_w3():
