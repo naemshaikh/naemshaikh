@@ -5067,8 +5067,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _pre_gas   = [0]
         _pre_nonce = [0]
         _w3_qn     = _get_w3q()
-        _MIN_PRICE_MV = 1.005   # 0.5% minimum price move
-        _MIN_BNB_FLOW = 0.05    # 0.05 BNB flow vs baseline
+        _MIN_PRICE_MV = 1.0001  # any price move
+        _MIN_BNB_FLOW = 0.001   # any BNB flow
 
         def _fetch_gas():
             try:
