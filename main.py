@@ -5141,34 +5141,38 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             except: pass
         threading.Thread(target=_prefetch_gas_nonce, daemon=True).start()
 
-        # Add to global monitor box
-        _done_event = threading.Event()
-        _result_holder = {"result": None, "done": _done_event}
-        with _fm_monitor_box_lock:
-            _fm_monitor_box[token_addr] = {
-                "price1":   _price1,
-                "funds1":   _funds1,
-                "added_at": time.time(),
-                "result":   None,
-                "done":     _done_event,
-            }
+        # ── Inline momentum monitor — 30s, 1s poll, QuickNode ──
+        _qn_url = os.getenv("QUICKNODE_HTTP", "")
+        _MIN_PRICE_MV = 1.0005
+        _MIN_BNB_FLOW = 0.0005
+        _w3m = Web3(Web3.HTTPProvider(_qn_url, request_kwargs={"timeout": 4})) if _qn_url else _fm_get_w3()
 
-        print(f"✅ Added to monitor box: {token_addr[-8:]} | box size: {len(_fm_monitor_box)}", flush=True)
+        _snap2  = None
+        _price2 = 0
+        _funds2 = 0
+        _t_end  = time.time() + 30
 
-        # Wait for momentum or 30s expire
-        _done_event.wait(timeout=32)
+        while time.time() < _t_end:
+            try:
+                _snap = _fm_get_token_info(token_addr, _w3m)
+                if not _snap: time.sleep(1); continue
+                if _snap.get("liquidityAdded"):
+                    _skip("graduated during monitor"); return
+                _p = _snap.get("lastPrice", 0)
+                _f = _snap.get("funds", 0)
+                print(f"[MON] {token_addr[-8:]} price:{_p} funds_diff:{(_f-_funds1)/1e18:.4f}", flush=True)
+                if _p >= _price1 * _MIN_PRICE_MV and (_f - _funds1) / 1e18 >= _MIN_BNB_FLOW:
+                    print(f"✅ [FM] Momentum! {token_addr[:10]} price+{(_p/_price1-1)*100:.3f}%", flush=True)
+                    _snap2  = _snap
+                    _price2 = _p
+                    _funds2 = _f
+                    break
+            except Exception as _me:
+                print(f"⚠️ [FM] monitor error: {str(_me)[:60]}", flush=True)
+            time.sleep(1)
 
-        with _fm_monitor_box_lock:
-            _box_data = _fm_monitor_box.pop(token_addr, None)
-
-        _mr = _box_data.get("result") if _box_data else None
-
-        if not _mr:
+        if not _snap2:
             _skip("no momentum in 30s"); return
-
-        _snap2  = _mr["snap"]
-        _price2 = _mr["price"]
-        _funds2 = _mr["funds"]
 
         # Unique buyers check
         try:
