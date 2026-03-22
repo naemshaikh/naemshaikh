@@ -6280,20 +6280,15 @@ def admin_reset_positions():
     try:
         closed = list(auto_trade_stats["running_positions"].keys())
         count  = len(closed)
-        auto_trade_stats["running_positions"].clear()
-        with monitor_lock:
-            monitored_positions.clear()
-        auto_trade_stats["total_auto_buys"]  = 0
-        auto_trade_stats["total_auto_sells"] = 0
-        auto_trade_stats["auto_pnl_total"]   = 0.0
-        auto_trade_stats["wins"]             = 0
-        auto_trade_stats["losses"]           = 0
-        auto_trade_stats["last_action"]      = "Manual reset"
-        sess = get_or_create_session(AUTO_SESSION_ID)
-        sess["open_positions"] = {}
-        sess["trade_count"]    = 0
-        sess["win_count"]      = 0
-        threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
+
+        # Har position ko properly sell karo — trade history mein save hoga
+        for addr in closed:
+            try:
+                _auto_paper_sell(addr, "Manual Close All 🔴", 100.0)
+            except Exception as _ce:
+                print(f"⚠️ Close position error {addr[:10]}: {_ce}")
+
+        auto_trade_stats["last_action"] = "Manual reset"
         print(f"🔄 Admin reset: closed {count} positions")
         return jsonify({"status": "ok", "closed": count, "addresses": closed})
     except Exception as e:
