@@ -4949,7 +4949,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         return result
 
 def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, result, skip_reason, time_ms,
-                   buyers_at_entry=0, momentum_pct=0.0, volume_change=0.0, pump_at_entry=0.0, dev_wallet_pct=0.0):
+                   buyers_at_entry=0, momentum_pct=0.0, volume_change=0.0, pump_at_entry=0.0, dev_wallet_pct=0.0, mc_usd=0.0):
     """FM event Supabase mein save karo — extra analytics data bhi"""
     try:
         if not supabase: return
@@ -4979,6 +4979,7 @@ def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, resul
             "volume_change":    round(float(volume_change or 0), 6),
             "pump_at_entry":    round(float(pump_at_entry or 0), 2),
             "dev_wallet_pct":   round(float(dev_wallet_pct or 0), 2),
+            "mc_usd":           round(float(mc_usd or 0), 0),
         }).execute()
 
         # Post-skip tracking — 5 min baad price check karo
@@ -5259,7 +5260,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
              token_addr)
         threading.Thread(target=_save_fm_event, args=(
             token_addr, 0, 0, entry, _momentum_pct, "BUY", "", ms,
-            _buyers_at_entry, _momentum_pct, round(_funds_diff, 6), _pump_at_entry, _dev_wallet_pct
+            _buyers_at_entry, _momentum_pct, round(_funds_diff, 6), _pump_at_entry, _dev_wallet_pct, _mc_usd
         ), daemon=True).start()
         print(f"✅ [FM] BC SNIPED: {token_name} mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}% {ms}ms")
 

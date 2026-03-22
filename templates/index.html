@@ -4415,7 +4415,7 @@ setInterval(fetchNotifications, 10000);
     const data  = window._fmEventsData || [];
     const rows  = count === 'all' ? data : data.slice(0, parseInt(count));
     if (!rows.length) { showToast && showToast('FM data nahi hai abhi'); return; }
-    const headers = ['time','token_name','token_address','status','liquidity_bnb','grad_price','snipe_price','exit_price','pnl_pct','pnl_bnb','ath_price','ath_pct','pump_pct','hold_minutes','exit_reason','sold_at','result','skip_reason','time_ms','momentum_pct','volume_change','buyers_at_entry','pump_at_entry','dev_wallet_pct'];
+    const headers = ['time','token_name','token_address','status','liquidity_bnb','grad_price','snipe_price','exit_price','pnl_pct','pnl_bnb','ath_price','ath_pct','pump_pct','hold_minutes','exit_reason','sold_at','result','skip_reason','time_ms','momentum_pct','volume_change','buyers_at_entry','pump_at_entry','dev_wallet_pct','mc_usd'];
     const csv = [headers.join(',')].concat(rows.map(e => [
       (e.detected_at||'').slice(0,19),
       (e.token_name||e.token_address||'').replace(/,/g,';'),
@@ -4440,7 +4440,8 @@ setInterval(fetchNotifications, 10000);
       e.volume_change||0,
       e.buyers_at_entry||0,
       e.pump_at_entry||0,
-      e.dev_wallet_pct||0
+      e.dev_wallet_pct||0,
+      e.mc_usd||0
     ].join(','))).join('\n');
     const a = document.createElement('a');
     a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
