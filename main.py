@@ -4910,10 +4910,11 @@ def poll_four_meme_v2():
                             _data   = log.get("data", "")
                             _data_hex = _data.hex() if hasattr(_data, "hex") else str(_data)
                             if _data_hex.startswith("0x"): _data_hex = _data_hex[2:]
-                            if len(_data_hex) < 128: continue
-                            dev_addr   = "0x" + _data_hex[24:64]
-                            token_addr = "0x" + _data_hex[88:128]
-                            if not token_addr: continue
+                            if len(_data_hex) < 160: continue
+                            dev_addr   = Web3.to_checksum_address("0x" + _data_hex[24:64])
+                            token_addr = Web3.to_checksum_address("0x" + _data_hex[56:96])
+                            if not Web3.is_address(token_addr) or token_addr == "0x0000000000000000000000000000000000000000":
+                                continue
                             _handle_token(token_addr, dev_addr)
 
                         if logs: break  # sirf tab break karo jab logs mile
