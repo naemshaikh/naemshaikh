@@ -1659,7 +1659,6 @@ def _whale_follow_loop():
                     print(f"🐋 Whale Follow: {wallet[:10]} ({w_label}) bought {token_addr[:10]} → auto-scan")
                     # Directly auto_check queue mein dalo
                     threading.Thread(
-                        target=_auto_check_new_pair,
                         args=(token_addr,),
                         kwargs={"whale_triggered": True, "whale_wallet": wallet},
                         daemon=True
@@ -2261,11 +2260,11 @@ def _persist_positions():
 
 
 # ========== NEW PAIRS ==========
-new_pairs_queue: deque = deque(maxlen=30)
 
 # ── Real-time Bot Event Log ──
 # Har action yahan log hoga — UI pe live dikhega
 _bot_log: deque = deque(maxlen=100)  # last 100 events
+new_pairs_queue: deque = deque(maxlen=30)
 
 # ── NOTIFICATION SYSTEM ──
 import uuid as _uuid
@@ -2348,7 +2347,6 @@ monitor_lock = threading.Lock()
 
 # ========== AUTO TRADE STATS ==========  FIX 2: trade_history added
 AUTO_TRADE_ENABLED = True
-PC_SNIPER_ENABLED  = True   # PC PancakeSwap sniper
 FM_SNIPER_ENABLED  = True   # FM Bonding Curve sniper
 
 # Stop events for full WSS shutdown
@@ -2357,15 +2355,14 @@ _pc_stop_event = threading.Event()
 
 def _load_sniper_state():
     """Supabase se sniper state load karo — restart pe same state rahega"""
-    global PC_SNIPER_ENABLED, FM_SNIPER_ENABLED
+    global FM_SNIPER_ENABLED
     if not supabase: return
     try:
         res = supabase.table("memory").select("positions").eq("session_id", "SNIPER_STATE").execute()
         if res.data:
             state = json.loads(res.data[0].get("positions") or "{}")
-            PC_SNIPER_ENABLED = state.get("pc", True)
             FM_SNIPER_ENABLED = state.get("fm", True)
-            print(f"✅ Sniper state loaded — PC:{PC_SNIPER_ENABLED} FM:{FM_SNIPER_ENABLED}")
+            print(f"✅ Sniper state loaded — FM:{FM_SNIPER_ENABLED}")
     except Exception as e:
         print(f"⚠️ Sniper state load error: {e}")
 
@@ -2378,7 +2375,7 @@ def _save_sniper_state():
             "role": "system",
             "content": "",
             "history": json.dumps([]),
-            "positions": json.dumps({"pc": PC_SNIPER_ENABLED, "fm": FM_SNIPER_ENABLED}),
+            "positions": json.dumps({"pc": False, "fm": FM_SNIPER_ENABLED}),
             "updated_at": datetime.utcnow().isoformat()
         }, on_conflict="session_id").execute()
     except Exception as e:
@@ -2435,43 +2432,6 @@ auto_trade_stats = {
 
 
 # ========== PROCESS NEW TOKEN ==========
-def _save_pc_event(token_addr, liq_bnb, prefilter, cl_score, cl_total, snipe_price, result, skip_reason, time_ms):
-    """PC event Supabase mein save karo"""
-    try:
-        if not supabase: return
-        # Auto cleanup — 5000 se zyada ho to purane delete karo
-        try:
-            _cnt = supabase.table("pc_events").select("id", count="exact").execute()
-            if (_cnt.count or 0) >= 5000:
-                _old = supabase.table("pc_events").select("id").order("detected_at", desc=False).limit(500).execute()
-                _ids = [r["id"] for r in (_old.data or []) if r.get("id")]
-                if _ids:
-                    supabase.table("pc_events").delete().in_("id", _ids).execute()
-        except Exception:
-            pass
-        supabase.table("pc_events").insert({
-            "token_address":   token_addr,
-            "token_short":     token_addr[:10],
-            "detected_at":     datetime.now(_IST).isoformat(),
-            "liquidity_bnb":   round(float(liq_bnb or 0), 6),
-            "prefilter":       prefilter or "",
-            "checklist_score": int(cl_score or 0),
-            "checklist_total": int(cl_total or 0),
-            "snipe_price":     float(snipe_price or 0),
-            "result":          result,
-            "skip_reason":     skip_reason or "",
-            "time_taken_ms":   int(time_ms or 0),
-            "mode":            TRADE_MODE,
-        }).execute()
-    except Exception as e:
-        print(f"⚠️ [PC] event save error: {e}")
-
-def _save_pc_event_bg(token_addr, liq_bnb, prefilter, cl_score, cl_total, snipe_price, result, skip_reason, time_ms):
-    """PC event background save"""
-    threading.Thread(target=_save_pc_event, args=(
-        token_addr, liq_bnb, prefilter, cl_score, cl_total, snipe_price, result, skip_reason, time_ms
-    ), daemon=True).start()
-
 def _process_new_token(token_address: str, pair_address: str, source: str = "websocket"):
     global discovered_addresses
     _now = time.time()
@@ -4209,406 +4169,6 @@ def _pc_get_tax(token_address: str, w3_inst) -> float:
         return -1
 
 
-def _auto_check_new_pair(pair_address: str, whale_triggered: bool = False, whale_wallet: str = ""):
-    if not PC_SNIPER_ENABLED: return  # PC stopped
-    """
-    PC Fast Sniper — max speed, on-chain only
-    ~700ms total: Blacklist(0ms) + Liq(200ms) + Parallel[Sim+Tax](300ms) + Buy(100ms)
-    """
-    _t_start = time.time()
-
-    # ── STEP 0: Instant blacklist checks (memory, 0ms) ──
-    if is_token_blacklisted(pair_address):
-        _scanner_stats["rej_blacklist"] += 1
-        print(f"🚫 Blacklisted — skip: {pair_address[:10]}")
-        return
-
-    try:
-        _addr_cs = Web3.to_checksum_address(pair_address)
-    except Exception:
-        return
-
-    _dev_addr = ""  # will check after GoPlus (background)
-
-    # ── Deduplicate — turant lock karo processing start hote hi ──
-    with _pc_sniped_lock:
-        if pair_address.lower() in _pc_sniped:
-            return
-        _pc_sniped.add(pair_address.lower())  # LOCK immediately
-
-    # ── Already traded ──
-    if any(t.get("address","").lower() == pair_address.lower()
-           for t in auto_trade_stats.get("trade_history", [])):
-        with _pc_sniped_lock:
-            _pc_sniped.discard(pair_address.lower())
-        return
-
-    # ── STEP 1: getPair (~100ms) ──
-    _liq_bnb = 0.0
-    _w3q = _get_w3q()
-    if not _w3q:
-        print(f"⚠️ QUICKNODE_HTTP not set — skip: {pair_address[:10]}")
-        return
-
-    try:
-        _factory_c = _w3q.eth.contract(
-            address=Web3.to_checksum_address(PANCAKE_FACTORY),
-            abi=FACTORY_ABI_PRICE
-        )
-        _actual_pair = _factory_c.functions.getPair(
-            _addr_cs, Web3.to_checksum_address(WBNB)
-        ).call()
-        if not _actual_pair or _actual_pair == "0x0000000000000000000000000000000000000000":
-            print(f"⚠️ No pair found — skip: {pair_address[:10]}")
-            return
-    except Exception as e:
-        print(f"⚠️ getPair failed — skip: {pair_address[:10]} {e}")
-        return
-
-    # ── STEP 2: PARALLEL CHECKS (~100ms) ──
-    # getReserves + totalSupply + owner + LP burn — sab ek saath
-    import concurrent.futures as _cf2
-
-    _DEAD     = "0x000000000000000000000000000000000000dEaD"
-    _ZERO     = "0x0000000000000000000000000000000000000000"
-    _pair_cs  = Web3.to_checksum_address(_actual_pair)
-    _token_cs = _addr_cs
-    _wbnb_cs  = Web3.to_checksum_address(WBNB)
-
-    _ERC20_ABI_EXT = [
-        {"name":"balanceOf","type":"function","stateMutability":"view",
-         "inputs":[{"name":"account","type":"address"}],"outputs":[{"name":"","type":"uint256"}]},
-        {"name":"totalSupply","type":"function","stateMutability":"view",
-         "inputs":[],"outputs":[{"name":"","type":"uint256"}]},
-        {"name":"owner","type":"function","stateMutability":"view",
-         "inputs":[],"outputs":[{"name":"","type":"address"}]},
-    ]
-
-    _pair_c   = _w3q.eth.contract(address=_pair_cs,  abi=PAIR_ABI_PRICE)
-    _token_c  = _w3q.eth.contract(address=_token_cs, abi=_ERC20_ABI_EXT)
-    _lp_c     = _w3q.eth.contract(address=_pair_cs,  abi=_ERC20_ABI_EXT)
-
-    def _get_reserves():
-        try:
-            _res = _pair_c.functions.getReserves().call()
-            _t0  = _pair_c.functions.token0().call().lower()
-            return _res, _t0
-        except: return None, None
-
-    def _get_total_supply():
-        try: return _token_c.functions.totalSupply().call()
-        except: return 0
-
-    def _get_owner():
-        try: return _token_c.functions.owner().call().lower()
-        except: return ""
-
-    def _get_lp_burned():
-        try: return _lp_c.functions.balanceOf(Web3.to_checksum_address(_DEAD)).call()
-        except: return 0
-
-    def _get_token_in_lp():
-        try: return _token_c.functions.balanceOf(_pair_cs).call()
-        except: return 0
-
-    # Sim+Tax inline function — parallel mein chalega
-    def _get_sim_tax():
-        try:
-            _ROUTER_ABI_SIM = [{"name":"getAmountsOut","type":"function","stateMutability":"view",
-                "inputs":[{"name":"amountIn","type":"uint256"},{"name":"path","type":"address[]"}],
-                "outputs":[{"name":"amounts","type":"uint256[]"}]}]
-            _router_s  = _w3q.eth.contract(address=Web3.to_checksum_address(PANCAKE_ROUTER), abi=_ROUTER_ABI_SIM)
-            _wbnb_s    = Web3.to_checksum_address(WBNB)
-            _token_s   = Web3.to_checksum_address(pair_address)
-            _amt_in_s  = int(0.001 * 1e18)
-            _buy_s     = _router_s.functions.getAmountsOut(_amt_in_s, [_wbnb_s, _token_s]).call(block_identifier="latest")
-            _tokens_out_s = _buy_s[-1] if _buy_s else 0
-            if _tokens_out_s <= 0: return {"safe": False, "reason": "buy path fail"}, -1.0
-            _sell_s    = _router_s.functions.getAmountsOut(_tokens_out_s, [_token_s, _wbnb_s]).call(block_identifier="latest")
-            _bnb_back_s = _sell_s[-1] if _sell_s else 0
-            if _bnb_back_s <= 0: return {"safe": False, "reason": "sell revert: honeypot"}, -1.0
-            _tax_s = round((1 - _bnb_back_s / _amt_in_s) * 100, 1)
-            return {"safe": True, "reason": f"ok tax={_tax_s:.1f}%"}, _tax_s
-        except Exception as _se:
-            err = str(_se)
-            if "revert" in err.lower() or "INSUFFICIENT" in err:
-                return {"safe": False, "reason": "sell revert: honeypot"}, -1.0
-            return {"safe": False, "reason": f"check error: {err[:60]}"}, -1.0
-
-    try:
-        with _cf2.ThreadPoolExecutor(max_workers=6) as _ex2:
-            _f_res   = _ex2.submit(_get_reserves)
-            _f_sup   = _ex2.submit(_get_total_supply)
-            _f_own   = _ex2.submit(_get_owner)
-            _f_burn  = _ex2.submit(_get_lp_burned)
-            _f_tokl  = _ex2.submit(_get_token_in_lp)
-            _f_sim   = _ex2.submit(_get_sim_tax)
-            _res_data, _t0 = _f_res.result(timeout=4)
-            _total_supply   = _f_sup.result(timeout=4)
-            _owner_addr     = _f_own.result(timeout=4)
-            _lp_burned_bal  = _f_burn.result(timeout=4)
-            _token_in_lp    = _f_tokl.result(timeout=4)
-            _sim_result, _tax_result = _f_sim.result(timeout=5)
-    except Exception as e:
-        print(f"⚠️ Parallel checks failed — skip: {pair_address[:10]} {e}")
-        return
-
-    if _res_data is None:
-        print(f"⚠️ getReserves failed — skip: {pair_address[:10]}")
-        return
-
-    # ── BNB Liquidity check ──
-    try:
-        _liq_bnb = (_res_data[0] / 1e18) if _t0 == WBNB.lower() else (_res_data[1] / 1e18)
-    except:
-        _liq_bnb = min(_res_data[0], _res_data[1]) / 1e18
-
-    _min_liq = CHECKLIST_SETTINGS.get("min_liq_bnb", 3.0)
-    if _liq_bnb < _min_liq:
-        _scanner_stats["rej_low_liq"] += 1
-        print(f"⏭️ Low liq {_liq_bnb:.2f} BNB — skip: {pair_address[:10]}")
-        _log("reject", pair_address[:8], f"Low liq {_liq_bnb:.2f} BNB", pair_address)
-        with _pc_sniped_lock: _pc_sniped.discard(pair_address.lower())
-        return
-    if _liq_bnb > 500:
-        _scanner_stats["rej_high_liq"] += 1
-        print(f"⏭️ High liq {_liq_bnb:.0f} BNB — skip: {pair_address[:10]}")
-        with _pc_sniped_lock: _pc_sniped.discard(pair_address.lower())
-        return
-
-    # ── USD liq check ──
-    _bnb_price = market_cache.get("bnb_price", 0)
-    _liq_usd   = _liq_bnb * _bnb_price if _bnb_price else 0
-    if _bnb_price and _liq_usd < 3000:
-        _scanner_stats["rej_low_liq"] += 1
-        print(f"⏭️ Low USD liq ${_liq_usd:.0f} — skip: {pair_address[:10]}")
-        with _pc_sniped_lock: _pc_sniped.discard(pair_address.lower())
-        return
-
-    # ── Token % in LP check (min 80%) ──
-    if _total_supply > 0 and _token_in_lp > 0:
-        _tok_pct = (_token_in_lp / _total_supply) * 100
-        if _tok_pct < 80.0:
-            print(f"⏭️ Token in LP {_tok_pct:.1f}% < 80% — skip: {pair_address[:10]}")
-            with _pc_sniped_lock: _pc_sniped.discard(pair_address.lower())
-            return
-        print(f"✅ Token in LP: {_tok_pct:.1f}%")
-
-    # ── Owner renounce check ──
-    _owner_renounced = _owner_addr in ["", _DEAD.lower(), _ZERO.lower()]
-    if not _owner_renounced:
-        print(f"⚠️ Owner not renounced ({_owner_addr[:10]}) — proceeding with caution")
-    else:
-        print(f"✅ Owner renounced")
-
-    # ── LP Burn check ──
-    _lp_burned = _lp_burned_bal > 0
-    if _lp_burned:
-        print(f"🔥 LP burned ✅")
-    else:
-        print(f"⛔ LP not burned — SKIP")
-        return
-
-    print(f"✅ Liq ok {_liq_bnb:.2f} BNB (${_liq_usd:.0f}): {pair_address[:10]}")
-    _scanner_stats["pc_prefilter_pass"] += 1
-
-    # ── Basic checks ──
-    if not AUTO_TRADE_ENABLED or not PC_SNIPER_ENABLED:
-        return
-    if len(auto_trade_stats.get("running_positions", {})) >= AUTO_MAX_POSITIONS:
-        return
-    sess = get_or_create_session(AUTO_SESSION_ID)
-    if sess.get("paper_balance", 5.0) < AUTO_BUY_SIZE_BNB:
-        return
-    _ok, _msg = DataGuard.bnb_price_ok()
-    if not _ok:
-        print(f"🛑 DataGuard: {_msg}")
-        return
-
-    # Sim+Tax already parallel mein run ho gaya upar — seedha result check
-    if not _sim_result.get("safe"):
-        _scanner_stats["pc_checklist_fail"] += 1
-        reason = _sim_result.get("reason", "")
-        print(f"🚫 Sim fail — {reason}: {pair_address[:10]}")
-        _log("reject", pair_address[:8], f"Sim fail: {reason}", pair_address)
-        # Sirf confirmed honeypot blacklist karo — error/timeout pe nahi
-        if "honeypot" in reason.lower() or "revert" in reason.lower() or "high tax" in reason.lower():
-            blacklist_token(pair_address, f"honeypot: {reason[:40]}")
-        elif "not run" in reason.lower() or "parallel error" in reason.lower() or "timeout" in reason.lower():
-            pass  # temporary error — blacklist mat karo
-        return
-
-    # Tax too high
-    _max_tax = CHECKLIST_SETTINGS.get("max_sell_tax", 8.0)
-    if _tax_result >= 0 and _tax_result > _max_tax:
-        _scanner_stats["pc_checklist_fail"] += 1
-        print(f"🚫 High tax {_tax_result:.1f}% — skip: {pair_address[:10]}")
-        _log("reject", pair_address[:8], f"High tax {_tax_result:.1f}%", pair_address)
-        blacklist_token(pair_address, f"high_tax_{_tax_result:.0f}pct")
-        return
-
-    print(f"✅ Sim+Tax passed (tax={_tax_result:.1f}%): {pair_address[:10]}")
-    _scanner_stats["pc_checklist_pass"] += 1
-
-    # ── STEP 3: BUY (~100ms) ──
-    if not _pc_sem.acquire(blocking=False):
-        print(f"⏭️ Sem full — skip: {pair_address[:10]}")
-        return
-
-    try:
-        entry_price = get_token_price_bnb(pair_address)
-        if entry_price <= 0:
-            time.sleep(0.5)
-            entry_price = get_token_price_bnb(pair_address)
-        if entry_price <= 0 or entry_price > 1.0:
-            print(f"❌ Bad price — skip: {pair_address[:10]}")
-            return
-
-        size_bnb   = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
-        token_name = pair_address[:8]
-
-        # Real mode
-        if TRADE_MODE == "real":
-            _real = real_buy_token(pair_address, size_bnb, 0, 0)
-            if not _real.get("success"):
-                print(f"❌ Real buy failed: {_real.get('error')}")
-                return
-            if _real.get("entry_price", 0) > 0:
-                entry_price = _real["entry_price"]
-
-        # Paper mode
-        if TRADE_MODE != "real":
-            sess["paper_balance"] = round(sess.get("paper_balance", 5.0) - size_bnb, 6)
-
-        # Mark sniped
-        with _pc_sniped_lock:
-            _pc_sniped.add(pair_address.lower())
-
-        add_position_to_monitor(AUTO_SESSION_ID, pair_address, token_name, entry_price, size_bnb)
-        auto_trade_stats["running_positions"][pair_address] = {
-            "token":          token_name,
-            "entry":          entry_price,
-            "size_bnb":       size_bnb,
-            "orig_size_bnb":  size_bnb,
-            "bought_usd":     round(size_bnb * market_cache.get("bnb_price", 0), 2),
-            "sl_pct":         CHECKLIST_SETTINGS.get("sl_new", 20.0),
-            "tp_sold":        0.0,
-            "banked_pnl_bnb": 0.0,
-            "bought_at":      datetime.utcnow().isoformat(),
-        }
-        auto_trade_stats["total_auto_buys"] += 1
-        auto_trade_stats["last_action"] = f"PC SNIPE {token_name}"
-        _scanner_stats["pc_bought"] += 1
-        _persist_positions()
-
-        ms_total = int((time.time() - _t_start) * 1000)
-        print(f"⚡ PC SNIPED: {token_name} @ {entry_price:.2e} liq={_liq_bnb:.1f}BNB tax={_tax_result:.1f}% {ms_total}ms")
-        _log("buy", token_name, f"⚡ PC SNIPE {size_bnb:.4f}BNB @ {entry_price:.2e} liq={_liq_bnb:.1f} {ms_total}ms", pair_address)
-        _push_notif("success", "⚡ PC Sniped!", f"{token_name} @ {entry_price:.2e} | {ms_total}ms", token_name, pair_address)
-
-        # ── Background: token name + Supabase save ──
-        def _bg_update():
-            try:
-                _r = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{pair_address}", timeout=6)
-                if _r.status_code == 200:
-                    _prs = [p for p in (_r.json().get("pairs") or []) if p and p.get("chainId") == "bsc"]
-                    if _prs:
-                        _bt = _prs[0].get("baseToken") or {}
-                        _name = _bt.get("symbol") or _bt.get("name") or token_name
-                        if _name and pair_address in auto_trade_stats["running_positions"]:
-                            auto_trade_stats["running_positions"][pair_address]["token"] = _name
-                            _log("discover", _name, f"Token name updated: {_name}", pair_address)
-            except Exception:
-                pass
-            try:
-                _save_pc_event(pair_address, _liq_bnb, "PASS", 1, 1, entry_price, "BUY", "", ms_total)
-            except Exception:
-                pass
-        threading.Thread(target=_bg_update, daemon=True).start()
-
-        _register_position_pair(pair_address)
-
-        # ── POST-BUY: 30s buyer monitor ──
-        # Agar 30s mein koi external buyer nahi aaya → force sell
-        def _post_buy_monitor(token_addr, entry_px, sz_bnb):
-            try:
-                time.sleep(30)
-                # Check karo position abhi bhi hai?
-                if token_addr not in auto_trade_stats.get("running_positions", {}):
-                    return  # Already sold
-
-                # SwapMonitor se buyers check karo
-                with _rt_swap_lock:
-                    sd = _rt_swap_data.get(token_addr.lower(), {})
-
-                buy_times  = sd.get("buy_times", [])
-                _our_buy_ts = time.time() - 32  # 32s pehle hamare buy ka time
-
-                # Sirf hamare buy ke BAAD ke external buyers count karo
-                external_buys = [(t, a) for t, a in buy_times if t > _our_buy_ts]
-                external_count = len(external_buys)
-                external_vol   = sum(a for t, a in external_buys)
-
-                if external_count == 0:
-                    print(f"⚠️ No buyers in 30s — force exit: {token_addr[:10]}")
-                    _log("reject", token_addr[:8], "No buyers in 30s — force exit", token_addr)
-                    _auto_paper_sell(token_addr, "No buyers 30s ❌", 100.0)
-                else:
-                    print(f"✅ {external_count} buyers in 30s ({external_vol:.3f} BNB) — holding: {token_addr[:10]}")
-            except Exception as _e:
-                print(f"⚠️ Post-buy monitor error: {_e}")
-
-        threading.Thread(
-            target=_post_buy_monitor,
-            args=(pair_address, entry_price, size_bnb),
-            daemon=True
-        ).start()
-
-    except Exception as e:
-        print(f"⚠️ PC buy error: {e}")
-    finally:
-        _pc_sem.release()
-
-# ========== FOUR.MEME NEW TOKEN POLLER ==========# ══════════════════════════════════════════════════════════════
-
-# ══════════════════════════════════════════════════════════════
-# FOUR.MEME GRADUATION SNIPER v2
-# Speed: ~900ms - 1.7 sec (PublicNode free WSS)
-# Flow:
-#   1. four.meme factory Transfer events (WSS)
-#   2. getPair() — PancakeSwap pe pair hai? NO=skip YES=graduated
-#   3. getReserves() graduation price
-#   4. cur_price <= grad_price x 1.30 = BUY else SKIP
-# ══════════════════════════════════════════════════════════════
-
-# Bitquery FM Graduation Stream
-BQ_CLIENT_ID     = os.environ.get("BQ_CLIENT_ID",     "1d38b4e2-008d-43cc-8ac8-9c93d8392d13")
-BQ_CLIENT_SECRET = os.environ.get("BQ_CLIENT_SECRET", "Th21wimf3DmD718dsiWGPIzT~V")
-BQ_WSS_URL       = "wss://streaming.bitquery.io/graphql"
-BQ_TOKEN_URL     = "https://oauth2.bitquery.io/oauth2/token"
-
-# ══════════════════════════════════════════════════════════════
-# FOUR.MEME BONDING CURVE SNIPER v2
-# Flow:
-#   1. Four.meme factory mint event (WSS)
-#   2. Parallel filters: progress + raised BNB + velocity +
-#      single wallet + dev history (on-chain) + honeypot sim
-#   3. BUY via bonding curve
-#   4. TP1/TP2/TP3/Moon + SL exit
-# ══════════════════════════════════════════════════════════════
-
-# ── Constants ──
-_FM_FACTORY_ADDRS = [
-    "0x5c952063c7fc8610ffdb798152d69f0b9550762b",
-    "0x8b8cf6d0c2b5f4cb61da5e7dc94e52f4f1dd8d64",
-    "0x48a31b72f77a2a90ebe24e5c4c88be43e2ad6beb",
-]
-_FM_FACTORY_ADDR = "0x5c952063c7fc8610ffdb798152d69f0b9550762b"
-
-# ── Gas price cache — buy ke time fast ──
-_fm_gas_cache = {"price": 0, "ts": 0}
-_fm_gas_lock  = threading.Lock()
-
 def _fm_get_cached_gas(w3):
     """Har 10s mein gas price update — buy ke time 0ms"""
     import time as _t
@@ -5607,7 +5167,6 @@ def run_full_sniper_checklist(address: str, prefetched_dex: dict = None) -> Dict
 
     # ── STEP 3: DexScreener — use prefetched data if available (avoid double call) ──
     if prefetched_dex is not None:
-        # Data already fetched in _auto_check_new_pair — parse it directly
         dex_data = get_dexscreener_token_data(address, prefetched_raw=prefetched_dex)
     else:
         dex_data = get_dexscreener_token_data(address)
@@ -6522,9 +6081,7 @@ def _startup_once():
                     try:
                         token_address = _discovery_queue.get(timeout=10)
                         try:
-                            # PC sniper off hai to queue drain karo, process mat karo
-                            if PC_SNIPER_ENABLED:
-                                _auto_check_new_pair(token_address)
+                            pass
                         except Exception as _we:
                             print(f"⚠️ PC worker error: {_we}")
                         _discovery_queue.task_done()
@@ -6535,7 +6092,6 @@ def _startup_once():
                 threading.Thread(target=_prefilter_worker, args=(i, False), daemon=True).start()
             for i in range(4):  # 4 hotstandby
                 threading.Thread(target=_prefilter_worker, args=(i, True), daemon=True).start()
-            print("🔍 PC Workers: 3 active + 4 hotstandby | Queue: infinite | Sem: 5")
 
         threading.Thread(target=_start_queue_workers, daemon=True).start()
 
@@ -7449,13 +7005,6 @@ def toggle_auto():
     print(f"🤖 Auto Trade toggled: {status}")
     return jsonify({"enabled": AUTO_TRADE_ENABLED, "status": status})
 
-@app.route("/toggle-pc", methods=["POST"])
-def toggle_pc_sniper():
-    global PC_SNIPER_ENABLED
-    PC_SNIPER_ENABLED = not PC_SNIPER_ENABLED
-    print(f"⚡ PC Sniper {'STARTED' if PC_SNIPER_ENABLED else 'STOPPED'}")
-    threading.Thread(target=_save_sniper_state, daemon=True).start()
-    return jsonify({"enabled": PC_SNIPER_ENABLED})
 
 @app.route('/toggle-fm', methods=['POST'])
 def toggle_fm_sniper():
@@ -7474,7 +7023,7 @@ def toggle_fm_sniper():
 
 @app.route('/sniper-status', methods=['GET'])
 def sniper_status():
-    return jsonify({"pc": PC_SNIPER_ENABLED, "fm": FM_SNIPER_ENABLED})
+    return jsonify({"pc": False, "fm": FM_SNIPER_ENABLED})
 
 @app.route('/set-trade-mode', methods=['POST'])
 def set_trade_mode():
@@ -7665,7 +7214,7 @@ def scanner_stats():
             "fm_buy":  _sum(last1d, "fm_buy"),
         },
         "history_points": len(hist),
-        "pc_enabled": PC_SNIPER_ENABLED,
+        "pc_enabled": False,
         "fm_enabled": FM_SNIPER_ENABLED,
         "rejections": {
             "low_liq":   _scanner_stats["rej_low_liq"],
@@ -7778,19 +7327,6 @@ def fm_events_api():
     except Exception as e:
         return jsonify({"events": [], "error": str(e)[:60]})
 
-@app.route("/pc-events")
-def pc_events_api():
-    """PC event log — Supabase se all events + current price + ATH"""
-    try:
-        if not supabase:
-            return jsonify({"events": [], "error": "supabase not connected"})
-        res = supabase.table("pc_events").select("*").order("detected_at", desc=True).limit(1000).execute()
-        events = res.data or []
-
-        events = _enrich_events(events)
-        return jsonify({"events": events})
-    except Exception as e:
-        return jsonify({"events": [], "error": str(e)[:60]})
 
 @app.route("/health")
 def health():
