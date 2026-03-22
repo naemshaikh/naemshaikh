@@ -4748,7 +4748,12 @@ def _fm_momentum_queue_worker():
                         print(f"[MON] {token_addr[-8:]} p:{_p} f+:{(_f-funds1)/1e18:.4f}", flush=True)
                         if _p >= price1 * _MIN_PRICE_MV and (_f - funds1) / 1e18 >= _MIN_BNB_FLOW:
                             print(f"✅ [FM] Momentum! {token_addr[:10]}", flush=True)
-                            result[0] = {"snap": snap, "price": _p, "funds": _f}
+                            # Unique buyers count — data collection only
+                            try:
+                                _ub, _ = _fm_get_unique_buyers(token_addr, _w3m)
+                            except:
+                                _ub = 0
+                            result[0] = {"snap": snap, "price": _p, "funds": _f, "buyers": _ub}
                             break
                 except Exception as _e:
                     print(f"⚠️ [FM] queue monitor: {str(_e)[:50]}", flush=True)
@@ -5216,10 +5221,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         ms = int((time.time() - _t_start) * 1000)
 
-        # Unique buyers check — free RPC use karo
+        # Unique buyers — from momentum result (no extra call)
         try:
-            _w3_free = Web3(Web3.HTTPProvider("https://bsc-rpc.publicnode.com", request_kwargs={"timeout": 5}))
-            _buyers_at_entry, _ = _fm_get_unique_buyers(token_addr, _w3_free)
+            _buyers_at_entry = _momentum_data[0].get("buyers", 0) if _momentum_data[0] else 0
         except:
             _buyers_at_entry = 0
         add_position_to_monitor(
