@@ -2195,44 +2195,49 @@ def _load_session_from_db(session_id: str):
 
 def _save_session_to_db(session_id: str):
     if not supabase: return
-    try:
-        sess = sessions.get(session_id, {})
-        extra = {}
-        if session_id == AUTO_SESSION_ID:
-            extra["pattern_database"] = {
-                "total_buys":    auto_trade_stats.get("total_auto_buys", 0),
-                "total_sells":   auto_trade_stats.get("total_auto_sells", 0),
-                "pnl_total":     auto_trade_stats.get("auto_pnl_total", 0.0),
-                "last_action":   auto_trade_stats.get("last_action", ""),
-                "trade_history": list(auto_trade_stats.get("trade_history", []))[-500:],
-                "total_scanned": max(len(discovered_addresses), brain.get("total_tokens_discovered_ever", 0)),
-                "wins":          auto_trade_stats.get("wins", 0),
-                "losses":        auto_trade_stats.get("losses", 0),
-                "today_wins":    auto_trade_stats.get("today_wins",   0),
-                "today_losses":  auto_trade_stats.get("today_losses", 0),
-                "today_pnl":     auto_trade_stats.get("today_pnl",    0.0),
-                "today_date":    auto_trade_stats.get("today_date",   ""),
-            }
-        else:
-            extra["pattern_database"] = sess.get("pattern_database", [])
-        supabase.table("memory").upsert({
-            "session_id":       session_id,
-            "role":             "user",
-            "content":          "",
-            "paper_balance":    sess.get("paper_balance",    5.0),
-            "open_positions":   json.dumps(sess.get("open_positions", {})),
-            "real_balance":     sess.get("real_balance",     0.00),
-            "positions":        json.dumps(sess.get("positions",        [])),
-            "history":          json.dumps(sess.get("history",          [])[-20:]),
-            "pnl_24h":          sess.get("pnl_24h",          0.0),
-            "daily_loss":       sess.get("daily_loss",        0.0),
-            "trade_count":      sess.get("trade_count",       0),
-            "win_count":        sess.get("win_count",         0),
-            **extra,
-            "updated_at":       datetime.utcnow().isoformat()
-        }, on_conflict="session_id").execute()
-    except Exception as e:
-        print(f"⚠️ Session save error: {e}")
+    for _attempt in range(3):
+        try:
+            sess = sessions.get(session_id, {})
+            extra = {}
+            if session_id == AUTO_SESSION_ID:
+                extra["pattern_database"] = {
+                    "total_buys":    auto_trade_stats.get("total_auto_buys", 0),
+                    "total_sells":   auto_trade_stats.get("total_auto_sells", 0),
+                    "pnl_total":     auto_trade_stats.get("auto_pnl_total", 0.0),
+                    "last_action":   auto_trade_stats.get("last_action", ""),
+                    "trade_history": list(auto_trade_stats.get("trade_history", []))[-500:],
+                    "total_scanned": max(len(discovered_addresses), brain.get("total_tokens_discovered_ever", 0)),
+                    "wins":          auto_trade_stats.get("wins", 0),
+                    "losses":        auto_trade_stats.get("losses", 0),
+                    "today_wins":    auto_trade_stats.get("today_wins",   0),
+                    "today_losses":  auto_trade_stats.get("today_losses", 0),
+                    "today_pnl":     auto_trade_stats.get("today_pnl",    0.0),
+                    "today_date":    auto_trade_stats.get("today_date",   ""),
+                }
+            else:
+                extra["pattern_database"] = sess.get("pattern_database", [])
+            supabase.table("memory").upsert({
+                "session_id":       session_id,
+                "role":             "user",
+                "content":          "",
+                "paper_balance":    sess.get("paper_balance",    5.0),
+                "open_positions":   json.dumps(sess.get("open_positions", {})),
+                "real_balance":     sess.get("real_balance",     0.00),
+                "positions":        json.dumps(sess.get("positions",        [])),
+                "history":          json.dumps(sess.get("history",          [])[-20:]),
+                "pnl_24h":          sess.get("pnl_24h",          0.0),
+                "daily_loss":       sess.get("daily_loss",        0.0),
+                "trade_count":      sess.get("trade_count",       0),
+                "win_count":        sess.get("win_count",         0),
+                **extra,
+                "updated_at":       datetime.utcnow().isoformat()
+            }, on_conflict="session_id").execute()
+            return  # success
+        except Exception as e:
+            if _attempt < 2:
+                time.sleep(2)
+            else:
+                print(f"⚠️ Session save error: {e}")
 
 def _persist_positions():
     """
@@ -6775,7 +6780,7 @@ def auto_stats_route():
 
     # Build open_trades array for UI — sirf current mode ki positions
     open_trades = []
-    for addr, pos in auto_trade_stats.get("running_positions", {}).items():
+    for addr, pos in list(auto_trade_stats.get("running_positions", {}).items()):
         if pos.get("mode", TRADE_MODE) != TRADE_MODE:
             continue
         mon     = monitored_positions.get(addr, {})
