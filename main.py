@@ -4716,7 +4716,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _price1 = _info_fresh.get("lastPrice", 0)
         _funds1 = _info_fresh.get("funds", 0)
         _MIN_PRICE_MV = 1.0005   # 0.05% price move
-        _MIN_BNB_FLOW = 0.05     # 0.05 BNB volume
+        _MIN_BNB_FLOW = 0.3      # 0.3 BNB volume — data se proven
         _MIN_BUYERS   = 5        # unique buyers
 
         # Gas + nonce prefetch parallel — momentum check ke dauran
