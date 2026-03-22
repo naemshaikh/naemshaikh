@@ -2029,7 +2029,15 @@ function setPnlPeriod(p){
       el.style.fontWeight='600';
     }
   });
-  window._renderPnlCard(window._lastStats);
+  // Trade history fetch karo agar cache nahi hai
+  if(p !== 'ALL' && (!window._cachedTradeHistory || window._cachedTradeHistory.length === 0)){
+    fetchJSON('/trade-history?filter=all',{},20000).then(function(d){
+      if(d && d.history) window._cachedTradeHistory = d.history;
+      window._renderPnlCard(window._lastStats);
+    });
+  } else {
+    window._renderPnlCard(window._lastStats);
+  }
 }
 
 function _pnlPeriodFilter(trades, period){
