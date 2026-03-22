@@ -7083,18 +7083,28 @@ def set_trade_mode():
     if prev_mode == "paper" and mode == "real":
         def _close_all_paper():
             try:
+                # 1. Paper positions remove
                 open_addrs = list(auto_trade_stats["running_positions"].keys())
                 if open_addrs:
                     print(f"🔴 Removing {len(open_addrs)} paper positions (no history save)...")
                     for addr in open_addrs:
                         try:
-                            # History mein mat daalo — sirf remove karo
                             auto_trade_stats["running_positions"].pop(addr, None)
                             remove_position_from_monitor(addr)
                         except Exception as _ce:
                             print(f"⚠️ Remove paper position error {addr[:10]}: {_ce}")
                     _persist_positions()
-                    print(f"✅ All paper positions removed — Real mode ready!")
+
+                # 2. Daily loss reset — paper ka loss real mein carry nahi hoga
+                sess = get_or_create_session(AUTO_SESSION_ID)
+                sess["daily_loss"]      = 0.0
+                sess["daily_loss_date"] = datetime.utcnow().strftime("%Y-%m-%d")
+
+                # 3. Stats reset
+                auto_trade_stats["total_auto_buys"] = 0
+                auto_trade_stats["total_auto_sells"] = 0
+
+                print(f"✅ All paper state cleared — Real mode ready!")
             except Exception as e:
                 print(f"⚠️ _close_all_paper error: {e}")
         threading.Thread(target=_close_all_paper, daemon=True).start()
