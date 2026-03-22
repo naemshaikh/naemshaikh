@@ -4187,6 +4187,32 @@ _FM_WBNB         = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
 _FM_WSS = []
 _FM_RPC = []
 
+_FM_FACTORY_ADDRS = [
+    "0x5c952063c7fc8610ffdb798152d69f0b9550762b",
+    "0x8b8cf6d0c2b5f4cb61da5e7dc94e52f4f1dd8d64",
+    "0x48a31b72f77a2a90ebe24e5c4c88be43e2ad6beb",
+]
+_FM_FACTORY_ADDR = "0x5c952063c7fc8610ffdb798152d69f0b9550762b"
+
+# ── Gas price cache — buy ke time fast ──
+_fm_gas_cache = {"price": 0, "ts": 0}
+_fm_gas_lock  = threading.Lock()
+
+def _fm_get_cached_gas(w3):
+    """Har 10s mein gas price update — buy ke time 0ms"""
+    import time as _t
+    with _fm_gas_lock:
+        if _t.time() - _fm_gas_cache["ts"] < 10 and _fm_gas_cache["price"] > 0:
+            return _fm_gas_cache["price"]
+    try:
+        gp = w3.eth.gas_price
+        with _fm_gas_lock:
+            _fm_gas_cache["price"] = gp
+            _fm_gas_cache["ts"]    = _t.time()
+        return gp
+    except:
+        return 3_000_000_000  # 3 gwei fallback
+
 # ── ABIs ──
 # Official helper contract — TokenManagerHelper3
 _FM_HELPER_ADDR = "0xF251F83e40a78868FcfA3FA4599Dad6494E46034"
