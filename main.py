@@ -4256,6 +4256,10 @@ _FM_ERC20_ABI = [
      "outputs":[{"name":"","type":"uint256"}]},
     {"name":"totalSupply","type":"function","stateMutability":"view",
      "inputs":[],"outputs":[{"name":"","type":"uint256"}]},
+    {"name":"name","type":"function","stateMutability":"view",
+     "inputs":[],"outputs":[{"name":"","type":"string"}]},
+    {"name":"symbol","type":"function","stateMutability":"view",
+     "inputs":[],"outputs":[{"name":"","type":"string"}]},
 ]
 
 def _fm_get_unique_buyers(token_addr, w3=None):
@@ -4845,6 +4849,23 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         auto_trade_stats["total_auto_buys"] += 1
         _scanner_stats["fm_bought"] = _scanner_stats.get("fm_bought", 0) + 1
         threading.Thread(target=_persist_positions, daemon=True).start()
+
+        # ── Background: token name fetch via ERC20 ──
+        def _fetch_token_name(ta):
+            try:
+                _w = _fm_get_w3()
+                if not _w: return
+                _tc = _w.eth.contract(address=Web3.to_checksum_address(ta), abi=_FM_ERC20_ABI)
+                _sym  = _tc.functions.symbol().call()
+                _name = _tc.functions.name().call()
+                _display = _sym or _name or ta[:8]
+                if _display and ta in auto_trade_stats.get("running_positions", {}):
+                    auto_trade_stats["running_positions"][ta]["token"] = _display
+                    _log("discover", _display, f"Token name: {_display}", ta)
+                    print(f"✅ [FM] Token name: {_display}")
+            except Exception as _ne:
+                print(f"⚠️ [FM] Name fetch: {str(_ne)[:40]}")
+        threading.Thread(target=_fetch_token_name, args=(token_addr,), daemon=True).start()
 
         _push_notif("success", "🚀 FM Bonding Curve!",
                     f"{token_name} mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}% | {ms}ms",
