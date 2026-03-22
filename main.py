@@ -3315,7 +3315,7 @@ def price_monitor_loop():
                 # FM bonding curve tokens — seedha bonding curve se price lo
                 if pos.get("buy_reasoning", {}).get("source") == "FM_BC_v2":
                     try:
-                        _fm_info = _fm_get_token_info(addr, _get_w3q() or _fm_get_w3())
+                        _fm_info = _fm_get_token_info(addr, _fm_get_w3())
                         if _fm_info and _fm_info.get("lastPrice", 0) > 0:
                             _bnb_p = market_cache.get("bnb_price", 640)
                             _quote = _fm_info.get("quote", "").lower()
