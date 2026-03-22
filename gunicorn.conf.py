@@ -11,6 +11,33 @@ loglevel         = "info"
 graceful_timeout = 30
 worker_exit_on_app_init_error = False
 
+# Health check logs filter karo — clutter kam karo
+class HealthFilter:
+    def filter(self, record):
+        return "/health" not in record.getMessage()
+
+logconfig_dict = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+        "health_filter": {"()": HealthFilter}
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "filters": ["health_filter"],
+            "stream": "ext://sys.stdout"
+        }
+    },
+    "loggers": {
+        "gunicorn.access": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False
+        }
+    }
+}
+
 def post_fork(server, worker):
     import threading
     try:
