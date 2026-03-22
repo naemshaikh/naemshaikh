@@ -4926,8 +4926,10 @@ def poll_four_meme_v2():
             except Exception as e:
                 err = str(e)
                 if "429" in err or "Too Many" in err:
+                    print(f"⚠️ [FM] Worker {worker_id} rate limit — retry 2s")
                     time.sleep(2)
                 else:
+                    print(f"⚠️ [FM] Worker {worker_id} error: {err[:80]}")
                     time.sleep(0.5)
 
     # 3 workers — each on different RPC, always running
