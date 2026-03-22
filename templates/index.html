@@ -704,78 +704,55 @@ function _checkLock(){
   <div class="sep">Bot Controls</div>
   <div class="ctrl-panel">
     <div class="ctrl-header">
-      <div class="ctrl-title">Manual Control</div>
+      <div class="ctrl-title">Controls</div>
       <div class="ctrl-status">
         <div class="ctrl-dot" id="auto-dot"></div>
         <span id="auto-status-lbl" style="color:var(--txt2)">Loading...</span>
       </div>
     </div>
 
-    <div class="ctrl-grid" style="margin-top:1px;">
-      <button class="ctrl-btn danger" id="close-one-btn" onclick="closeOne()">
-        <div class="ctrl-icon">&#128308;</div>
-        <div class="ctrl-lbl">Close One</div>
-        <div class="ctrl-sub" id="close-one-sub">Select to close</div>
+    <!-- All 6 buttons compact in 3x2 grid -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:8px 10px;">
+
+      <!-- Close One -->
+      <button id="close-one-btn" onclick="closeOne()" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:8px 4px;border-radius:10px;border:1px solid rgba(255,80,80,0.3);background:rgba(255,80,80,0.08);cursor:pointer;">
+        <div style="font-size:18px;">🔴</div>
+        <div style="font-size:9px;font-weight:700;color:var(--txt1);">Close One</div>
       </button>
-      <button class="ctrl-btn danger" onclick="resetAll()">
-        <div class="ctrl-icon">&#128163;</div>
-        <div class="ctrl-lbl">Close All</div>
-        <div class="ctrl-sub">Reset positions</div>
+
+      <!-- Close All -->
+      <button onclick="resetAll()" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:8px 4px;border-radius:10px;border:1px solid rgba(255,80,80,0.3);background:rgba(255,80,80,0.08);cursor:pointer;">
+        <div style="font-size:18px;">💣</div>
+        <div style="font-size:9px;font-weight:700;color:var(--txt1);">Close All</div>
       </button>
-      <button class="ctrl-btn ice" onclick="doHealthCheck()">
-        <div class="ctrl-icon">&#129686;</div>
-        <div class="ctrl-lbl">Health Check</div>
-        <div class="ctrl-sub" id="health-sub">BSC + Supabase</div>
+
+      <!-- Health Check -->
+      <button onclick="doHealthCheck()" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:8px 4px;border-radius:10px;border:1px solid rgba(100,200,255,0.3);background:rgba(100,200,255,0.06);cursor:pointer;">
+        <div style="font-size:18px;">🪖</div>
+        <div style="font-size:9px;font-weight:700;color:var(--txt1);" id="health-sub">Health</div>
       </button>
-      <button class="ctrl-btn gold" onclick="forceRefresh()">
-        <div class="ctrl-icon">&#128260;</div>
-        <div class="ctrl-lbl">Refresh Data</div>
-        <div class="ctrl-sub">Sync live data</div>
+
+      <!-- Refresh Data -->
+      <button onclick="forceRefresh()" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:8px 4px;border-radius:10px;border:1px solid rgba(212,168,71,0.3);background:rgba(212,168,71,0.06);cursor:pointer;">
+        <div style="font-size:18px;">🔄</div>
+        <div style="font-size:9px;font-weight:700;color:var(--txt1);">Refresh</div>
       </button>
+
+      <!-- Buy Amount -->
+      <button onclick="setBuyAmount()" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:8px 4px;border-radius:10px;border:1px solid rgba(0,230,118,0.3);background:rgba(0,230,118,0.06);cursor:pointer;">
+        <div style="font-size:18px;">💰</div>
+        <div style="font-size:9px;font-weight:700;color:var(--txt1);" id="buy-amount-sub">Buy Amt</div>
+      </button>
+
+      <!-- Max Trades -->
+      <button onclick="setMaxPositions()" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:8px 4px;border-radius:10px;border:1px solid rgba(64,196,255,0.3);background:rgba(64,196,255,0.06);cursor:pointer;">
+        <div style="font-size:18px;">📊</div>
+        <div style="font-size:9px;font-weight:700;color:var(--txt1);" id="max-pos-sub">Max Trades</div>
+      </button>
+
     </div>
-    <div style="padding:8px 14px;border-top:1px solid var(--line);margin-top:1px;">
+    <div style="padding:4px 14px 8px;">
       <div style="font-size:10px;color:var(--txt3);font-family:'JetBrains Mono',monospace;" id="last-ctrl-action">— awaiting command —</div>
-    </div>
-  </div>
-
-  <!-- NEW: Bot Functions Panel -->
-  <div class="ctrl-panel">
-    <div class="ctrl-header">
-      <div class="ctrl-title">🤖 Bot Functions</div>
-      <div class="ctrl-status" style="font-size:10px;color:var(--txt3);">All tools</div>
-    </div>
-    <div class="ctrl-grid">
-      <button class="ctrl-btn" onclick="setBuyAmount()" style="background:var(--ink2);">
-        <div class="ctrl-icon" style="background:rgba(0,230,118,0.1);border:1px solid rgba(0,230,118,0.3);">💰</div>
-        <div class="ctrl-lbl">Buy Amount</div>
-        <div class="ctrl-sub" id="buy-amount-sub">Loading...</div>
-      </button>
-      <button class="ctrl-btn" onclick="setMaxPositions()" style="background:var(--ink2);">
-        <div class="ctrl-icon" style="background:rgba(64,196,255,0.1);border:1px solid rgba(64,196,255,0.3);">📊</div>
-        <div class="ctrl-lbl">Max Trades</div>
-        <div class="ctrl-sub" id="max-pos-sub">Loading...</div>
-      </button>
-      <button class="ctrl-btn" onclick="viewNewPairs()" style="background:var(--ink2);">
-        <div class="ctrl-icon" style="background:rgba(240,192,64,0.1);border:1px solid rgba(240,192,64,0.3);">🆕</div>
-        <div class="ctrl-lbl">New Pairs</div>
-        <div class="ctrl-sub" id="new-pairs-count">BSC live</div>
-      </button>
-
-      <button class="ctrl-btn" onclick="checkReadiness()" style="background:var(--ink2);">
-        <div class="ctrl-icon" style="background:rgba(0,230,118,0.1);border:1px solid rgba(0,230,118,0.3);">📊</div>
-        <div class="ctrl-lbl">Readiness</div>
-        <div class="ctrl-sub">Paper→Real</div>
-      </button>
-      <button class="ctrl-btn" onclick="viewSelfAwareness()" style="background:var(--ink2);">
-        <div class="ctrl-icon" style="background:rgba(64,196,255,0.1);border:1px solid rgba(64,196,255,0.3);">🧠</div>
-        <div class="ctrl-lbl">Brain Stats</div>
-        <div class="ctrl-sub">IQ + Cycles</div>
-      </button>
-      <button class="ctrl-btn" onclick="openChecklistSettings()" style="background:var(--ink2);grid-column:1/-1;">
-        <div class="ctrl-icon" style="background:rgba(240,192,64,0.12);border:1px solid rgba(240,192,64,0.35);">⚙️</div>
-        <div class="ctrl-lbl">Checklist Settings</div>
-        <div class="ctrl-sub">Edit 13-Stage thresholds</div>
-      </button>
     </div>
   </div>
 
