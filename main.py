@@ -4476,7 +4476,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                 # Simpler: lastPrice × amount / totalSupply × (1 - 5% slippage)
                 _total_sup = 1_000_000_000 * 1e18
                 _expected_bnb = (_info_sell["lastPrice"] * _amt) / _total_sup
-                _min_funds = int(_expected_bnb * 0.95)  # 5% slippage allowed
+                _min_funds = int(_expected_bnb * 0.90)  # 10% slippage allowed
         except: pass
 
         # sellToken(token, amount, minFunds)
