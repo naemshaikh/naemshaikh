@@ -4859,8 +4859,14 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _sym  = _tc.functions.symbol().call()
                 _name = _tc.functions.name().call()
                 _display = _sym or _name or ta[:8]
-                if _display and ta in auto_trade_stats.get("running_positions", {}):
-                    auto_trade_stats["running_positions"][ta]["token"] = _display
+                if _display:
+                    # running_positions update
+                    if ta in auto_trade_stats.get("running_positions", {}):
+                        auto_trade_stats["running_positions"][ta]["token"] = _display
+                    # monitored_positions update
+                    with monitor_lock:
+                        if ta in monitored_positions:
+                            monitored_positions[ta]["token"] = _display
                     _log("discover", _display, f"Token name: {_display}", ta)
                     print(f"✅ [FM] Token name: {_display}")
             except Exception as _ne:
