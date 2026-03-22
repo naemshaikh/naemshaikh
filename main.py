@@ -4882,7 +4882,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
              f"🚀 FM BC v2 mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}% {ms}ms",
              token_addr)
         threading.Thread(target=_save_fm_event, args=(
-            token_addr, 0, 0, entry, _momentum_pct, "BUY", "", ms,
+            token_addr, round(_funds2/1e18, 4), 0, entry, _momentum_pct, "BUY", "", ms,
             _buyers_at_entry, _momentum_pct, round(_funds_diff, 6), _pump_at_entry, _dev_wallet_pct, _mc_usd, _total_buys_at_entry
         ), daemon=True).start()
         print(f"✅ [FM] BC SNIPED: {token_name} mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}% {ms}ms")
