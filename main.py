@@ -4813,13 +4813,15 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         ms = int((time.time() - _t_start) * 1000)
 
-        # Unique buyers — already fetched in Stage 2
+        # buyers_at_entry — offers from bonding curve (each buy = 1 offer)
+        # eth_getLogs disabled on free RPC, offers is reliable proxy
         try:
-            _buyers_at_entry     = _ub
-            _total_buys_at_entry = _total_buys
+            _snap_final = _fm_get_token_info(token_addr, w3)
+            _buyers_at_entry     = int(_snap_final.get("offers", 0)) if _snap_final else int(_ub or 0)
+            _total_buys_at_entry = _buyers_at_entry
         except:
-            _buyers_at_entry     = 0
-            _total_buys_at_entry = 0
+            _buyers_at_entry     = int(_ub or 0)
+            _total_buys_at_entry = int(_total_buys or 0)
         add_position_to_monitor(
             AUTO_SESSION_ID, token_addr, token_name, entry, size_bnb,
             stop_loss_pct=20.0
