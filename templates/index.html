@@ -4075,17 +4075,7 @@ setInterval(fetchNotifications, 10000);
   // ═══════════════════════════════════════════════
   // REFRESH BUTTONS
   // ═══════════════════════════════════════════════
-  function refreshPC() {
-    const btn  = document.getElementById('pc-refresh-btn');
-    const icon = document.getElementById('pc-refresh-icon');
-    if (btn)  btn.disabled = true;
-    if (icon) icon.textContent = '⏳';
-    fetchScannerStats();
-      .finally(() => {
-        if (btn)  btn.disabled = false;
-        if (icon) icon.textContent = '🔄';
-      });
-  }
+  function refreshPC() { /* PC sniper removed */ }
 
   function refreshFM() {
     const btn  = document.getElementById('fm-refresh-btn');
