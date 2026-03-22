@@ -6910,7 +6910,7 @@ def sys_stats():
         # Estimate paper vs real breakdown
         # Paper: running_positions, trade_history, brain, smart_wallets
         import sys as _sys
-        pos_count   = len(auto_trade_stats.get("running_positions", {}))
+        pos_count   = sum(1 for p in auto_trade_stats.get("running_positions", {}).values() if p.get("mode") == "real")
         hist_count  = len(auto_trade_stats.get("trade_history", []))
         brain_pats  = len(brain["trading"].get("best_patterns",[])) + len(brain["trading"].get("avoid_patterns",[]))
         whale_count = len(_smart_wallets)
@@ -6932,7 +6932,7 @@ def sys_stats():
             "paper_mb":  paper_mb,
             "real_mb":   real_mb,
             "paper_items": {
-                "open_positions": len(auto_trade_stats.get("running_positions", {})),
+                "open_positions": sum(1 for p in auto_trade_stats.get("running_positions", {}).values() if p.get("mode") != "real"),
                 "trade_history": hist_count,
                 "brain_patterns": brain_pats,
                 "whale_wallets": whale_count,
