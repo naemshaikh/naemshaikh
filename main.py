@@ -5215,7 +5215,12 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         ms = int((time.time() - _t_start) * 1000)
 
-        _buyers_at_entry = 0  # buyers count not tracked in simple momentum
+        # Unique buyers check — free RPC use karo
+        try:
+            _w3_free = Web3(Web3.HTTPProvider("https://bsc-rpc.publicnode.com", request_kwargs={"timeout": 5}))
+            _buyers_at_entry, _ = _fm_get_unique_buyers(token_addr, _w3_free)
+        except:
+            _buyers_at_entry = 0
         add_position_to_monitor(
             AUTO_SESSION_ID, token_addr, token_name, entry, size_bnb,
             stop_loss_pct=20.0
