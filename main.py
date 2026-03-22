@@ -4696,7 +4696,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _MIN_PRICE_MV = 1.0005   # 0.05% price move
         _MIN_BNB_FLOW = 0.05     # 0.05 BNB volume
         _MIN_BUYERS   = 2        # unique buyers
-        w3 = _fm_get_w3()
+        w3 = _get_w3q() or _fm_get_w3()
         if not w3: _skip("no RPC"); return
 
         # Gas + nonce prefetch parallel — momentum check ke dauran
