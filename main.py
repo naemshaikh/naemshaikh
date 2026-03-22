@@ -4759,7 +4759,10 @@ def _fm_momentum_queue_worker():
                             except:
                                 _ub = 0
                                 _total_buys = 0
-                            result[0] = {"snap": snap, "price": _p, "funds": _f, "buyers": _ub, "total_buys": _total_buys}
+                            if _ub < 2:
+                                print(f"⏭️ [FM] Skip — buyers {_ub} < 2: {token_addr[:10]}", flush=True)
+                            else:
+                                result[0] = {"snap": snap, "price": _p, "funds": _f, "buyers": _ub, "total_buys": _total_buys}
                             break
                 except Exception as _e:
                     print(f"⚠️ [FM] queue monitor: {str(_e)[:50]}", flush=True)
