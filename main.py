@@ -4923,7 +4923,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         wallet_addr = BSC_WALLET or REAL_WALLET
         if not wallet_addr or not pk:
             result["error"] = "no wallet/key"; return result
-        if not w3: w3 = _fm_get_w3()
+        if not w3: w3 = _get_w3q() or _fm_get_w3()
         if not w3: result["error"] = "no RPC"; return result
 
         # Token balance
