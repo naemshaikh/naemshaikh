@@ -5065,17 +5065,23 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         print(f"✅ [FM] Stage1 PASS: mc=${_mc_usd:.0f}")
 
         # ════════════════════════════════════════
-        # STAGE 2 — MOMENTUM CHECK (simple)
+        # STAGE 2 — MOMENTUM CHECK
         # 10s window, 1s poll, QuickNode
+        # Filters: price >= 0.05%, volume >= 0.05 BNB, buyers >= 2
         # ════════════════════════════════════════
         _price1 = info.get("lastPrice", 0)
         _funds1 = info.get("funds", 0)
-        w3 = _fm_get_w3()
+        _MIN_PRICE_MV = 1.0005   # 0.05% price move
+        _MIN_BNB_FLOW = 0.05     # 0.05 BNB volume
+        _MIN_BUYERS   = 2        # unique buyers
+        w3 = _get_w3q() or _fm_get_w3()
         if not w3: _skip("no RPC"); return
 
         _price2 = 0
         _funds2 = 0
         _snap2  = None
+        _ub     = 0
+        _total_buys = 0
         _t_end  = time.time() + 10
 
         while time.time() < _t_end:
@@ -5087,17 +5093,31 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     _price2 = _snap2.get("lastPrice", 0)
                     _funds2 = _snap2.get("funds", 0)
                     _funds_diff = (_funds2 - _funds1) / 1e18
-                    if _price2 > _price1 and _funds_diff > 0:
-                        print(f"✅ [FM] Momentum found! price+{round((_price2-_price1)/max(_price1,1)*100,1)}% funds+{_funds_diff:.4f}BNB")
+                    _price_ok = _price1 > 0 and _price2 >= _price1 * _MIN_PRICE_MV
+                    _vol_ok   = _funds_diff >= _MIN_BNB_FLOW
+                    if _price_ok and _vol_ok:
+                        # Unique buyers check
+                        try:
+                            _ub, _total_buys = _fm_get_unique_buyers(token_addr, w3)
+                        except:
+                            _ub = 0
+                            _total_buys = 0
+                        if _ub < _MIN_BUYERS:
+                            print(f"⏭️ [FM] Skip — buyers {_ub} < {_MIN_BUYERS}: {token_addr[:10]}")
+                            time.sleep(1)
+                            continue
+                        print(f"✅ [FM] Momentum! price+{round((_price2-_price1)/max(_price1,1)*100,2)}% vol+{_funds_diff:.4f}BNB buyers:{_ub}")
                         break
             except Exception as _me:
                 print(f"⚠️ [FM] momentum error: {str(_me)[:50]}")
             time.sleep(1)
 
-        if not _price2 or _price2 <= _price1:
+        if not _price2 or _price2 < _price1 * _MIN_PRICE_MV:
             _skip("no momentum in 10s"); return
 
-        _funds_diff   = (_funds2 - _funds1) / 1e18
+        _funds_diff = (_funds2 - _funds1) / 1e18
+        if _funds_diff < _MIN_BNB_FLOW:
+            _skip(f"low volume {_funds_diff:.4f} BNB < {_MIN_BNB_FLOW}"); return
         _momentum_pct = round((_price2 - _price1) / max(_price1, 1) * 100, 1)
 
         print(f"✅ [FM] ALL PASS: mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}%")
@@ -5162,12 +5182,12 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         ms = int((time.time() - _t_start) * 1000)
 
-        # Unique buyers — from momentum result (no extra call)
+        # Unique buyers — already fetched in Stage 2
         try:
-            _buyers_at_entry = _momentum_data[0].get("buyers", 0) if _momentum_data[0] else 0
-            _total_buys_at_entry = _momentum_data[0].get("total_buys", 0) if _momentum_data[0] else 0
+            _buyers_at_entry     = _ub
+            _total_buys_at_entry = _total_buys
         except:
-            _buyers_at_entry = 0
+            _buyers_at_entry     = 0
             _total_buys_at_entry = 0
         add_position_to_monitor(
             AUTO_SESSION_ID, token_addr, token_name, entry, size_bnb,
