@@ -4553,6 +4553,10 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
     _s1_mc_usd        = [0.0]
     _s1_pump_at_entry = [0.0]
     _s1_dev_wallet    = [0.0]
+    _s2_momentum_pct  = [0.0]
+    _s2_volume_change = [0.0]
+    _s2_buyers        = [0]
+    _s2_total_buys    = [0]
 
     def _skip(reason):
         ms = int((time.time() - _t_start) * 1000)
@@ -4560,9 +4564,13 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         threading.Thread(target=_save_fm_event, args=(
             token_addr, 0, 0, 0, 0, "SKIP", reason, ms
         ), kwargs={
-            "pump_at_entry":  _s1_pump_at_entry[0],
-            "dev_wallet_pct": _s1_dev_wallet[0],
-            "mc_usd":         _s1_mc_usd[0],
+            "pump_at_entry":      _s1_pump_at_entry[0],
+            "dev_wallet_pct":     _s1_dev_wallet[0],
+            "mc_usd":             _s1_mc_usd[0],
+            "momentum_pct":       _s2_momentum_pct[0],
+            "volume_change":      _s2_volume_change[0],
+            "buyers_at_entry":    _s2_buyers[0],
+            "total_buys_at_entry":_s2_total_buys[0],
         }, daemon=True).start()
 
     try:
@@ -4726,9 +4734,15 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             time.sleep(1)
 
         if not _price2 or _price2 < _price1 * _MIN_PRICE_MV:
+            _s2_volume_change[0] = round((_funds2 - _funds1) / 1e18, 6) if _funds2 else 0
             _skip("no momentum in 10s"); return
 
         _funds_diff = (_funds2 - _funds1) / 1e18
+        _s2_volume_change[0] = round(_funds_diff, 6)
+        _s2_momentum_pct[0]  = round((_price2 - _price1) / max(_price1, 1) * 100, 1)
+        _s2_buyers[0]        = _ub
+        _s2_total_buys[0]    = _total_buys
+
         if _funds_diff < _MIN_BNB_FLOW:
             _skip(f"low volume {_funds_diff:.4f} BNB < {_MIN_BNB_FLOW}"); return
         _momentum_pct = round((_price2 - _price1) / max(_price1, 1) * 100, 1)
