@@ -7079,19 +7079,22 @@ def set_trade_mode():
     REAL_WALLET  = wallet
     print(f"🔄 Trade mode switched to: {mode.upper()} | wallet={wallet[:12] if wallet else 'none'}")
 
-    # Paper → Real switch: saare paper open positions close karo
+    # Paper → Real switch: saare paper open positions silently remove karo
     if prev_mode == "paper" and mode == "real":
         def _close_all_paper():
             try:
                 open_addrs = list(auto_trade_stats["running_positions"].keys())
                 if open_addrs:
-                    print(f"🔴 Closing {len(open_addrs)} paper positions before real mode...")
+                    print(f"🔴 Removing {len(open_addrs)} paper positions (no history save)...")
                     for addr in open_addrs:
                         try:
-                            _auto_paper_sell(addr, "Mode switch → Real trading", 100.0)
+                            # History mein mat daalo — sirf remove karo
+                            auto_trade_stats["running_positions"].pop(addr, None)
+                            remove_position_from_monitor(addr)
                         except Exception as _ce:
-                            print(f"⚠️ Close paper position error {addr[:10]}: {_ce}")
-                    print(f"✅ All paper positions closed — Real mode ready!")
+                            print(f"⚠️ Remove paper position error {addr[:10]}: {_ce}")
+                    _persist_positions()
+                    print(f"✅ All paper positions removed — Real mode ready!")
             except Exception as e:
                 print(f"⚠️ _close_all_paper error: {e}")
         threading.Thread(target=_close_all_paper, daemon=True).start()
