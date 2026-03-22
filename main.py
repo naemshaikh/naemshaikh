@@ -4282,23 +4282,26 @@ def _fm_get_unique_buyers(token_addr, w3=None):
         logs = w3.eth.get_logs({
             "address": Web3.to_checksum_address(token_addr),
             "topics": [TRANSFER_TOPIC],
-            "fromBlock": current - 200,  # last ~10 mins total
+            "fromBlock": current - 100,  # ~5 mins, QuickNode limit safe
             "toBlock": "latest",
         })
         _ZERO = "0x0000000000000000000000000000000000000000"
         _DEAD = "0x000000000000000000000000000000000000dead"
+        _FM_FACTORY_L = _FM_FACTORY_ADDR.lower()
         buyers = set()
-        recent_buys = 0  # last 20 blocks ~60s
+        recent_buys = 0
         for log in logs:
             if len(log["topics"]) < 3: continue
-            to_addr = "0x" + log["topics"][2].hex()[-40:].lower()
-            if to_addr not in [_ZERO, _DEAD]:
+            from_addr = "0x" + log["topics"][1].hex()[-40:].lower()
+            to_addr   = "0x" + log["topics"][2].hex()[-40:].lower()
+            # Sirf factory se receive karne wale = actual buyers
+            if from_addr == _FM_FACTORY_L and to_addr not in [_ZERO, _DEAD]:
                 buyers.add(to_addr)
-                # Recent buys — last 20 blocks
                 if log["blockNumber"] >= current - 20:
                     recent_buys += 1
         return len(buyers), recent_buys
-    except:
+    except Exception as e:
+        print(f"⚠️ [FM] buyers fetch error: {str(e)[:50]}")
         return 0, 0
 
 _fm_sniped      = set()
