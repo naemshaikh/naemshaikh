@@ -4748,9 +4748,10 @@ def _fm_momentum_queue_worker():
                         print(f"[MON] {token_addr[-8:]} p:{_p} f+:{(_f-funds1)/1e18:.4f}", flush=True)
                         if _p >= price1 * _MIN_PRICE_MV and (_f - funds1) / 1e18 >= _MIN_BNB_FLOW:
                             print(f"✅ [FM] Momentum! {token_addr[:10]}", flush=True)
-                            # Unique buyers count — data collection only
+                            # Unique buyers — free RPC (no QuickNode limit)
                             try:
-                                _ub, _ = _fm_get_unique_buyers(token_addr, _w3m)
+                                _w3_free = _fm_get_w3()
+                                _ub, _ = _fm_get_unique_buyers(token_addr, _w3_free)
                             except:
                                 _ub = 0
                             result[0] = {"snap": snap, "price": _p, "funds": _f, "buyers": _ub}
