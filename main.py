@@ -4857,7 +4857,7 @@ def poll_four_meme_v2():
     _RPCS = [
         "https://bsc-dataseed1.binance.org",
         "https://bsc-dataseed2.binance.org",
-        "https://rpc.ankr.com/bsc",
+        os.getenv("BSC_RPC", "https://bsc-dataseed3.binance.org"),
     ]
 
     def _handle_token(token_addr, dev_addr):
