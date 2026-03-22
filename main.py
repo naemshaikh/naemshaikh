@@ -4687,28 +4687,36 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         print(f"✅ [FM] Stage1 PASS: mc=${_mc_usd:.0f}")
 
         # ════════════════════════════════════════
-        # STAGE 2 — MOMENTUM CHECK
-        # 10s window, 1s poll, QuickNode
+        # STAGE 2 — MOMENTUM CHECK (QuickNode)
+        # 10s window, 1s poll
         # Filters: price >= 0.05%, volume >= 0.05 BNB, buyers >= 2
         # ════════════════════════════════════════
-        _price1 = info.get("lastPrice", 0)
-        _funds1 = info.get("funds", 0)
+        w3q = _get_w3q()
+        w3  = w3q or _fm_get_w3()  # QuickNode primary, free RPC fallback
+        if not w3: _skip("no RPC"); return
+
+        # Fresh snapshot Stage 2 shuru hote hi (Stage 1 data stale ho sakta hai)
+        _info_fresh = _fm_get_token_info(token_addr, w3)
+        if not _info_fresh: _skip("Stage2 snapshot failed"); return
+        if _info_fresh.get("liquidityAdded"): _skip("graduated before Stage2"); return
+
+        _price1 = _info_fresh.get("lastPrice", 0)
+        _funds1 = _info_fresh.get("funds", 0)
         _MIN_PRICE_MV = 1.0005   # 0.05% price move
         _MIN_BNB_FLOW = 0.05     # 0.05 BNB volume
         _MIN_BUYERS   = 2        # unique buyers
-        w3 = _get_w3q() or _fm_get_w3()
-        if not w3: _skip("no RPC"); return
 
         # Gas + nonce prefetch parallel — momentum check ke dauran
         _pre_gas   = [0]
         _pre_nonce = [0]
         def _prefetch_gas_nonce():
             try:
-                _pre_gas[0] = _fm_get_cached_gas(w3)
+                _w3pf = w3q or w3
+                _pre_gas[0] = _fm_get_cached_gas(_w3pf)
                 if TRADE_MODE == "real":
                     _wa = BSC_WALLET or REAL_WALLET
                     if _wa:
-                        _pre_nonce[0] = w3.eth.get_transaction_count(_wa, "pending")
+                        _pre_nonce[0] = _w3pf.eth.get_transaction_count(_wa, "pending")
             except: pass
         threading.Thread(target=_prefetch_gas_nonce, daemon=True).start()
 
