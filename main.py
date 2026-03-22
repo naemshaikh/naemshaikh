@@ -1899,22 +1899,27 @@ _TRADES_SESSION_ID      = "MRBLACK_TRADE_HISTORY"       # paper trades — memor
 _REAL_TRADES_TABLE      = "real_trade_history"           # real trades — alag table
 
 def _save_trade_history_to_db():
-    """Har trade ke baad Supabase mein permanently save karo"""
+    """Har trade ke baad Supabase mein permanently save karo — 3 retries"""
     if not supabase: return
-    try:
-        all_hist = auto_trade_stats.get("trade_history", [])
-        supabase.table("memory").upsert({
-            "session_id":    _TRADES_SESSION_ID,
-            "role":          "user",
-            "content":       "",
-            "trade_history": json.dumps(all_hist[-10000:]),
-            "updated_at":    datetime.utcnow().isoformat(),
-        }, on_conflict="session_id").execute()
-        paper_hist = [t for t in all_hist if t.get("mode", "paper") == "paper"]
-        real_hist  = [t for t in all_hist if t.get("mode") == "real"]
-        print(f"💾 Trade history saved: {len(all_hist)} total | {len(paper_hist)} paper | {len(real_hist)} real")
-    except Exception as e:
-        print(f"⚠️ Trade history save error: {e}")
+    for _attempt in range(3):
+        try:
+            all_hist = auto_trade_stats.get("trade_history", [])
+            supabase.table("memory").upsert({
+                "session_id":    _TRADES_SESSION_ID,
+                "role":          "user",
+                "content":       "",
+                "trade_history": json.dumps(all_hist[-10000:]),
+                "updated_at":    datetime.utcnow().isoformat(),
+            }, on_conflict="session_id").execute()
+            paper_hist = [t for t in all_hist if t.get("mode", "paper") == "paper"]
+            real_hist  = [t for t in all_hist if t.get("mode") == "real"]
+            print(f"💾 Trade history saved: {len(all_hist)} total | {len(paper_hist)} paper | {len(real_hist)} real")
+            return  # success
+        except Exception as e:
+            if _attempt < 2:
+                time.sleep(2)  # 2s wait before retry
+            else:
+                print(f"⚠️ Trade history save error (3 retries failed): {e}")
 
 def _load_trade_history_from_db():
     """Startup pe Supabase se history load karo"""
