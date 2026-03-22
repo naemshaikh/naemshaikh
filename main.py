@@ -4549,12 +4549,21 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if addr_lower in _fm_sniped: return
         _fm_sniped.add(addr_lower)
 
+    # Stage 1 analytics — _skip mein use honge
+    _s1_mc_usd        = [0.0]
+    _s1_pump_at_entry = [0.0]
+    _s1_dev_wallet    = [0.0]
+
     def _skip(reason):
         ms = int((time.time() - _t_start) * 1000)
         print(f"⏭️ [FM] SKIP — {reason}: {token_addr[:10]}")
         threading.Thread(target=_save_fm_event, args=(
             token_addr, 0, 0, 0, 0, "SKIP", reason, ms
-        ), daemon=True).start()
+        ), kwargs={
+            "pump_at_entry":  _s1_pump_at_entry[0],
+            "dev_wallet_pct": _s1_dev_wallet[0],
+            "mc_usd":         _s1_mc_usd[0],
+        }, daemon=True).start()
 
     try:
         # ── Basic checks (0ms) ──
@@ -4646,7 +4655,12 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if _dev_pct_res[0] > 10:
             _skip(f"dev wallet too high {_dev_pct_res[0]:.0f}%"); return
 
-        _dev_wallet_pct = _dev_pct_res[0]  # for _save_fm_event later
+        _dev_wallet_pct = _dev_pct_res[0]
+
+        # Stage 1 analytics set karo — _skip mein use honge
+        _s1_mc_usd[0]        = _mc_usd
+        _s1_pump_at_entry[0] = _pump_at_entry
+        _s1_dev_wallet[0]    = _dev_wallet_pct
 
         print(f"✅ [FM] Stage1 PASS: mc=${_mc_usd:.0f}")
 
