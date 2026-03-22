@@ -4751,10 +4751,11 @@ def _fm_momentum_queue_worker():
                             # Unique buyers — free RPC (no QuickNode limit)
                             try:
                                 _w3_free = _fm_get_w3()
-                                _ub, _ = _fm_get_unique_buyers(token_addr, _w3_free)
+                                _ub, _total_buys = _fm_get_unique_buyers(token_addr, _w3_free)
                             except:
                                 _ub = 0
-                            result[0] = {"snap": snap, "price": _p, "funds": _f, "buyers": _ub}
+                                _total_buys = 0
+                            result[0] = {"snap": snap, "price": _p, "funds": _f, "buyers": _ub, "total_buys": _total_buys}
                             break
                 except Exception as _e:
                     print(f"⚠️ [FM] queue monitor: {str(_e)[:50]}", flush=True)
@@ -4955,7 +4956,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         return result
 
 def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, result, skip_reason, time_ms,
-                   buyers_at_entry=0, momentum_pct=0.0, volume_change=0.0, pump_at_entry=0.0, dev_wallet_pct=0.0, mc_usd=0.0):
+                   buyers_at_entry=0, momentum_pct=0.0, volume_change=0.0, pump_at_entry=0.0, dev_wallet_pct=0.0, mc_usd=0.0, total_buys_at_entry=0):
     """FM event Supabase mein save karo — extra analytics data bhi"""
     try:
         if not supabase: return
@@ -4986,6 +4987,7 @@ def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, resul
             "pump_at_entry":    round(float(pump_at_entry or 0), 2),
             "dev_wallet_pct":   round(float(dev_wallet_pct or 0), 2),
             "mc_usd":           round(float(mc_usd or 0), 0),
+            "total_buys_at_entry": int(total_buys_at_entry or 0),
         }).execute()
 
         # Post-skip tracking — 5 min baad price check karo
@@ -5225,8 +5227,10 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         # Unique buyers — from momentum result (no extra call)
         try:
             _buyers_at_entry = _momentum_data[0].get("buyers", 0) if _momentum_data[0] else 0
+            _total_buys_at_entry = _momentum_data[0].get("total_buys", 0) if _momentum_data[0] else 0
         except:
             _buyers_at_entry = 0
+            _total_buys_at_entry = 0
         add_position_to_monitor(
             AUTO_SESSION_ID, token_addr, token_name, entry, size_bnb,
             stop_loss_pct=20.0
@@ -5265,7 +5269,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
              token_addr)
         threading.Thread(target=_save_fm_event, args=(
             token_addr, 0, 0, entry, _momentum_pct, "BUY", "", ms,
-            _buyers_at_entry, _momentum_pct, round(_funds_diff, 6), _pump_at_entry, _dev_wallet_pct, _mc_usd
+            _buyers_at_entry, _momentum_pct, round(_funds_diff, 6), _pump_at_entry, _dev_wallet_pct, _mc_usd, _total_buys_at_entry
         ), daemon=True).start()
         print(f"✅ [FM] BC SNIPED: {token_name} mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}% {ms}ms")
 
