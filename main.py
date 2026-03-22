@@ -2984,7 +2984,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         # FM Bonding Curve token — check karo graduated hua ya nahi
         if _source == "FM_BC":
             _fm_factory = pos.get("fm_factory", _FM_FACTORY_ADDR)
-            _w3_sell    = _fm_get_w3()
+            _w3_sell    = _get_w3q() or _fm_get_w3()
             _graduated  = False
             if _w3_sell:
                 try:
