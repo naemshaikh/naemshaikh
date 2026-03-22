@@ -6044,56 +6044,6 @@ def _startup_once():
         # threading.Thread(target=_delayed(start_swap_monitor, 20), daemon=True).start()  # PC only — disabled
 
         # ── Queue Workers Start ──────────────────────────────────
-        def _start_queue_workers():
-            import time as _t
-            _t.sleep(5)  # startup settle karne do
-
-            # ── FM Workers: 3 active + 5 hot-standby = 8 total ──
-            def _fm_worker(worker_id, is_standby=False):
-                if is_standby:
-                    time.sleep(2)
-                while True:
-                    try:
-                        token_addr, pair_addr = _fm_queue.get(timeout=5)
-                        if FM_SNIPER_ENABLED:
-                            threading.Thread(
-                                target=_fm_snipe,
-                                args=(token_addr, pair_addr),
-                                daemon=True
-                            ).start()
-                        _fm_queue.task_done()
-                    except:
-                        continue
-
-            for i in range(3):
-                threading.Thread(target=_fm_worker, args=(i, False), daemon=True).start()
-            for i in range(5):
-                threading.Thread(target=_fm_worker, args=(i, True), daemon=True).start()
-            print("🎓 FM Queue Workers started: 3 active + 5 standby = 8 total")
-
-            # ── PC Pre-filter Workers: 3 active + 2 standby = 5 total ──
-            # Queue infinite — tokens wait karenge, 700ms per token
-            # Semaphore(5) — max 5 parallel snipes
-            def _prefilter_worker(worker_id, is_standby=False):
-                if is_standby:
-                    time.sleep(5)  # standby thoda late start
-                while True:
-                    try:
-                        token_address = _discovery_queue.get(timeout=10)
-                        try:
-                            pass
-                        except Exception as _we:
-                            print(f"⚠️ PC worker error: {_we}")
-                        _discovery_queue.task_done()
-                    except:
-                        continue  # timeout = normal, queue empty
-
-            for i in range(3):  # 3 active
-                threading.Thread(target=_prefilter_worker, args=(i, False), daemon=True).start()
-            for i in range(4):  # 4 hotstandby
-                threading.Thread(target=_prefilter_worker, args=(i, True), daemon=True).start()
-
-        threading.Thread(target=_start_queue_workers, daemon=True).start()
 
         threading.Thread(target=_delayed(price_monitor_loop,    15),  daemon=True).start()
         threading.Thread(target=_delayed(continuous_learning,   25),  daemon=True).start()
