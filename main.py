@@ -4855,9 +4855,9 @@ def poll_four_meme_v2():
 
     # 3 different RPCs — each worker uses own RPC
     _RPCS = [
-        "https://bsc-dataseed1.binance.org",
-        "https://bsc-dataseed2.binance.org",
-        os.getenv("BSC_RPC", "https://bsc-dataseed3.binance.org"),
+        "https://bsc-rpc.publicnode.com",
+        "https://bsc.drpc.org",
+        "https://1rpc.io/bnb",
     ]
 
     def _handle_token(token_addr, dev_addr):
