@@ -4466,12 +4466,25 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         _amt   = int(_bal * sell_pct / 100)
         if _amt <= 0: result["error"] = "zero balance"; return result
 
-        # sellToken(token, amount, minFunds=0)
+        # minFunds — 5% slippage protection
+        # getTokenInfo se current price fetch karo
+        _min_funds = 0
+        try:
+            _info_sell = _fm_get_token_info(token_addr, w3)
+            if _info_sell and _info_sell.get("lastPrice", 0) > 0:
+                _expected_bnb = (_info_sell["lastPrice"] / 1e18) * (_amt / 1e18) / (_info_sell.get("lastPrice", 1) / 1e18)
+                # Simpler: lastPrice × amount / totalSupply × (1 - 5% slippage)
+                _total_sup = 1_000_000_000 * 1e18
+                _expected_bnb = (_info_sell["lastPrice"] * _amt) / _total_sup
+                _min_funds = int(_expected_bnb * 0.95)  # 5% slippage allowed
+        except: pass
+
+        # sellToken(token, amount, minFunds)
         fc  = w3.eth.contract(address=Web3.to_checksum_address(factory_addr), abi=_FM_BC_ABI)
         tx  = fc.functions.sellToken(
             Web3.to_checksum_address(token_addr),
             _amt,
-            0  # minFunds = 0
+            _min_funds  # 5% slippage protection
         ).build_transaction({
             "from":     wallet_addr,
             "gas":      300000,
