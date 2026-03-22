@@ -4839,6 +4839,8 @@ def poll_four_meme_v2():
     3 workers always running — no sleep, max coverage
     """
     TOKEN_CREATE_SIGS = [
+        ("0x396d5e902b675b032348d3d2e9517ee8f0c4a926603fbc075d3d282ff00cad20",
+         "TokenCreate — primary (confirmed on-chain)"),
         ("0xb9d10aa6e0d565720d9f16b6d742668c3406afc3f2592b890549f66f78033b2c",
          "TokenCreate(address,address,uint256,uint256,uint256,uint256,string,string)"),
         ("0x3d96f13f99c3b0aca975bfbf0f185997444b7b43cd455e82b759dae94e99d3f7",
