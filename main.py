@@ -4708,7 +4708,7 @@ def _fm_momentum_queue_worker():
     """Process tokens one by one — 2s monitor each, QuickNode, no 429"""
     _qn_url = os.getenv("QUICKNODE_HTTP", "")
     _MIN_PRICE_MV = 1.0005
-    _MIN_BNB_FLOW = 0.1
+    _MIN_BNB_FLOW = 0.05
 
     def _w3():
         if _qn_url:
