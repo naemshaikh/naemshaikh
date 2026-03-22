@@ -2944,7 +2944,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         # FM Bonding Curve token — check karo graduated hua ya nahi
         if _source == "FM_BC":
             _fm_factory = pos.get("fm_factory", _FM_FACTORY_ADDR)
-            _w3_sell    = _get_w3q() or _fm_get_w3()
+            _w3_sell    = _fm_get_w3()
             _graduated  = False
             if _w3_sell:
                 try:
@@ -4443,7 +4443,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         wallet_addr = BSC_WALLET or REAL_WALLET
         if not wallet_addr or not pk:
             result["error"] = "no wallet/key"; return result
-        if not w3: w3 = _get_w3q() or _fm_get_w3()
+        if not w3: w3 = _fm_get_w3()
         if not w3: result["error"] = "no RPC"; return result
 
         # Token balance
@@ -4682,7 +4682,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _MIN_PRICE_MV = 1.0005   # 0.05% price move
         _MIN_BNB_FLOW = 0.05     # 0.05 BNB volume
         _MIN_BUYERS   = 2        # unique buyers
-        w3 = _get_w3q() or _fm_get_w3()
+        w3 = _fm_get_w3()
         if not w3: _skip("no RPC"); return
 
         # Gas + nonce prefetch parallel — momentum check ke dauran
