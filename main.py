@@ -1971,7 +1971,11 @@ def _load_trade_history_from_db():
         print(f"⚠️ Trade history load error: {e}")
 
 # ══════════════════════════════════════════════
-_rug_dna: list = []   # [{"creator": str, "buy_tax": float, "sell_tax": float, "liq_usd": float, "ts": float}]
+_rug_dna: list = []
+
+# Stage2 info cache — 0.5s TTL for faster polling
+_info_cache: dict = {}  # {addr_lower: {'data': {...}, 'ts': float}}
+   # [{"creator": str, "buy_tax": float, "sell_tax": float, "liq_usd": float, "ts": float}]
 _RUG_DNA_MAX = 10000  # max fingerprints store
 
 def _record_rug_dna(token_address: str, creator: str, buy_tax: float, sell_tax: float, liq_usd: float, reason: str = "", pnl_pct: float = 0.0):
@@ -4175,10 +4179,12 @@ def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, resul
 
 def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
     """
-    Four.meme Bonding Curve Sniper v2 — OPTIMIZED
-    - Parallel Stage1 + Stage2 prep
-    - Dynamic poll time
-    - Lazy buyers check
+    Four.meme Bonding Curve Sniper v2 — ULTIMATE OPTIMIZED
+    - Parallel Stage1 + gas/nonce (3 threads)
+    - Dynamic poll time (0.5-1s)
+    - Parallel price + buyers check
+    - Cached token info (0.5s TTL)
+    - Dynamic threshold based on volume
     """
     addr_lower = token_addr.lower()
     _t_start = time.time()
@@ -4186,6 +4192,17 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
     with _fm_sniped_lock:
         if addr_lower in _fm_sniped: return
         _fm_sniped.add(addr_lower)
+
+    # Cache helper
+    def _get_token_info_cached(addr, w3, ttl=0.5):
+        key = addr.lower()
+        now = time.time()
+        if key in _info_cache and now - _info_cache[key]['ts'] < ttl:
+            return _info_cache[key]['data']
+        data = _fm_get_token_info(addr, w3)
+        if data:
+            _info_cache[key] = {'data': data, 'ts': now}
+        return data
 
     # Analytics containers
     _s1_mc_usd = [0.0]
@@ -4236,7 +4253,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if dev_addr and is_dev_blacklisted(dev_addr):
             _skip(f"dev blacklisted: {dev_addr[:10]}"); return
 
-        # ========== STAGE 1 — PRE-FILTER (parallel with gas prefetch) ==========
+        # ========== STAGE 1 — PRE-FILTER (parallel) ==========
         _w3a = None
         for _rpc in ["https://bsc-rpc.publicnode.com", "https://bsc.drpc.org", "https://1rpc.io/bnb"]:
             try:
@@ -4248,7 +4265,6 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             _push_notif("critical", "🔴 Stage1 RPC Down", "Sare free RPCs down hain — tokens filter nahi ho rahe!", token_addr[:10], token_addr)
             _skip("Stage1 RPC unavailable"); return
 
-        # Parallel Stage1 + gas/nonce prefetch
         import concurrent.futures as _cf
         _info_res = [None]
         _dev_pct_res = [0.0]
@@ -4328,33 +4344,50 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         print(f"✅ [FM] Stage1 PASS: mc=${_mc_usd:.0f}")
 
-        # ========== STAGE 2 — OPTIMIZED MOMENTUM CHECK ==========
+        # ========== STAGE 2 — ULTIMATE OPTIMIZED MOMENTUM ==========
         w3q = _get_w3q()
         w3 = w3q
         if not w3: _skip("QuickNode not available"); return
 
-        _info_fresh = _fm_get_token_info(token_addr, w3)
+        _info_fresh = _get_token_info_cached(token_addr, w3, ttl=0.5)
         if not _info_fresh: _skip("Stage2 snapshot failed"); return
         if _info_fresh.get("liquidityAdded"): _skip("graduated before Stage2"); return
 
         _price1 = _info_fresh.get("lastPrice", 0)
         _funds1 = _info_fresh.get("funds", 0)
-        _MIN_PRICE_MV = 1.0005
-        _MIN_BNB_FLOW = 0.3
         _MIN_BUYERS = 5
-
         _price2 = 0
         _funds2 = 0
         _ub = 0
         _total_buys = 0
         _t_end = time.time() + 10
-        _last_check_time = 0
         _price_ok_flag = False
         _vol_ok_flag = False
+        _last_check_time = 0
 
         while time.time() < _t_end:
             try:
-                _snap2 = _fm_get_token_info(token_addr, w3)
+                # Dynamic threshold based on volume momentum
+                _funds_diff_sofar = (_funds2 - _funds1) / 1e18 if _funds2 else 0
+                if _funds_diff_sofar >= 0.5:  # High volume
+                    _MIN_PRICE_MV = 1.0001  # Only 0.01% price move
+                elif _funds_diff_sofar >= 0.2:
+                    _MIN_PRICE_MV = 1.0003  # 0.03%
+                else:
+                    _MIN_PRICE_MV = 1.0005  # 0.05% (default)
+
+                # Parallel fetch price and buyers
+                with _cf.ThreadPoolExecutor(max_workers=2) as _p_ex:
+                    price_future = _p_ex.submit(_get_token_info_cached, token_addr, w3, 0.5)
+                    buyers_future = _p_ex.submit(_fm_get_unique_buyers, token_addr, w3) if (_price_ok_flag or _vol_ok_flag) else None
+                    
+                    _snap2 = price_future.result()
+                    if buyers_future:
+                        _ub, _total_buys = buyers_future.result()
+                    else:
+                        _ub = 0
+                        _total_buys = 0
+
                 if _snap2:
                     if _snap2.get("liquidityAdded"):
                         _skip("graduated during momentum check"); return
@@ -4362,40 +4395,29 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     _funds2 = _snap2.get("funds", 0)
                     _funds_diff = (_funds2 - _funds1) / 1e18
                     _price_ok = _price1 > 0 and _price2 >= _price1 * _MIN_PRICE_MV
-                    _vol_ok = _funds_diff >= _MIN_BNB_FLOW
+                    _vol_ok = _funds_diff >= 0.3
 
                     if _price_ok:
                         _price_ok_flag = True
                     if _vol_ok:
                         _vol_ok_flag = True
 
-                    # Dynamic poll: faster if price/volume already good
-                    if _price_ok_flag and _vol_ok_flag:
-                        # Lazy buyers check — only when conditions met
-                        try:
-                            _ub, _total_buys = _fm_get_unique_buyers(token_addr, w3)
-                        except:
-                            _ub = 0
-                            _total_buys = 0
-                        if _ub >= _MIN_BUYERS:
-                            print(f"✅ [FM] Momentum! price+{round((_price2-_price1)/max(_price1,1)*100,2)}% vol+{_funds_diff:.4f}BNB buyers:{_ub}")
-                            break
-                        else:
-                            # Wait a bit more for buyers
-                            time.sleep(0.5)
-                            continue
+                    # Check conditions
+                    if _price_ok_flag and _vol_ok_flag and _ub >= _MIN_BUYERS:
+                        print(f"✅ [FM] Momentum! price+{round((_price2-_price1)/max(_price1,1)*100,2)}% vol+{_funds_diff:.4f}BNB buyers:{_ub}")
+                        break
 
-                    # Dynamic sleep: 0.5s if close to conditions, else 1s
-                    if (_price_ok_flag or _vol_ok_flag) and not (_price_ok_flag and _vol_ok_flag):
-                        time.sleep(0.5)
-                    else:
-                        time.sleep(1.0)
+                # Dynamic sleep
+                if (_price_ok_flag or _vol_ok_flag) and not (_price_ok_flag and _vol_ok_flag):
+                    time.sleep(0.5)
+                else:
+                    time.sleep(1.0)
 
             except Exception as _me:
                 print(f"⚠️ [FM] momentum error: {str(_me)[:50]}")
                 time.sleep(0.5)
 
-        if not _price2 or _price2 < _price1 * _MIN_PRICE_MV:
+        if not _price2 or _price2 < _price1 * 1.0005:
             _s2_volume_change[0] = round((_funds2 - _funds1) / 1e18, 6) if _funds2 else 0
             _skip("no momentum in 10s"); return
 
@@ -4405,8 +4427,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _s2_buyers[0] = _ub
         _s2_total_buys[0] = _total_buys
 
-        if _funds_diff < _MIN_BNB_FLOW:
-            _skip(f"low volume {_funds_diff:.4f} BNB < {_MIN_BNB_FLOW}"); return
+        if _funds_diff < 0.3:
+            _skip(f"low volume {_funds_diff:.4f} BNB < 0.3"); return
         _momentum_pct = round((_price2 - _price1) / max(_price1, 1) * 100, 1)
 
         print(f"✅ [FM] ALL PASS: mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}%")
