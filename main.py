@@ -2974,7 +2974,9 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
             _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
 
         if not _real_sell.get("success"):
-            print(f"⚠️ REAL SELL failed: {_real_sell.get('error','?')} — continuing paper tracking")
+            _sell_err = _real_sell.get('error','?')
+            print(f"⚠️ REAL SELL failed: {_sell_err} — continuing paper tracking")
+            _push_notif("critical", "🔴 FM Sell Failed", f"{token_name}: {_sell_err}", token_name, address)
         else:
             print(f"✅ REAL SELL: tx={_real_sell.get('tx_hash','')[:20]} BNB={_real_sell.get('bnb_received',0):.4f}")
             _actual_gas_used = _real_sell.get("gas_used", 0)
@@ -4877,7 +4879,16 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         print(f"⚠️ [FM] Receipt timeout: {str(_re)[:40]}")
                 threading.Thread(target=_wait_receipt, args=(tx_hash, _w3_buy, token_addr), daemon=True).start()
             except Exception as e:
-                _skip(f"real buy error: {str(e)[:40]}"); return
+                _err = str(e)[:60]
+                if "insufficient funds" in _err.lower():
+                    _push_notif("critical", "🔴 FM Buy Failed", f"Insufficient balance: {_err}", token_name, token_addr)
+                elif "nonce" in _err.lower():
+                    _push_notif("critical", "🔴 FM Nonce Error", f"Nonce conflict: {_err}", token_name, token_addr)
+                elif "slippage" in _err.lower() or "minAmount" in _err.lower():
+                    _push_notif("warning", "🟡 FM Slippage", f"Price moved too fast: {_err}", token_name, token_addr)
+                else:
+                    _push_notif("critical", "🔴 FM Buy Error", f"{_err}", token_name, token_addr)
+                _skip(f"real buy error: {_err}"); return
         else:
             sess["paper_balance"] = round(sess.get("paper_balance",5.0) - size_bnb, 6)
 
