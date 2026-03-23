@@ -928,7 +928,7 @@ def real_buy_token(token_address: str, bnb_amount: float,
         print(f"🔴 REAL BUY TX: {tx_hash.hex()[:20]}... slippage={slippage_pct}%")
 
         # Wait for receipt (30 sec max)
-        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
         if receipt["status"] == 1:
             result["success"]      = True
             result["tx_hash"]      = tx_hash.hex()
@@ -1025,7 +1025,7 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
         tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
         print(f"🔴 REAL SELL TX: {tx_hash.hex()[:20]}... slippage={slippage_pct}%")
 
-        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
         if receipt["status"] == 1:
             result["success"]      = True
             result["tx_hash"]      = tx_hash.hex()
@@ -4082,7 +4082,7 @@ def _get_w3q():
     with _w3q_lock:
         qn = os.getenv("QUICKNODE_HTTP", "")
         if not qn: return None
-        _w3q_global = Web3(Web3.HTTPProvider(qn, request_kwargs={"timeout": 4}))
+        _w3q_global = Web3(Web3.HTTPProvider(qn, request_kwargs={"timeout": 10}))
         return _w3q_global
 
 def _onchain_sim(token_address: str, w3_instance=None) -> dict:
@@ -4503,7 +4503,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                 })
                 _signed_a = Account.sign_transaction(_approve_tx, pk)
                 _approve_hash = w3.eth.send_raw_transaction(_signed_a.raw_transaction)
-                w3.eth.wait_for_transaction_receipt(_approve_hash, timeout=30)
+                w3.eth.wait_for_transaction_receipt(_approve_hash, timeout=60)
                 print(f"✅ [FM] Approve done: {_approve_hash.hex()[:12]}")
         except Exception as _ae:
             result["error"] = f"approve failed: {str(_ae)[:50]}"; return result
@@ -4523,7 +4523,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         from eth_account import Account
         signed  = Account.sign_transaction(tx, pk)
         tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
         if receipt["status"] != 1:
             result["error"] = "sell tx reverted"; return result
         result["success"]  = True
