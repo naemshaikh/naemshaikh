@@ -790,7 +790,7 @@ ERC20_ABI_APPROVE = [
      "outputs": [{"name": "", "type": "uint256"}]}
 ]
 
-REAL_PRIVATE_KEY = os.environ.get("WALLET_PRIVATE_KEY", "")  # env se lo — kabhi hardcode mat karo
+REAL_PRIVATE_KEY = os.environ.get("WALLET_PRIVATE_KEY", "") or os.environ.get("PRIVATE_KEY", "") or os.environ.get("REAL_PRIVATE_KEY", "")
 
 def _anti_mev_amount(base_bnb: float) -> float:
     """Amount randomize ±3% — round numbers MEV bots ko obvious lagte hain"""
@@ -4458,7 +4458,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
     """FM Bonding Curve pe real sell — token graduated nahi hua"""
     result = {"success": False, "tx_hash": "", "bnb_received": 0.0, "error": ""}
     try:
-        pk = os.getenv("WALLET_PRIVATE_KEY", "") or os.getenv("PRIVATE_KEY", "")
+        pk = os.getenv("WALLET_PRIVATE_KEY", "") or os.getenv("PRIVATE_KEY", "") or os.getenv("REAL_PRIVATE_KEY", "")
         wallet_addr = BSC_WALLET or REAL_WALLET
         if not wallet_addr or not pk:
             result["error"] = "no wallet/key"; return result
@@ -4826,7 +4826,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if TRADE_MODE == "real":
             try:
                 wallet_addr = BSC_WALLET or REAL_WALLET
-                pk = os.getenv("WALLET_PRIVATE_KEY", "") or os.getenv("PRIVATE_KEY", "")
+                pk = os.getenv("WALLET_PRIVATE_KEY", "") or os.getenv("PRIVATE_KEY", "") or os.getenv("REAL_PRIVATE_KEY", "")
                 if not wallet_addr or not pk:
                     _skip("no wallet/key"); return
                 # QuickNode HTTP for buy tx — no fallback, speed critical
