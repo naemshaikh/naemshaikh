@@ -7803,9 +7803,11 @@ def wallet_info():
 
 @app.route("/pnl-breakdown")
 def pnl_breakdown():
-    """PNL breakdown — today, week, all time"""
+    """PNL breakdown — today, week, all time — current mode filtered"""
     try:
         hist = auto_trade_stats.get("trade_history", [])
+        # Sirf current mode ke trades
+        hist = [t for t in hist if (t.get("mode") or "paper") == TRADE_MODE]
         now  = datetime.utcnow()
         def _calc(trades):
             wins   = sum(1 for t in trades if float(t.get("pnl_bnb", 0) or 0) > 0)
