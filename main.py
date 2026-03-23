@@ -2968,6 +2968,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 "entry_price":   entry,
                 "exit_price":    current,
                 "pnl_pct":       pnl_pct,
+                "sell_pct":      sell_pct,
+                "size_bnb":      size,
                 "win":           pnl_pct > 0,
                 "lesson":        f"Auto: {reason} | PnL:{pnl_pct:+.1f}%",
             })
@@ -5303,36 +5305,43 @@ def _save_bot_decision(data: dict):
         print(f"⚠️ bot_decision save error: {e}")
 
 # ========== TRADE LOGGING ==========
-def log_trade_internal(session_id: str, trade: Dict):
+def log_trade_internal(session_id: str, trade: dict):
     sess = get_or_create_session(session_id)
-    pnl  = float(trade.get("pnl_pct", 0))
-    win  = pnl > 0
-    lesson = {
-        "token":            trade.get("token_address", ""),
-        "entry_price":      trade.get("entry_price",   0),
-        "exit_price":       trade.get("exit_price",    0),
-        "pnl_pct":          pnl,
-        "win":              win,
-        "lesson":           trade.get("lesson", ""),
-        "timestamp":        datetime.utcnow().isoformat()
-    }
-    if not isinstance(sess.get("pattern_database"), list):
-        sess["pattern_database"] = []
-    sess["pattern_database"].append(lesson)
-    sess["pattern_database"] = sess["pattern_database"][-100:]
-    sess["trade_count"] += 1
-    if win:
-        sess["win_count"] += 1
-        sess["pnl_24h"]   += pnl
-    else:
-        # FIX v6: BNB mein track karo (pnl % tha, convert karo)
-        _size = float(trade.get("size_bnb", AUTO_BUY_SIZE_BNB) or AUTO_BUY_SIZE_BNB)  # FIX1: pos→trade
-        _bnb_lost = _size * abs(pnl) / 100.0
-        sess["daily_loss"] = sess.get("daily_loss", 0) + _bnb_lost
-        print(f"📉 daily_loss updated: +{_bnb_lost:.4f} BNB (pnl={pnl:.1f}%) total={sess['daily_loss']:.4f}")
+    pnl = float(trade.get("pnl_pct", 0))
+    win = pnl > 0
+    
+    # Sirf full sell ke liye count badhao
+    if trade.get("sell_pct", 100.0) >= 100.0:
+        sess["trade_count"] += 1
+        if win:
+            sess["win_count"] += 1
+            sess["pnl_24h"] += pnl
+        else:
+            _size = float(trade.get("size_bnb", AUTO_BUY_SIZE_BNB) or AUTO_BUY_SIZE_BNB)
+            _bnb_lost = _size * abs(pnl) / 100.0
+            sess["daily_loss"] = sess.get("daily_loss", 0) + _bnb_lost
+            print(f"📉 daily_loss updated: +{_bnb_lost:.4f} BNB (pnl={pnl:.1f}%) total={sess['daily_loss']:.4f}")
+    
+    # History save only for full sell
+    if trade.get("sell_pct", 100.0) >= 100.0:
+        if not isinstance(sess.get("pattern_database"), list):
+            sess["pattern_database"] = []
+        lesson = {
+            "token":            trade.get("token_address", ""),
+            "entry_price":      trade.get("entry_price", 0),
+            "exit_price":       trade.get("exit_price", 0),
+            "pnl_pct":          pnl,
+            "win":              win,
+            "lesson":           trade.get("lesson", ""),
+            "timestamp":        datetime.utcnow().isoformat()
+        }
+        sess["pattern_database"].append(lesson)
+        sess["pattern_database"] = sess["pattern_database"][-100:]
+    
     token_addr = trade.get("token_address", "")
     if token_addr:
         remove_position_from_monitor(token_addr)
+    
     threading.Thread(target=_save_session_to_db, args=(session_id,), daemon=True).start()
     return lesson
 
