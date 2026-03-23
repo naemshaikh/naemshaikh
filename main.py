@@ -4807,6 +4807,10 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _w3_buy = _get_w3q()
                 if not _w3_buy:
                     _skip("QuickNode not available"); return
+                # Wallet balance check
+                _bal_check = _w3_buy.eth.get_balance(Web3.to_checksum_address(wallet_addr)) / 1e18
+                if _bal_check < size_bnb + 0.002:  # size + gas buffer
+                    _skip(f"insufficient wallet balance {_bal_check:.4f} BNB"); return
                 # Grok confirmed: buyTokenAMAP(token, funds, minAmount) payable
                 fc = _w3_buy.eth.contract(
                     address=Web3.to_checksum_address(_FM_FACTORY_ADDR),
