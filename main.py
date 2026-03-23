@@ -4482,6 +4482,30 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                 _min_funds = int(_expected_bnb * 0.90)  # 10% slippage allowed
         except: pass
 
+        # Approve factory to spend tokens — FM requires this
+        from eth_account import Account
+        try:
+            _allowance = _tc.functions.allowance(
+                Web3.to_checksum_address(wallet_addr),
+                Web3.to_checksum_address(factory_addr)
+            ).call()
+            if _allowance < _amt:
+                _approve_tx = _tc.functions.approve(
+                    Web3.to_checksum_address(factory_addr),
+                    2**256 - 1  # max approve
+                ).build_transaction({
+                    "from":     wallet_addr,
+                    "gas":      100000,
+                    "gasPrice": int(_fm_get_cached_gas(w3) * 1.5),
+                    "nonce":    w3.eth.get_transaction_count(wallet_addr, "pending"),
+                })
+                _signed_a = Account.sign_transaction(_approve_tx, pk)
+                _approve_hash = w3.eth.send_raw_transaction(_signed_a.raw_transaction)
+                w3.eth.wait_for_transaction_receipt(_approve_hash, timeout=30)
+                print(f"✅ [FM] Approve done: {_approve_hash.hex()[:12]}")
+        except Exception as _ae:
+            result["error"] = f"approve failed: {str(_ae)[:50]}"; return result
+
         # sellToken(token, amount, minFunds)
         fc  = w3.eth.contract(address=Web3.to_checksum_address(factory_addr), abi=_FM_BC_ABI)
         tx  = fc.functions.sellToken(
