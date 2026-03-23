@@ -4811,7 +4811,15 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _bal_check = _w3_buy.eth.get_balance(Web3.to_checksum_address(wallet_addr)) / 1e18
                 if _bal_check < size_bnb + 0.002:  # size + gas buffer
                     _skip(f"insufficient wallet balance {_bal_check:.4f} BNB"); return
-                # Grok confirmed: buyTokenAMAP(token, funds, minAmount) payable
+                # minAmount — 10% slippage protection on buy
+                _min_tokens = 0
+                try:
+                    if _snap2 and _snap2.get("lastPrice", 0) > 0:
+                        _total_sup = 1_000_000_000 * 1e18
+                        _expected_tokens = (int(size_bnb * 1e18) * _total_sup) / _snap2["lastPrice"]
+                        _min_tokens = int(_expected_tokens * 0.90)  # 10% slippage allowed
+                except: pass
+
                 fc = _w3_buy.eth.contract(
                     address=Web3.to_checksum_address(_FM_FACTORY_ADDR),
                     abi=_FM_BC_ABI
@@ -4819,7 +4827,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 tx = fc.functions.buyTokenAMAP(
                     Web3.to_checksum_address(token_addr),
                     int(size_bnb * 1e18),
-                    0  # minAmount = 0 (max slippage)
+                    _min_tokens  # 10% slippage protection
                 ).build_transaction({
                     "from":     wallet_addr,
                     "value":    int(size_bnb * 1e18),
