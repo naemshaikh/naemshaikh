@@ -4617,6 +4617,11 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
     def _skip(reason):
         ms = int((time.time() - _t_start) * 1000)
         print(f"⏭️ [FM] SKIP — {reason}: {token_addr[:10]}")
+        # Critical errors → notification
+        if "no wallet" in reason or "no wallet/key" in reason:
+            _push_notif("critical", "🔴 No Wallet/Key", "WALLET_PRIVATE_KEY set nahi hai — real trading blocked!", token_addr[:10], token_addr)
+        elif "QuickNode not available" in reason:
+            _push_notif("critical", "🔴 QuickNode Down", "QuickNode unavailable — check credits!", token_addr[:10], token_addr)
         threading.Thread(target=_save_fm_event, args=(
             token_addr, 0, 0, 0, 0, "SKIP", reason, ms
         ), kwargs={
