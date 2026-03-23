@@ -4175,29 +4175,30 @@ def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, resul
 
 def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
     """
-    Four.meme Bonding Curve Sniper v2
-    Parallel filters → buy → TP/SL exit
+    Four.meme Bonding Curve Sniper v2 — OPTIMIZED
+    - Parallel Stage1 + Stage2 prep
+    - Dynamic poll time
+    - Lazy buyers check
     """
     addr_lower = token_addr.lower()
-    _t_start   = time.time()
+    _t_start = time.time()
 
     with _fm_sniped_lock:
         if addr_lower in _fm_sniped: return
         _fm_sniped.add(addr_lower)
 
-    # Stage 1 analytics — _skip mein use honge
-    _s1_mc_usd        = [0.0]
+    # Analytics containers
+    _s1_mc_usd = [0.0]
     _s1_pump_at_entry = [0.0]
-    _s1_dev_wallet    = [0.0]
-    _s2_momentum_pct  = [0.0]
+    _s1_dev_wallet = [0.0]
+    _s2_momentum_pct = [0.0]
     _s2_volume_change = [0.0]
-    _s2_buyers        = [0]
-    _s2_total_buys    = [0]
+    _s2_buyers = [0]
+    _s2_total_buys = [0]
 
     def _skip(reason):
         ms = int((time.time() - _t_start) * 1000)
         print(f"⏭️ [FM] SKIP — {reason}: {token_addr[:10]}")
-        # Critical errors → notification
         if "no wallet" in reason or "no wallet/key" in reason:
             _push_notif("critical", "🔴 No Wallet/Key", "WALLET_PRIVATE_KEY set nahi hai — real trading blocked!", token_addr[:10], token_addr)
         elif "QuickNode not available" in reason:
@@ -4211,17 +4212,16 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         threading.Thread(target=_save_fm_event, args=(
             token_addr, 0, 0, 0, 0, "SKIP", reason, ms
         ), kwargs={
-            "pump_at_entry":      _s1_pump_at_entry[0],
-            "dev_wallet_pct":     _s1_dev_wallet[0],
-            "mc_usd":             _s1_mc_usd[0],
-            "momentum_pct":       _s2_momentum_pct[0],
-            "volume_change":      _s2_volume_change[0],
-            "buyers_at_entry":    _s2_buyers[0],
-            "total_buys_at_entry":_s2_total_buys[0],
+            "pump_at_entry": _s1_pump_at_entry[0],
+            "dev_wallet_pct": _s1_dev_wallet[0],
+            "mc_usd": _s1_mc_usd[0],
+            "momentum_pct": _s2_momentum_pct[0],
+            "volume_change": _s2_volume_change[0],
+            "buyers_at_entry": _s2_buyers[0],
+            "total_buys_at_entry": _s2_total_buys[0],
         }, daemon=True).start()
 
     try:
-        # ── Basic checks (0ms) ──
         if not AUTO_TRADE_ENABLED or not FM_SNIPER_ENABLED: return
         if len(auto_trade_stats.get("running_positions", {})) >= AUTO_MAX_POSITIONS:
             _skip("max positions"); return
@@ -4231,17 +4231,12 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _ok, _msg = DataGuard.bnb_price_ok()
         if not _ok: _skip(f"DataGuard: {_msg}"); return
         if is_token_blacklisted(token_addr): _skip("blacklisted"); return
-        if any(t.get("address","").lower() == addr_lower
-               for t in auto_trade_stats.get("trade_history", [])):
+        if any(t.get("address","").lower() == addr_lower for t in auto_trade_stats.get("trade_history", [])):
             _skip("already traded"); return
-
-        # ── Dev blacklist check (0ms, memory) ──
         if dev_addr and is_dev_blacklisted(dev_addr):
             _skip(f"dev blacklisted: {dev_addr[:10]}"); return
 
-        # ════════════════════════════════════════
-        # STAGE 1 — PRE-FILTER (parallel)
-        # ════════════════════════════════════════
+        # ========== STAGE 1 — PRE-FILTER (parallel with gas prefetch) ==========
         _w3a = None
         for _rpc in ["https://bsc-rpc.publicnode.com", "https://bsc.drpc.org", "https://1rpc.io/bnb"]:
             try:
@@ -4253,8 +4248,12 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             _push_notif("critical", "🔴 Stage1 RPC Down", "Sare free RPCs down hain — tokens filter nahi ho rahe!", token_addr[:10], token_addr)
             _skip("Stage1 RPC unavailable"); return
 
-        _info_res    = [None]
+        # Parallel Stage1 + gas/nonce prefetch
+        import concurrent.futures as _cf
+        _info_res = [None]
         _dev_pct_res = [0.0]
+        _pre_gas = [0]
+        _pre_nonce = [0]
 
         def _fetch_token_info():
             _info_res[0] = _fm_get_token_info(token_addr, _w3a)
@@ -4262,22 +4261,31 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         def _fetch_dev_balance():
             if not dev_addr: return
             try:
-                _tc    = _w3a.eth.contract(address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
+                _tc = _w3a.eth.contract(address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
                 _total = _tc.functions.totalSupply().call()
                 _dev_b = _tc.functions.balanceOf(Web3.to_checksum_address(dev_addr)).call()
                 if _total > 0:
                     _dev_pct_res[0] = round(_dev_b / _total * 100, 2)
             except: pass
 
-        import concurrent.futures as _cf1
-        with _cf1.ThreadPoolExecutor(max_workers=2) as _ex1:
-            _f1 = _ex1.submit(_fetch_token_info)
-            _f2 = _ex1.submit(_fetch_dev_balance)
-            _f1.result(); _f2.result()
+        def _prefetch_gas_nonce_parallel():
+            try:
+                _w3pf = _get_w3q()
+                if _w3pf:
+                    _pre_gas[0] = _fm_get_cached_gas(_w3pf)
+                    if TRADE_MODE == "real":
+                        _wa = BSC_WALLET or REAL_WALLET
+                        if _wa:
+                            _pre_nonce[0] = _w3pf.eth.get_transaction_count(_wa, "pending")
+            except: pass
+
+        with _cf.ThreadPoolExecutor(max_workers=3) as _ex:
+            _ex.submit(_fetch_token_info)
+            _ex.submit(_fetch_dev_balance)
+            _ex.submit(_prefetch_gas_nonce_parallel)
 
         info = _info_res[0]
         if not info:
-            _push_notif("warning", "🟡 TokenInfo Failed", f"Stage1 data fetch failed — RPC issue? {token_addr[:10]}", token_addr[:10], token_addr)
             _skip("tokenInfo fetch failed"); return
         if info["liquidityAdded"]:
             _skip("already graduated"); return
@@ -4286,20 +4294,18 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if _fee_rate > 300:
             _skip(f"high fee {_fee_rate/100:.1f}% > 3%"); return
 
-        _last_price   = info.get("lastPrice", 0)
+        _last_price = info.get("lastPrice", 0)
         _total_supply = 1_000_000_000
-        _bnb_price    = market_cache.get("bnb_price", 640)
-        _quote_mc     = info.get("quote", "").lower()
+        _bnb_price = market_cache.get("bnb_price", 640)
+        _quote_mc = info.get("quote", "").lower()
         _USDT_L = "0x55d398326f99059ff775485246999027b3197955"
         _BUSD_L = "0xe9e7cea3dedca5984780bafc599bd69add087d56"
-        _WBNB_L  = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
+        _WBNB_L = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
         _ZERO_ADDR = "0x0000000000000000000000000000000000000000"
         if _last_price > 0:
             if _quote_mc in [_USDT_L, _BUSD_L]:
-                # USDT/BUSD — already in USD
                 _mc_usd = (_last_price / 1e18) * _total_supply
             elif _quote_mc in [_WBNB_L, _ZERO_ADDR, ""]:
-                # BNB pair — quote=0x0 means BNB (FM docs confirmed)
                 _mc_usd = (_last_price / 1e18) * _total_supply * _bnb_price
             else:
                 _skip(f"unsupported quote — skip"); return
@@ -4308,7 +4314,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         else:
             _skip("MC calc failed"); return
 
-        _offers    = info.get("offers", 0)
+        _offers = info.get("offers", 0)
         _maxOffers = info.get("maxOffers", 1)
         _pump_at_entry = round((_offers / max(_maxOffers, 1)) * 100, 1)
 
@@ -4316,54 +4322,35 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             _skip(f"dev wallet too high {_dev_pct_res[0]:.0f}%"); return
 
         _dev_wallet_pct = _dev_pct_res[0]
-
-        # Stage 1 analytics set karo — _skip mein use honge
-        _s1_mc_usd[0]        = _mc_usd
+        _s1_mc_usd[0] = _mc_usd
         _s1_pump_at_entry[0] = _pump_at_entry
-        _s1_dev_wallet[0]    = _dev_wallet_pct
+        _s1_dev_wallet[0] = _dev_wallet_pct
 
         print(f"✅ [FM] Stage1 PASS: mc=${_mc_usd:.0f}")
 
-        # ════════════════════════════════════════
-        # STAGE 2 — MOMENTUM CHECK (QuickNode)
-        # 10s window, 1s poll
-        # Filters: price >= 0.05%, volume >= 0.05 BNB, buyers >= 2
-        # ════════════════════════════════════════
+        # ========== STAGE 2 — OPTIMIZED MOMENTUM CHECK ==========
         w3q = _get_w3q()
-        w3  = w3q
+        w3 = w3q
         if not w3: _skip("QuickNode not available"); return
 
-        # Fresh snapshot Stage 2 shuru hote hi (Stage 1 data stale ho sakta hai)
         _info_fresh = _fm_get_token_info(token_addr, w3)
         if not _info_fresh: _skip("Stage2 snapshot failed"); return
         if _info_fresh.get("liquidityAdded"): _skip("graduated before Stage2"); return
 
         _price1 = _info_fresh.get("lastPrice", 0)
         _funds1 = _info_fresh.get("funds", 0)
-        _MIN_PRICE_MV = 1.0005   # 0.05% price move
-        _MIN_BNB_FLOW = 0.3      # 0.3 BNB volume — data se proven
-        _MIN_BUYERS   = 5        # unique buyers
-
-        # Gas + nonce prefetch parallel — momentum check ke dauran
-        _pre_gas   = [0]
-        _pre_nonce = [0]
-        def _prefetch_gas_nonce():
-            try:
-                _w3pf = w3q or w3
-                _pre_gas[0] = _fm_get_cached_gas(_w3pf)
-                if TRADE_MODE == "real":
-                    _wa = BSC_WALLET or REAL_WALLET
-                    if _wa:
-                        _pre_nonce[0] = _w3pf.eth.get_transaction_count(_wa, "pending")
-            except: pass
-        threading.Thread(target=_prefetch_gas_nonce, daemon=True).start()
+        _MIN_PRICE_MV = 1.0005
+        _MIN_BNB_FLOW = 0.3
+        _MIN_BUYERS = 5
 
         _price2 = 0
         _funds2 = 0
-        _snap2  = None
-        _ub     = 0
+        _ub = 0
         _total_buys = 0
-        _t_end  = time.time() + 10
+        _t_end = time.time() + 10
+        _last_check_time = 0
+        _price_ok_flag = False
+        _vol_ok_flag = False
 
         while time.time() < _t_end:
             try:
@@ -4375,23 +4362,38 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     _funds2 = _snap2.get("funds", 0)
                     _funds_diff = (_funds2 - _funds1) / 1e18
                     _price_ok = _price1 > 0 and _price2 >= _price1 * _MIN_PRICE_MV
-                    _vol_ok   = _funds_diff >= _MIN_BNB_FLOW
-                    if _price_ok and _vol_ok:
-                        # Unique buyers check
+                    _vol_ok = _funds_diff >= _MIN_BNB_FLOW
+
+                    if _price_ok:
+                        _price_ok_flag = True
+                    if _vol_ok:
+                        _vol_ok_flag = True
+
+                    # Dynamic poll: faster if price/volume already good
+                    if _price_ok_flag and _vol_ok_flag:
+                        # Lazy buyers check — only when conditions met
                         try:
                             _ub, _total_buys = _fm_get_unique_buyers(token_addr, w3)
                         except:
                             _ub = 0
                             _total_buys = 0
-                        if _ub < _MIN_BUYERS:
-                            print(f"⏭️ [FM] Skip — buyers {_ub} < {_MIN_BUYERS}: {token_addr[:10]}")
-                            time.sleep(1)
+                        if _ub >= _MIN_BUYERS:
+                            print(f"✅ [FM] Momentum! price+{round((_price2-_price1)/max(_price1,1)*100,2)}% vol+{_funds_diff:.4f}BNB buyers:{_ub}")
+                            break
+                        else:
+                            # Wait a bit more for buyers
+                            time.sleep(0.5)
                             continue
-                        print(f"✅ [FM] Momentum! price+{round((_price2-_price1)/max(_price1,1)*100,2)}% vol+{_funds_diff:.4f}BNB buyers:{_ub}")
-                        break
+
+                    # Dynamic sleep: 0.5s if close to conditions, else 1s
+                    if (_price_ok_flag or _vol_ok_flag) and not (_price_ok_flag and _vol_ok_flag):
+                        time.sleep(0.5)
+                    else:
+                        time.sleep(1.0)
+
             except Exception as _me:
                 print(f"⚠️ [FM] momentum error: {str(_me)[:50]}")
-            time.sleep(1)
+                time.sleep(0.5)
 
         if not _price2 or _price2 < _price1 * _MIN_PRICE_MV:
             _s2_volume_change[0] = round((_funds2 - _funds1) / 1e18, 6) if _funds2 else 0
@@ -4399,9 +4401,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         _funds_diff = (_funds2 - _funds1) / 1e18
         _s2_volume_change[0] = round(_funds_diff, 6)
-        _s2_momentum_pct[0]  = round((_price2 - _price1) / max(_price1, 1) * 100, 1)
-        _s2_buyers[0]        = _ub
-        _s2_total_buys[0]    = _total_buys
+        _s2_momentum_pct[0] = round((_price2 - _price1) / max(_price1, 1) * 100, 1)
+        _s2_buyers[0] = _ub
+        _s2_total_buys[0] = _total_buys
 
         if _funds_diff < _MIN_BNB_FLOW:
             _skip(f"low volume {_funds_diff:.4f} BNB < {_MIN_BNB_FLOW}"); return
@@ -4410,10 +4412,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         print(f"✅ [FM] ALL PASS: mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}%")
         _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
 
-        # ── BUY ──
-        size_bnb   = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
+        # ========== BUY EXECUTION ==========
+        size_bnb = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
         token_name = token_addr[:8]
-        # Entry price from bonding curve lastPrice — token is NOT on PancakeSwap yet
         try:
             entry = info["lastPrice"] / 1e18 if info.get("lastPrice", 0) > 0 else 1e-12
         except:
@@ -4425,40 +4426,31 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 pk = os.getenv("WALLET_PRIVATE_KEY", "") or os.getenv("PRIVATE_KEY", "") or os.getenv("REAL_PRIVATE_KEY", "")
                 if not wallet_addr or not pk:
                     _skip("no wallet/key"); return
-                # QuickNode HTTP for buy tx — no fallback, speed critical
                 _w3_buy = _get_w3q()
                 if not _w3_buy:
                     _skip("QuickNode not available"); return
-                # Wallet balance check
                 _bal_check = _w3_buy.eth.get_balance(Web3.to_checksum_address(wallet_addr)) / 1e18
-                if _bal_check < size_bnb + 0.002:  # size + gas buffer
+                if _bal_check < size_bnb + 0.002:
                     _skip(f"insufficient wallet balance {_bal_check:.4f} BNB"); return
-                # minAmount = 0 — FM bonding curve dynamic pricing
-                # Linear calculation incorrect for bonding curve
-                # Protection via Stage 2 filters (buyers>=5, volume>=0.3 BNB)
                 _min_tokens = 0
 
-                fc = _w3_buy.eth.contract(
-                    address=Web3.to_checksum_address(_FM_FACTORY_ADDR),
-                    abi=_FM_BC_ABI
-                )
+                fc = _w3_buy.eth.contract(address=Web3.to_checksum_address(_FM_FACTORY_ADDR), abi=_FM_BC_ABI)
                 tx = fc.functions.buyTokenAMAP(
                     Web3.to_checksum_address(token_addr),
                     int(size_bnb * 1e18),
-                    _min_tokens  # 10% slippage protection
+                    _min_tokens
                 ).build_transaction({
-                    "from":     wallet_addr,
-                    "value":    int(size_bnb * 1e18),
-                    "gas":      400000,
+                    "from": wallet_addr,
+                    "value": int(size_bnb * 1e18),
+                    "gas": 400000,
                     "gasPrice": int((_pre_gas[0] or _fm_get_cached_gas(_w3_buy)) * 1.5),
-                    "nonce":    _pre_nonce[0] or _w3_buy.eth.get_transaction_count(wallet_addr, "pending"),
+                    "nonce": _pre_nonce[0] or _w3_buy.eth.get_transaction_count(wallet_addr, "pending"),
                 })
                 from eth_account import Account
-                signed   = Account.sign_transaction(tx, pk)
-                tx_hash  = _w3_buy.eth.send_raw_transaction(signed.raw_transaction)
+                signed = Account.sign_transaction(tx, pk)
+                tx_hash = _w3_buy.eth.send_raw_transaction(signed.raw_transaction)
                 print(f"✅ [FM] Real buy sent: {tx_hash.hex()}")
 
-                # Receipt wait background mein — 30s hang nahi hoga
                 def _wait_receipt(_th, _w3b, _addr):
                     try:
                         _r = _w3b.eth.wait_for_transaction_receipt(_th, timeout=60)
@@ -4483,10 +4475,10 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                                         Web3.to_checksum_address(_FM_FACTORY_ADDR),
                                         2**256 - 1
                                     ).build_transaction({
-                                        "from":     _wa2,
-                                        "gas":      100000,
+                                        "from": _wa2,
+                                        "gas": 100000,
                                         "gasPrice": int(_fm_get_cached_gas(_w3p) * 1.5),
-                                        "nonce":    _w3p.eth.get_transaction_count(_wa2, "pending"),
+                                        "nonce": _w3p.eth.get_transaction_count(_wa2, "pending"),
                                     })
                                     _sa = _Acc.sign_transaction(_atx, _pk2)
                                     _ah = _w3p.eth.send_raw_transaction(_sa.raw_transaction)
@@ -4516,58 +4508,51 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             sess["paper_balance"] = round(sess.get("paper_balance",5.0) - size_bnb, 6)
 
         ms = int((time.time() - _t_start) * 1000)
-
-        # buyers_at_entry — Stage 2 momentum mein _ub set hua tha
         try:
-            _buyers_at_entry     = min(int(_ub or 0), 2147483647)
+            _buyers_at_entry = min(int(_ub or 0), 2147483647)
             _total_buys_at_entry = min(int(_total_buys or 0), 2147483647)
         except:
-            _buyers_at_entry     = 0
+            _buyers_at_entry = 0
             _total_buys_at_entry = 0
-        add_position_to_monitor(
-            AUTO_SESSION_ID, token_addr, token_name, entry, size_bnb,
-            stop_loss_pct=20.0
-        )
+
+        add_position_to_monitor(AUTO_SESSION_ID, token_addr, token_name, entry, size_bnb, stop_loss_pct=20.0)
         auto_trade_stats["running_positions"][token_addr] = {
-            "token":            token_name,
-            "entry":            entry,
-            "size_bnb":         size_bnb,
-            "orig_size_bnb":    size_bnb,
-            "bought_usd":       round(size_bnb * market_cache.get("bnb_price",0), 2),
-            "sl_pct":           20.0,
-            "tp_sold":          0.0,
-            "banked_pnl_bnb":   0.0,
-            "bought_at":        datetime.utcnow().isoformat(),
-            "mode":             TRADE_MODE,
-            "source":           "FM_BC",   # ← sell ke time check karo
-            "fm_factory":       _FM_FACTORY_ADDR,
-            "fm_mc_usd":        round(_mc_usd, 0),
-            "fm_momentum":      _momentum_pct,
-            "fm_dev":           dev_addr[:10] if dev_addr else "",
+            "token": token_name,
+            "entry": entry,
+            "size_bnb": size_bnb,
+            "orig_size_bnb": size_bnb,
+            "bought_usd": round(size_bnb * market_cache.get("bnb_price",0), 2),
+            "sl_pct": 20.0,
+            "tp_sold": 0.0,
+            "banked_pnl_bnb": 0.0,
+            "bought_at": datetime.utcnow().isoformat(),
+            "mode": TRADE_MODE,
+            "source": "FM_BC",
+            "fm_factory": _FM_FACTORY_ADDR,
+            "fm_mc_usd": round(_mc_usd, 0),
+            "fm_momentum": _momentum_pct,
+            "fm_dev": dev_addr[:10] if dev_addr else "",
             "buy_reasoning": {
-                "source":    "FM_BC_v2",
-                "mc_usd":    f"${_mc_usd:.0f}",
-                "momentum":  f"+{_momentum_pct:.1f}%",
+                "source": "FM_BC_v2",
+                "mc_usd": f"${_mc_usd:.0f}",
+                "momentum": f"+{_momentum_pct:.1f}%",
             },
         }
         auto_trade_stats["total_auto_buys"] += 1
         _scanner_stats["fm_bought"] = _scanner_stats.get("fm_bought", 0) + 1
         threading.Thread(target=_persist_positions, daemon=True).start()
 
-        # ── Background: token name fetch via ERC20 ──
         def _fetch_token_name(ta):
             try:
                 _w = _fm_get_w3()
                 if not _w: return
                 _tc = _w.eth.contract(address=Web3.to_checksum_address(ta), abi=_FM_ERC20_ABI)
-                _sym  = _tc.functions.symbol().call()
+                _sym = _tc.functions.symbol().call()
                 _name = _tc.functions.name().call()
                 _display = _sym or _name or ta[:8]
                 if _display:
-                    # running_positions update
                     if ta in auto_trade_stats.get("running_positions", {}):
                         auto_trade_stats["running_positions"][ta]["token"] = _display
-                    # monitored_positions update
                     with monitor_lock:
                         if ta in monitored_positions:
                             monitored_positions[ta]["token"] = _display
@@ -4577,25 +4562,18 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 print(f"⚠️ [FM] Name fetch: {str(_ne)[:40]}")
         threading.Thread(target=_fetch_token_name, args=(token_addr,), daemon=True).start()
 
-        _push_notif("success", "🚀 FM Bonding Curve!",
-                    f"{token_name} mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}% | {ms}ms",
-                    token_name, token_addr)
-        _log("buy", token_name,
-             f"🚀 FM BC v2 mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}% {ms}ms",
-             token_addr)
+        _push_notif("success", "🚀 FM Bonding Curve!", f"{token_name} mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}% | {ms}ms", token_name, token_addr)
+        _log("buy", token_name, f"🚀 FM BC v2 mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}% {ms}ms", token_addr)
         threading.Thread(target=_save_fm_event, args=(
             token_addr, round(_funds2/1e18, 4), 0, entry, _momentum_pct, "BUY", "", ms,
             _buyers_at_entry, _momentum_pct, round(_funds_diff, 6), _pump_at_entry, _dev_wallet_pct, _mc_usd, _total_buys_at_entry
         ), daemon=True).start()
         print(f"✅ [FM] BC SNIPED: {token_name} mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}% {ms}ms")
 
-        # ── POST-BUY: 30s buyer monitor — agar koi nahi aaya toh force exit ──
         def _fm_post_buy_monitor(ta, t_name):
             try:
                 time.sleep(30)
-                if ta not in auto_trade_stats.get("running_positions", {}):
-                    return  # Already sold
-                # Transfer events check karo — hamare buy ke baad new buyers?
+                if ta not in auto_trade_stats.get("running_positions", {}): return
                 _w3 = _fm_get_w3()
                 if not _w3: return
                 TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
@@ -4603,7 +4581,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _logs = _w3.eth.get_logs({
                     "address": Web3.to_checksum_address(ta),
                     "topics": [TRANSFER_TOPIC],
-                    "fromBlock": _cur - 20,  # last ~60s
+                    "fromBlock": _cur - 20,
                     "toBlock": "latest",
                 })
                 _ZERO = "0x0000000000000000000000000000000000000000"
@@ -4614,7 +4592,6 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     to_addr = "0x" + log["topics"][2].hex()[-40:].lower()
                     if to_addr not in [_ZERO, _DEAD]:
                         new_buyers.add(to_addr)
-
                 if len(new_buyers) < 2:
                     print(f"⚠️ [FM] No new buyers in 30s — force exit: {ta[:10]}")
                     _auto_paper_sell(ta, "FM No buyers 30s ❌", 100.0)
@@ -4622,14 +4599,11 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     print(f"✅ [FM] {len(new_buyers)} buyers in 30s — holding: {ta[:10]}")
             except Exception as _fe:
                 print(f"⚠️ [FM] post-buy monitor error: {_fe}")
-
         threading.Thread(target=_fm_post_buy_monitor, args=(token_addr, token_name), daemon=True).start()
 
     except Exception as e:
         print(f"⚠️ [FM] snipe error: {e}")
         with _fm_sniped_lock: _fm_sniped.discard(addr_lower)
-
-_QN_WSS = os.getenv("QUICKNODE_WSS","wss://blissful-dark-scion.bsc.quiknode.pro/15a13a747cf019149b7c43a1a0bbd2ce37179d15/")
 
 def poll_four_meme_v2():
     """
