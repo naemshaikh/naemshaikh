@@ -4669,6 +4669,10 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 if _w3a.is_connected(): break
             except: continue
 
+        if not _w3a:
+            _push_notif("critical", "🔴 Stage1 RPC Down", "Sare free RPCs down hain — tokens filter nahi ho rahe!", token_addr[:10], token_addr)
+            _skip("Stage1 RPC unavailable"); return
+
         _info_res    = [None]
         _dev_pct_res = [0.0]
 
@@ -4693,6 +4697,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         info = _info_res[0]
         if not info:
+            _push_notif("warning", "🟡 TokenInfo Failed", f"Stage1 data fetch failed — RPC issue? {token_addr[:10]}", token_addr[:10], token_addr)
             _skip("tokenInfo fetch failed"); return
         if info["liquidityAdded"]:
             _skip("already graduated"); return
