@@ -4750,8 +4750,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         # Filters: price >= 0.05%, volume >= 0.05 BNB, buyers >= 2
         # ════════════════════════════════════════
         w3q = _get_w3q()
-        w3  = w3q or _fm_get_w3()  # QuickNode primary, free RPC fallback for rate limit
-        if not w3: _skip("no RPC"); return
+        w3  = w3q
+        if not w3: _skip("QuickNode not available"); return
 
         # Fresh snapshot Stage 2 shuru hote hi (Stage 1 data stale ho sakta hai)
         _info_fresh = _fm_get_token_info(token_addr, w3)
