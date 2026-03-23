@@ -4284,7 +4284,7 @@ def _fm_get_unique_buyers(token_addr, w3=None):
         logs = w3.eth.get_logs({
             "address": Web3.to_checksum_address(token_addr),
             "topics": [TRANSFER_TOPIC],
-            "fromBlock": current - 100,  # ~5 mins, QuickNode limit safe
+            "fromBlock": current - 20,  # ~60s, QuickNode safe
             "toBlock": "latest",
         })
         _ZERO = "0x0000000000000000000000000000000000000000"
