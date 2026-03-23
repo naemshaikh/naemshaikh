@@ -2781,51 +2781,51 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
 
     # FIX 4: Save to trade_history — sirf 100% sell pe (partial sells skip)
     if sell_pct >= 100.0:
-     if not isinstance(auto_trade_stats.get("trade_history"), list):
-        auto_trade_stats["trade_history"] = []
-     _bnb_at_sell = market_cache.get("bnb_price", 0)
-     _saved_bought_usd = auto_trade_stats["running_positions"].get(address, {}).get("bought_usd", 0)
-     _orig_sz = pos.get("orig_size_bnb", size)
-     _total_pnl_bnb_trade = round(pos.get("banked_pnl_bnb", 0.0), 6)
-     _total_pnl_pct_trade = round((_total_pnl_bnb_trade / _orig_sz * 100), 2) if _orig_sz > 0 else pnl_pct
-     _gas_bnb_sell = DataGuard.get_real_gas_bnb()
-     # ── Post-mortem ──
-     _buy_rsn = pos.get("buy_reasoning", {}) or {}
-     _assumption = _buy_rsn.get("assumption", "N/A")
-     _signals_used = _buy_rsn.get("signals", [])
-     if _total_pnl_pct_trade > 0:
-         _post_mortem = (f"WIN +{_total_pnl_pct_trade:.1f}% | Exit: {reason} | "f"Entry: {entry:.2e} BNB | ExitPrice: {current:.2e} BNB | "f"HoldTime: {round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds()/60, 1) if bought_at_str else 0:.0f}min | "f"Signals used: {', '.join(_signals_used[:3]) if _signals_used else 'checklist only'} | "f"BNB at sell: {market_cache.get('bnb_price', 0):.2f} | Mode: {TRADE_MODE}")
-     else:
-         _post_mortem = (f"LOSS {_total_pnl_pct_trade:.1f}% | Exit: {reason} | "f"Entry: {entry:.2e} BNB | ExitPrice: {current:.2e} BNB | "f"HoldTime: {round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds()/60, 1) if bought_at_str else 0:.0f}min | "f"Assumption: {_assumption[:80]} | "f"Signals used: {', '.join(_signals_used[:3]) if _signals_used else 'none'} | "f"BNB at sell: {market_cache.get('bnb_price', 0):.2f} | Mode: {TRADE_MODE}")
-     auto_trade_stats["trade_history"].append({
-        "token":        token,
-        "address":      address,
-        "entry":        entry,
-        "exit":         current,
-        "exit_price":   current,
-        "pnl_pct":      _total_pnl_pct_trade,
-        "pnl_bnb":      _total_pnl_bnb_trade,
-        "size_bnb":     _orig_sz,
-        "gas_bnb":      _gas_bnb_sell,
-        "bought_usd":   _saved_bought_usd if _saved_bought_usd else round(_orig_sz * _bnb_at_sell, 2),
-        "sold_usd":     round(max(0.0, (_saved_bought_usd / _bnb_at_sell if _bnb_at_sell > 0 else _orig_sz) + _total_pnl_bnb_trade) * _bnb_at_sell, 2) if _bnb_at_sell > 0 else 0,
-        "bought_at":    bought_at_str,
-        "sold_at":      datetime.utcnow().isoformat(),
-        "result":       "win" if _total_pnl_pct_trade > 0 else "loss",
-        "exit_reason":  reason,
-        "reason":       reason,
-        "mode":         TRADE_MODE,
-        "tp_events":    pos.get("tp_events", []),
-        "buy_reasoning":_buy_rsn,
-        "post_mortem":  _post_mortem,
-        "signals_used": _signals_used,
-        "snipe_source": _buy_rsn.get("source", "checklist"),
-        "snipe_strategy": _buy_rsn.get("strategy", "Normal_Checklist"),
-        # ATH + hold time — data analysis ke liye
-        "ath_price":    monitored_positions.get(address, {}).get("high", current),
-        "ath_pct":      round((monitored_positions.get(address, {}).get("high", current) - entry) / entry * 100, 1) if entry > 0 else 0,
-        "hold_minutes": round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds() / 60, 1) if bought_at_str else 0,
-    })
+        if not isinstance(auto_trade_stats.get("trade_history"), list):
+            auto_trade_stats["trade_history"] = []
+        _bnb_at_sell = market_cache.get("bnb_price", 0)
+        _saved_bought_usd = auto_trade_stats["running_positions"].get(address, {}).get("bought_usd", 0)
+        _orig_sz = pos.get("orig_size_bnb", size)
+        _total_pnl_bnb_trade = round(pos.get("banked_pnl_bnb", 0.0), 6)
+        _total_pnl_pct_trade = round((_total_pnl_bnb_trade / _orig_sz * 100), 2) if _orig_sz > 0 else pnl_pct
+        _gas_bnb_sell = DataGuard.get_real_gas_bnb()
+        # ── Post-mortem ──
+        _buy_rsn = pos.get("buy_reasoning", {}) or {}
+        _assumption = _buy_rsn.get("assumption", "N/A")
+        _signals_used = _buy_rsn.get("signals", [])
+        if _total_pnl_pct_trade > 0:
+            _post_mortem = (f"WIN +{_total_pnl_pct_trade:.1f}% | Exit: {reason} | "f"Entry: {entry:.2e} BNB | ExitPrice: {current:.2e} BNB | "f"HoldTime: {round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds()/60, 1) if bought_at_str else 0:.0f}min | "f"Signals used: {', '.join(_signals_used[:3]) if _signals_used else 'checklist only'} | "f"BNB at sell: {market_cache.get('bnb_price', 0):.2f} | Mode: {TRADE_MODE}")
+        else:
+            _post_mortem = (f"LOSS {_total_pnl_pct_trade:.1f}% | Exit: {reason} | "f"Entry: {entry:.2e} BNB | ExitPrice: {current:.2e} BNB | "f"HoldTime: {round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds()/60, 1) if bought_at_str else 0:.0f}min | "f"Assumption: {_assumption[:80]} | "f"Signals used: {', '.join(_signals_used[:3]) if _signals_used else 'none'} | "f"BNB at sell: {market_cache.get('bnb_price', 0):.2f} | Mode: {TRADE_MODE}")
+        auto_trade_stats["trade_history"].append({
+            "token":        token,
+            "address":      address,
+            "entry":        entry,
+            "exit":         current,
+            "exit_price":   current,
+            "pnl_pct":      _total_pnl_pct_trade,
+            "pnl_bnb":      _total_pnl_bnb_trade,
+            "size_bnb":     _orig_sz,
+            "gas_bnb":      _gas_bnb_sell,
+            "bought_usd":   _saved_bought_usd if _saved_bought_usd else round(_orig_sz * _bnb_at_sell, 2),
+            "sold_usd":     round(max(0.0, (_saved_bought_usd / _bnb_at_sell if _bnb_at_sell > 0 else _orig_sz) + _total_pnl_bnb_trade) * _bnb_at_sell, 2) if _bnb_at_sell > 0 else 0,
+            "bought_at":    bought_at_str,
+            "sold_at":      datetime.utcnow().isoformat(),
+            "result":       "win" if _total_pnl_pct_trade > 0 else "loss",
+            "exit_reason":  reason,
+            "reason":       reason,
+            "mode":         pos.get("mode", TRADE_MODE),
+            "tp_events":    pos.get("tp_events", []),
+            "buy_reasoning":_buy_rsn,
+            "post_mortem":  _post_mortem,
+            "signals_used": _signals_used,
+            "snipe_source": _buy_rsn.get("source", "checklist"),
+            "snipe_strategy": _buy_rsn.get("strategy", "Normal_Checklist"),
+            # ATH + hold time
+            "ath_price":    monitored_positions.get(address, {}).get("high", current),
+            "ath_pct":      round((monitored_positions.get(address, {}).get("high", current) - entry) / entry * 100, 1) if entry > 0 else 0,
+            "hold_minutes": round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds() / 60, 1) if bought_at_str else 0,
+        })
     if len(auto_trade_stats["trade_history"]) > 10000:
         auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-10000:]
     # ── Bot Decision — SELL log ──
@@ -2973,10 +2973,46 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         else:
             _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
 
+        # ── RETRY LOOP — 3 attempts, no sleep ──
         if not _real_sell.get("success"):
-            _sell_err = _real_sell.get('error','?')
-            print(f"⚠️ REAL SELL failed: {_sell_err} — continuing paper tracking")
-            _push_notif("critical", "🔴 FM Sell Failed", f"{token_name}: {_sell_err}", token_name, address)
+            _sell_err = _real_sell.get('error', '?')
+            print(f"⚠️ REAL SELL attempt 1 failed: {_sell_err} — retrying...")
+            for _retry in range(2, 4):
+                try:
+                    _w3r = _get_w3q() or _fm_get_w3()
+                    _source_r = pos.get("source", pos.get("buy_reasoning", {}).get("source", ""))
+                    if "FM_BC" in _source_r:
+                        _fm_factory_r = pos.get("fm_factory", _FM_FACTORY_ADDR)
+                        _real_sell = _fm_real_sell_bc(address, sell_pct, _fm_factory_r, _w3r)
+                    else:
+                        _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
+                    if _real_sell.get("success"):
+                        print(f"✅ REAL SELL success on attempt {_retry}")
+                        break
+                    else:
+                        _sell_err = _real_sell.get('error', '?')
+                        print(f"⚠️ REAL SELL attempt {_retry} failed: {_sell_err}")
+                except Exception as _re:
+                    _sell_err = str(_re)[:60]
+                    print(f"⚠️ REAL SELL attempt {_retry} exception: {_sell_err}")
+
+        if not _real_sell.get("success"):
+            _sell_err = _real_sell.get('error', '?')
+            print(f"🚨 REAL SELL FAILED 3/3 — POSITION RESTORED: {_sell_err}")
+            _push_notif("critical", "🚨 MANUAL SELL REQUIRED",
+                f"{token_name} — 3 tries fail! Error: {_sell_err[:80]} | WALLET PE TOKEN HAI — MANUALLY SELL KARO!",
+                token_name, address)
+            auto_trade_stats["running_positions"][address] = pos
+            auto_trade_stats["total_auto_sells"] = max(0, auto_trade_stats["total_auto_sells"] - 1)
+            _th = auto_trade_stats.get("trade_history", [])
+            if _th and _th[-1].get("address") == address:
+                auto_trade_stats["trade_history"] = _th[:-1]
+            _sess_r = get_or_create_session(AUTO_SESSION_ID)
+            _sess_r["paper_balance"] = round(_sess_r.get("paper_balance", 0) - return_bnb, 6)
+            add_position_to_monitor(AUTO_SESSION_ID, address, token_name,
+                pos.get("entry", 0), pos.get("size_bnb", AUTO_BUY_SIZE_BNB),
+                stop_loss_pct=pos.get("sl_pct", 12.0))
+            return
         else:
             print(f"✅ REAL SELL: tx={_real_sell.get('tx_hash','')[:20]} BNB={_real_sell.get('bnb_received',0):.4f}")
             _actual_gas_used = _real_sell.get("gas_used", 0)
@@ -4484,7 +4520,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                 _min_funds = int(_expected_bnb * 0.90)  # 10% slippage allowed
         except: pass
 
-        # Approve factory to spend tokens — FM requires this
+        # Approve — sirf agar pehle nahi hua (pre-approve check)
         from eth_account import Account
         try:
             _allowance = _tc.functions.allowance(
@@ -4492,38 +4528,42 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                 Web3.to_checksum_address(factory_addr)
             ).call()
             if _allowance < _amt:
+                print(f"⚠️ [FM] Approve missing — doing now fast")
                 _approve_tx = _tc.functions.approve(
                     Web3.to_checksum_address(factory_addr),
-                    2**256 - 1  # max approve
+                    2**256 - 1
                 ).build_transaction({
                     "from":     wallet_addr,
                     "gas":      100000,
-                    "gasPrice": int(_fm_get_cached_gas(w3) * 1.5),
+                    "gasPrice": int(_fm_get_cached_gas(w3) * 2.0),
                     "nonce":    w3.eth.get_transaction_count(wallet_addr, "pending"),
                 })
                 _signed_a = Account.sign_transaction(_approve_tx, pk)
                 _approve_hash = w3.eth.send_raw_transaction(_signed_a.raw_transaction)
-                w3.eth.wait_for_transaction_receipt(_approve_hash, timeout=60)
+                w3.eth.wait_for_transaction_receipt(_approve_hash, timeout=20)
                 print(f"✅ [FM] Approve done: {_approve_hash.hex()[:12]}")
+            else:
+                print(f"✅ [FM] Already approved — sell seedha")
         except Exception as _ae:
             result["error"] = f"approve failed: {str(_ae)[:50]}"; return result
 
-        # sellToken(token, amount, minFunds)
-        fc  = w3.eth.contract(address=Web3.to_checksum_address(factory_addr), abi=_FM_BC_ABI)
+        # sellToken — QuickNode prefer, 2x gas, 20s timeout
+        _w3_fast = _get_w3q() or w3
+        fc  = _w3_fast.eth.contract(address=Web3.to_checksum_address(factory_addr), abi=_FM_BC_ABI)
         tx  = fc.functions.sellToken(
             Web3.to_checksum_address(token_addr),
             _amt,
-            _min_funds  # 5% slippage protection
+            _min_funds
         ).build_transaction({
             "from":     wallet_addr,
             "gas":      300000,
-            "gasPrice": int(_fm_get_cached_gas(w3) * 1.5),
-            "nonce":    w3.eth.get_transaction_count(wallet_addr, "pending"),
+            "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 2.0),
+            "nonce":    _w3_fast.eth.get_transaction_count(wallet_addr, "pending"),
         })
         from eth_account import Account
         signed  = Account.sign_transaction(tx, pk)
-        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+        tx_hash = _w3_fast.eth.send_raw_transaction(signed.raw_transaction)
+        receipt = _w3_fast.eth.wait_for_transaction_receipt(tx_hash, timeout=20)
         if receipt["status"] != 1:
             result["error"] = "sell tx reverted"; return result
         result["success"]  = True
@@ -4884,6 +4924,37 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         _r = _w3b.eth.wait_for_transaction_receipt(_th, timeout=60)
                         if _r["status"] == 1:
                             print(f"✅ [FM] Buy confirmed: {_th.hex()[:12]}")
+                            def _pre_approve(_addr2):
+                                try:
+                                    _pk2 = os.getenv("WALLET_PRIVATE_KEY","") or os.getenv("PRIVATE_KEY","") or os.getenv("REAL_PRIVATE_KEY","")
+                                    _wa2 = BSC_WALLET or REAL_WALLET
+                                    if not _wa2 or not _pk2: return
+                                    _w3p = _get_w3q() or _fm_get_w3()
+                                    if not _w3p: return
+                                    _tc2 = _w3p.eth.contract(address=Web3.to_checksum_address(_addr2), abi=_FM_ERC20_ABI)
+                                    _allow = _tc2.functions.allowance(
+                                        Web3.to_checksum_address(_wa2),
+                                        Web3.to_checksum_address(_FM_FACTORY_ADDR)
+                                    ).call()
+                                    if _allow > 0:
+                                        print(f"✅ [FM] Already approved: {_addr2[:10]}"); return
+                                    from eth_account import Account as _Acc
+                                    _atx = _tc2.functions.approve(
+                                        Web3.to_checksum_address(_FM_FACTORY_ADDR),
+                                        2**256 - 1
+                                    ).build_transaction({
+                                        "from":     _wa2,
+                                        "gas":      100000,
+                                        "gasPrice": int(_fm_get_cached_gas(_w3p) * 1.5),
+                                        "nonce":    _w3p.eth.get_transaction_count(_wa2, "pending"),
+                                    })
+                                    _sa = _Acc.sign_transaction(_atx, _pk2)
+                                    _ah = _w3p.eth.send_raw_transaction(_sa.raw_transaction)
+                                    _w3p.eth.wait_for_transaction_receipt(_ah, timeout=30)
+                                    print(f"✅ [FM] Pre-approve done: {_addr2[:10]}")
+                                except Exception as _pe:
+                                    print(f"⚠️ [FM] Pre-approve error: {str(_pe)[:50]}")
+                            threading.Thread(target=_pre_approve, args=(_addr,), daemon=True).start()
                         else:
                             print(f"⚠️ [FM] Buy failed onchain: {_th.hex()[:12]}")
                             _auto_paper_sell(_addr, "buy tx failed onchain", 100.0)
