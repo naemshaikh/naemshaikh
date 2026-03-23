@@ -800,12 +800,6 @@ def _anti_mev_amount(base_bnb: float) -> float:
 
 
 # Fix #4: Dynamic gas estimate
-def _get_dynamic_gas_price() -> int:
-    try:
-        base = w3.eth.gas_price
-        return int(base * 1.1)  # 10% buffer for fast confirmation
-    except Exception:
-        return w3.to_wei(5, "gwei")
 
 # Fix #5: Sell slippage separate function
 def _anti_mev_slippage_sell(buy_tax: float = 0.0, sell_tax: float = 0.0) -> int:
@@ -827,14 +821,6 @@ def _anti_mev_slippage(buy_tax: float = 0.0, sell_tax: float = 0.0) -> int:
     slippage = min(round(base + noise), 20)           # max 20%
     return int(slippage)
 
-def _get_dynamic_gas_price() -> int:
-    """BSC fast gas price — 5 gwei default, higher = faster confirmation"""
-    try:
-        gp = w3.eth.gas_price
-        # 10% above current = fast lane
-        return int(gp * 1.2)
-    except Exception:
-        return w3.to_wei(5, "gwei")  # 5 gwei fallback (max speed)
 
 
 def _pre_approve_after_buy(token_addr):
@@ -4360,7 +4346,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _funds2 = 0
         _ub = 0
         _total_buys = 0
-        _t_end = time.time() + 10
+        _t_end = time.time() + 15
         _price_ok_flag = False
         _vol_ok_flag = False
         _last_check_time = 0
@@ -5374,6 +5360,16 @@ def log_trade_internal(session_id: str, trade: dict):
     pnl = float(trade.get("pnl_pct", 0))
     win = pnl > 0
     
+    lesson = {
+        "token": trade.get("token_address", ""),
+        "entry_price": trade.get("entry_price", 0),
+        "exit_price": trade.get("exit_price", 0),
+        "pnl_pct": pnl,
+        "win": win,
+        "lesson": trade.get("lesson", ""),
+        "timestamp": datetime.utcnow().isoformat()
+    }
+    
     # Sirf full sell ke liye count badhao
     if trade.get("sell_pct", 100.0) >= 100.0:
         sess["trade_count"] += 1
@@ -5384,21 +5380,11 @@ def log_trade_internal(session_id: str, trade: dict):
             _size = float(trade.get("size_bnb", AUTO_BUY_SIZE_BNB) or AUTO_BUY_SIZE_BNB)
             _bnb_lost = _size * abs(pnl) / 100.0
             sess["daily_loss"] = sess.get("daily_loss", 0) + _bnb_lost
-            print(f"📉 daily_loss updated: +{_bnb_lost:.4f} BNB (pnl={pnl:.1f}%) total={sess['daily_loss']:.4f}")
     
     # History save only for full sell
     if trade.get("sell_pct", 100.0) >= 100.0:
         if not isinstance(sess.get("pattern_database"), list):
             sess["pattern_database"] = []
-        lesson = {
-            "token":            trade.get("token_address", ""),
-            "entry_price":      trade.get("entry_price", 0),
-            "exit_price":       trade.get("exit_price", 0),
-            "pnl_pct":          pnl,
-            "win":              win,
-            "lesson":           trade.get("lesson", ""),
-            "timestamp":        datetime.utcnow().isoformat()
-        }
         sess["pattern_database"].append(lesson)
         sess["pattern_database"] = sess["pattern_database"][-100:]
     
