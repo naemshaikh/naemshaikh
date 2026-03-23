@@ -798,6 +798,23 @@ def _anti_mev_amount(base_bnb: float) -> float:
     jittered = round(base_bnb * (1 + noise), 5)
     return max(jittered, 0.001)
 
+
+# Fix #4: Dynamic gas estimate
+def _get_dynamic_gas_price() -> int:
+    try:
+        base = w3.eth.gas_price
+        return int(base * 1.1)  # 10% buffer for fast confirmation
+    except Exception:
+        return w3.to_wei(5, "gwei")
+
+# Fix #5: Sell slippage separate function
+def _anti_mev_slippage_sell(buy_tax: float = 0.0, sell_tax: float = 0.0) -> int:
+    """Higher slippage for sell to ensure execution"""
+    base = max(buy_tax + sell_tax + 5.0, 20.0)  # min 20%
+    noise = _random.uniform(0.5, 3.0)
+    return min(round(base + noise), 25)  # max 25%
+
+
 def _anti_mev_slippage(buy_tax: float = 0.0, sell_tax: float = 0.0) -> int:
     """
     Smart slippage calculation:
@@ -818,6 +835,26 @@ def _get_gas_price_fast() -> int:
         return int(gp * 1.2)
     except Exception:
         return w3.to_wei(5, "gwei")  # 5 gwei fallback (max speed)
+
+
+def _pre_approve_after_buy(token_addr):
+    """Fix #10: Pre-approve after successful buy"""
+    try:
+        time.sleep(2)
+        token_c = w3.eth.contract(address=Web3.to_checksum_address(token_addr), abi=ERC20_ABI_APPROVE)
+        wallet = w3.eth.account.from_key(REAL_PRIVATE_KEY).address
+        allowance = token_c.functions.allowance(wallet, PANCAKE_ROUTER).call()
+        if allowance < 2**256 - 1:
+            approve_tx = token_c.functions.approve(PANCAKE_ROUTER, 2**256 - 1).build_transaction({
+                "from": wallet, "gas": 100000,
+                "gasPrice": _get_dynamic_gas_price(),
+                "nonce": w3.eth.get_transaction_count(wallet, "pending")
+            })
+            signed = w3.eth.account.sign_transaction(approve_tx, REAL_PRIVATE_KEY)
+            w3.eth.send_raw_transaction(signed.rawTransaction)
+            print(f"✅ Pre-approved {token_addr[:10]}")
+    except Exception as e:
+        print(f"⚠️ Pre-approve error: {e}")
 
 def real_buy_token(token_address: str, bnb_amount: float,
                    buy_tax: float = 0.0, sell_tax: float = 0.0) -> dict:
@@ -906,7 +943,7 @@ def real_buy_token(token_address: str, bnb_amount: float,
 
         # Deadline: 60 sec
         deadline  = int(time.time()) + 60
-        nonce     = w3.eth.get_transaction_count(wallet)
+        nonce     = w3.eth.get_transaction_count(wallet, "pending")
         gas_price = _get_gas_price_fast()
 
         txn = router.functions.swapExactETHForTokensSupportingFeeOnTransferTokens(
@@ -961,10 +998,6 @@ def real_buy_token(token_address: str, bnb_amount: float,
 
 def real_sell_token(token_address: str, sell_pct: float = 100.0,
                     buy_tax: float = 0.0, sell_tax: float = 0.0) -> dict:
-    """
-    Real BSC sell transaction with anti-MEV slippage.
-    sell_pct: percentage of holdings to sell (25, 50, 100 etc)
-    """
     result = {"success": False, "tx_hash": "", "bnb_received": 0.0,
               "gas_used": 0, "error": ""}
 
@@ -980,36 +1013,33 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
         wbnb_cs  = Web3.to_checksum_address(WBNB)
         token_c  = w3.eth.contract(address=token_cs, abi=ERC20_ABI_APPROVE)
 
-        # Get token balance
         balance   = token_c.functions.balanceOf(wallet).call()
         sell_amt  = int(balance * sell_pct / 100)
         if sell_amt <= 0:
             result["error"] = "Zero balance"
             return result
 
-        # Check + set allowance
         allowance = token_c.functions.allowance(wallet, Web3.to_checksum_address(PANCAKE_ROUTER)).call()
         if allowance < sell_amt:
-            nonce_a = w3.eth.get_transaction_count(wallet)
+            nonce_a = w3.eth.get_transaction_count(wallet, "pending")
             approve_txn = token_c.functions.approve(
                 Web3.to_checksum_address(PANCAKE_ROUTER),
-                2**256 - 1  # max approval
+                2**256 - 1
             ).build_transaction({
                 "from": wallet, "gas": 100000,
-                "gasPrice": _get_gas_price_fast(),
+                "gasPrice": _get_dynamic_gas_price(),
                 "nonce": nonce_a, "chainId": 56
             })
             signed_a = w3.eth.account.sign_transaction(approve_txn, REAL_PRIVATE_KEY)
-            w3.eth.send_raw_transaction(signed_a.rawTransaction)
-            time.sleep(3)  # approval confirm ka wait
+            tx_hash_a = w3.eth.send_raw_transaction(signed_a.rawTransaction)
+            w3.eth.wait_for_transaction_receipt(tx_hash_a, timeout=30)
             print(f"✅ Approved token for sell")
 
-        # Slippage for sell
-        slippage_pct = _anti_mev_slippage(buy_tax, sell_tax)
+        slippage_pct = _anti_mev_slippage_sell(buy_tax, sell_tax)
         expected_bnb = router.functions.getAmountsOut(sell_amt, [token_cs, wbnb_cs]).call()
         min_bnb      = int(expected_bnb[1] * (1 - slippage_pct / 100))
         deadline     = int(time.time()) + 60
-        nonce        = w3.eth.get_transaction_count(wallet)
+        nonce        = w3.eth.get_transaction_count(wallet, "pending")
 
         txn = router.functions.swapExactTokensForETHSupportingFeeOnTransferTokens(
             sell_amt, min_bnb,
@@ -1017,7 +1047,7 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
             wallet, deadline
         ).build_transaction({
             "from": wallet, "gas": 300000,
-            "gasPrice": _get_gas_price_fast(),
+            "gasPrice": _get_dynamic_gas_price(),
             "nonce": nonce, "chainId": 56
         })
 
@@ -1030,10 +1060,21 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
             result["success"]      = True
             result["tx_hash"]      = tx_hash.hex()
             result["gas_used"]     = receipt["gasUsed"]
-            result["gas_price"]    = txn.get("gasPrice", 0)  # actual gas price wei
-            bnb_received           = min_bnb / 1e18
+            result["gas_price"]    = txn.get("gasPrice", 0)
+            
+            # Parse actual BNB received from logs
+            bnb_received = min_bnb / 1e18
+            for log in receipt["logs"]:
+                if log["address"].lower() == PANCAKE_ROUTER.lower():
+                    data = log["data"]
+                    if len(data) >= 130:
+                        raw_hex = data[2:]
+                        a0out = int(raw_hex[128:192], 16)
+                        a1out = int(raw_hex[192:256], 16)
+                        bnb_received = max(a0out, a1out) / 1e18
+                        break
             result["bnb_received"] = bnb_received
-            print(f"✅ REAL SELL confirmed: {tx_hash.hex()[:20]}...")
+            print(f"✅ REAL SELL confirmed: {tx_hash.hex()[:20]}... BNB received: {bnb_received:.6f}")
         else:
             result["error"] = "Sell reverted"
             _push_notif("critical", "🔴 Sell Reverted", f"Sell transaction reverted — position still open!", token_address[:10], token_address)
@@ -1048,18 +1089,6 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
             _push_notif("critical", "🔴 Sell Failed", f"{_sell_err}", token_address[:10], token_address)
 
     return result
-
-
-_mev_buy_count = 0
-
-# ══════════════════════════════════════════════
-# VOLUME PRESSURE CACHE — position manager ke liye
-# DexScreener se har 60s fetch, rate limit se bachne ke liye
-# ══════════════════════════════════════════════
-_vol_pressure_cache: dict = {}   # {addr: {"buys": N, "sells": N, "ts": float}}
-_vol_pressure_lock  = threading.Lock()
-VOL_CACHE_TTL       = 60  # seconds — har 60s mein fresh data
-
 def _get_vol_pressure(address: str) -> dict:
     """Buy/Sell pressure fetch karo — cached, 60s TTL, rate-limit safe"""
     now = time.time()
