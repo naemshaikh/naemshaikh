@@ -827,7 +827,7 @@ def _anti_mev_slippage(buy_tax: float = 0.0, sell_tax: float = 0.0) -> int:
     slippage = min(round(base + noise), 20)           # max 20%
     return int(slippage)
 
-def _get_gas_price_fast() -> int:
+def _get_dynamic_gas_price() -> int:
     """BSC fast gas price — 5 gwei default, higher = faster confirmation"""
     try:
         gp = w3.eth.gas_price
@@ -944,7 +944,7 @@ def real_buy_token(token_address: str, bnb_amount: float,
         # Deadline: 60 sec
         deadline  = int(time.time()) + 60
         nonce     = w3.eth.get_transaction_count(wallet, "pending")
-        gas_price = _get_gas_price_fast()
+        gas_price = _get_dynamic_gas_price()
 
         txn = router.functions.swapExactETHForTokensSupportingFeeOnTransferTokens(
             amount_out_min,
