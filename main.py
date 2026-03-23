@@ -2772,215 +2772,39 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     with monitor_lock:
         mon = monitored_positions.get(address, {})
 
-    entry   = pos.get("entry", 0)       # FIX: was entry_price
-    current = mon.get("current", entry)  # FIX: was sell_price
+    entry   = pos.get("entry", 0)
+    current = mon.get("current", entry)
     size    = pos.get("size_bnb", AUTO_BUY_SIZE_BNB)
-    token   = pos.get("token", address[:10])  # FIX: was token_name
-    bought_at_str = pos.get("bought_at", "")   # FIX: now correctly sourced
+    token   = pos.get("token", address[:10])
+    bought_at_str = pos.get("bought_at", "")
 
     if entry <= 0:
         return
 
     if current <= 0:
-        # Rug pull — price = 0, 100% loss force karo
-        # Skip mat karo — position close karni hai
         current = 0
         pnl_pct    = -100.0
         sell_size  = size * (sell_pct / 100.0)
-        pnl_bnb    = -sell_size   # full loss
+        pnl_bnb    = -sell_size
         return_bnb = 0.0
     else:
-        current = current * 0.995  # 0.5% sell slippage
+        current = current * 0.995
         pnl_pct    = ((current - entry) / entry) * 100
         sell_size  = size * (sell_pct / 100.0)
         pnl_bnb    = sell_size * (pnl_pct / 100.0)
         return_bnb = sell_size * (1 + pnl_pct / 100.0)
 
     sess = get_or_create_session(AUTO_SESSION_ID)
-    sess["paper_balance"] = round(sess.get("paper_balance", 5.0) + return_bnb, 6)
-    # FIX PNL: Sirf full sell (100%) pe total_pnl mein add karo
-    # Partial sells pe accumulation hoti thi — ek trade 4x count ho raha tha
-    if sell_pct >= 100.0:
-        auto_trade_stats["auto_pnl_total"] += pnl_pct
-    auto_trade_stats["total_auto_sells"] += 1
-
-    # Partial sell pe banked_pnl accumulate karo
-    _banked = pos.get("banked_pnl_bnb", 0.0)
-    pos["banked_pnl_bnb"] = round(_banked + pnl_bnb, 6)
-
-    # FIX 4: Save to trade_history — sirf 100% sell pe (partial sells skip)
-    if sell_pct >= 100.0:
-        if not isinstance(auto_trade_stats.get("trade_history"), list):
-            auto_trade_stats["trade_history"] = []
-        _bnb_at_sell = market_cache.get("bnb_price", 0)
-        _saved_bought_usd = auto_trade_stats["running_positions"].get(address, {}).get("bought_usd", 0)
-        _orig_sz = pos.get("orig_size_bnb", size)
-        _total_pnl_bnb_trade = round(pos.get("banked_pnl_bnb", 0.0), 6)
-        _total_pnl_pct_trade = round((_total_pnl_bnb_trade / _orig_sz * 100), 2) if _orig_sz > 0 else pnl_pct
-        _gas_bnb_sell = DataGuard.get_real_gas_bnb()
-        # ── Post-mortem ──
-        _buy_rsn = pos.get("buy_reasoning", {}) or {}
-        _assumption = _buy_rsn.get("assumption", "N/A")
-        _signals_used = _buy_rsn.get("signals", [])
-        if _total_pnl_pct_trade > 0:
-            _post_mortem = (f"WIN +{_total_pnl_pct_trade:.1f}% | Exit: {reason} | "f"Entry: {entry:.2e} BNB | ExitPrice: {current:.2e} BNB | "f"HoldTime: {round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds()/60, 1) if bought_at_str else 0:.0f}min | "f"Signals used: {', '.join(_signals_used[:3]) if _signals_used else 'checklist only'} | "f"BNB at sell: {market_cache.get('bnb_price', 0):.2f} | Mode: {TRADE_MODE}")
-        else:
-            _post_mortem = (f"LOSS {_total_pnl_pct_trade:.1f}% | Exit: {reason} | "f"Entry: {entry:.2e} BNB | ExitPrice: {current:.2e} BNB | "f"HoldTime: {round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds()/60, 1) if bought_at_str else 0:.0f}min | "f"Assumption: {_assumption[:80]} | "f"Signals used: {', '.join(_signals_used[:3]) if _signals_used else 'none'} | "f"BNB at sell: {market_cache.get('bnb_price', 0):.2f} | Mode: {TRADE_MODE}")
-        auto_trade_stats["trade_history"].append({
-            "token":        token,
-            "address":      address,
-            "entry":        entry,
-            "exit":         current,
-            "exit_price":   current,
-            "pnl_pct":      _total_pnl_pct_trade,
-            "pnl_bnb":      _total_pnl_bnb_trade,
-            "size_bnb":     _orig_sz,
-            "gas_bnb":      _gas_bnb_sell,
-            "bought_usd":   _saved_bought_usd if _saved_bought_usd else round(_orig_sz * _bnb_at_sell, 2),
-            "sold_usd":     round(max(0.0, (_saved_bought_usd / _bnb_at_sell if _bnb_at_sell > 0 else _orig_sz) + _total_pnl_bnb_trade) * _bnb_at_sell, 2) if _bnb_at_sell > 0 else 0,
-            "bought_at":    bought_at_str,
-            "sold_at":      datetime.utcnow().isoformat(),
-            "result":       "win" if _total_pnl_pct_trade > 0 else "loss",
-            "exit_reason":  reason,
-            "reason":       reason,
-            "mode":         pos.get("mode", TRADE_MODE),
-            "tp_events":    pos.get("tp_events", []),
-            "buy_reasoning":_buy_rsn,
-            "post_mortem":  _post_mortem,
-            "signals_used": _signals_used,
-            "snipe_source": _buy_rsn.get("source", "checklist"),
-            "snipe_strategy": _buy_rsn.get("strategy", "Normal_Checklist"),
-            # ATH + hold time
-            "ath_price":    monitored_positions.get(address, {}).get("high", current),
-            "ath_pct":      round((monitored_positions.get(address, {}).get("high", current) - entry) / entry * 100, 1) if entry > 0 else 0,
-            "hold_minutes": round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds() / 60, 1) if bought_at_str else 0,
-        })
-    if len(auto_trade_stats["trade_history"]) > 10000:
-        auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-10000:]
-    # ── Bot Decision — SELL log ──
-    if sell_pct >= 100.0:
-        try:
-            _hold_min  = round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds() / 60, 1) if bought_at_str else 0
-            _peak      = monitored_positions.get(address, {}).get("peak_price", current)
-            _left_pct  = round((_peak - current) / _peak * 100, 1) if _peak and _peak > 0 and current > 0 else 0
-            _exit_type = ("tp_hit" if ("TP" in reason or "Profit" in reason)
-                          else "sl_hit" if "SL" in reason
-                          else "rug"    if ("Rug" in reason or "Dump" in reason)
-                          else "manual")
-            _fg_sell   = market_cache.get("fear_greed", 50)
-            _mkt_sell  = "bullish" if _fg_sell >= 60 else ("bearish" if _fg_sell <= 35 else "neutral")
-            threading.Thread(target=_save_bot_decision, args=({
-                "token_address":      address,
-                "token_name":         token,
-                "decision":           "SELL",
-                "reason":             reason,
-                "thought":            _post_mortem,
-                "pnl_pct":            _total_pnl_pct_trade,
-                "exit_reason":        reason,
-                "exit_type":          _exit_type,
-                "hold_time_min":      _hold_min,
-                "peak_price":         _peak,
-                "left_on_table_pct":  _left_pct,
-                "entry_price":        entry,
-                "exit_price":         current,
-                "bnb_price_at_entry": market_cache.get("bnb_price", 0),
-                "fear_greed_at_entry":_fg_sell,
-                "market_condition":   _mkt_sell,
-                "token_type":         "meme",
-            },), daemon=True).start()
-        except Exception as _de:
-            print(f"⚠️ sell decision log error: {_de}")
-    # Supabase mein permanently save karo — background thread mein
-    threading.Thread(target=_save_trade_history_to_db, daemon=True).start()
-
-    # ── Auto-blacklist dev + token + record rug DNA if SL hit or rug dump ──
-    if "VolRug" in reason or "LP Burn" in reason or "LiqDrop" in reason or "Dump" in reason:
-        try:
-            _gp       = _get_goplus(address)
-            _creator  = _gp.get("creator_address", "")
-            _buy_tax  = float(_gp.get("buy_tax",  0) or 0)
-            _sell_tax = float(_gp.get("sell_tax", 0) or 0)
-            _liq_usd  = float(auto_trade_stats["running_positions"].get(address, pos).get("bought_usd", 0) or 0)
-            if _creator and len(_creator) == 42:
-                blacklist_dev(_creator, f"SL/Rug on {token} {reason}")
-            # Token blacklist — 24h
-            blacklist_token(address, f"{reason} pnl={pnl_pct:.0f}%")
-            # Rug DNA record
-            _record_rug_dna(address, _creator or "unknown", _buy_tax, _sell_tax, _liq_usd, reason=reason, pnl_pct=pnl_pct)
-        except Exception: pass
-
-    auto_trade_stats["last_action"] = f"SELL {sell_pct:.0f}% {token} PnL:{pnl_pct:+.1f}%"
-    if "SL" in reason or "Rug" in reason or "Dump" in reason:
-        _push_notif("warning", f"🟡 Stop Loss Hit", f"{token} | PnL: {pnl_pct:+.1f}% | Reason: {reason}", token, address)
-    elif pnl_pct >= 0:
-        _push_notif("success", f"🟢 Take Profit", f"{token} sold {sell_pct:.0f}% | PnL: {pnl_pct:+.1f}% | {reason}", token, address)
-    _emoji = "🟢" if pnl_pct >= 0 else "🔴"
-    _log("sell", token, f"{_emoji} SELL {sell_pct:.0f}% · PnL {pnl_pct:+.1f}% · {reason}", address)
-
-    if sell_pct >= 100.0:
-        auto_trade_stats["running_positions"].pop(address, None)
-        remove_position_from_monitor(address)
-        # Track wins/losses + today stats
-        _today_key = datetime.utcnow().strftime("%Y-%m-%d")
-        if auto_trade_stats.get("today_date") != _today_key:
-            auto_trade_stats["today_date"]   = _today_key
-            auto_trade_stats["today_wins"]   = 0
-            auto_trade_stats["today_losses"] = 0
-            auto_trade_stats["today_pnl"]    = 0.0
-        if pnl_pct >= 0:
-            auto_trade_stats["wins"]       = auto_trade_stats.get("wins", 0) + 1
-            auto_trade_stats["today_wins"] = auto_trade_stats.get("today_wins", 0) + 1
-        else:
-            auto_trade_stats["losses"]       = auto_trade_stats.get("losses", 0) + 1
-            auto_trade_stats["today_losses"] = auto_trade_stats.get("today_losses", 0) + 1
-        auto_trade_stats["today_pnl"] = round(auto_trade_stats.get("today_pnl", 0.0) + pnl_bnb, 4)
-        _persist_positions()  # ✅ FIX: full sell ke baad baki positions save (with tp_sold)
-
-        log_trade_internal(AUTO_SESSION_ID, {
-            "token_address": address,
-            "entry_price":   entry,
-            "exit_price":    current,
-            "pnl_pct":       pnl_pct,
-            "win":           pnl_pct > 0,
-            "lesson":        f"Auto: {reason} | PnL:{pnl_pct:+.1f}%",
-        })
-        sess["positions"] = [p for p in sess.get("positions", []) if p.get("address") != address]
-    else:
-        if not isinstance(sess.get("positions"), list):
-            sess["positions"] = []
-        pos["size_bnb"]       = size * (1 - sell_pct / 100.0)
-        pos["tp_sold"]        = pos.get("tp_sold", 0) + sell_pct
-        pos["banked_pnl_bnb"] = round(pos.get("banked_pnl_bnb", 0.0) + pnl_bnb, 6)  # ✅ accumulate
-        # ✅ Store real TP sell events for frontend display
-        _bnb_at_tp = market_cache.get("bnb_price", 0) or market_cache.get("last_bnb_price", 660)  # fallback 660 if cache empty
-        _gas_bnb   = DataGuard.get_real_gas_bnb()  # real BSC gas price
-        if not isinstance(pos.get("tp_events"), list):
-            pos["tp_events"] = []
-        if len(pos.get("tp_events", [])) >= 4:
-            pos["tp_events"] = pos["tp_events"][-4:]
-        pos["tp_events"].append({
-            "label":       reason,             # e.g. "TP+50%"
-            "sell_pct":    sell_pct,           # % sold this time
-            "exit_price":  round(current, 12), # real exit price in BNB
-            "exit_usd":    round(current * _bnb_at_tp, 10),  # real exit price in USD
-            "sell_bnb":    round(sell_size, 6),
-            "sell_usd":    round(max(0, return_bnb) * _bnb_at_tp, 2),
-            "pnl_bnb":     round(pnl_bnb, 6),
-            "pnl_pct":     round(pnl_pct, 2),
-            "gas_bnb":     _gas_bnb,
-            "gas_usd":     round(_gas_bnb * _bnb_at_tp, 3),
-            "tokens_sold": round(sell_size / current, 0) if current > 0 else 0,
-            "sold_at":     datetime.utcnow().isoformat(),
-        })
-        _persist_positions()  # ✅ FIX: tp_sold + new size_bnb Supabase mein save
-
-    # ── REAL SELL execution ──
+    
+    # ========== FIX #7: REAL SELL PEHLE ==========
+    real_sell_success = False
+    real_sell_result = None
+    
     if TRADE_MODE == "real":
         _buy_tax_s  = float(pos.get("buy_tax",  0) or 0)
         _sell_tax_s = float(pos.get("sell_tax", 0) or 0)
         _source     = pos.get("source", "")
-
-        # FM Bonding Curve token — check karo graduated hua ya nahi
+        
         if _source == "FM_BC":
             _fm_factory = pos.get("fm_factory", _FM_FACTORY_ADDR)
             _w3_sell    = _get_w3q() or _fm_get_w3()
@@ -2990,602 +2814,219 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                     _info_sell = _fm_get_token_info(address, _w3_sell)
                     _graduated = _info_sell.get("liquidityAdded", False) if _info_sell else False
                 except: pass
-
+            
             if not _graduated:
-                # Still on bonding curve → FM sellToken()
-                print(f"🎓 [FM] Selling via bonding curve: {address[:10]}")
                 _real_sell = _fm_real_sell_bc(address, sell_pct, _fm_factory, _w3_sell)
             else:
-                # Graduated → PancakeSwap
-                print(f"🎓 [FM] Token graduated → PancakeSwap sell: {address[:10]}")
                 _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
         else:
             _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
-
-        # ── RETRY LOOP — 3 attempts, no sleep ──
-        if not _real_sell.get("success"):
-            _sell_err = _real_sell.get('error', '?')
-            print(f"⚠️ REAL SELL attempt 1 failed: {_sell_err} — retrying...")
-            for _retry in range(2, 4):
-                try:
-                    _w3r = _get_w3q() or _fm_get_w3()
-                    _source_r = pos.get("source", pos.get("buy_reasoning", {}).get("source", ""))
-                    if "FM_BC" in _source_r:
-                        _fm_factory_r = pos.get("fm_factory", _FM_FACTORY_ADDR)
-                        _real_sell = _fm_real_sell_bc(address, sell_pct, _fm_factory_r, _w3r)
-                    else:
-                        _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
-                    if _real_sell.get("success"):
-                        print(f"✅ REAL SELL success on attempt {_retry}")
-                        break
-                    else:
-                        _sell_err = _real_sell.get('error', '?')
-                        print(f"⚠️ REAL SELL attempt {_retry} failed: {_sell_err}")
-                except Exception as _re:
-                    _sell_err = str(_re)[:60]
-                    print(f"⚠️ REAL SELL attempt {_retry} exception: {_sell_err}")
-
-        if not _real_sell.get("success"):
-            _sell_err = _real_sell.get('error', '?')
-            print(f"🚨 REAL SELL FAILED 3/3 — POSITION RESTORED: {_sell_err}")
-            _push_notif("critical", "🚨 MANUAL SELL REQUIRED",
-                f"{token_name} — 3 tries fail! Error: {_sell_err[:80]} | WALLET PE TOKEN HAI — MANUALLY SELL KARO!",
-                token_name, address)
-            auto_trade_stats["running_positions"][address] = pos
-            auto_trade_stats["total_auto_sells"] = max(0, auto_trade_stats["total_auto_sells"] - 1)
-            _th = auto_trade_stats.get("trade_history", [])
-            if _th and _th[-1].get("address") == address:
-                auto_trade_stats["trade_history"] = _th[:-1]
-            _sess_r = get_or_create_session(AUTO_SESSION_ID)
-            _sess_r["paper_balance"] = round(_sess_r.get("paper_balance", 0) - return_bnb, 6)
-            add_position_to_monitor(AUTO_SESSION_ID, address, token_name,
-                pos.get("entry", 0), pos.get("size_bnb", AUTO_BUY_SIZE_BNB),
-                stop_loss_pct=pos.get("sl_pct", 12.0))
-            return
+        
+        if _real_sell.get("success"):
+            real_sell_success = True
+            real_sell_result = _real_sell
         else:
-            print(f"✅ REAL SELL: tx={_real_sell.get('tx_hash','')[:20]} BNB={_real_sell.get('bnb_received',0):.4f}")
-            _actual_gas_used = _real_sell.get("gas_used", 0)
-            _gas_price_wei   = _real_sell.get("gas_price", 0)
+            print(f"❌ REAL SELL FAILED — paper state NOT updated: {_real_sell.get('error', '?')}")
+            _push_notif("critical", "🔴 Sell Failed", 
+                       f"Real sell failed: {_real_sell.get('error','?')} — position still open", token, address)
+            return  # Early exit — state unchanged
+    
+    # ========== AB PAPER STATE UPDATE (agar real success ya paper mode) ==========
+    if TRADE_MODE != "real" or real_sell_success:
+        sess["paper_balance"] = round(sess.get("paper_balance", 5.0) + return_bnb, 6)
+        
+        if sell_pct >= 100.0:
+            auto_trade_stats["auto_pnl_total"] += pnl_pct
+        auto_trade_stats["total_auto_sells"] += 1
+        
+        _banked = pos.get("banked_pnl_bnb", 0.0)
+        pos["banked_pnl_bnb"] = round(_banked + pnl_bnb, 6)
+        
+        if sell_pct >= 100.0:
+            if not isinstance(auto_trade_stats.get("trade_history"), list):
+                auto_trade_stats["trade_history"] = []
+            _bnb_at_sell = market_cache.get("bnb_price", 0)
+            _saved_bought_usd = auto_trade_stats["running_positions"].get(address, {}).get("bought_usd", 0)
+            _orig_sz = pos.get("orig_size_bnb", size)
+            _total_pnl_bnb_trade = round(pos.get("banked_pnl_bnb", 0.0), 6)
+            _total_pnl_pct_trade = round((_total_pnl_bnb_trade / _orig_sz * 100), 2) if _orig_sz > 0 else pnl_pct
+            _gas_bnb_sell = DataGuard.get_real_gas_bnb()
+            
+            _buy_rsn = pos.get("buy_reasoning", {}) or {}
+            _assumption = _buy_rsn.get("assumption", "N/A")
+            _signals_used = _buy_rsn.get("signals", [])
+            if _total_pnl_pct_trade > 0:
+                _post_mortem = (f"WIN +{_total_pnl_pct_trade:.1f}% | Exit: {reason} | "f"Entry: {entry:.2e} BNB | ExitPrice: {current:.2e} BNB | "f"HoldTime: {round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds()/60, 1) if bought_at_str else 0:.0f}min | "f"Signals used: {', '.join(_signals_used[:3]) if _signals_used else 'checklist only'} | "f"BNB at sell: {market_cache.get('bnb_price', 0):.2f} | Mode: {TRADE_MODE}")
+            else:
+                _post_mortem = (f"LOSS {_total_pnl_pct_trade:.1f}% | Exit: {reason} | "f"Entry: {entry:.2e} BNB | ExitPrice: {current:.2e} BNB | "f"HoldTime: {round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds()/60, 1) if bought_at_str else 0:.0f}min | "f"Assumption: {_assumption[:80]} | "f"Signals used: {', '.join(_signals_used[:3]) if _signals_used else 'none'} | "f"BNB at sell: {market_cache.get('bnb_price', 0):.2f} | Mode: {TRADE_MODE}")
+            auto_trade_stats["trade_history"].append({
+                "token":        token,
+                "address":      address,
+                "entry":        entry,
+                "exit":         current,
+                "exit_price":   current,
+                "pnl_pct":      _total_pnl_pct_trade,
+                "pnl_bnb":      _total_pnl_bnb_trade,
+                "size_bnb":     _orig_sz,
+                "gas_bnb":      _gas_bnb_sell,
+                "bought_usd":   _saved_bought_usd if _saved_bought_usd else round(_orig_sz * _bnb_at_sell, 2),
+                "sold_usd":     round(max(0.0, (_saved_bought_usd / _bnb_at_sell if _bnb_at_sell > 0 else _orig_sz) + _total_pnl_bnb_trade) * _bnb_at_sell, 2) if _bnb_at_sell > 0 else 0,
+                "bought_at":    bought_at_str,
+                "sold_at":      datetime.utcnow().isoformat(),
+                "result":       "win" if _total_pnl_pct_trade > 0 else "loss",
+                "exit_reason":  reason,
+                "reason":       reason,
+                "mode":         pos.get("mode", TRADE_MODE),
+                "tp_events":    pos.get("tp_events", []),
+                "buy_reasoning":_buy_rsn,
+                "post_mortem":  _post_mortem,
+                "signals_used": _signals_used,
+                "snipe_source": _buy_rsn.get("source", "checklist"),
+                "snipe_strategy": _buy_rsn.get("strategy", "Normal_Checklist"),
+                "ath_price":    monitored_positions.get(address, {}).get("high", current),
+                "ath_pct":      round((monitored_positions.get(address, {}).get("high", current) - entry) / entry * 100, 1) if entry > 0 else 0,
+                "hold_minutes": round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds() / 60, 1) if bought_at_str else 0,
+            })
+        if len(auto_trade_stats["trade_history"]) > 10000:
+            auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-10000:]
+        
+        if sell_pct >= 100.0:
+            try:
+                _hold_min  = round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds() / 60, 1) if bought_at_str else 0
+                _peak      = monitored_positions.get(address, {}).get("peak_price", current)
+                _left_pct  = round((_peak - current) / _peak * 100, 1) if _peak and _peak > 0 and current > 0 else 0
+                _exit_type = ("tp_hit" if ("TP" in reason or "Profit" in reason)
+                              else "sl_hit" if "SL" in reason
+                              else "rug"    if ("Rug" in reason or "Dump" in reason)
+                              else "manual")
+                _fg_sell   = market_cache.get("fear_greed", 50)
+                _mkt_sell  = "bullish" if _fg_sell >= 60 else ("bearish" if _fg_sell <= 35 else "neutral")
+                threading.Thread(target=_save_bot_decision, args=({
+                    "token_address":      address,
+                    "token_name":         token,
+                    "decision":           "SELL",
+                    "reason":             reason,
+                    "thought":            _post_mortem,
+                    "pnl_pct":            _total_pnl_pct_trade,
+                    "exit_reason":        reason,
+                    "exit_type":          _exit_type,
+                    "hold_time_min":      _hold_min,
+                    "peak_price":         _peak,
+                    "left_on_table_pct":  _left_pct,
+                    "entry_price":        entry,
+                    "exit_price":         current,
+                    "bnb_price_at_entry": market_cache.get("bnb_price", 0),
+                    "fear_greed_at_entry":_fg_sell,
+                    "market_condition":   _mkt_sell,
+                    "token_type":         "meme",
+                },), daemon=True).start()
+            except Exception as _de:
+                print(f"⚠️ sell decision log error: {_de}")
+        
+        threading.Thread(target=_save_trade_history_to_db, daemon=True).start()
+        
+        if "VolRug" in reason or "LP Burn" in reason or "LiqDrop" in reason or "Dump" in reason:
+            try:
+                _gp       = _get_goplus(address)
+                _creator  = _gp.get("creator_address", "")
+                _buy_tax  = float(_gp.get("buy_tax",  0) or 0)
+                _sell_tax = float(_gp.get("sell_tax", 0) or 0)
+                _liq_usd  = float(auto_trade_stats["running_positions"].get(address, pos).get("bought_usd", 0) or 0)
+                if _creator and len(_creator) == 42:
+                    blacklist_dev(_creator, f"SL/Rug on {token} {reason}")
+                blacklist_token(address, f"{reason} pnl={pnl_pct:.0f}%")
+                _record_rug_dna(address, _creator or "unknown", _buy_tax, _sell_tax, _liq_usd, reason=reason, pnl_pct=pnl_pct)
+            except Exception: pass
+        
+        auto_trade_stats["last_action"] = f"SELL {sell_pct:.0f}% {token} PnL:{pnl_pct:+.1f}%"
+        if "SL" in reason or "Rug" in reason or "Dump" in reason:
+            _push_notif("warning", f"🟡 Stop Loss Hit", f"{token} | PnL: {pnl_pct:+.1f}% | Reason: {reason}", token, address)
+        elif pnl_pct >= 0:
+            _push_notif("success", f"🟢 Take Profit", f"{token} sold {sell_pct:.0f}% | PnL: {pnl_pct:+.1f}% | {reason}", token, address)
+        _emoji = "🟢" if pnl_pct >= 0 else "🔴"
+        _log("sell", token, f"{_emoji} SELL {sell_pct:.0f}% · PnL {pnl_pct:+.1f}% · {reason}", address)
+        
+        if sell_pct >= 100.0:
+            auto_trade_stats["running_positions"].pop(address, None)
+            remove_position_from_monitor(address)
+            _today_key = datetime.utcnow().strftime("%Y-%m-%d")
+            if auto_trade_stats.get("today_date") != _today_key:
+                auto_trade_stats["today_date"]   = _today_key
+                auto_trade_stats["today_wins"]   = 0
+                auto_trade_stats["today_losses"] = 0
+                auto_trade_stats["today_pnl"]    = 0.0
+            if pnl_pct >= 0:
+                auto_trade_stats["wins"]       = auto_trade_stats.get("wins", 0) + 1
+                auto_trade_stats["today_wins"] = auto_trade_stats.get("today_wins", 0) + 1
+            else:
+                auto_trade_stats["losses"]       = auto_trade_stats.get("losses", 0) + 1
+                auto_trade_stats["today_losses"] = auto_trade_stats.get("today_losses", 0) + 1
+            auto_trade_stats["today_pnl"] = round(auto_trade_stats.get("today_pnl", 0.0) + pnl_bnb, 4)
+            _persist_positions()
+            log_trade_internal(AUTO_SESSION_ID, {
+                "token_address": address,
+                "entry_price":   entry,
+                "exit_price":    current,
+                "pnl_pct":       pnl_pct,
+                "win":           pnl_pct > 0,
+                "lesson":        f"Auto: {reason} | PnL:{pnl_pct:+.1f}%",
+            })
+            sess["positions"] = [p for p in sess.get("positions", []) if p.get("address") != address]
+        else:
+            if not isinstance(sess.get("positions"), list):
+                sess["positions"] = []
+            pos["size_bnb"]       = size * (1 - sell_pct / 100.0)
+            pos["tp_sold"]        = pos.get("tp_sold", 0) + sell_pct
+            pos["banked_pnl_bnb"] = round(pos.get("banked_pnl_bnb", 0.0) + pnl_bnb, 6)
+            _bnb_at_tp = market_cache.get("bnb_price", 0) or market_cache.get("last_bnb_price", 660)
+            _gas_bnb   = DataGuard.get_real_gas_bnb()
+            if not isinstance(pos.get("tp_events"), list):
+                pos["tp_events"] = []
+            if len(pos.get("tp_events", [])) >= 4:
+                pos["tp_events"] = pos["tp_events"][-4:]
+            pos["tp_events"].append({
+                "label":       reason,
+                "sell_pct":    sell_pct,
+                "exit_price":  round(current, 12),
+                "exit_usd":    round(current * _bnb_at_tp, 10),
+                "sell_bnb":    round(sell_size, 6),
+                "sell_usd":    round(max(0, return_bnb) * _bnb_at_tp, 2),
+                "pnl_bnb":     round(pnl_bnb, 6),
+                "pnl_pct":     round(pnl_pct, 2),
+                "gas_bnb":     _gas_bnb,
+                "gas_usd":     round(_gas_bnb * _bnb_at_tp, 3),
+                "tokens_sold": round(sell_size / current, 0) if current > 0 else 0,
+                "sold_at":     datetime.utcnow().isoformat(),
+            })
+            _persist_positions()
+        
+        if TRADE_MODE == "real" and real_sell_success:
+            _actual_gas_used = real_sell_result.get("gas_used", 0)
+            _gas_price_wei   = real_sell_result.get("gas_price", 0)
             if _actual_gas_used and _gas_price_wei:
                 _actual_gas_bnb = (_actual_gas_used * _gas_price_wei) / 1e18
                 _actual_gas_usd = round(_actual_gas_bnb * market_cache.get("bnb_price", 0), 4)
                 if pos.get("tp_events"):
                     pos["tp_events"][-1]["gas_bnb"] = round(_actual_gas_bnb, 8)
                     pos["tp_events"][-1]["gas_usd"]  = _actual_gas_usd
-                    pos["tp_events"][-1]["tx_hash"]  = _real_sell.get("tx_hash", "")[:20]
+                    pos["tp_events"][-1]["tx_hash"]  = real_sell_result.get("tx_hash", "")[:20]
                     _persist_positions()
-
-    print(f"AUTO SELL {sell_pct:.0f}%: {address[:10]} PnL:{pnl_pct:+.1f}% [{reason}]")
-    # ✅ Paper balance Supabase mein save karo — restart pe balance reset na ho
-    threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
-    # ✅ Full sell → swap monitor se unregister + learn from trade
-    if sell_pct >= 100:
-        _unregister_position_pair(address)
-        # Background mein early buyers ke whale stats update karo
-        _bought_at = pos.get("bought_at", "")
-        try:
-            _entry_ts = datetime.fromisoformat(_bought_at).timestamp() if _bought_at else time.time() - 3600
-        except Exception:
-            _entry_ts = time.time() - 3600
-        threading.Thread(
-            target=_learn_from_trade,
-            args=(address, pnl_pct >= 0, pnl_pct, _entry_ts),
-            daemon=True
-        ).start()
-
-# ========== AUTO POSITION MANAGER ==========
-def auto_position_manager():
-    print("Auto Position Manager started!")
-    # FIX v6: Startup pe stale daily_loss reset karo
-    try:
-        _s = get_or_create_session(AUTO_SESSION_ID)
-        _dl = _s.get("daily_loss", 0)
-        _today = datetime.utcnow().strftime("%Y-%m-%d")
-        if _dl > 1.0 or _s.get("daily_loss_date", "") != _today:
-            print(f"🔄 Startup: daily_loss={_dl:.4f} → 0 (new day or stale)")
-            _s["daily_loss"] = 0.0
-            _s["daily_loss_date"] = _today
-    except Exception as _e:
-        print(f"⚠️ Startup reset error: {_e}")
-    # BUG FIX 1: trade_history guard — restart pe crash hota tha
-    if not isinstance(auto_trade_stats.get("trade_history"), list):
-        auto_trade_stats["trade_history"] = []
-    while True:
-        for addr, pos in list(auto_trade_stats["running_positions"].items()):
+        
+        print(f"AUTO SELL {sell_pct:.0f}%: {address[:10]} PnL:{pnl_pct:+.1f}% [{reason}]")
+        threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
+        
+        if sell_pct >= 100:
+            _unregister_position_pair(address)
+            _bought_at = pos.get("bought_at", "")
             try:
-                with monitor_lock:
-                    mon = monitored_positions.get(addr, {})
-                current = mon.get("current", 0)
-                _pos_data = auto_trade_stats["running_positions"].get(addr, pos)  # FIX4
-                entry   = _pos_data.get("entry", 0)
-                high    = mon.get("high", entry)
-                tp_sold = _pos_data.get("tp_sold", 0.0)  # FIX4
-                sl_pct  = _pos_data.get("sl_pct", 12.0)  # FIX4
-                if entry <= 0:
-                    continue
-
-                # ── RUG DETECTION: price = 0 → liquidity removed ──
-                # current=0 matlab liquidity pull ho gayi — rug confirmed
-                # Counter track karo — 3 consecutive zeros = force close
-                if current <= 0:
-                    _zero_count = _pos_data.get("_zero_price_count", 0) + 1
-                    _pos_data["_zero_price_count"] = _zero_count
-                    print(f"⚠️ Price=0: {addr[:10]} count={_zero_count}/3")
-                    if _zero_count >= 3:
-                        # 3 baar price 0 aaya = rug confirmed = force close
-                        print(f"🚨 RUG: {addr[:10]} price=0 x3 → force close")
-                        _auto_paper_sell(addr, "🚨 RUG price=0", 100.0)
-                    continue
-                else:
-                    _pos_data["_zero_price_count"] = 0  # reset on valid price
-                pnl     = ((current - entry) / entry) * 100
-                drop_hi = ((current - high) / high) * 100 if high > 0 else 0
-                _cs   = CHECKLIST_SETTINGS
-                _tp1  = _cs.get("tp1_pct", 30.0)
-                _tp2  = _cs.get("tp2_pct", 50.0)
-                _tp3  = _cs.get("tp3_pct", 100.0)
-                _tp4  = _cs.get("tp4_pct", 200.0)
-
-                # ══════════════════════════════════════════════════════
-                # STOP LOSS SYSTEM
-                # PRIMARY:  Volume based — on-chain sell pressure detect
-                # BACKUP:   Fixed trailing — agar volume data na aaye
-                #
-                # Fixed trailing SL levels (profit → SL locked at):
-                #   Entry      →  -20% (rug protection)
-                #   +40%       →   0%  (breakeven)
-                #   +80%       →  +40%
-                #   +100%      →  +60%
-                #   +200%      → +120%
-                #   +300%      → +180%
-                #   +400%      → +240%
-                #   +500%      → +300%
-                #   +700%      → +420%
-                #   +1000%     → +600%
-                #   +2000%     → +1200%
-                #   +5000%     → +3000%
-                #   +10000%    → +6000%
-                # ══════════════════════════════════════════════════════
-
-                # ── Volume Data ──
-                _vol      = _get_vol_pressure_rt(addr)
-                _bv5      = _vol.get("buy_vol5",  0.0)
-                _sv5      = _vol.get("sell_vol5", 0.0)
-                _b5       = _vol.get("buys5",     0)
-                _s5       = _vol.get("sells5",    0)
-                _has_vol  = (_bv5 > 0 or _sv5 > 0 or _b5 > 0 or _s5 > 0)
-                _vol_src  = _vol.get("source", "?")
-
-                _trail_triggered = False
-
-                # ── LP BURN CHECK — Highest priority (WSS millisecond) ──
-                with _lp_burn_lock:
-                    _burn_detected = addr.lower() in _lp_burn_alerts
-                if _burn_detected:
-                    print(f"🚨 LP Burn confirmed sell: {addr[:10]}")
-                    _auto_paper_sell(addr, "LP Burn 🚨 Rug Confirmed", 100.0)
-                    with _lp_burn_lock:
-                        _lp_burn_alerts.discard(addr.lower())
-                    continue
-
-                # ── BACKUP: RESERVES SUDDEN DROP ──
-                # Har 3s mein pair ka WBNB reserve check karo
-                # 50%+ sudden drop = LP pull = instant sell
-                # Yeh price movement se independent hai — genuine tokens safe
-                _now_t = time.time()
-                _last_res_t = _pos_data.get("_last_res_t", 0)
-                if _now_t - _last_res_t >= 3:
-                    _pos_data["_last_res_t"] = _now_t
-                    try:
-                        _pair_addr = _get_pair_for_token(addr)
-                        if _pair_addr:
-                            _pc = w3.eth.contract(
-                                address=Web3.to_checksum_address(_pair_addr),
-                                abi=PAIR_ABI_PRICE
-                            )
-                            _res = _pc.functions.getReserves().call()
-                            _t0  = _pc.functions.token0().call().lower()
-                            # WBNB reserve nikalo
-                            _wbnb_res = _res[0] if _t0 == WBNB.lower() else _res[1]
-                            _wbnb_bnb = _wbnb_res / 1e18
-                            # Pehli reading save karo
-                            _prev_wbnb = _pos_data.get("_wbnb_reserve", 0)
-                            if _prev_wbnb <= 0:
-                                _pos_data["_wbnb_reserve"] = _wbnb_bnb
-                            else:
-                                # Drop calculate karo
-                                _drop_pct = ((_wbnb_bnb - _prev_wbnb) / _prev_wbnb) * 100
-                                if _drop_pct <= -50:
-                                    # 50%+ WBNB reserve drop = LP pull = SELL NOW
-                                    print(f"🚨 RESERVES DROP: {addr[:10]} WBNB {_prev_wbnb:.3f}→{_wbnb_bnb:.3f} ({_drop_pct:.0f}%) → SELL!")
-                                    _auto_paper_sell(addr, f"LiqDrop {abs(_drop_pct):.0f}% 🚨 Rug", 100.0)
-                                    continue
-                                elif _wbnb_bnb > _prev_wbnb:
-                                    # Reserve badha = LP add = update baseline
-                                    _pos_data["_wbnb_reserve"] = _wbnb_bnb
-                    except Exception as _re:
-                        pass  # RPC fail = skip, next cycle mein retry
-
-                # ── PRIMARY: Volume SL ──
-                if _has_vol:
-                    if _bv5 > 0 or _sv5 > 0:
-                        _ratio = _sv5 / max(_bv5, 0.0001)
-                    else:
-                        _ratio = _s5 / max(_b5, 1)
-
-                    # Confirmed rug — instant exit
-                    if _ratio >= 5.0 and _s5 >= 5 and pnl <= -8:
-                        _auto_paper_sell(addr, f"VolRug {_ratio:.1f}x 🚨", 100.0)
-                        print(f"🚨 VolRug: {addr[:10]} ratio={_ratio:.1f}x sv={_sv5:.3f} bv={_bv5:.3f}")
-                        _trail_triggered = True
-
-                    # Dump shuru — exit
-                    elif _ratio >= 3.0 and _s5 >= 5 and pnl <= -10:
-                        _auto_paper_sell(addr, f"VolDump {_ratio:.1f}x", 100.0)
-                        print(f"⚠️ VolDump: {addr[:10]} ratio={_ratio:.1f}x pnl={pnl:.1f}%")
-                        _trail_triggered = True
-
-                # ── BACKUP: Fixed Trailing SL ──
-                if not _trail_triggered:
-                    # SL level = locked profit based on current pnl high
-                    # drop_hi = current drop from all-time high of this position
-                    _trail_pct = _pos_data.get("trail_pct", 20.0)
-
-                    # ── Fixed Trailing: SL locks at ~60% of peak profit ──
-                    # +40%   → SL  0% (breakeven)
-                    # +80%   → SL +40%
-                    # +100%  → SL +60%
-                    # +200%  → SL +120%
-                    # +300%  → SL +180%
-                    # +500%  → SL +300%
-                    # +1000% → SL +600%
-                    # +5000% → SL +3000%
-                    # +10000%→ SL +6000%
-                    # Formula: sl_locked = pnl_high * 0.6  (for pnl >= 40%)
-                    #          trail_pct stays 20% always
-                    # "high se 20% girne pe sell" — but SL floor = pnl_high * 0.6
-
-                    _pnl_high = _pos_data.get("pnl_high", 0.0)
-                    if pnl > _pnl_high:
-                        _pos_data["pnl_high"] = pnl
-                        _pnl_high = pnl
-
-                    # SL floor calculate karo pehle
-                    # FM BC positions = sl_pct 20%, PC = 12%
-                    _entry_sl  = _pos_data.get("sl_pct", 12.0)
-                    _sl_floor  = (_pnl_high * 0.7) if _pnl_high >= 30 else -_entry_sl
-
-                    # ══════════════════════════════════════════════════════
-                    # PRO LADDER pehle → THEN TrailSL — ek hi chain mein
-                    # +40%  → 50% sell → capital ~71% recover
-                    # +80%  → 25% sell → total 75% out
-                    # +150% → 15% sell → total 90% out
-                    # TrailSL → sirf tab fire hoga jab ProTP nahi hua
-                    # ══════════════════════════════════════════════════════
-                    if pnl >= 200 and tp_sold < 90:
-                        _auto_paper_sell(addr, f"ProTP +200% [90% banked] 🌙", 15.0)
-                        print(f"🌙 ProTP200: {addr[:10]} pnl={pnl:.1f}% tp_sold={tp_sold:.0f}%")
-                    elif pnl >= 120 and tp_sold < 75:
-                        _auto_paper_sell(addr, f"ProTP +120% [75% banked] 💰", 25.0)
-                        print(f"💰 ProTP120: {addr[:10]} pnl={pnl:.1f}% tp_sold={tp_sold:.0f}%")
-                    elif pnl >= 40 and tp_sold < 50:
-                        _auto_paper_sell(addr, f"ProTP +40% [50% banked] 🔒", 50.0)
-                        print(f"🔒 ProTP40: {addr[:10]} pnl={pnl:.1f}%")
-                    elif pnl <= _sl_floor and _pnl_high >= 40:
-                        _auto_paper_sell(addr, f"TrailSL locked +{_sl_floor:.0f}% {'(vol fallback)' if not _has_vol else ''}", 100.0)
-                        _trail_triggered = True
-                        print(f"🔒 TrailSL: {addr[:10]} pnl={pnl:.1f}% floor={_sl_floor:.0f}% peak={_pnl_high:.0f}%")
-                    elif drop_hi <= -_entry_sl:
-                        _auto_paper_sell(addr, f"TrailSL -{_entry_sl:.0f}% entry {'(vol fallback)' if not _has_vol else ''}", 100.0)
-                        _trail_triggered = True
-                        blacklist_token(addr, f"TrailSL -{_entry_sl:.0f}% rebuy block")
-                        print(f"🔒 TrailSL entry: {addr[:10]} drop={drop_hi:.1f}% sl={_entry_sl:.0f}%")
-
-                    # ── TRAILING TAKE PROFIT (GMGN style) ──
-                    # TP hit hone ke baad price aur upar bhi ja sakta hai
-                    # Abhi: TP hit → 25% sell → price 10x ho jaaye → miss
-                    # Trailing TP: TP hit → high track karo → high se 20% gire → sell rest
-                    # ══ LADDERED SELLS — pro standard ══
-                    # 2x/5x/10x pe guaranteed profit lock
-                    # Har milestone pe 20-25% sell → principal safe
-                    # Baaki hold → moonshot ka chance bhi
-
-                    # TrailTP check — TP4+ ke baad active hota hai
-                    elif _pos_data.get("trail_tp_active") and drop_hi <= -_pos_data.get("trail_tp_pct", 20.0):
-                        _ttp = _pos_data.get("trail_tp_pct", 20.0)
-                        _auto_paper_sell(addr, f"TrailTP -{_ttp:.0f}% from high 🎯", 100.0)
-                        print(f"🎯 TrailTP exit: {addr[:10]} drop={drop_hi:.1f}%")
-
-                    # ══════════════════════════════════════
-                    # LADDERED SELLS — Full moonshot plan
-                    # Har level pe sirf 10-15% sell karo
-                    # Zyada position hold = zyada moonshot profit
-                    #
-                    # Position remaining after all levels:
-                    # 2x→90%, 3x→80%, 5x→65%, 10x→50%,
-                    # 20x→35%, 50x→20%, 100x→10% still riding!
-                    # ══════════════════════════════════════
-
-                    # TrailTP — extreme levels ke baad activate hota hai
-                    elif _pos_data.get("trail_tp_active") and drop_hi <= -_pos_data.get("trail_tp_pct", 20.0):
-                        _ttp = _pos_data.get("trail_tp_pct", 20.0)
-                        _auto_paper_sell(addr, f"TrailTP -{_ttp:.0f}% from high 🎯", 100.0)
-                        print(f"🎯 TrailTP exit: {addr[:10]} drop={drop_hi:.1f}%")
-
-                    # 100x = +9900% 🌙 — sirf 10% sell, 90% still riding!
-                    elif pnl >= 9900 and tp_sold < 90:
-                        _auto_paper_sell(addr, "Ladder 100x 🌙", 10.0)
-                        _pos_data["trail_tp_pct"] = 10.0   # tight 10% — itna upar gaya toh protect karo
-                        print(f"🌙 100x LADDER: {addr[:10]} @ +{pnl:.0f}%")
-
-                    # 50x = +4900% 🌟
-                    elif pnl >= 4900 and tp_sold < 80:
-                        _auto_paper_sell(addr, "Ladder 50x 🌟", 15.0)
-                        _pos_data["trail_tp_pct"] = 12.0
-                        print(f"🌟 50x LADDER: {addr[:10]} @ +{pnl:.0f}%")
-
-                    # 20x = +1900% 💎
-                    elif pnl >= 1900 and tp_sold < 65:
-                        _auto_paper_sell(addr, "Ladder 20x 💎", 15.0)
-                        _pos_data["trail_tp_active"] = True
-                        _pos_data["trail_tp_pct"]    = 15.0
-                        print(f"💎 20x LADDER: {addr[:10]} @ +{pnl:.0f}%")
-
-                    # 10x = +900% 🚀
-                    elif pnl >= 900 and tp_sold < 50:
-                        _auto_paper_sell(addr, "Ladder 10x 🚀", 15.0)
-                        _pos_data["trail_tp_active"] = True
-                        _pos_data["trail_tp_pct"]    = 20.0
-                        print(f"🚀 10x LADDER: {addr[:10]} @ +{pnl:.0f}%")
-
-                    # 5x = +400% 🔥
-                    elif pnl >= 400 and tp_sold < 35:
-                        _auto_paper_sell(addr, "Ladder 5x 🔥", 15.0)
-                        _pos_data["trail_tp_active"] = True
-                        _pos_data["trail_tp_pct"]    = 25.0
-                        print(f"🔥 5x LADDER: {addr[:10]} @ +{pnl:.0f}%")
-
-                    # 3x = +200% 💰
-                    elif pnl >= _tp4 and tp_sold < 20:
-                        _auto_paper_sell(addr, f"Ladder 3x 💰", 10.0)
-                        print(f"💰 3x LADDER: {addr[:10]} @ +{pnl:.0f}%")
-
-                    # 2x = +100% ✅
-                    elif pnl >= _tp3 and tp_sold < 10:
-                        _auto_paper_sell(addr, f"Ladder 2x ✅", 10.0)
-                        print(f"✅ 2x LADDER: {addr[:10]} @ +{pnl:.0f}%")
-
-                    # TrailSL + Ladder sells are above
-            except Exception as e:
-                print(f"Auto manager err {addr[:10]}: {e}")
-        # No positions → 30s sleep. Any position in profit → 0.3s ultra fast. Else → 1s
-        _positions = auto_trade_stats["running_positions"]
-        if not _positions:
-            _sleep = 30
-        elif any(
-            ((monitored_positions.get(a, {}).get("current", 0) - v.get("entry", 1e-18)) / max(v.get("entry", 1e-18), 1e-18)) * 100 >= 10
-            for a, v in list(_positions.items())
-        ):
-            _sleep = 0.3   # ⚡ ultra fast — koi position 10%+ mein hai, whale speed
-        else:
-            _sleep = 1.0   # 1s default — positions hain but abhi pump nahi
-        time.sleep(_sleep)
-
-# ========== PRICE MONITOR ==========
-def price_monitor_loop():
-    print("📡 Price Monitor started")
-    while True:
-        with monitor_lock:
-            _snap = list(monitored_positions.items())
-        for addr, pos in _snap:
-            try:
-                # FM bonding curve tokens — seedha bonding curve se price lo
-                if pos.get("buy_reasoning", {}).get("source") == "FM_BC_v2":
-                    try:
-                        _fm_info = _fm_get_token_info(addr, _fm_get_w3())
-                        if _fm_info and _fm_info.get("lastPrice", 0) > 0:
-                            _bnb_p = market_cache.get("bnb_price", 640)
-                            _quote = _fm_info.get("quote", "").lower()
-                            _USDT_L = "0x55d398326f99059ff775485246999027b3197955"
-                            _BUSD_L = "0xe9e7cea3dedca5984780bafc599bd69add087d56"
-                            if _quote in [_USDT_L, _BUSD_L]:
-                                current = (_fm_info["lastPrice"] / 1e18) / _bnb_p if _bnb_p > 0 else 0
-                            else:
-                                current = _fm_info["lastPrice"] / 1e18
-                        else:
-                            current = 0
-                    except:
-                        current = 0
-                else:
-                    current = get_token_price_bnb(addr)
-                if current <= 0:
-                    continue
-                # Sanity check: 10000x se zyada spike = stale/wrong price, ignore karo
-                if pos["entry"] > 0 and current > pos["entry"] * 10000:
-                    continue
-                pos["current"] = current
-                if current > pos["high"]:
-                    pos["high"] = current
-                entry        = pos["entry"]
-                pnl_pct      = ((current - entry) / entry) * 100 if entry > 0 else 0
-                drop_from_high = ((current - pos["high"]) / pos["high"]) * 100 if pos["high"] > 0 else 0
-                sl           = pos["stop_loss_pct"]
-                alerts_sent  = pos["alerts_sent"]
-                token        = pos["token"]
-
-                if pnl_pct <= -sl and "stop_loss" not in alerts_sent:
-                    alerts_sent.append("stop_loss")
-                    pass
-                if pnl_pct >= 200 and "tp_200" not in alerts_sent:
-                    alerts_sent.append("tp_200")
-                    pass
-                elif pnl_pct >= 100 and "tp_100" not in alerts_sent:
-                    alerts_sent.append("tp_100")
-                    pass
-                elif pnl_pct >= 50 and "tp_50" not in alerts_sent:
-                    alerts_sent.append("tp_50")
-                    pass
-                elif pnl_pct >= 30 and "tp_30" not in alerts_sent:
-                    alerts_sent.append("tp_30")
-                    pass
-                if drop_from_high <= -90 and "dump_90" not in alerts_sent:
-                    alerts_sent.append("dump_90")
-                    pass
-                elif drop_from_high <= -70 and "dump_70" not in alerts_sent:
-                    alerts_sent.append("dump_70")
-                    pass
-                elif drop_from_high <= -50 and "dump_50" not in alerts_sent:
-                    alerts_sent.append("dump_50")
-                    pass
-            except Exception as e:
-                print(f"⚠️ Price monitor error ({addr}): {e}")
-        # Positions hain? 1s. Nahi? 15s
-        _sleep = 1.0 if monitored_positions else 15
-        time.sleep(_sleep)
-
-# ========== DEXSCREENER ==========
-def get_dexscreener_token_data(token_address: str, prefetched_raw: dict = None) -> Dict:
-    result = {
-        "price_usd": 0.0, "price_bnb": 0.0, "volume_24h": 0.0,
-        "liquidity_usd": 0.0, "change_1h": 0.0, "change_6h": 0.0, "change_24h": 0.0,
-        "buys_5m": 0, "sells_5m": 0, "buys_1h": 0, "sells_1h": 0,
-        "fdv": 0.0, "pair_address": "", "dex_url": "", "source": "dexscreener"
-    }
-    try:
-        if prefetched_raw is not None:
-            raw_json = prefetched_raw
-        else:
-            r = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{token_address}", timeout=10)
-            raw_json = r.json() if r.status_code == 200 else {}
-        pairs = (raw_json or {}).get("pairs") or []
-        if not isinstance(pairs, list): pairs = []
-        bsc   = [p for p in pairs if p and p.get("chainId") == "bsc"]
-        if bsc:
-            bsc.sort(key=lambda x: float(x.get("liquidity", {}).get("usd", 0) or 0), reverse=True)
-            p = bsc[0]
-            txns = p.get("txns", {})
-            result.update({
-                "price_usd":     float(p.get("priceUsd", 0) or 0),
-                "volume_24h":    float(p.get("volume", {}).get("h24", 0) or 0),
-                "liquidity_usd": float(p.get("liquidity", {}).get("usd", 0) or 0),
-                "change_1h":     float(p.get("priceChange", {}).get("h1", 0) or 0),
-                "change_6h":     float(p.get("priceChange", {}).get("h6", 0) or 0),
-                "change_24h":    float(p.get("priceChange", {}).get("h24", 0) or 0),
-                "buys_5m":       int(txns.get("m5", {}).get("buys", 0) or 0),
-                "sells_5m":      int(txns.get("m5", {}).get("sells", 0) or 0),
-                "buys_1h":       int(txns.get("h1", {}).get("buys", 0) or 0),
-                "sells_1h":      int(txns.get("h1", {}).get("sells", 0) or 0),
-                "fdv":             float(p.get("fdv", 0) or 0),
-                "pair_address":    p.get("pairAddress", ""),
-                "dex_url":         p.get("url", ""),
-                "pair_created_at": p.get("pairCreatedAt", 0) or 0,
-            })
-            bnb_price = market_cache.get("bnb_price", 0)
-            result["price_bnb"]    = result["price_usd"] / bnb_price if result["price_usd"] else 0
-            _bt = p.get("baseToken") or {}
-            result["symbol"]       = _bt.get("symbol", "")
-            result["name"]         = _bt.get("name",   "")
-            result["token_symbol"] = _bt.get("symbol", "")
-            result["token_name"]   = _bt.get("name",   "")
-            result["_raw_pairs"]   = True
-            return result
-    except Exception as e:
-        print(f"⚠️ DexScreener error: {e}")
-
-    # ── FALLBACK: GeckoTerminal ──
-    try:
-        print(f"⚠️ DexScreener failed — trying GeckoTerminal for {token_address[:10]}")
-        gt = requests.get(
-            f"https://api.geckoterminal.com/api/v2/networks/bsc/tokens/{token_address}/pools",
-            params={"page": 1},
-            headers={"Accept": "application/json;version=20230302"},
-            timeout=10
-        )
-        if gt.status_code == 200:
-            pools = gt.json().get("data", [])
-            bsc_pools = [p for p in pools if p]
-            if bsc_pools:
-                # Sort by liquidity (reserve_in_usd)
-                bsc_pools.sort(key=lambda x: float(x.get("attributes", {}).get("reserve_in_usd", 0) or 0), reverse=True)
-                attrs = bsc_pools[0].get("attributes", {})
-                price_usd = float(attrs.get("base_token_price_usd", 0) or 0)
-                bnb_price = market_cache.get("bnb_price", 0)
-                result.update({
-                    "price_usd":     price_usd,
-                    "price_bnb":     price_usd / bnb_price if price_usd and bnb_price else 0,
-                    "volume_24h":    float(attrs.get("volume_usd", {}).get("h24", 0) or 0),
-                    "liquidity_usd": float(attrs.get("reserve_in_usd", 0) or 0),
-                    "change_1h":     float(attrs.get("price_change_percentage", {}).get("h1", 0) or 0),
-                    "change_24h":    float(attrs.get("price_change_percentage", {}).get("h24", 0) or 0),
-                    "fdv":           float(attrs.get("fdv_usd", 0) or 0),
-                    "pair_address":  attrs.get("address", ""),
-                    "source":        "geckoterminal",
-                    "_raw_pairs":    True,
-                })
-                # Token name from relationships
-                try:
-                    rels  = bsc_pools[0].get("relationships", {})
-                    bt_id = rels.get("base_token", {}).get("data", {}).get("id", "")
-                    result["symbol"]       = bt_id.split("_")[-1][:10] if "_" in bt_id else ""
-                    result["token_symbol"] = result["symbol"]
-                except Exception: pass
-                print(f"✅ GeckoTerminal fallback OK: {token_address[:10]} price=${price_usd:.6f}")
-    except Exception as e:
-        print(f"⚠️ GeckoTerminal fallback error: {e}")
-
-    return result
-
-# ========== MARKET DATA ==========
-def fetch_market_data():
-    bnb_fetched = False
-    # NodeReal HTTP — on-chain PancakeSwap WBNB/BUSD reserves (most accurate)
-    def _nodereal_bnb():
-        _key = os.environ.get("NODEREAL_API_KEY", "")
-        if not _key: return 0
-        payload = {"jsonrpc":"2.0","id":1,"method":"eth_call","params":[{
-            "to":   "0x58F876857a02D6762E0101bb5C46A8c1ED44Dc16",
-            "data": "0x0902f1ac"  # getReserves()
-        },"latest"]}
-        r = requests.post(f"https://bsc-mainnet.nodereal.io/v1/{_key}", json=payload, timeout=10)
-        res = r.json().get("result","")
-        if not res or len(res) < 130: return 0
-        r0 = int(res[2:66],   16) / 1e18   # BUSD reserve (token0)
-        r1 = int(res[66:130], 16) / 1e18   # WBNB reserve (token1)
-        return r0 / r1 if r1 > 0 else 0
-    sources = [
-        ("NodeReal",     _nodereal_bnb),
-        ("OKX",          lambda: float(((requests.get(
-            "https://www.okx.com/api/v5/market/ticker",
-            params={"instId":"BNB-USDT"}, timeout=20
-        ).json() or {}).get("data") or [{}])[0].get("last",0) or 0)),
-        ("CoinPaprika",  lambda: float((requests.get(
-            "https://api.coinpaprika.com/v1/tickers/bnb-binance-coin",
-            timeout=10
-        ).json() or {}).get("quotes", {}).get("USD", {}).get("price", 0) or 0)),
-    ]
-    for attempt in range(2):  # 2 attempts
-        if bnb_fetched: break
-        for source, fn in sources:
-            if bnb_fetched: break
-            try:
-                price = fn()
-                if price and float(price) > 10:  # sanity check
-                    market_cache["bnb_price"] = float(price)
-                    bnb_fetched = True
-                    print(f"✅ BNB price ({source}): ${float(price):.2f}")
-            except Exception as e:
-                print(f"⚠️ BNB {source} error: {str(e)[:50]}")
-        if not bnb_fetched and attempt == 0:
-            time.sleep(10)  # wait 10s before retry
-
-    try:
-        r2 = requests.get("https://api.alternative.me/fng/?limit=1", timeout=10)
-        if r2.status_code == 200:
-            market_cache["fear_greed"] = int(r2.json()["data"][0]["value"])
-    except Exception as e:
-        print(f"⚠️ Fear & Greed error: {e}")
-    market_cache["last_updated"] = datetime.utcnow().isoformat()
-    print(f"📊 BNB: ${market_cache['bnb_price']} | F&G: {market_cache['fear_greed']}")
+                _entry_ts = datetime.fromisoformat(_bought_at).timestamp() if _bought_at else time.time() - 3600
+            except Exception:
+                _entry_ts = time.time() - 3600
+            threading.Thread(
+                target=_learn_from_trade,
+                args=(address, pnl_pct >= 0, pnl_pct, _entry_ts),
+                daemon=True
+            ).start()
 
 def fetch_pancakeswap_data():
     try:
