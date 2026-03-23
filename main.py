@@ -4622,6 +4622,12 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             _push_notif("critical", "🔴 No Wallet/Key", "WALLET_PRIVATE_KEY set nahi hai — real trading blocked!", token_addr[:10], token_addr)
         elif "QuickNode not available" in reason:
             _push_notif("critical", "🔴 QuickNode Down", "QuickNode unavailable — check credits!", token_addr[:10], token_addr)
+        elif "insufficient wallet balance" in reason:
+            _push_notif("critical", "🔴 Low Balance", f"{reason} — wallet top up karo!", token_addr[:10], token_addr)
+        elif "real buy error" in reason:
+            _push_notif("critical", "🔴 Buy TX Failed", f"{reason}", token_addr[:10], token_addr)
+        elif "Stage2 snapshot failed" in reason:
+            _push_notif("warning", "🟡 RPC Issue", "Stage2 snapshot fail — QuickNode check karo", token_addr[:10], token_addr)
         threading.Thread(target=_save_fm_event, args=(
             token_addr, 0, 0, 0, 0, "SKIP", reason, ms
         ), kwargs={
