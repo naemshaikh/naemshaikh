@@ -4880,7 +4880,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 from eth_account import Account
                 signed   = Account.sign_transaction(tx, pk)
                 tx_hash  = _w3_buy.eth.send_raw_transaction(signed.raw_transaction)
-                print(f"✅ [FM] Real buy sent: {tx_hash.hex()[:12]}")
+                print(f"✅ [FM] Real buy sent: {tx_hash.hex()}")
 
                 # Receipt wait background mein — 30s hang nahi hoga
                 def _wait_receipt(_th, _w3b, _addr):
