@@ -4885,7 +4885,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 # Receipt wait background mein — 30s hang nahi hoga
                 def _wait_receipt(_th, _w3b, _addr):
                     try:
-                        _r = _w3b.eth.wait_for_transaction_receipt(_th, timeout=30)
+                        _r = _w3b.eth.wait_for_transaction_receipt(_th, timeout=60)
                         if _r["status"] == 1:
                             print(f"✅ [FM] Buy confirmed: {_th.hex()[:12]}")
                         else:
