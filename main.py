@@ -4605,36 +4605,83 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         ), daemon=True).start()
         print(f"✅ [FM] BC SNIPED: {token_name} mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}% {ms}ms")
 
-        def _fm_post_buy_monitor(ta, t_name):
-            try:
-                time.sleep(30)
-                if ta not in auto_trade_stats.get("running_positions", {}): return
-                _w3 = _fm_get_w3()
-                if not _w3: return
-                TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
-                _cur = _w3.eth.block_number
-                _logs = _w3.eth.get_logs({
-                    "address": Web3.to_checksum_address(ta),
-                    "topics": [TRANSFER_TOPIC],
-                    "fromBlock": _cur - 20,
-                    "toBlock": "latest",
-                })
-                _ZERO = "0x0000000000000000000000000000000000000000"
-                _DEAD = "0x000000000000000000000000000000000000dead"
-                new_buyers = set()
-                for log in _logs:
-                    if len(log["topics"]) < 3: continue
-                    to_addr = "0x" + log["topics"][2].hex()[-40:].lower()
-                    if to_addr not in [_ZERO, _DEAD]:
-                        new_buyers.add(to_addr)
-                if len(new_buyers) < 2:
-                    print(f"⚠️ [FM] No new buyers in 30s — force exit: {ta[:10]}")
-                    _auto_paper_sell(ta, "FM No buyers 30s ❌", 100.0)
-                else:
-                    print(f"✅ [FM] {len(new_buyers)} buyers in 30s — holding: {ta[:10]}")
-            except Exception as _fe:
-                print(f"⚠️ [FM] post-buy monitor error: {_fe}")
-        threading.Thread(target=_fm_post_buy_monitor, args=(token_addr, token_name), daemon=True).start()
+        def _fm_price_monitor(ta, t_name):
+            """FM BC instant price monitor — har ~1s getTokenInfo se price update"""
+            print(f"📡 [FM] Price monitor started: {ta[:10]}")
+            _last_price = [0.0]
+            _no_change_count = [0]
+            _start_time = time.time()
+            _buyer_checked = [False]
+
+            while ta in auto_trade_stats.get("running_positions", {}):
+                try:
+                    _w3f = _get_w3q() or _fm_get_w3()
+                    if not _w3f:
+                        time.sleep(1); continue
+
+                    _info = _fm_get_token_info(ta, _w3f)
+                    if _info and _info.get("lastPrice", 0) > 0:
+                        _bnb_p = market_cache.get("bnb_price", 0)
+                        _quote  = str(_info.get("quote", "")).lower()
+                        if "usdt" in _quote or "busd" in _quote or "usd" in _quote:
+                            _price = (_info["lastPrice"] / 1e18) / _bnb_p if _bnb_p > 0 else 0
+                        else:
+                            _price = _info["lastPrice"] / 1e18
+
+                        if _price > 0:
+                            with monitor_lock:
+                                if ta in monitored_positions:
+                                    monitored_positions[ta]["current"] = _price
+                                    if _price > monitored_positions[ta].get("high", 0):
+                                        monitored_positions[ta]["high"] = _price
+
+                            # Price change track karo
+                            if _last_price[0] > 0:
+                                _chg = abs(_price - _last_price[0]) / _last_price[0] * 100
+                                if _chg < 0.01:  # 0.01% se kam change
+                                    _no_change_count[0] += 1
+                                else:
+                                    _no_change_count[0] = 0
+                            _last_price[0] = _price
+
+                    # 30s baad buyers check karo — sirf ek baar
+                    if not _buyer_checked[0] and (time.time() - _start_time) >= 30:
+                        _buyer_checked[0] = True
+                        try:
+                            TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+                            _cur = _w3f.eth.block_number
+                            _logs = _w3f.eth.get_logs({
+                                "address": Web3.to_checksum_address(ta),
+                                "topics": [TRANSFER_TOPIC],
+                                "fromBlock": _cur - 20,
+                                "toBlock": "latest",
+                            })
+                            _ZERO = "0x0000000000000000000000000000000000000000"
+                            _DEAD = "0x000000000000000000000000000000000000dead"
+                            _FM_FAC = _FM_FACTORY_ADDR.lower()
+                            new_buyers = set()
+                            for _log in _logs:
+                                if len(_log["topics"]) < 3: continue
+                                _from = "0x" + _log["topics"][1].hex()[-40:].lower()
+                                _to   = "0x" + _log["topics"][2].hex()[-40:].lower()
+                                if _from == _FM_FAC and _to not in [_ZERO, _DEAD]:
+                                    new_buyers.add(_to)
+                            if len(new_buyers) < 2:
+                                print(f"⚠️ [FM] No buyers 30s — force exit: {ta[:10]}")
+                                _auto_paper_sell(ta, "FM No buyers 30s ❌", 100.0)
+                            else:
+                                print(f"✅ [FM] {len(new_buyers)} buyers 30s — holding: {ta[:10]}")
+                        except Exception:
+                            pass
+
+                except Exception as _fe:
+                    pass
+
+                time.sleep(1)  # har 1 second mein update
+
+            print(f"📡 [FM] Price monitor stopped: {ta[:10]}")
+
+        threading.Thread(target=_fm_price_monitor, args=(token_addr, token_name), daemon=True).start()
 
     except Exception as e:
         print(f"⚠️ [FM] snipe error: {e}")
