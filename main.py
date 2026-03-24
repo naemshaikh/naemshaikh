@@ -4010,20 +4010,6 @@ def _pc_get_tax(token_address: str, w3_inst) -> float:
         return -1
 
 
-def _fm_get_cached_gas(w3):
-    """Har 10s mein gas price update — buy ke time 0ms"""
-    import time as _t
-    with _fm_gas_lock:
-        if _t.time() - _fm_gas_cache["ts"] < 10 and _fm_gas_cache["price"] > 0:
-            return _fm_gas_cache["price"]
-    try:
-        gp = w3.eth.gas_price
-        with _fm_gas_lock:
-            _fm_gas_cache["price"] = gp
-            _fm_gas_cache["ts"]    = _t.time()
-        return gp
-    except:
-        return 3_000_000_000  # 3 gwei fallback
 _FM_WBNB         = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"
 _FM_WSS = []
 _FM_RPC = []
@@ -4247,9 +4233,40 @@ def _fm_dev_history_onchain(dev_addr, w3=None):
 
     return result
 
+def _fm_track_sell_confirmation(tx_hash_hex, token_addr, token_name, w3):
+    """Background mein TX confirm hone tak track karo — har 2s check"""
+    import threading as _th
+    try:
+        for _ in range(30):  # 60s max
+            try:
+                _receipt = w3.eth.get_transaction_receipt(tx_hash_hex)
+                if _receipt:
+                    if _receipt["status"] == 1:
+                        _push_notif("success", "✅ Sell Confirmed",
+                            f"{token_name} sell confirmed onchain | TX: {tx_hash_hex[:12]}",
+                            token_name, token_addr)
+                        print(f"✅ [FM] Sell confirmed onchain: {tx_hash_hex[:12]}")
+                    else:
+                        _push_notif("critical", "🚨 Sell Reverted",
+                            f"{token_name} sell reverted — manually check karo! TX: {tx_hash_hex[:12]}",
+                            token_name, token_addr)
+                        print(f"❌ [FM] Sell reverted onchain: {tx_hash_hex[:12]}")
+                    return
+            except Exception:
+                pass
+            time.sleep(2)
+        # 60s baad bhi pending
+        _push_notif("critical", "⏳ Sell Still Pending",
+            f"{token_name} TX pending 60s — manually check! {tx_hash_hex[:12]}",
+            token_name, token_addr)
+        print(f"⏳ [FM] Sell still pending after 60s: {tx_hash_hex[:12]}")
+    except Exception as _te:
+        print(f"⚠️ [FM] tracker error: {_te}")
+
+
 def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=None) -> dict:
-    """FM Bonding Curve pe real sell — NO APPROVE NEEDED"""
-    result = {"success": False, "tx_hash": "", "bnb_received": 0.0, "error": ""}
+    """FM Bonding Curve pe real sell — background tracker + 3 retry + BC minFunds"""
+    result = {"success": False, "tx_hash": "", "bnb_received": 0.0, "error": "", "status": ""}
     try:
         pk = os.getenv("WALLET_PRIVATE_KEY", "") or os.getenv("PRIVATE_KEY", "") or os.getenv("REAL_PRIVATE_KEY", "")
         wallet_addr = BSC_WALLET or REAL_WALLET
@@ -4258,58 +4275,79 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         if not w3: w3 = _get_w3q() or _fm_get_w3()
         if not w3: result["error"] = "no RPC"; return result
 
+        # Fix 7: checksum wallet
+        wallet_cs = Web3.to_checksum_address(wallet_addr)
+
         # Get token balance
-        _tc = w3.eth.contract(address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
-        _bal = _tc.functions.balanceOf(Web3.to_checksum_address(wallet_addr)).call()
+        _tc  = w3.eth.contract(address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
+        _bal = _tc.functions.balanceOf(wallet_cs).call()
         _amt = int(_bal * sell_pct / 100)
         if _amt <= 0:
             result["error"] = "zero balance"
             return result
 
-        # Calculate min funds (10% slippage)
+        # Fix 1: minFunds — BC formula (funds/offers) instead of hardcoded totalSupply
         _min_funds = 0
         try:
             _info_sell = _fm_get_token_info(token_addr, w3)
-            if _info_sell and _info_sell.get("lastPrice", 0) > 0:
-                _total_sup = 1_000_000_000 * 1e18
-                _expected_bnb = (_info_sell["lastPrice"] * _amt) / _total_sup
-                _min_funds = int(_expected_bnb * 0.90)  # 10% slippage
+            if _info_sell:
+                _funds  = int(_info_sell.get("funds",  0) or 0)
+                _offers = int(_info_sell.get("offers", 0) or 0)
+                if _funds > 0 and _offers > 0:
+                    _expected_bnb = (_funds * _amt) // max(_offers, 1)
+                    _min_funds = int(_expected_bnb * 0.90)  # 10% slippage
         except:
-            pass
+            _min_funds = 0  # safe fallback
 
-        # FM bonding curve — NO APPROVE CHECK
-        print(f"🎓 [FM] Selling bonding curve token: {token_addr[:10]} | amt={_amt} | min_funds={_min_funds}")
-        
+        print(f"🎓 [FM] Selling: {token_addr[:10]} | amt={_amt} | min_funds={_min_funds}")
+
         _w3_fast = _get_w3q() or w3
         fc = _w3_fast.eth.contract(address=Web3.to_checksum_address(factory_addr), abi=_FM_BC_ABI)
-        tx = fc.functions.sellToken(
-            Web3.to_checksum_address(token_addr),
-            _amt,
-            _min_funds
-        ).build_transaction({
-            "from": wallet_addr,
-            "gas": 300000,
-            "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 1.5),
-            "nonce": _w3_fast.eth.get_transaction_count(wallet_addr, "pending"),
-        })
-        
-        from eth_account import Account
-        signed = Account.sign_transaction(tx, pk)
-        tx_hash = _w3_fast.eth.send_raw_transaction(signed.raw_transaction)
-        print(f"🔴 [FM] Sell TX sent: {tx_hash.hex()[:12]}...")
-        
-        receipt = _w3_fast.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
-        if receipt["status"] != 1:
-            result["error"] = "sell tx reverted"
-            print(f"❌ [FM] Sell reverted: {tx_hash.hex()[:12]}")
-            return result
-            
+
+        # Fix 3+4+5: 3 retry turant, pending TX pe retry block, background tracker
+        tx_hash = None
+        for _attempt in range(1, 4):
+            try:
+                _nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")
+                tx = fc.functions.sellToken(
+                    Web3.to_checksum_address(token_addr),
+                    _amt,
+                    _min_funds
+                ).build_transaction({
+                    "from":     wallet_cs,  # Fix 2: checksum
+                    "gas":      300000,
+                    "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 2.0),
+                    "nonce":    _nonce,
+                })
+                from eth_account import Account
+                signed  = Account.sign_transaction(tx, pk)
+                tx_hash = _w3_fast.eth.send_raw_transaction(signed.raw_transaction)
+                print(f"🔴 [FM] Sell TX attempt {_attempt}: {tx_hash.hex()[:12]}...")
+                break  # TX sent — loop se niklo
+            except Exception as _se:
+                print(f"⚠️ [FM] Sell attempt {_attempt} failed: {str(_se)[:60]}")
+                if _attempt == 3:
+                    _push_notif("critical", "🚨 MANUAL SELL REQUIRED",
+                        f"{token_addr[:10]} — 3 TX send fail! MANUALLY SELL KARO!",
+                        token_addr[:10], token_addr)
+                    result["error"] = "3 send attempts failed"
+                    return result
+
+        # TX sent — turant return, background mein confirm track karo
         result["success"] = True
         result["tx_hash"] = tx_hash.hex()
-        result["gas_used"] = receipt["gasUsed"]
-        print(f"✅ [FM] BC Sell confirmed: {tx_hash.hex()[:12]} | gas={receipt['gasUsed']}")
+        result["status"]  = "pending"
+
+        import threading as _th
+        _th.Thread(
+            target=_fm_track_sell_confirmation,
+            args=(tx_hash.hex(), token_addr, token_addr[:10], _w3_fast),
+            daemon=True
+        ).start()
+
+        print(f"✅ [FM] Sell TX sent — background tracker active: {tx_hash.hex()[:12]}")
         return result
-        
+
     except Exception as e:
         result["error"] = str(e)[:60]
         print(f"❌ [FM] Sell error: {result['error']}")
