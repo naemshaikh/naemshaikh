@@ -4110,9 +4110,13 @@ _FM_BC_ABI = [
      "inputs":[{"name":"token","type":"address"},
                {"name":"funds","type":"uint256"},{"name":"minAmount","type":"uint256"}],
      "outputs":[{"name":"","type":"uint256"}]},
+    # FIX: sellToken sahi 4 params — origin,token,amount,minBNB
+    # origin=0 hamesha, bina is ke encoding galat hoti thi → revert
     {"name":"sellToken","type":"function","stateMutability":"nonpayable",
-     "inputs":[{"name":"token","type":"address"},{"name":"amount","type":"uint256"},
-               {"name":"minFunds","type":"uint256"}],
+     "inputs":[{"name":"origin","type":"uint256"},
+               {"name":"token","type":"address"},
+               {"name":"amount","type":"uint256"},
+               {"name":"minBNB","type":"uint256"}],
      "outputs":[{"name":"","type":"uint256"}]},
 ]
 
@@ -4445,16 +4449,45 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         _w3_fast = _get_w3q() or w3
         fc = _w3_fast.eth.contract(address=Web3.to_checksum_address(factory_addr), abi=_FM_BC_ABI)
 
+        # FIX: Approve Token Manager pehle — bina approval sell revert hogi
+        try:
+            _tc_approve = _w3_fast.eth.contract(
+                address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
+            _allowance = _tc_approve.functions.allowance(
+                wallet_cs, Web3.to_checksum_address(factory_addr)).call()
+            if _allowance < _amt:
+                print(f"🔑 [FM] Approving Token Manager for sell...")
+                _approve_nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")
+                _approve_tx = _tc_approve.functions.approve(
+                    Web3.to_checksum_address(factory_addr), 2**256 - 1
+                ).build_transaction({
+                    "from":     wallet_cs,
+                    "gas":      100000,
+                    "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 3.0),
+                    "nonce":    _approve_nonce,
+                })
+                from eth_account import Account as _AccA
+                _signed_a = _AccA.sign_transaction(_approve_tx, pk)
+                _ah = _w3_fast.eth.send_raw_transaction(_signed_a.raw_transaction)
+                _w3_fast.eth.wait_for_transaction_receipt(_ah, timeout=30)
+                print(f"✅ [FM] Approval done for sell")
+            else:
+                print(f"✅ [FM] Already approved for sell")
+        except Exception as _ae:
+            print(f"⚠️ [FM] Approve error: {str(_ae)[:60]}")
+
         # Fix 3+4+5: 3 retry turant, pending TX pe retry block, background tracker
         tx_hash = None
         for _attempt in range(1, 4):
             try:
                 _nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")
-                # GAS FIX: BC sell 2x → 3x — rug se pehle fast niklo
+                # FIX: origin=0 add kiya — sahi 4 param call
+                # GAS FIX: BC sell 3x — rug se pehle fast niklo
                 tx = fc.functions.sellToken(
-                    Web3.to_checksum_address(token_addr),
-                    _amt,
-                    _min_funds
+                    0,                                        # origin = 0
+                    Web3.to_checksum_address(token_addr),     # token
+                    _amt,                                     # raw amount 18 decimals
+                    _min_funds                                 # minBNB = 0
                 ).build_transaction({
                     "from":     wallet_cs,
                     "gas":      300000,
