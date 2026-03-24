@@ -1075,12 +1075,13 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
         allowance = token_c.functions.allowance(wallet, Web3.to_checksum_address(PANCAKE_ROUTER)).call()
         if allowance < sell_amt:
             nonce_a = w3.eth.get_transaction_count(wallet, "pending")
+            # GAS FIX: Approve bhi 3x — approve slow toh sell delay hogi
             approve_txn = token_c.functions.approve(
                 Web3.to_checksum_address(PANCAKE_ROUTER),
                 2**256 - 1
             ).build_transaction({
                 "from": wallet, "gas": 100000,
-                "gasPrice": _get_dynamic_gas_price(),
+                "gasPrice": int(_get_dynamic_gas_price() * 3.0),
                 "nonce": nonce_a, "chainId": 56
             })
             signed_a = w3.eth.account.sign_transaction(approve_txn, REAL_PRIVATE_KEY)
@@ -1094,13 +1095,15 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
         deadline     = int(time.time()) + 60
         nonce        = w3.eth.get_transaction_count(wallet, "pending")
 
+        # GAS FIX: Sell pe 3x gas — rug se pehle fast niklo
+        _sell_gas_price = int(_get_dynamic_gas_price() * 3.0)
         txn = router.functions.swapExactTokensForETHSupportingFeeOnTransferTokens(
             sell_amt, min_bnb,
             [token_cs, wbnb_cs],
             wallet, deadline
         ).build_transaction({
             "from": wallet, "gas": 300000,
-            "gasPrice": _get_dynamic_gas_price(),
+            "gasPrice": _sell_gas_price,
             "nonce": nonce, "chainId": 56
         })
 
@@ -4445,14 +4448,15 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         for _attempt in range(1, 4):
             try:
                 _nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")
+                # GAS FIX: BC sell 2x → 3x — rug se pehle fast niklo
                 tx = fc.functions.sellToken(
                     Web3.to_checksum_address(token_addr),
                     _amt,
                     _min_funds
                 ).build_transaction({
-                    "from":     wallet_cs,  # Fix 2: checksum
+                    "from":     wallet_cs,
                     "gas":      300000,
-                    "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 2.0),
+                    "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 3.0),
                     "nonce":    _nonce,
                 })
                 from eth_account import Account
