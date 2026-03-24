@@ -7332,6 +7332,102 @@ def close_one_position():
     print(f"🔴 Manual close: {tok} ({addr[:10]})")
     return jsonify({"status": "closing", "address": addr, "token": tok, "remaining": remaining})
 
+@app.route("/force-close-position", methods=["POST"])
+def force_close_position():
+    """
+    Force close — bina real sell ke state clean karo.
+    Real mode mein wallet gas nahi hai tab use karo.
+    Position trade history mein loss ke saath save hogi.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        addr = data.get("address", "").strip()
+
+        # Agar address nahi diya toh worst PnL wali lo
+        positions = auto_trade_stats.get("running_positions", {})
+        if not positions:
+            return jsonify({"status": "empty", "message": "Koi open position nahi hai"})
+
+        if addr and addr in positions:
+            target_addr = addr
+        else:
+            # Worst PnL wali position
+            def _pnl(item):
+                a, p = item
+                e = p.get("entry", 0)
+                c = monitored_positions.get(a, {}).get("current", e)
+                return ((c - e) / e * 100) if e > 0 else 0
+            target_addr, _ = sorted(positions.items(), key=_pnl)[0]
+
+        pos   = positions.get(target_addr, {})
+        token = pos.get("token", target_addr[:10])
+        entry = pos.get("entry", 0)
+        size  = pos.get("size_bnb", AUTO_BUY_SIZE_BNB)
+
+        with monitor_lock:
+            mon = monitored_positions.get(target_addr, {})
+        current = mon.get("current", 0)
+
+        # PnL calculate karo
+        if entry > 0 and current > 0:
+            pnl_pct = round(((current - entry) / entry) * 100, 2)
+        else:
+            pnl_pct = -100.0
+        pnl_bnb = round(size * (pnl_pct / 100.0), 6)
+
+        bought_at_str = pos.get("bought_at", "")
+
+        # Trade history mein save karo
+        if not isinstance(auto_trade_stats.get("trade_history"), list):
+            auto_trade_stats["trade_history"] = []
+        auto_trade_stats["trade_history"].append({
+            "token":        token,
+            "address":      target_addr,
+            "entry":        entry,
+            "exit":         current,
+            "pnl_pct":      pnl_pct,
+            "pnl_bnb":      pnl_bnb,
+            "size_bnb":     size,
+            "bought_at":    bought_at_str,
+            "sold_at":      datetime.utcnow().isoformat(),
+            "result":       "win" if pnl_pct > 0 else "loss",
+            "exit_reason":  "Force Close (no gas)",
+            "mode":         TRADE_MODE,
+            "tx_hash":      "force_closed",
+        })
+
+        # Stats update
+        if pnl_pct > 0:
+            auto_trade_stats["wins"]   = auto_trade_stats.get("wins", 0) + 1
+        else:
+            auto_trade_stats["losses"] = auto_trade_stats.get("losses", 0) + 1
+        auto_trade_stats["total_auto_sells"] = auto_trade_stats.get("total_auto_sells", 0) + 1
+
+        # State clean karo
+        auto_trade_stats["running_positions"].pop(target_addr, None)
+        remove_position_from_monitor(target_addr)
+
+        # DB save
+        threading.Thread(target=_save_session_to_db,    args=(AUTO_SESSION_ID,), daemon=True).start()
+        threading.Thread(target=_save_trade_history_to_db,                       daemon=True).start()
+        _persist_positions()
+
+        print(f"🔴 FORCE CLOSED: {token} ({target_addr[:10]}) PnL:{pnl_pct:+.1f}%")
+        _log("sell", token, f"🔴 FORCE CLOSE (no gas) PnL:{pnl_pct:+.1f}%", target_addr)
+
+        return jsonify({
+            "status":  "force_closed",
+            "address": target_addr,
+            "token":   token,
+            "pnl_pct": pnl_pct,
+            "pnl_bnb": pnl_bnb,
+            "message": f"{token} force closed — PnL: {pnl_pct:+.1f}%"
+        })
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)[:100]}), 500
+
+
 @app.route("/scanner-stats")
 def scanner_stats():
     """Scanner performance stats — per min/hour/day"""
