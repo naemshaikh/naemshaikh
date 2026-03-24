@@ -4530,23 +4530,26 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                         int(_w3_fast.eth.get_block('latest')['timestamp'] + 300)
                     ).build_transaction({
                         "from": wallet_cs,
-                        "gas": 400000,
-                        "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 3.0),
+                        "gas": 650000,                         # BOOST
+                        "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 5.5),
                         "nonce": _nonce,
                     })
+                    print(f"[FM v10] Pancake Sell TX — Gas:650k | Gwei:{int(_fm_get_cached_gas(_w3_fast)*5.5)/1e9:.1f}")
                 else:
                     # Curve sell (original)
+                    # ==================== v10 RUG-PROOF CURVE SELL ====================
                     tx = fc.functions.sellToken(
-                        0,                                        # origin = 0
-                        Web3.to_checksum_address(token_addr),     # token
-                        _amt,                                     # raw amount 18 decimals
-                        _min_funds                                 # minBNB = 0
+                        0,
+                        Web3.to_checksum_address(token_addr),
+                        _amt,
+                        _min_funds
                     ).build_transaction({
                     "from":     wallet_cs,
-                    "gas":      300000,
-                    "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 3.0),
+                    "gas":      750000,                    # BOOST for Four.meme rugs
+                    "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 5.5),
                     "nonce":    _nonce,
                 })
+                    print(f"[FM v10] Curve Sell TX — Gas:750k | Gwei:{int(_fm_get_cached_gas(_w3_fast)*5.5)/1e9:.1f}")
                 from eth_account import Account
                 signed  = Account.sign_transaction(tx, pk)
                 tx_hash = _w3_fast.eth.send_raw_transaction(signed.raw_transaction)
