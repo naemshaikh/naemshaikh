@@ -803,8 +803,8 @@ def _anti_mev_amount(base_bnb: float) -> float:
 
 # Fix #5: Sell slippage separate function
 def _anti_mev_slippage_sell(buy_tax: float = 0.0, sell_tax: float = 0.0) -> int:
-    """Higher slippage for sell to ensure execution"""
-    base = max(buy_tax + sell_tax + 5.0, 20.0)  # min 20%
+    """FIX3: Sell slippage — sirf sell_tax relevant, buy_tax nahi"""
+    base = max(sell_tax + 5.0, 20.0)  # FIX3: buy_tax remove kiya
     noise = _random.uniform(0.5, 3.0)
     return min(round(base + noise), 25)  # max 25%
 
@@ -2735,6 +2735,8 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         "bought_at":      datetime.utcnow().isoformat(),
         "mode":           TRADE_MODE,
         "buy_reasoning":  _buy_reasoning,
+        "buy_tax":        _buy_tax,   # FIX2: sell slippage ke liye zaroori
+        "sell_tax":       _sell_tax,  # FIX2: sell slippage ke liye zaroori
     }
     auto_trade_stats["total_auto_buys"] += 1
     auto_trade_stats["last_action"] = f"BUY {token_name or address[:10]}"
@@ -3761,6 +3763,9 @@ _FM_ERC20_ABI = [
     {"name":"approve","type":"function","stateMutability":"nonpayable",
      "inputs":[{"name":"spender","type":"address"},{"name":"amount","type":"uint256"}],
      "outputs":[{"name":"","type":"bool"}]},
+    {"name":"allowance","type":"function","stateMutability":"view",
+     "inputs":[{"name":"owner","type":"address"},{"name":"spender","type":"address"}],
+     "outputs":[{"name":"","type":"uint256"}]},
     {"name":"balanceOf","type":"function","stateMutability":"view",
      "inputs":[{"name":"account","type":"address"}],
      "outputs":[{"name":"","type":"uint256"}]},
