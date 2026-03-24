@@ -3419,8 +3419,6 @@ def continuous_learning():
     print(f"📚 Learning from cycle #{cycle}")
     _last_price_update = 0  # FIX4: price update tracker
 
-    _last_price_update = 0  # FIX4
-
     while True:
         try:
             cycle += 1
