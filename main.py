@@ -4190,33 +4190,108 @@ def _fm_dev_history_onchain(dev_addr, w3=None):
 
     return result
 
-def _fm_track_sell_confirmation(tx_hash_hex, token_addr, token_name, w3):
-    """Background mein TX confirm hone tak track karo — har 2s check"""
-    import threading as _th
+def _fm_confirm_close(token_addr, sell_pct, reason, tx_hash_hex):
+    """
+    FM sell confirmed onchain — sirf paper state close karo.
+    Real sell ho chuka hai — dobara nahi karenge.
+    """
+    try:
+        if token_addr not in auto_trade_stats.get("running_positions", {}):
+            return
+        pos  = auto_trade_stats["running_positions"][token_addr]
+        with monitor_lock:
+            mon = monitored_positions.get(token_addr, {})
+
+        entry   = pos.get("entry", 0)
+        current = mon.get("current", entry)
+        size    = pos.get("size_bnb", AUTO_BUY_SIZE_BNB)
+        token   = pos.get("token", token_addr[:10])
+
+        if entry <= 0:
+            return
+
+        current    = current * 0.995 if current > 0 else 0
+        pnl_pct    = ((current - entry) / entry) * 100 if entry > 0 and current > 0 else -100.0
+        sell_size  = size * (sell_pct / 100.0)
+        pnl_bnb    = sell_size * (pnl_pct / 100.0)
+        return_bnb = sell_size * (1 + pnl_pct / 100.0) if current > 0 else 0.0
+
+        sess = get_or_create_session(AUTO_SESSION_ID)
+        sess["paper_balance"] = round(sess.get("paper_balance", 5.0) + return_bnb, 6)
+
+        if sell_pct >= 100.0:
+            auto_trade_stats["auto_pnl_total"] += pnl_pct
+        auto_trade_stats["total_auto_sells"] += 1
+
+        _banked = pos.get("banked_pnl_bnb", 0.0)
+        pos["banked_pnl_bnb"] = round(_banked + pnl_bnb, 6)
+
+        if sell_pct >= 100.0:
+            if not isinstance(auto_trade_stats.get("trade_history"), list):
+                auto_trade_stats["trade_history"] = []
+            _bnb_at_sell  = market_cache.get("bnb_price", 0)
+            bought_at_str = pos.get("bought_at", "")
+            _orig_sz      = pos.get("orig_size_bnb", size)
+            _total_pnl_bnb = round(pos.get("banked_pnl_bnb", 0.0), 6)
+            _total_pnl_pct = round((_total_pnl_bnb / _orig_sz * 100), 2) if _orig_sz > 0 else pnl_pct
+            auto_trade_stats["trade_history"].append({
+                "token":       token,
+                "address":     token_addr,
+                "entry":       entry,
+                "exit":        current,
+                "pnl_pct":     _total_pnl_pct,
+                "pnl_bnb":     _total_pnl_bnb,
+                "size_bnb":    _orig_sz,
+                "bought_at":   bought_at_str,
+                "sold_at":     datetime.utcnow().isoformat(),
+                "result":      "win" if _total_pnl_pct > 0 else "loss",
+                "exit_reason": reason,
+                "mode":        "real",
+                "tx_hash":     tx_hash_hex,
+            })
+            auto_trade_stats["running_positions"].pop(token_addr, None)
+            remove_position_from_monitor(token_addr)
+            if pnl_pct > 0:
+                auto_trade_stats["wins"]   = auto_trade_stats.get("wins", 0) + 1
+            else:
+                auto_trade_stats["losses"] = auto_trade_stats.get("losses", 0) + 1
+
+        _emoji = "🟢" if pnl_pct >= 0 else "🔴"
+        _log("sell", token, f"{_emoji} REAL SELL {sell_pct:.0f}% confirmed · PnL {pnl_pct:+.1f}% · {reason}", token_addr)
+        threading.Thread(target=_save_session_to_db, args=(AUTO_SESSION_ID,), daemon=True).start()
+        threading.Thread(target=_save_trade_history_to_db, daemon=True).start()
+        print(f"✅ [FM] State closed: {token_addr[:10]} PnL:{pnl_pct:+.1f}%")
+
+    except Exception as _ce:
+        print(f"⚠️ [FM] confirm close error: {_ce}")
+
+
+def _fm_track_sell_confirmation(tx_hash_hex, token_addr, token_name, w3, sell_pct=100.0, sell_reason="FM sell"):
+    """Background mein TX confirm hone tak track karo — confirm pe paper state close"""
     try:
         for _ in range(30):  # 60s max
             try:
                 _receipt = w3.eth.get_transaction_receipt(tx_hash_hex)
                 if _receipt:
                     if _receipt["status"] == 1:
+                        print(f"✅ [FM] Sell confirmed: {tx_hash_hex[:12]} — closing state")
                         _push_notif("success", "✅ Sell Confirmed",
-                            f"{token_name} sell confirmed onchain | TX: {tx_hash_hex[:12]}",
+                            f"{token_name} sell confirmed | TX: {tx_hash_hex[:12]}",
                             token_name, token_addr)
-                        print(f"✅ [FM] Sell confirmed onchain: {tx_hash_hex[:12]}")
+                        _fm_confirm_close(token_addr, sell_pct, sell_reason, tx_hash_hex)
                     else:
+                        print(f"❌ [FM] Sell reverted: {tx_hash_hex[:12]} — position still open")
                         _push_notif("critical", "🚨 Sell Reverted",
-                            f"{token_name} sell reverted — manually check karo! TX: {tx_hash_hex[:12]}",
+                            f"{token_name} sell reverted — position still open! Manually sell karo! TX: {tx_hash_hex[:12]}",
                             token_name, token_addr)
-                        print(f"❌ [FM] Sell reverted onchain: {tx_hash_hex[:12]}")
                     return
             except Exception:
                 pass
             time.sleep(2)
-        # 60s baad bhi pending
         _push_notif("critical", "⏳ Sell Still Pending",
             f"{token_name} TX pending 60s — manually check! {tx_hash_hex[:12]}",
             token_name, token_addr)
-        print(f"⏳ [FM] Sell still pending after 60s: {tx_hash_hex[:12]}")
+        print(f"⏳ [FM] Still pending 60s: {tx_hash_hex[:12]}")
     except Exception as _te:
         print(f"⚠️ [FM] tracker error: {_te}")
 
