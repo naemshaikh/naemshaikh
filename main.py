@@ -1054,6 +1054,18 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
         wbnb_cs  = Web3.to_checksum_address(WBNB)
         token_c  = w3.eth.contract(address=token_cs, abi=ERC20_ABI_APPROVE)
 
+        # FIX 4: Gas balance check before sell
+        try:
+            _gas_bal = w3.eth.get_balance(wallet) / 1e18
+            if _gas_bal < 0.0015:  # minimum ~0.0015 BNB for sell gas
+                result["error"] = f"insufficient wallet balance {_gas_bal:.4f} BNB"
+                _push_notif("critical", "🔴 Low Balance",
+                    f"insufficient wallet balance {_gas_bal:.4f} BNB — wallet top up karo!",
+                    token_address[:10], token_address)
+                return result
+        except Exception:
+            pass  # gas check fail toh proceed
+
         balance   = token_c.functions.balanceOf(wallet).call()
         sell_amt  = int(balance * sell_pct / 100)
         if sell_amt <= 0:
@@ -1103,17 +1115,36 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
             result["gas_used"]     = receipt["gasUsed"]
             result["gas_price"]    = txn.get("gasPrice", 0)
             
-            # Parse actual BNB received from logs
+            # FIX 2: Parse actual BNB received from logs
+            # WBNB Withdrawal event WBNB contract se aata hai, Router se nahi
+            _WBNB_ADDR = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
             bnb_received = min_bnb / 1e18
             for log in receipt["logs"]:
-                if log["address"].lower() == PANCAKE_ROUTER.lower():
-                    data = log["data"]
-                    if len(data) >= 130:
-                        raw_hex = data[2:]
-                        a0out = int(raw_hex[128:192], 16)
-                        a1out = int(raw_hex[192:256], 16)
-                        bnb_received = max(a0out, a1out) / 1e18
+                # Withdrawal(address,uint256) — topic0 = keccak256("Withdrawal(address,uint256)")
+                _is_wbnb    = log["address"].lower() == _WBNB_ADDR.lower()
+                _withdrawal = len(log.get("topics", [])) >= 2 and log["topics"][0].hex().startswith("7fcf532c")
+                if _is_wbnb and _withdrawal:
+                    try:
+                        bnb_received = int(log["data"].hex() if isinstance(log["data"], bytes) else log["data"], 16) / 1e18
                         break
+                    except Exception:
+                        pass
+            # Fallback — swap event se parse karo
+            if bnb_received == min_bnb / 1e18:
+                for log in receipt["logs"]:
+                    _d = log.get("data", "")
+                    _d = _d.hex() if isinstance(_d, bytes) else _d
+                    if len(_d) >= 130:
+                        raw_hex = _d[2:] if _d.startswith("0x") else _d
+                        try:
+                            a0out = int(raw_hex[128:192], 16)
+                            a1out = int(raw_hex[192:256], 16)
+                            _candidate = max(a0out, a1out) / 1e18
+                            if 0 < _candidate < 100:  # sanity check
+                                bnb_received = _candidate
+                                break
+                        except Exception:
+                            pass
             result["bnb_received"] = bnb_received
             print(f"✅ REAL SELL confirmed: {tx_hash.hex()[:20]}... BNB received: {bnb_received:.6f}")
         else:
@@ -3743,6 +3774,7 @@ def auto_position_manager():
                         _auto_paper_sell(addr, f"VolDump {_ratio:.1f}x", 100.0)
                         print(f"⚠️ VolDump: {addr[:10]} ratio={_ratio:.1f}x pnl={pnl:.1f}%")
                         _trail_triggered = True
+                    # FIX 1: _auto_paper_sell real mode bhi handle karta hai internally
 
                 if not _trail_triggered:
                     _pnl_high = _pos_data.get("pnl_high", 0.0)
@@ -4393,6 +4425,18 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
 
         print(f"🎓 [FM] Selling: {token_addr[:10]} | amt={_amt} | min_funds={_min_funds}")
 
+        # FIX 5: Gas balance check before BC sell
+        try:
+            _gas_bal_bc = w3.eth.get_balance(Web3.to_checksum_address(wallet_addr)) / 1e18
+            if _gas_bal_bc < 0.0015:
+                result["error"] = f"insufficient wallet balance {_gas_bal_bc:.4f} BNB"
+                _push_notif("critical", "🔴 Low Balance",
+                    f"insufficient wallet balance {_gas_bal_bc:.4f} BNB — wallet top up karo!",
+                    token_addr[:10], token_addr)
+                return result
+        except Exception:
+            pass  # gas check fail toh proceed
+
         _w3_fast = _get_w3q() or w3
         fc = _w3_fast.eth.contract(address=Web3.to_checksum_address(factory_addr), abi=_FM_BC_ABI)
 
@@ -4425,15 +4469,62 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                     result["error"] = "3 send attempts failed"
                     return result
 
-        # TX sent — turant return, background mein confirm track karo
+        # FIX 3: TX sent — receipt wait karo (60s) taaki bnb_received sahi mile
         result["success"] = True
         result["tx_hash"] = tx_hash.hex()
         result["status"]  = "pending"
 
+        # BC expected BNB estimate (from minFunds)
+        _est_bnb = _min_funds / 1e18 if _min_funds > 0 else 0.0
+        result["bnb_received"] = _est_bnb
+
+        def _bc_track_and_parse(_th_hex, _t_addr, _t_name, _w3t, _min_f):
+            try:
+                for _ in range(30):  # 60s max
+                    try:
+                        _receipt = _w3t.eth.get_transaction_receipt(_th_hex)
+                        if _receipt:
+                            if _receipt["status"] == 1:
+                                # Parse actual BNB from Transfer logs
+                                _bnb_got = _min_f / 1e18 if _min_f > 0 else 0.0
+                                _wallet_cs = Web3.to_checksum_address(BSC_WALLET or REAL_WALLET)
+                                for _log in _receipt["logs"]:
+                                    _topics = _log.get("topics", [])
+                                    if len(_topics) >= 3:
+                                        try:
+                                            _to_addr = "0x" + _topics[2].hex()[-40:]
+                                            if _to_addr.lower() == _wallet_cs.lower():
+                                                _d = _log.get("data", "")
+                                                _d = _d.hex() if isinstance(_d, bytes) else _d
+                                                _val = int(_d, 16) / 1e18
+                                                if 0 < _val < 100:
+                                                    _bnb_got = _val
+                                                    break
+                                        except Exception:
+                                            pass
+                                print(f"✅ [FM BC] Sell confirmed: {_th_hex[:12]} | BNB: {_bnb_got:.6f}")
+                                _push_notif("success", "✅ BC Sell Confirmed",
+                                    f"{_t_name} sell confirmed | BNB: {_bnb_got:.6f} | TX: {_th_hex[:12]}",
+                                    _t_name, _t_addr)
+                                _fm_confirm_close(_t_addr, 100.0, "BC sell confirmed", _th_hex)
+                            else:
+                                print(f"❌ [FM BC] Sell reverted: {_th_hex[:12]}")
+                                _push_notif("critical", "🚨 BC Sell Reverted",
+                                    f"{_t_name} sell reverted — position still open! Manually sell karo! TX: {_th_hex[:12]}",
+                                    _t_name, _t_addr)
+                            return
+                    except Exception:
+                        pass
+                    import time as _t; _t.sleep(2)
+                _push_notif("critical", "⏳ BC Sell Pending",
+                    f"{_t_name} TX pending 60s — manually check! {_th_hex[:12]}", _t_name, _t_addr)
+            except Exception as _te:
+                print(f"⚠️ [FM BC] tracker error: {_te}")
+
         import threading as _th
         _th.Thread(
-            target=_fm_track_sell_confirmation,
-            args=(tx_hash.hex(), token_addr, token_addr[:10], _w3_fast),
+            target=_bc_track_and_parse,
+            args=(tx_hash.hex(), token_addr, token_addr[:10], _w3_fast, _min_funds),
             daemon=True
         ).start()
 
