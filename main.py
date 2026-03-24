@@ -4089,6 +4089,21 @@ _fm_gas_lock  = threading.Lock()
 def _fm_get_cached_gas(w3):
     """Har 10s mein gas price update — buy ke time 0ms"""
     import time as _t
+    _FM_MIN_GAS = 1_000_000_000  # 1 gwei minimum — FourMeme 'GW' error avoid
+    with _fm_gas_lock:
+        if _t.time() - _fm_gas_cache["ts"] < 10 and _fm_gas_cache["price"] > 0:
+            return max(_fm_gas_cache["price"], _FM_MIN_GAS)
+    try:
+        gp = w3.eth.gas_price
+        gp = max(gp, _FM_MIN_GAS)
+        with _fm_gas_lock:
+            _fm_gas_cache["price"] = gp
+            _fm_gas_cache["ts"]    = _t.time()
+        return gp
+    except:
+        return 3_000_000_000
+    """Har 10s mein gas price update — buy ke time 0ms"""
+    import time as _t
     with _fm_gas_lock:
         if _t.time() - _fm_gas_cache["ts"] < 10 and _fm_gas_cache["price"] > 0:
             return _fm_gas_cache["price"]
