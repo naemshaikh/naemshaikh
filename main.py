@@ -4125,13 +4125,15 @@ _FM_BC_ABI = [
      "inputs":[{"name":"token","type":"address"},
                {"name":"funds","type":"uint256"},{"name":"minAmount","type":"uint256"}],
      "outputs":[{"name":"","type":"uint256"}]},
-    # FIX: sellToken sahi 4 params — origin,token,amount,minBNB
-    # origin=0 hamesha, bina is ke encoding galat hoti thi → revert
+    # FIX v11: sellToken V2 = 6 params — feeRate + feeRecipient add kiya
+    # 4 params pe V2 contract hamesha revert karta tha — ROOT CAUSE FIXED
     {"name":"sellToken","type":"function","stateMutability":"nonpayable",
      "inputs":[{"name":"origin","type":"uint256"},
                {"name":"token","type":"address"},
                {"name":"amount","type":"uint256"},
-               {"name":"minBNB","type":"uint256"}],
+               {"name":"minFunds","type":"uint256"},
+               {"name":"feeRate","type":"uint256"},
+               {"name":"feeRecipient","type":"address"}],
      "outputs":[{"name":"","type":"uint256"}]},
 ]
 
@@ -4536,20 +4538,21 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                     })
                     print(f"[FM v10] Pancake Sell TX — Gas:650k | Gwei:{int(_fm_get_cached_gas(_w3_fast)*5.5)/1e9:.1f}")
                 else:
-                    # Curve sell (original)
-                    # ==================== v10 RUG-PROOF CURVE SELL ====================
+                    # Curve sell — v11 FIXED: 6 params ABI
                     tx = fc.functions.sellToken(
-                        0,
-                        Web3.to_checksum_address(token_addr),
-                        _amt,
-                        _min_funds
+                        0,                                              # origin
+                        Web3.to_checksum_address(token_addr),           # token
+                        _amt,                                           # amount
+                        _min_funds,                                     # minFunds
+                        0,                                              # feeRate = 0
+                        "0x0000000000000000000000000000000000000000"    # feeRecipient = zero
                     ).build_transaction({
                     "from":     wallet_cs,
-                    "gas":      750000,                    # BOOST for Four.meme rugs
+                    "gas":      750000,
                     "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 5.5),
                     "nonce":    _nonce,
                 })
-                    print(f"[FM v10] Curve Sell TX — Gas:750k | Gwei:{int(_fm_get_cached_gas(_w3_fast)*5.5)/1e9:.1f}")
+                    print(f"[FM v11] Curve Sell TX — Gas:750k | 6-param ABI FIXED | Gwei:{int(_fm_get_cached_gas(_w3_fast)*5.5)/1e9:.1f}")
                 from eth_account import Account
                 signed  = Account.sign_transaction(tx, pk)
                 tx_hash = _w3_fast.eth.send_raw_transaction(signed.raw_transaction)
