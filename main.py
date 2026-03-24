@@ -3417,11 +3417,61 @@ def continuous_learning():
     cycle = brain.get("total_learning_cycles", 0)
     last_fast = last_deep = last_hour = last_bnb_check = 0
     print(f"📚 Learning from cycle #{cycle}")
+    _last_price_update = 0  # FIX4: price update tracker
+
     while True:
         try:
             cycle += 1
             brain["total_learning_cycles"] = cycle
             now = time.time()
+
+            # ══ FIX4: monitored_positions price update — har 3s ══
+            # Root cause: WSS swap events se price update nahi hota
+            # Yahan har 3s pe get_token_price_bnb se fresh price lo
+            if now - _last_price_update >= 3:
+                _last_price_update = now
+                try:
+                    with monitor_lock:
+                        _mon_snap = list(monitored_positions.items())
+                    for _addr, _mon in _mon_snap:
+                        try:
+                            # FM BC tokens — getTokenInfo se lastPrice
+                            _pos_data = auto_trade_stats.get("running_positions", {}).get(_addr, {})
+                            _src = _pos_data.get("source", "") or _pos_data.get("buy_reasoning", {}).get("source", "")
+                            if "FM_BC" in _src:
+                                try:
+                                    _w3f = _fm_get_w3()
+                                    if _w3f:
+                                        _info = _fm_get_token_info(_addr, _w3f)
+                                        if _info and _info.get("lastPrice", 0) > 0:
+                                            _bnb_p = market_cache.get("bnb_price", 0)
+                                            _quote = str(_info.get("quote", "")).lower()
+                                            if "usdt" in _quote or "busd" in _quote or "usd" in _quote:
+                                                _price = (_info["lastPrice"] / 1e18) / _bnb_p if _bnb_p > 0 else 0
+                                            else:
+                                                _price = _info["lastPrice"] / 1e18
+                                            if _price > 0:
+                                                with monitor_lock:
+                                                    if _addr in monitored_positions:
+                                                        monitored_positions[_addr]["current"] = _price
+                                                        if _price > monitored_positions[_addr].get("high", 0):
+                                                            monitored_positions[_addr]["high"] = _price
+                                except Exception:
+                                    pass
+                            else:
+                                # PancakeSwap tokens — on-chain price
+                                _price = get_token_price_bnb(_addr)
+                                if _price > 0:
+                                    with monitor_lock:
+                                        if _addr in monitored_positions:
+                                            monitored_positions[_addr]["current"] = _price
+                                            if _price > monitored_positions[_addr].get("high", 0):
+                                                monitored_positions[_addr]["high"] = _price
+                        except Exception:
+                            pass
+                except Exception as _pe:
+                    pass
+            # ══ FIX4 END ══
 
             # BNB price backup — har 30s check karo (dedicated loop se alag)
             if now - last_bnb_check >= 30:
