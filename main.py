@@ -4955,13 +4955,14 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                                     if _allow > 0:
                                         print(f"✅ [FM] Already approved: {_addr2[:10]}"); return
                                     from eth_account import Account as _Acc
+                                    # GAS FIX: Pre-approve 1.5x → 3x — approve fast hogi sell se pehle
                                     _atx = _tc2.functions.approve(
                                         Web3.to_checksum_address(_FM_FACTORY_ADDR),
                                         2**256 - 1
                                     ).build_transaction({
                                         "from": _wa2,
                                         "gas": 100000,
-                                        "gasPrice": int(_fm_get_cached_gas(_w3p) * 1.5),
+                                        "gasPrice": int(_fm_get_cached_gas(_w3p) * 3.0),
                                         "nonce": _w3p.eth.get_transaction_count(_wa2, "pending"),
                                     })
                                     _sa = _Acc.sign_transaction(_atx, _pk2)
