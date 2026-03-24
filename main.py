@@ -4491,19 +4491,57 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         except Exception as _ae:
             print(f"⚠️ [FM] Approve error: {str(_ae)[:60]}")
 
+        # FM GRADUATION AUTO DETECT + PC FALLBACK v6
+        _FM_PANCAKE_ROUTER = "0x10ED43C718714eb63d5aA57B78B54704E256024E"
+        _FM_PANCAKE_FACTORY = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
+        _FM_WBNB = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
+
+        def _fm_is_graduated(token):
+            try:
+                fac = _w3_fast.eth.contract(address=_FM_PANCAKE_FACTORY, abi=[{"inputs":[{"name":"","type":"address"},{"name":"","type":"address"}],"name":"getPair","outputs":[{"name":"","type":"address"}],"type":"function"}])
+                pair = fac.functions.getPair(token, _FM_WBNB).call()
+                if pair == "0x0000000000000000000000000000000000000000":
+                    return False
+                pr = _w3_fast.eth.contract(address=pair, abi=[{"inputs":[],"name":"getReserves","outputs":[{"name":"","type":"uint112"},{"name":"","type":"uint112"},{"name":"","type":"uint32"}],"type":"function"}])
+                res = pr.functions.getReserves().call()
+                return res[0] > 0 or res[1] > 0
+            except:
+                return False
+
+        is_grad = _fm_is_graduated(Web3.to_checksum_address(token_addr))
+        print(f"🔍 [FM] Graduated to PC? {'✅ YES (Pancake)' if is_grad else '❌ NO (Curve)'}")
+
+        # Approve (Token Manager ya Router)
+        approve_to = Web3.to_checksum_address(factory_addr) if not is_grad else _FM_PANCAKE_ROUTER
+
+        # SELL LOGIC — Curve ya PC auto
         # Fix 3+4+5: 3 retry turant, pending TX pe retry block, background tracker
         tx_hash = None
         for _attempt in range(1, 4):
             try:
                 _nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")
-                # FIX: origin=0 add kiya — sahi 4 param call
-                # GAS FIX: BC sell 3x — rug se pehle fast niklo
-                tx = fc.functions.sellToken(
-                    0,                                        # origin = 0
-                    Web3.to_checksum_address(token_addr),     # token
-                    _amt,                                     # raw amount 18 decimals
-                    _min_funds                                 # minBNB = 0
-                ).build_transaction({
+                if is_grad:
+                    # Pancake sell
+                    pr = _w3_fast.eth.contract(address=_FM_PANCAKE_ROUTER, abi=[{"name":"swapExactTokensForETH","type":"function","stateMutability":"nonpayable","inputs":[{"name":"amountIn","type":"uint256"},{"name":"amountOutMin","type":"uint256"},{"name":"path","type":"address[]"},{"name":"to","type":"address"},{"name":"deadline","type":"uint256"}],"outputs":[{"name":"amounts","type":"uint256[]"}]}])
+                    tx = pr.functions.swapExactTokensForETH(
+                        _amt, 0,
+                        [Web3.to_checksum_address(token_addr), _FM_WBNB],
+                        wallet_cs,
+                        int(_w3_fast.eth.get_block('latest')['timestamp'] + 300)
+                    ).build_transaction({
+                        "from": wallet_cs,
+                        "gas": 400000,
+                        "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 3.0),
+                        "nonce": _nonce,
+                    })
+                else:
+                    # Curve sell (original)
+                    tx = fc.functions.sellToken(
+                        0,                                        # origin = 0
+                        Web3.to_checksum_address(token_addr),     # token
+                        _amt,                                     # raw amount 18 decimals
+                        _min_funds                                 # minBNB = 0
+                    ).build_transaction({
                     "from":     wallet_cs,
                     "gas":      300000,
                     "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 3.0),
