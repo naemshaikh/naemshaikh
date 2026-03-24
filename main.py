@@ -3621,6 +3621,242 @@ def feedback_validation_loop():
 
 _pair_to_token: dict = {}  # {pair_lower: {token, pair, ts}}
 
+def auto_position_manager():
+    print("Auto Position Manager started!")
+    try:
+        _s = get_or_create_session(AUTO_SESSION_ID)
+        _dl = _s.get("daily_loss", 0)
+        _today = datetime.utcnow().strftime("%Y-%m-%d")
+        if _dl > 1.0 or _s.get("daily_loss_date", "") != _today:
+            print(f"🔄 Startup: daily_loss={_dl:.4f} → 0 (new day or stale)")
+            _s["daily_loss"] = 0.0
+            _s["daily_loss_date"] = _today
+    except Exception as _e:
+        print(f"⚠️ Startup reset error: {_e}")
+    if not isinstance(auto_trade_stats.get("trade_history"), list):
+        auto_trade_stats["trade_history"] = []
+    while True:
+        for addr, pos in list(auto_trade_stats["running_positions"].items()):
+            try:
+                with monitor_lock:
+                    mon = monitored_positions.get(addr, {})
+                current = mon.get("current", 0)
+                _pos_data = auto_trade_stats["running_positions"].get(addr, pos)
+                entry   = _pos_data.get("entry", 0)
+                high    = mon.get("high", entry)
+                tp_sold = _pos_data.get("tp_sold", 0.0)
+                sl_pct  = _pos_data.get("sl_pct", 12.0)
+                if entry <= 0:
+                    continue
+
+                if current <= 0:
+                    _zero_count = _pos_data.get("_zero_price_count", 0) + 1
+                    _pos_data["_zero_price_count"] = _zero_count
+                    print(f"⚠️ Price=0: {addr[:10]} count={_zero_count}/3")
+                    if _zero_count >= 3:
+                        print(f"🚨 RUG: {addr[:10]} price=0 x3 → force close")
+                        _auto_paper_sell(addr, "🚨 RUG price=0", 100.0)
+                    continue
+                else:
+                    _pos_data["_zero_price_count"] = 0
+
+                pnl     = ((current - entry) / entry) * 100
+                drop_hi = ((current - high) / high) * 100 if high > 0 else 0
+                _cs   = CHECKLIST_SETTINGS
+                _tp3  = _cs.get("tp3_pct", 100.0)
+                _tp4  = _cs.get("tp4_pct", 200.0)
+
+                _vol     = _get_vol_pressure_rt(addr)
+                _bv5     = _vol.get("buy_vol5",  0.0)
+                _sv5     = _vol.get("sell_vol5", 0.0)
+                _b5      = _vol.get("buys5",     0)
+                _s5      = _vol.get("sells5",    0)
+                _has_vol = (_bv5 > 0 or _sv5 > 0 or _b5 > 0 or _s5 > 0)
+
+                _trail_triggered = False
+
+                with _lp_burn_lock:
+                    _burn_detected = addr.lower() in _lp_burn_alerts
+                if _burn_detected:
+                    print(f"🚨 LP Burn confirmed sell: {addr[:10]}")
+                    _auto_paper_sell(addr, "LP Burn 🚨 Rug Confirmed", 100.0)
+                    with _lp_burn_lock:
+                        _lp_burn_alerts.discard(addr.lower())
+                    continue
+
+                _now_t = time.time()
+                _last_res_t = _pos_data.get("_last_res_t", 0)
+                if _now_t - _last_res_t >= 3:
+                    _pos_data["_last_res_t"] = _now_t
+                    try:
+                        _pair_addr = _get_pair_for_token(addr)
+                        if _pair_addr:
+                            _pc = w3.eth.contract(
+                                address=Web3.to_checksum_address(_pair_addr),
+                                abi=PAIR_ABI_PRICE
+                            )
+                            _res = _pc.functions.getReserves().call()
+                            _t0  = _pc.functions.token0().call().lower()
+                            _wbnb_res = _res[0] if _t0 == WBNB.lower() else _res[1]
+                            _wbnb_bnb = _wbnb_res / 1e18
+                            _prev_wbnb = _pos_data.get("_wbnb_reserve", 0)
+                            if _prev_wbnb <= 0:
+                                _pos_data["_wbnb_reserve"] = _wbnb_bnb
+                            else:
+                                _drop_pct = ((_wbnb_bnb - _prev_wbnb) / _prev_wbnb) * 100
+                                if _drop_pct <= -50:
+                                    print(f"🚨 RESERVES DROP: {addr[:10]} WBNB {_prev_wbnb:.3f}→{_wbnb_bnb:.3f} ({_drop_pct:.0f}%) → SELL!")
+                                    _auto_paper_sell(addr, f"LiqDrop {abs(_drop_pct):.0f}% 🚨 Rug", 100.0)
+                                    continue
+                                elif _wbnb_bnb > _prev_wbnb:
+                                    _pos_data["_wbnb_reserve"] = _wbnb_bnb
+                    except Exception:
+                        pass
+
+                if _has_vol:
+                    if _bv5 > 0 or _sv5 > 0:
+                        _ratio = _sv5 / max(_bv5, 0.0001)
+                    else:
+                        _ratio = _s5 / max(_b5, 1)
+                    if _ratio >= 5.0 and _s5 >= 5 and pnl <= -8:
+                        _auto_paper_sell(addr, f"VolRug {_ratio:.1f}x 🚨", 100.0)
+                        print(f"🚨 VolRug: {addr[:10]} ratio={_ratio:.1f}x sv={_sv5:.3f} bv={_bv5:.3f}")
+                        _trail_triggered = True
+                    elif _ratio >= 3.0 and _s5 >= 5 and pnl <= -10:
+                        _auto_paper_sell(addr, f"VolDump {_ratio:.1f}x", 100.0)
+                        print(f"⚠️ VolDump: {addr[:10]} ratio={_ratio:.1f}x pnl={pnl:.1f}%")
+                        _trail_triggered = True
+
+                if not _trail_triggered:
+                    _pnl_high = _pos_data.get("pnl_high", 0.0)
+                    if pnl > _pnl_high:
+                        _pos_data["pnl_high"] = pnl
+                        _pnl_high = pnl
+
+                    _entry_sl = _pos_data.get("sl_pct", 12.0)
+                    _sl_floor = (_pnl_high * 0.7) if _pnl_high >= 30 else -_entry_sl
+
+                    if pnl >= 200 and tp_sold < 90:
+                        _auto_paper_sell(addr, f"ProTP +200% [90% banked] 🌙", 15.0)
+                        print(f"🌙 ProTP200: {addr[:10]} pnl={pnl:.1f}%")
+                    elif pnl >= 120 and tp_sold < 75:
+                        _auto_paper_sell(addr, f"ProTP +120% [75% banked] 💰", 25.0)
+                        print(f"💰 ProTP120: {addr[:10]} pnl={pnl:.1f}%")
+                    elif pnl >= 40 and tp_sold < 50:
+                        _auto_paper_sell(addr, f"ProTP +40% [50% banked] 🔒", 50.0)
+                        print(f"🔒 ProTP40: {addr[:10]} pnl={pnl:.1f}%")
+                    elif pnl <= _sl_floor and _pnl_high >= 40:
+                        _auto_paper_sell(addr, f"TrailSL locked +{_sl_floor:.0f}%", 100.0)
+                        _trail_triggered = True
+                        print(f"🔒 TrailSL: {addr[:10]} pnl={pnl:.1f}% floor={_sl_floor:.0f}%")
+                    elif drop_hi <= -_entry_sl:
+                        _auto_paper_sell(addr, f"TrailSL -{_entry_sl:.0f}% entry", 100.0)
+                        _trail_triggered = True
+                        blacklist_token(addr, f"TrailSL -{_entry_sl:.0f}% rebuy block")
+                        print(f"🔒 TrailSL entry: {addr[:10]} drop={drop_hi:.1f}%")
+                    elif _pos_data.get("trail_tp_active") and drop_hi <= -_pos_data.get("trail_tp_pct", 20.0):
+                        _ttp = _pos_data.get("trail_tp_pct", 20.0)
+                        _auto_paper_sell(addr, f"TrailTP -{_ttp:.0f}% from high 🎯", 100.0)
+                        print(f"🎯 TrailTP exit: {addr[:10]} drop={drop_hi:.1f}%")
+                    elif pnl >= 9900 and tp_sold < 90:
+                        _auto_paper_sell(addr, "Ladder 100x 🌙", 10.0)
+                        _pos_data["trail_tp_pct"] = 10.0
+                    elif pnl >= 4900 and tp_sold < 80:
+                        _auto_paper_sell(addr, "Ladder 50x 🌟", 15.0)
+                        _pos_data["trail_tp_pct"] = 12.0
+                    elif pnl >= 1900 and tp_sold < 65:
+                        _auto_paper_sell(addr, "Ladder 20x 💎", 15.0)
+                        _pos_data["trail_tp_active"] = True
+                        _pos_data["trail_tp_pct"]    = 15.0
+                    elif pnl >= 900 and tp_sold < 50:
+                        _auto_paper_sell(addr, "Ladder 10x 🚀", 15.0)
+                        _pos_data["trail_tp_active"] = True
+                        _pos_data["trail_tp_pct"]    = 20.0
+                    elif pnl >= 400 and tp_sold < 35:
+                        _auto_paper_sell(addr, "Ladder 5x 🔥", 15.0)
+                        _pos_data["trail_tp_active"] = True
+                        _pos_data["trail_tp_pct"]    = 25.0
+                    elif pnl >= _tp4 and tp_sold < 20:
+                        _auto_paper_sell(addr, "Ladder 3x 💰", 10.0)
+                    elif pnl >= _tp3 and tp_sold < 10:
+                        _auto_paper_sell(addr, "Ladder 2x ✅", 10.0)
+
+            except Exception as e:
+                print(f"Auto manager err {addr[:10]}: {e}")
+
+        _positions = auto_trade_stats["running_positions"]
+        if not _positions:
+            _sleep = 30
+        elif any(
+            ((monitored_positions.get(a, {}).get("current", 0) - v.get("entry", 1e-18)) / max(v.get("entry", 1e-18), 1e-18)) * 100 >= 10
+            for a, v in list(_positions.items())
+        ):
+            _sleep = 0.3
+        else:
+            _sleep = 1.0
+        time.sleep(_sleep)
+
+
+def price_monitor_loop():
+    print("📡 Price Monitor started")
+    while True:
+        with monitor_lock:
+            _snap = list(monitored_positions.items())
+        for addr, pos in _snap:
+            try:
+                if pos.get("buy_reasoning", {}).get("source") == "FM_BC_v2":
+                    try:
+                        _fm_info = _fm_get_token_info(addr, _fm_get_w3())
+                        if _fm_info and _fm_info.get("lastPrice", 0) > 0:
+                            _bnb_p = market_cache.get("bnb_price", 640)
+                            _quote = _fm_info.get("quote", "").lower()
+                            _USDT_L = "0x55d398326f99059ff775485246999027b3197955"
+                            _BUSD_L = "0xe9e7cea3dedca5984780bafc599bd69add087d56"
+                            if _quote in [_USDT_L, _BUSD_L]:
+                                current = (_fm_info["lastPrice"] / 1e18) / _bnb_p if _bnb_p > 0 else 0
+                            else:
+                                current = _fm_info["lastPrice"] / 1e18
+                        else:
+                            current = 0
+                    except:
+                        current = 0
+                else:
+                    current = get_token_price_bnb(addr)
+                if current <= 0:
+                    continue
+                if pos["entry"] > 0 and current > pos["entry"] * 10000:
+                    continue
+                pos["current"] = current
+                if current > pos["high"]:
+                    pos["high"] = current
+                entry          = pos["entry"]
+                pnl_pct        = ((current - entry) / entry) * 100 if entry > 0 else 0
+                drop_from_high = ((current - pos["high"]) / pos["high"]) * 100 if pos["high"] > 0 else 0
+                sl             = pos["stop_loss_pct"]
+                alerts_sent    = pos["alerts_sent"]
+
+                if pnl_pct <= -sl and "stop_loss" not in alerts_sent:
+                    alerts_sent.append("stop_loss")
+                if pnl_pct >= 200 and "tp_200" not in alerts_sent:
+                    alerts_sent.append("tp_200")
+                elif pnl_pct >= 100 and "tp_100" not in alerts_sent:
+                    alerts_sent.append("tp_100")
+                elif pnl_pct >= 50 and "tp_50" not in alerts_sent:
+                    alerts_sent.append("tp_50")
+                elif pnl_pct >= 30 and "tp_30" not in alerts_sent:
+                    alerts_sent.append("tp_30")
+                if drop_from_high <= -90 and "dump_90" not in alerts_sent:
+                    alerts_sent.append("dump_90")
+                elif drop_from_high <= -70 and "dump_70" not in alerts_sent:
+                    alerts_sent.append("dump_70")
+                elif drop_from_high <= -50 and "dump_50" not in alerts_sent:
+                    alerts_sent.append("dump_50")
+            except Exception as e:
+                print(f"⚠️ Price monitor error ({addr}): {e}")
+        _sleep = 1.0 if monitored_positions else 15
+        time.sleep(_sleep)
+
+
 def _memory_cleanup_loop():
     """Periodic cleanup — _pair_to_token + _rt_swap_data orphan entries remove karo"""
     time.sleep(60)
