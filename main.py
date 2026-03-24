@@ -4499,19 +4499,36 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
             pass  # gas check fail toh proceed
 
         _w3_fast = _get_w3q() or w3
-        fc = _w3_fast.eth.contract(address=Web3.to_checksum_address(factory_addr), abi=_FM_BC_ABI)
 
-        # FIX: Approve Token Manager pehle — bina approval sell revert hogi
+        # FIX v18: Version check + dynamic tokenManager via getTokenInfo
+        _token_ver = 2
+        _dynamic_manager = factory_addr
+        try:
+            _helper_c = _w3_fast.eth.contract(
+                address=Web3.to_checksum_address(_FM_HELPER_ADDR), abi=_FM_HELPER_ABI)
+            _tinfo = _helper_c.functions.getTokenInfo(
+                Web3.to_checksum_address(token_addr)).call()
+            _token_ver       = int(_tinfo[0])
+            _dynamic_manager = _tinfo[1]  # actual tokenManager address
+            print(f"[FM v18] Token version={_token_ver} | manager={str(_dynamic_manager)[:10]}")
+        except Exception as _ve:
+            print(f"[FM v18] getTokenInfo failed ({str(_ve)[:40]}), defaulting V2")
+
+        # FIX v18: V1 ya V2 ABI — version ke hisaab se
+        _use_abi = _FM_BC_ABI_V1 if _token_ver == 1 else _FM_BC_ABI
+        fc = _w3_fast.eth.contract(address=Web3.to_checksum_address(factory_addr), abi=_use_abi)
+
+        # FIX v18: Approve dynamic tokenManager (factory nahi)
         try:
             _tc_approve = _w3_fast.eth.contract(
                 address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
             _allowance = _tc_approve.functions.allowance(
-                wallet_cs, Web3.to_checksum_address(factory_addr)).call()
+                wallet_cs, Web3.to_checksum_address(_dynamic_manager)).call()
             if _allowance < _amt:
                 print(f"🔑 [FM] Approving Token Manager for sell...")
                 _approve_nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")
                 _approve_tx = _tc_approve.functions.approve(
-                    Web3.to_checksum_address(factory_addr), 2**256 - 1
+                    Web3.to_checksum_address(_dynamic_manager), 2**256 - 1
                 ).build_transaction({
                     "from":     wallet_cs,
                     "gas":      100000,
