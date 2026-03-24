@@ -4482,6 +4482,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                     "gas":      100000,
                     "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 3.0),
                     "nonce":    _approve_nonce,
+                    "chainId":  56,
                 })
                 from eth_account import Account as _AccA
                 _signed_a = _AccA.sign_transaction(_approve_tx, pk)
@@ -4532,11 +4533,12 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                         int(_w3_fast.eth.get_block('latest')['timestamp'] + 300)
                     ).build_transaction({
                         "from": wallet_cs,
-                        "gas": 650000,                         # BOOST
+                        "gas": 650000,
                         "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 5.5),
                         "nonce": _nonce,
+                        "chainId": 56,
                     })
-                    print(f"[FM v10] Pancake Sell TX — Gas:650k | Gwei:{int(_fm_get_cached_gas(_w3_fast)*5.5)/1e9:.1f}")
+                    print(f"[FM v13] Pancake Sell TX — Gas:650k | chainId=56 | Gwei:{int(_fm_get_cached_gas(_w3_fast)*5.5)/1e9:.1f}")
                 else:
                     # Curve sell — v11 FIXED: 6 params ABI
                     tx = fc.functions.sellToken(
@@ -4551,8 +4553,9 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                     "gas":      750000,
                     "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 5.5),
                     "nonce":    _nonce,
+                    "chainId":  56,
                 })
-                    print(f"[FM v11] Curve Sell TX — Gas:750k | 6-param ABI FIXED | Gwei:{int(_fm_get_cached_gas(_w3_fast)*5.5)/1e9:.1f}")
+                    print(f"[FM v13] Curve Sell TX — Gas:750k | 6-param | chainId=56 | Gwei:{int(_fm_get_cached_gas(_w3_fast)*5.5)/1e9:.1f}")
                 from eth_account import Account
                 signed  = Account.sign_transaction(tx, pk)
                 tx_hash = _w3_fast.eth.send_raw_transaction(signed.raw_transaction)
@@ -5027,6 +5030,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     "gas": 400000,
                     "gasPrice": int((_pre_gas[0] or _fm_get_cached_gas(_w3_buy)) * 1.5),
                     "nonce": _pre_nonce[0] or _w3_buy.eth.get_transaction_count(wallet_addr, "pending"),
+                    "chainId": 56,
                 })
                 from eth_account import Account
                 signed = Account.sign_transaction(tx, pk)
