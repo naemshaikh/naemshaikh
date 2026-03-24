@@ -4556,7 +4556,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                         int(_w3_fast.eth.get_block('latest')['timestamp'] + 300)
                     ).build_transaction({
                         "from": wallet_cs,
-                        "gas": 650000,
+                        "gas": 400000,
                         "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 5.5),
                         "nonce": _nonce,
                         "chainId": 56,
@@ -4574,7 +4574,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                         "0x0000000000000000000000000000000000000000"    # feeRecipient = zero
                     ).build_transaction({
                     "from":     wallet_cs,
-                    "gas":      750000,
+                    "gas":      400000,
                     "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 5.5),
                     "nonce":    _nonce,
                     "chainId":  56,
