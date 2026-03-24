@@ -4646,20 +4646,24 @@ def _fm_honeypot_sim(token_addr, factory_addr, w3=None):
         fc = w3.eth.contract(address=Web3.to_checksum_address(factory_addr), abi=_FM_BC_ABI)
         _tiny = int(0.001 * 1e18)  # 0.001 BNB
 
-        # Simulate buy via eth_call
+        # Simulate buy via eth_call — v12: 3 params correct
         buy_result = fc.functions.buyTokenAMAP(
             Web3.to_checksum_address(token_addr),
-            Web3.to_checksum_address("0x000000000000000000000000000000000000dead"),
-            _tiny, 0
+            _tiny,
+            0
         ).call({"value": _tiny})
 
         if buy_result <= 0:
             return False  # honeypot — buy fail
 
-        # Simulate sell
+        # Simulate sell — v12: 6 params correct
         sell_result = fc.functions.sellToken(
+            0,
             Web3.to_checksum_address(token_addr),
-            buy_result, 0
+            buy_result,
+            0,
+            0,
+            "0x0000000000000000000000000000000000000000"
         ).call()
 
         if sell_result <= 0:
