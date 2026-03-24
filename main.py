@@ -2892,15 +2892,23 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         _source     = pos.get("source", "") or pos.get("buy_reasoning", {}).get("source", "")
 
         if "FM_BC" in _source:
+            _w3_sell   = _get_w3q() or _fm_get_w3()
+            _graduated = False
             _fm_factory = pos.get("fm_factory", _FM_FACTORY_ADDR)
-            _w3_sell    = _get_w3q() or _fm_get_w3()
-            _graduated  = False
             if _w3_sell:
                 try:
                     _info_sell = _fm_get_token_info(address, _w3_sell)
-                    _graduated = _info_sell.get("liquidityAdded", False) if _info_sell else False
-                except: pass
-            
+                    if _info_sell:
+                        _graduated = _info_sell.get("liquidityAdded", False)
+                        # FIX: har token ka alag tokenManager hota hai
+                        # tokenManager = actual sell contract, factory nahi
+                        _tm = _info_sell.get("tokenManager", "")
+                        if _tm and _tm != "0x0000000000000000000000000000000000000000":
+                            _fm_factory = _tm
+                            print(f"✅ [FM] tokenManager: {_tm[:10]} for {address[:10]}")
+                except Exception as _te:
+                    print(f"⚠️ [FM] tokenInfo sell error: {str(_te)[:40]}")
+
             if not _graduated:
                 _real_sell = _fm_real_sell_bc(address, sell_pct, _fm_factory, _w3_sell)
             else:
