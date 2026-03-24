@@ -4415,18 +4415,10 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
             result["error"] = "zero balance"
             return result
 
-        # Fix 1: minFunds — BC formula (funds/offers) instead of hardcoded totalSupply
+        # FIX: minFunds = 0 — BC pe slippage nahi chahiye
+        # buyTokenAMAP bhi 0 use karta hai — BC formula fixed hai
+        # Outdated price se minFunds calculate karna = revert
         _min_funds = 0
-        try:
-            _info_sell = _fm_get_token_info(token_addr, w3)
-            if _info_sell:
-                _funds  = int(_info_sell.get("funds",  0) or 0)
-                _offers = int(_info_sell.get("offers", 0) or 0)
-                if _funds > 0 and _offers > 0:
-                    _expected_bnb = (_funds * _amt) // max(_offers, 1)
-                    _min_funds = int(_expected_bnb * 0.90)  # 10% slippage
-        except:
-            _min_funds = 0  # safe fallback
 
         print(f"🎓 [FM] Selling: {token_addr[:10]} | amt={_amt} | min_funds={_min_funds}")
 
