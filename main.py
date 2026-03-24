@@ -823,6 +823,61 @@ def _anti_mev_slippage(buy_tax: float = 0.0, sell_tax: float = 0.0) -> int:
 
 
 
+def _get_dynamic_gas_price() -> int:
+    """
+    Dynamic gas price in wei — NodeReal ya w3 se fetch karo.
+    BSC real buy/sell/approve transactions ke liye gasPrice field.
+    Cached 30s via DataGuard._gas_cache (consistent).
+    Returns: int (wei) — e.g. 1_000_000_000 = 1 gwei
+    """
+    # Primary: w3 direct gas_price (already connected RPC)
+    try:
+        gp   = w3.eth.gas_price  # wei
+        gwei = gp / 1e9
+        if 0.5 < gwei < 100:
+            return gp
+    except Exception as _e:
+        print(f"⚠️ _get_dynamic_gas_price w3 error: {_e}")
+
+    # Fallback 1: NodeReal JSON-RPC
+    try:
+        _key = os.environ.get("NODEREAL_API_KEY", "")
+        if _key:
+            r = requests.post(
+                f"https://bsc-mainnet.nodereal.io/v1/{_key}",
+                json={"jsonrpc": "2.0", "id": 1, "method": "eth_gasPrice", "params": []},
+                timeout=5
+            )
+            gp_hex = r.json().get("result", "0x0")
+            gp     = int(gp_hex, 16)
+            gwei   = gp / 1e9
+            if 0.5 < gwei < 100:
+                return gp
+    except Exception as _e:
+        print(f"⚠️ _get_dynamic_gas_price NodeReal error: {_e}")
+
+    # Fallback 2: BSC public RPC
+    try:
+        import requests as _req
+        _pub_rpc = "https://bsc-dataseed.bnbchain.org"
+        r2 = _req.post(
+            _pub_rpc,
+            json={"jsonrpc": "2.0", "id": 1, "method": "eth_gasPrice", "params": []},
+            timeout=5
+        )
+        gp_hex2 = r2.json().get("result", "0x0")
+        gp2     = int(gp_hex2, 16)
+        gwei2   = gp2 / 1e9
+        if 0.5 < gwei2 < 100:
+            return gp2
+    except Exception as _e:
+        print(f"⚠️ _get_dynamic_gas_price public RPC error: {_e}")
+
+    # Last resort: BSC safe minimum 1 gwei
+    print("⚠️ _get_dynamic_gas_price — all sources failed, using 1 gwei fallback")
+    return int(1e9)  # 1 gwei in wei
+
+
 def _pre_approve_after_buy(token_addr):
     """Fix #10: Pre-approve after successful buy"""
     try:
