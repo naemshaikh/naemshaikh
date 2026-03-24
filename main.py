@@ -4125,11 +4125,12 @@ _FM_BC_ABI = [
      "inputs":[{"name":"token","type":"address"},
                {"name":"funds","type":"uint256"},{"name":"minAmount","type":"uint256"}],
      "outputs":[{"name":"","type":"uint256"}]},
-    # FIX v11: sellToken V2 = 6 params — feeRate + feeRecipient add kiya
-    # 4 params pe V2 contract hamesha revert karta tha — ROOT CAUSE FIXED
+    # FIX v14: sellToken V2 = 7 params — `from` wallet param add kiya
+    # CONTRACT: require(msg.sender == from) — from missing = guaranteed revert
     {"name":"sellToken","type":"function","stateMutability":"nonpayable",
      "inputs":[{"name":"origin","type":"uint256"},
                {"name":"token","type":"address"},
+               {"name":"from","type":"address"},
                {"name":"amount","type":"uint256"},
                {"name":"minFunds","type":"uint256"},
                {"name":"feeRate","type":"uint256"},
@@ -4540,10 +4541,11 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                     })
                     print(f"[FM v13] Pancake Sell TX — Gas:650k | chainId=56 | Gwei:{int(_fm_get_cached_gas(_w3_fast)*5.5)/1e9:.1f}")
                 else:
-                    # Curve sell — v11 FIXED: 6 params ABI
+                    # Curve sell — v14 FIXED: 7 params (from=wallet_cs added)
                     tx = fc.functions.sellToken(
                         0,                                              # origin
                         Web3.to_checksum_address(token_addr),           # token
+                        wallet_cs,                                      # from ← v14 FIX
                         _amt,                                           # amount
                         _min_funds,                                     # minFunds
                         0,                                              # feeRate = 0
@@ -4555,7 +4557,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                     "nonce":    _nonce,
                     "chainId":  56,
                 })
-                    print(f"[FM v13] Curve Sell TX — Gas:750k | 6-param | chainId=56 | Gwei:{int(_fm_get_cached_gas(_w3_fast)*5.5)/1e9:.1f}")
+                    print(f"[FM v14] Curve Sell TX — Gas:750k | 7-param | chainId=56 | Gwei:{int(_fm_get_cached_gas(_w3_fast)*5.5)/1e9:.1f}")
                 from eth_account import Account
                 signed  = Account.sign_transaction(tx, pk)
                 tx_hash = _w3_fast.eth.send_raw_transaction(signed.raw_transaction)
@@ -4659,10 +4661,12 @@ def _fm_honeypot_sim(token_addr, factory_addr, w3=None):
         if buy_result <= 0:
             return False  # honeypot — buy fail
 
-        # Simulate sell — v12: 6 params correct
+        # Simulate sell — v14: 7 params (from added)
+        _sim_wallet = Web3.to_checksum_address(BSC_WALLET or REAL_WALLET)
         sell_result = fc.functions.sellToken(
             0,
             Web3.to_checksum_address(token_addr),
+            _sim_wallet,
             buy_result,
             0,
             0,
