@@ -4210,6 +4210,10 @@ def _fm_get_unique_buyers(token_addr, w3=None):
 _fm_sniped      = set()
 _fm_sniped_lock = threading.Lock()
 
+# FIX v15: Sell dedup — ek token pe ek hi sell ek waqt mein
+_fm_selling_set  = set()
+_fm_selling_lock = threading.Lock()
+
 # Dev history cache — on-chain results cache karo
 _fm_dev_cache      = {}
 _fm_dev_cache_lock = threading.Lock()
@@ -4426,13 +4430,28 @@ def _fm_track_sell_confirmation(tx_hash_hex, token_addr, token_name, w3, sell_pc
 def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=None) -> dict:
     """FM Bonding Curve pe real sell — background tracker + 3 retry + BC minFunds"""
     result = {"success": False, "tx_hash": "", "bnb_received": 0.0, "error": "", "status": ""}
+
+    # FIX v15: Sell dedup — agar ye token already sell ho raha hai toh skip
+    _t_lower = token_addr.lower()
+    with _fm_selling_lock:
+        if _t_lower in _fm_selling_set:
+            print(f"⏭️ [FM] Sell already in progress for {token_addr[:10]} — skip")
+            result["error"] = "sell already in progress"
+            return result
+        _fm_selling_set.add(_t_lower)
+
     try:
         pk = os.getenv("WALLET_PRIVATE_KEY", "") or os.getenv("PRIVATE_KEY", "") or os.getenv("REAL_PRIVATE_KEY", "")
         wallet_addr = BSC_WALLET or REAL_WALLET
         if not wallet_addr or not pk:
-            result["error"] = "no wallet/key"; return result
+            result["error"] = "no wallet/key"
+            with _fm_selling_lock: _fm_selling_set.discard(_t_lower)
+            return result
         if not w3: w3 = _get_w3q() or _fm_get_w3()
-        if not w3: result["error"] = "no RPC"; return result
+        if not w3:
+            result["error"] = "no RPC"
+            with _fm_selling_lock: _fm_selling_set.discard(_t_lower)
+            return result
 
         # Fix 7: checksum wallet
         wallet_cs = Web3.to_checksum_address(wallet_addr)
@@ -4523,6 +4542,9 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         tx_hash = None
         for _attempt in range(1, 4):
             try:
+                # FIX v15: Har retry pe fresh nonce — stale nonce = gapped-nonce error
+                if _attempt > 1:
+                    import time as _nt; _nt.sleep(1)  # 1s wait before retry
                 _nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")
                 if is_grad:
                     # Pancake sell
@@ -4615,6 +4637,8 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                                 _push_notif("critical", "🚨 BC Sell Reverted",
                                     f"{_t_name} sell reverted — position still open! Manually sell karo! TX: {_th_hex[:12]}",
                                     _t_name, _t_addr)
+                            # FIX v15: Lock release — ab ye token dobara sell ho sakta hai
+                            with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower())
                             return
                     except Exception:
                         pass
@@ -4637,6 +4661,8 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
     except Exception as e:
         result["error"] = str(e)[:60]
         print(f"❌ [FM] Sell error: {result['error']}")
+        # FIX v15: Exception pe bhi lock release
+        with _fm_selling_lock: _fm_selling_set.discard(token_addr.lower())
         return result
 
 def _fm_honeypot_sim(token_addr, factory_addr, w3=None):
