@@ -2923,7 +2923,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         
         if sell_pct >= 100.0:
             auto_trade_stats["auto_pnl_total"] += pnl_pct
-        auto_trade_stats["total_auto_sells"] += 1
+            # FIX: sirf final 100% close pe count karo
+            auto_trade_stats["total_auto_sells"] += 1
         
         _banked = pos.get("banked_pnl_bnb", 0.0)
         pos["banked_pnl_bnb"] = round(_banked + pnl_bnb, 6)
@@ -4316,7 +4317,8 @@ def _fm_confirm_close(token_addr, sell_pct, reason, tx_hash_hex):
 
         if sell_pct >= 100.0:
             auto_trade_stats["auto_pnl_total"] += pnl_pct
-        auto_trade_stats["total_auto_sells"] += 1
+            # FIX: sirf final 100% close pe count karo
+            auto_trade_stats["total_auto_sells"] += 1
 
         _banked = pos.get("banked_pnl_bnb", 0.0)
         pos["banked_pnl_bnb"] = round(_banked + pnl_bnb, 6)
