@@ -3419,11 +3419,56 @@ def continuous_learning():
     print(f"📚 Learning from cycle #{cycle}")
     _last_price_update = 0  # FIX4: price update tracker
 
+    _last_price_update = 0  # FIX4
+
     while True:
         try:
             cycle += 1
             brain["total_learning_cycles"] = cycle
             now = time.time()
+
+            # FIX4: Price update har 3s
+            if now - _last_price_update >= 3:
+                _last_price_update = now
+                try:
+                    with monitor_lock:
+                        _mon_snap = list(monitored_positions.items())
+                    for _addr, _mon in _mon_snap:
+                        try:
+                            _pos_data = auto_trade_stats.get("running_positions", {}).get(_addr, {})
+                            _src = _pos_data.get("source", "") or _pos_data.get("buy_reasoning", {}).get("source", "")
+                            if "FM_BC" in _src:
+                                try:
+                                    _w3f = _fm_get_w3()
+                                    if _w3f:
+                                        _info = _fm_get_token_info(_addr, _w3f)
+                                        if _info and _info.get("lastPrice", 0) > 0:
+                                            _bnb_p = market_cache.get("bnb_price", 0)
+                                            _quote = str(_info.get("quote", "")).lower()
+                                            if "usdt" in _quote or "busd" in _quote:
+                                                _price = (_info["lastPrice"] / 1e18) / _bnb_p if _bnb_p > 0 else 0
+                                            else:
+                                                _price = _info["lastPrice"] / 1e18
+                                            if _price > 0:
+                                                with monitor_lock:
+                                                    if _addr in monitored_positions:
+                                                        monitored_positions[_addr]["current"] = _price
+                                                        if _price > monitored_positions[_addr].get("high", 0):
+                                                            monitored_positions[_addr]["high"] = _price
+                                except Exception:
+                                    pass
+                            else:
+                                _price = get_token_price_bnb(_addr)
+                                if _price > 0:
+                                    with monitor_lock:
+                                        if _addr in monitored_positions:
+                                            monitored_positions[_addr]["current"] = _price
+                                            if _price > monitored_positions[_addr].get("high", 0):
+                                                monitored_positions[_addr]["high"] = _price
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
 
             # ══ FIX4: monitored_positions price update — har 3s ══
             # Root cause: WSS swap events se price update nahi hota
