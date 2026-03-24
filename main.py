@@ -4125,12 +4125,27 @@ _FM_BC_ABI = [
      "inputs":[{"name":"token","type":"address"},
                {"name":"funds","type":"uint256"},{"name":"minAmount","type":"uint256"}],
      "outputs":[{"name":"","type":"uint256"}]},
-    # FIX v14: sellToken V2 = 7 params — `from` wallet param add kiya
-    # CONTRACT: require(msg.sender == from) — from missing = guaranteed revert
+    # V2: 7 params
     {"name":"sellToken","type":"function","stateMutability":"nonpayable",
      "inputs":[{"name":"origin","type":"uint256"},
                {"name":"token","type":"address"},
                {"name":"from","type":"address"},
+               {"name":"amount","type":"uint256"},
+               {"name":"minFunds","type":"uint256"},
+               {"name":"feeRate","type":"uint256"},
+               {"name":"feeRecipient","type":"address"}],
+     "outputs":[{"name":"","type":"uint256"}]},
+]
+
+# V1 ABI — 6 params (no from)
+_FM_BC_ABI_V1 = [
+    {"name":"buyTokenAMAP","type":"function","stateMutability":"payable",
+     "inputs":[{"name":"token","type":"address"},
+               {"name":"funds","type":"uint256"},{"name":"minAmount","type":"uint256"}],
+     "outputs":[{"name":"","type":"uint256"}]},
+    {"name":"sellToken","type":"function","stateMutability":"nonpayable",
+     "inputs":[{"name":"origin","type":"uint256"},
+               {"name":"token","type":"address"},
                {"name":"amount","type":"uint256"},
                {"name":"minFunds","type":"uint256"},
                {"name":"feeRate","type":"uint256"},
@@ -4563,23 +4578,49 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                     })
                     print(f"[FM v13] Pancake Sell TX — Gas:650k | chainId=56 | Gwei:{int(_fm_get_cached_gas(_w3_fast)*5.5)/1e9:.1f}")
                 else:
-                    # Curve sell — v14 FIXED: 7 params (from=wallet_cs added)
-                    tx = fc.functions.sellToken(
-                        0,                                              # origin
-                        Web3.to_checksum_address(token_addr),           # token
-                        wallet_cs,                                      # from ← v14 FIX
-                        _amt,                                           # amount
-                        _min_funds,                                     # minFunds
-                        0,                                              # feeRate = 0
-                        "0x0000000000000000000000000000000000000000"    # feeRecipient = zero
-                    ).build_transaction({
-                    "from":     wallet_cs,
-                    "gas":      400000,
-                    "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 5.5),
-                    "nonce":    _nonce,
-                    "chainId":  56,
-                })
-                    print(f"[FM v14] Curve Sell TX — Gas:750k | 7-param | chainId=56 | Gwei:{int(_fm_get_cached_gas(_w3_fast)*5.5)/1e9:.1f}")
+                    # FIX v18: V1 vs V2 version check
+                    _token_info = _fm_get_token_info(token_addr, _w3_fast)
+                    _token_ver  = _token_info["version"] if _token_info else 2
+                    print(f"[FM v18] Token version: {_token_ver}")
+                    if _token_ver == 1:
+                        # V1 — 6 params (no from)
+                        _fc_v1 = _w3_fast.eth.contract(
+                            address=Web3.to_checksum_address(factory_addr),
+                            abi=_FM_BC_ABI_V1
+                        )
+                        tx = _fc_v1.functions.sellToken(
+                            0,                                              # origin
+                            Web3.to_checksum_address(token_addr),           # token
+                            _amt,                                           # amount
+                            _min_funds,                                     # minFunds
+                            0,                                              # feeRate
+                            "0x0000000000000000000000000000000000000000"    # feeRecipient
+                        ).build_transaction({
+                            "from":     wallet_cs,
+                            "gas":      400000,
+                            "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 5.5),
+                            "nonce":    _nonce,
+                            "chainId":  56,
+                        })
+                        print(f"[FM v18] Curve Sell V1 TX — 6-param | Gwei:{int(_fm_get_cached_gas(_w3_fast)*5.5)/1e9:.1f}")
+                    else:
+                        # V2 — 7 params (with from)
+                        tx = fc.functions.sellToken(
+                            0,                                              # origin
+                            Web3.to_checksum_address(token_addr),           # token
+                            wallet_cs,                                      # from
+                            _amt,                                           # amount
+                            _min_funds,                                     # minFunds
+                            0,                                              # feeRate
+                            "0x0000000000000000000000000000000000000000"    # feeRecipient
+                        ).build_transaction({
+                            "from":     wallet_cs,
+                            "gas":      400000,
+                            "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 5.5),
+                            "nonce":    _nonce,
+                            "chainId":  56,
+                        })
+                        print(f"[FM v18] Curve Sell V2 TX — 7-param | Gwei:{int(_fm_get_cached_gas(_w3_fast)*5.5)/1e9:.1f}")
                 from eth_account import Account
                 signed  = Account.sign_transaction(tx, pk)
                 tx_hash = _w3_fast.eth.send_raw_transaction(signed.raw_transaction)
