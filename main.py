@@ -4591,6 +4591,8 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                     _push_notif("critical", "🚨 MANUAL SELL REQUIRED",
                         f"{token_addr[:10]} — 3 TX send fail! MANUALLY SELL KARO!",
                         token_addr[:10], token_addr)
+                    # FIX v16: 3 attempts fail — lock release karo
+                    with _fm_selling_lock: _fm_selling_set.discard(token_addr.lower())
                     result["error"] = "3 send attempts failed"
                     return result
 
@@ -4637,16 +4639,20 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                                 _push_notif("critical", "🚨 BC Sell Reverted",
                                     f"{_t_name} sell reverted — position still open! Manually sell karo! TX: {_th_hex[:12]}",
                                     _t_name, _t_addr)
-                            # FIX v15: Lock release — ab ye token dobara sell ho sakta hai
+                            # FIX v16: Lock ALWAYS release — confirm ya revert dono case
                             with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower())
                             return
                     except Exception:
                         pass
                     import time as _t; _t.sleep(2)
+                # FIX v16: Timeout pe bhi lock release
+                with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower())
                 _push_notif("critical", "⏳ BC Sell Pending",
                     f"{_t_name} TX pending 60s — manually check! {_th_hex[:12]}", _t_name, _t_addr)
             except Exception as _te:
                 print(f"⚠️ [FM BC] tracker error: {_te}")
+                # FIX v16: Exception pe bhi lock release
+                with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower())
 
         import threading as _th
         _th.Thread(
