@@ -1130,6 +1130,11 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
             _push_notif("critical", "🔴 Sell Failed", f"{_sell_err}", token_address[:10], token_address)
 
     return result
+# ── Vol Pressure cache — globals (missing fix) ──
+VOL_CACHE_TTL       = 60          # 60s TTL — DexScreener rate limit safe
+_vol_pressure_cache = {}          # {addr_lower: {"buys5":N, "sells5":N, ...,"ts":float}}
+_vol_pressure_lock  = threading.Lock()
+
 def _get_vol_pressure(address: str) -> dict:
     """Buy/Sell pressure fetch karo — cached, 60s TTL, rate-limit safe"""
     now = time.time()
