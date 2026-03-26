@@ -2534,6 +2534,17 @@ CHECKLIST_SETTINGS = {
 }
 AUTO_BUY_SIZE_BNB  = 0.01
 AUTO_MAX_POSITIONS = 50  # max concurrent positions
+
+# FM Filter settings — manually adjustable from UI
+_fm_filters = {
+    "mc_max":         10000,  # Max MC in USD
+    "dev_wallet_max": 10,     # Max dev wallet %
+    "vol_min":        0.3,    # Min BNB volume change in 2s
+    "buyers_min":     5,      # Min unique buyers
+    "price_min":      0.05,   # Min price change %
+    "pump_max":       10,     # Max pump at entry %
+    "stop_loss":      20,     # SL %
+}
 AUTO_SESSION_ID    = "AUTO_TRADER"
 
 auto_trade_stats = {
@@ -4982,16 +4993,18 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _mc_usd = (_last_price / 1e18) * _total_supply * _bnb_price
             else:
                 _skip(f"unsupported quote — skip"); return
-            if _mc_usd > 15000:
-                _skip(f"MC too high ${_mc_usd:.0f} > $15k"); return
+            if _mc_usd > _fm_filters["mc_max"]:
+                _skip(f"MC too high ${_mc_usd:.0f} > ${_fm_filters['mc_max']}"); return
         else:
             _skip("MC calc failed"); return
 
         _offers = info.get("offers", 0)
         _maxOffers = info.get("maxOffers", 1)
         _pump_at_entry = round((_offers / max(_maxOffers, 1)) * 100, 1)
+        if _pump_at_entry > _fm_filters["pump_max"]:
+            _skip(f"pump at entry {_pump_at_entry:.1f}% > {_fm_filters['pump_max']}%"); return
 
-        if _dev_pct_res[0] > 10:
+        if _dev_pct_res[0] > _fm_filters["dev_wallet_max"]:
             _skip(f"dev wallet too high {_dev_pct_res[0]:.0f}%"); return
 
         _dev_wallet_pct = _dev_pct_res[0]
@@ -5012,7 +5025,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         _price1 = _info_fresh.get("lastPrice", 0)
         _funds1 = _info_fresh.get("funds", 0)
-        _MIN_BUYERS = 5
+        _MIN_BUYERS = _fm_filters['buyers_min']
         _price2 = 0
         _funds2 = 0
         _ub = 0
@@ -5052,7 +5065,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     _funds2 = _snap2.get("funds", 0)
                     _funds_diff = (_funds2 - _funds1) / 1e18
                     _price_ok = _price1 > 0 and _price2 >= _price1 * _MIN_PRICE_MV
-                    _vol_ok = _funds_diff >= 0.3
+                    _vol_ok = _funds_diff >= _fm_filters['vol_min']
 
                     if _price_ok:
                         _price_ok_flag = True
@@ -5084,8 +5097,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _s2_buyers[0] = _ub
         _s2_total_buys[0] = _total_buys
 
-        if _funds_diff < 0.3:
-            _skip(f"low volume {_funds_diff:.4f} BNB < 0.3"); return
+        if _funds_diff < _fm_filters['vol_min']:
+            _skip(f"low volume {_funds_diff:.4f} BNB < {_fm_filters['vol_min']}"); return
         _momentum_pct = round((_price2 - _price1) / max(_price1, 1) * 100, 1)
 
         print(f"✅ [FM] ALL PASS: mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}%")
@@ -5196,7 +5209,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             _buyers_at_entry = 0
             _total_buys_at_entry = 0
 
-        add_position_to_monitor(AUTO_SESSION_ID, token_addr, token_name, entry, size_bnb, stop_loss_pct=20.0)
+        add_position_to_monitor(AUTO_SESSION_ID, token_addr, token_name, entry, size_bnb, stop_loss_pct=float(_fm_filters['stop_loss']))
         # FIX B: FM tradingFeeRate fetch karo — sell slippage ke liye
         _fm_fee_rate = 0.0
         try:
@@ -7591,6 +7604,19 @@ def save_checklist_settings():
     threading.Thread(target=_persist_settings, daemon=True).start()
     print(f"✅ Checklist settings saved: {len(updated)} keys")
     return jsonify({"status": "ok", "updated": updated, "settings": CHECKLIST_SETTINGS})
+
+@app.route("/get-fm-filters", methods=["GET"])
+def get_fm_filters():
+    return jsonify(_fm_filters)
+
+@app.route("/set-fm-filters", methods=["POST"])
+def set_fm_filters():
+    global _fm_filters
+    d = request.get_json(silent=True) or {}
+    for k, v in d.items():
+        if k in _fm_filters:
+            _fm_filters[k] = v
+    return jsonify({"ok": True, "filters": _fm_filters})
 
 @app.route("/get-settings", methods=["GET"])
 def get_settings():

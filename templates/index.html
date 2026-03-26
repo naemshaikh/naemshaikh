@@ -750,6 +750,12 @@ function _checkLock(){
         <div style="font-size:9px;font-weight:700;color:var(--txt1);" id="max-pos-sub">Max Trades</div>
       </button>
 
+      <!-- FM Filters -->
+      <button onclick="openFmFilters()" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:8px 4px;border-radius:10px;border:1px solid rgba(212,168,71,0.4);background:rgba(212,168,71,0.08);cursor:pointer;">
+        <div style="font-size:18px;">⚙️</div>
+        <div style="font-size:9px;font-weight:700;color:var(--gold);">FM Filters</div>
+      </button>
+
     </div>
     <div style="padding:4px 14px 8px;">
       <div style="font-size:10px;color:var(--txt3);font-family:'JetBrains Mono',monospace;" id="last-ctrl-action">— awaiting command —</div>
@@ -3620,6 +3626,49 @@ async function setMaxPos(val){
   closeModal();
   const maxEl = document.getElementById('max-pos-sub');
   if(maxEl) maxEl.textContent = d.count+' max';
+}
+
+// FM Filters
+async function openFmFilters(){
+  const d = await fetchJSON('/get-fm-filters',{},5000);
+  const f = d || {mc_max:10000,dev_wallet_max:10,vol_min:0.3,buyers_min:5,pump_max:10,stop_loss:20};
+  document.getElementById('modal-title').textContent='⚙️ FM Filter Settings';
+  document.getElementById('modal-sub').textContent='Bonding curve sniper ke filters adjust karo';
+  document.getElementById('modal-pnl').textContent='';
+  document.getElementById('modal-body').innerHTML=
+    '<div style="padding:12px 0;display:flex;flex-direction:column;gap:12px;">'+
+    _fmRow('MC Max ($)','mc_max',f.mc_max,'number','Max market cap in USD')+
+    _fmRow('Dev Wallet Max (%)','dev_wallet_max',f.dev_wallet_max,'number','Max dev holding %')+
+    _fmRow('Volume Min (BNB)','vol_min',f.vol_min,'number','Min BNB volume in 2s')+
+    _fmRow('Buyers Min','buyers_min',f.buyers_min,'number','Min unique buyers')+
+    _fmRow('Pump Max (%)','pump_max',f.pump_max,'number','Max pump at entry %')+
+    _fmRow('Stop Loss (%)','stop_loss',f.stop_loss,'number','SL %')+
+    '</div>';
+  document.getElementById('modal-actions').innerHTML=
+    '<button class="mbtn em" onclick="saveFmFilters()" style="flex:1;">💾 Save</button>'+
+    '<button class="mbtn dark" onclick="closeModal()" style="flex:1;">✕ Cancel</button>';
+  showModal();
+}
+
+function _fmRow(label,id,val,type,hint){
+  return '<div style="display:flex;flex-direction:column;gap:4px;">'+
+    '<div style="font-size:11px;color:var(--txt2);font-weight:600;">'+label+'</div>'+
+    '<div style="font-size:10px;color:var(--txt3);">'+hint+'</div>'+
+    '<input id="fm-f-'+id+'" type="'+type+'" value="'+val+'" style="padding:10px;border:1px solid var(--line2);border-radius:8px;background:var(--ink3);color:var(--txt);font-size:14px;font-family:JetBrains Mono,monospace;">'+
+    '</div>';
+}
+
+async function saveFmFilters(){
+  const fields = ['mc_max','dev_wallet_max','vol_min','buyers_min','pump_max','stop_loss'];
+  const payload = {};
+  for(const f of fields){
+    const el = document.getElementById('fm-f-'+f);
+    if(el) payload[f] = parseFloat(el.value);
+  }
+  const d = await fetchJSON('/set-fm-filters',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)},8000);
+  if(!d||!d.ok){showToast('❌ Save failed');return;}
+  showToast('✅ FM Filters saved!');
+  closeModal();
 }
 
 // Scan Token
