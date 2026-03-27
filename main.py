@@ -5107,6 +5107,11 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             _s2_volume_change[0] = round((_funds2 - _funds1) / 1e18, 6) if _funds2 else 0
             _skip("no momentum in 10s"); return
 
+        # ✅ BUG FIX: timeout pe bhi buyers check — _MIN_BUYERS bypass nahi hoga
+        if _ub < _MIN_BUYERS:
+            _s2_buyers[0] = _ub
+            _skip(f"low buyers {_ub} < {_MIN_BUYERS}"); return
+
         _funds_diff = (_funds2 - _funds1) / 1e18
         _s2_volume_change[0] = round(_funds_diff, 6)
         _s2_momentum_pct[0] = round((_price2 - _price1) / max(_price1, 1) * 100, 1)
