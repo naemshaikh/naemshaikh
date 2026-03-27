@@ -2641,6 +2641,10 @@ function _setFmBtn(on){
 }
 
 async function toggleFmSniper(){
+  const isOn = document.getElementById('fm-sniper-btn')?.textContent?.includes('ON');
+  const action = isOn ? 'STOP' : 'START';
+  const emoji = isOn ? '🛑' : '🚀';
+  if(!confirm(`${emoji} FM Sniper ${action} karna chahte ho?\n\nConfirm karo!`)) return;
   const btn=document.getElementById('fm-sniper-btn');
   if(btn){btn.disabled=true;btn.style.opacity='0.5';}
   try{
