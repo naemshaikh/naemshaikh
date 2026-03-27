@@ -5033,7 +5033,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         _price1 = _info_fresh.get("lastPrice", 0)
         _funds1 = _info_fresh.get("funds", 0)
-        _MIN_BUYERS = 0 if not _fm_filters.get("buyers_min_on", True) else _fm_filters['buyers_min'] if _fm_filters.get('buyers_min_on', True) else 0
+        _MIN_BUYERS = 0 if not _fm_filters.get("buyers_min_on", True) else _fm_filters['buyers_min']
         _price2 = 0
         _funds2 = 0
         _ub = 0
@@ -5073,7 +5073,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     _funds2 = _snap2.get("funds", 0)
                     _funds_diff = (_funds2 - _funds1) / 1e18
                     _price_ok = _price1 > 0 and _price2 >= _price1 * _MIN_PRICE_MV
-                    _vol_ok = _funds_diff >= _fm_filters['vol_min']
+                    _vol_ok = (not _fm_filters.get('vol_min_on', True)) or (_funds_diff >= _fm_filters['vol_min'])
 
                     if _price_ok:
                         _price_ok_flag = True
@@ -5081,7 +5081,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         _vol_ok_flag = True
 
                     # Check conditions
-                    if _price_ok_flag and _vol_ok_flag and _ub >= _MIN_BUYERS:
+                    _buyers_ok = (_ub >= _MIN_BUYERS) if _fm_filters.get("buyers_min_on", True) else True
+                    if _price_ok_flag and _vol_ok_flag and _buyers_ok:
                         print(f"✅ [FM] Momentum! price+{round((_price2-_price1)/max(_price1,1)*100,2)}% vol+{_funds_diff:.4f}BNB buyers:{_ub}")
                         break
 
