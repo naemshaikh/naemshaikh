@@ -3678,8 +3678,8 @@ function _fmRow(label,id,val,type,hint,enabled){
       '<div style="font-size:11px;color:var(--txt2);font-weight:600;">'+label+'</div>'+
       '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;">'+
         '<span style="font-size:9px;color:var(--txt3);">ON/OFF</span>'+
-        '<input type="checkbox" id="fm-f-'+id+'-enabled" '+(isOn?'checked':'')+
-          ' onchange="_fmToggleRow(''+id+'',this.checked)"'+
+        '<input type="checkbox" id="fm-f-'+id+'-enabled" data-fid="'+id+'" '+(isOn?'checked':'')+
+          ' onchange="_fmToggleRow(this.dataset.fid,this.checked)"'+
           ' style="width:16px;height:16px;accent-color:var(--em);cursor:pointer;">'+
       '</label>'+
     '</div>'+
