@@ -756,11 +756,7 @@ function _checkLock(){
         <div style="font-size:9px;font-weight:700;color:var(--gold);">FM Filters</div>
       </button>
 
-      <!-- FM ON/OFF Toggle -->
-      <button onclick="toggleFmFilter()" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:8px 4px;border-radius:10px;border:1px solid rgba(0,230,118,0.3);background:rgba(0,230,118,0.06);cursor:pointer;">
-        <div id="fm-toggle-icon" style="font-size:18px;">🟢</div>
-        <div id="fm-toggle-lbl" style="font-size:9px;font-weight:700;color:var(--em);">FM ON</div>
-      </button>
+
 
       <!-- TP Settings -->
       <button onclick="openTpSettings()" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:8px 4px;border-radius:10px;border:1px solid rgba(255,200,0,0.3);background:rgba(255,200,0,0.06);cursor:pointer;">
@@ -3641,80 +3637,87 @@ async function setMaxPos(val){
   if(maxEl) maxEl.textContent = d.count+' max';
 }
 
-// FM Filters
+// FM Filters — per-row individual toggles
+const _FM_FILTER_DEFAULTS = {
+  mc_max:         {val:10000, on:true,  label:'MC Max ($)',         hint:'Max market cap in USD'},
+  dev_wallet_max: {val:10,    on:true,  label:'Dev Wallet Max (%)', hint:'Max dev holding %'},
+  vol_min:        {val:0.3,   on:true,  label:'Volume Min (BNB)',   hint:'Min BNB volume in 2s'},
+  buyers_min:     {val:5,     on:true,  label:'Buyers Min',         hint:'Min unique buyers'},
+  pump_max:       {val:10,    on:true,  label:'Pump Max (%)',       hint:'Max pump at entry %'},
+  stop_loss:      {val:20,    on:true,  label:'Stop Loss (%)',      hint:'SL %'},
+};
+
 async function openFmFilters(){
   const d = await fetchJSON('/get-fm-filters',{},5000);
-  const f = d || {mc_max:10000,dev_wallet_max:10,vol_min:0.3,buyers_min:5,pump_max:10,stop_loss:20};
+  const f = d || {};
   document.getElementById('modal-title').textContent='⚙️ FM Filter Settings';
-  document.getElementById('modal-sub').textContent='Bonding curve sniper ke filters adjust karo';
+  document.getElementById('modal-sub').textContent='Har filter ko alag ON/OFF karo';
   document.getElementById('modal-pnl').textContent='';
-  document.getElementById('modal-body').innerHTML=
-    '<div style="padding:12px 0;display:flex;flex-direction:column;gap:12px;">'+
-    '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--ink3);border-radius:10px;">'+
-    '<span style="font-size:12px;font-weight:700;color:var(--txt1);">FM Filter Enabled</span>'+
-    '<button id="fm-enabled-toggle" onclick="_toggleFmEnabled()" style="padding:6px 14px;border-radius:8px;border:none;font-weight:800;font-size:12px;background:'+(f.enabled!==false?'var(--em)':'var(--red)')+';color:#000;cursor:pointer;">'+(f.enabled!==false?'🟢 ON':'🔴 OFF')+'</button>'+
-    '</div>'+
-    _fmRow('MC Max ($)','mc_max',f.mc_max,'number','Max market cap in USD')+
-    _fmRow('Dev Wallet Max (%)','dev_wallet_max',f.dev_wallet_max,'number','Max dev holding %')+
-    _fmRow('Volume Min (BNB)','vol_min',f.vol_min,'number','Min BNB volume in 2s')+
-    _fmRow('Buyers Min','buyers_min',f.buyers_min,'number','Min unique buyers')+
-    _fmRow('Pump Max (%)','pump_max',f.pump_max,'number','Max pump at entry %')+
-    _fmRow('Stop Loss (%)','stop_loss',f.stop_loss,'number','SL %')+
-    '</div>';
+
+  let rows = '<div style="padding:12px 0;display:flex;flex-direction:column;gap:10px;">';
+  for(const [key, def] of Object.entries(_FM_FILTER_DEFAULTS)){
+    const val  = f[key]         !== undefined ? f[key]         : def.val;
+    const isOn = f[key+'_on']   !== undefined ? f[key+'_on']   : def.on;
+    rows += _fmRow(def.label, key, val, isOn, def.hint);
+  }
+  rows += '</div>';
+
+  document.getElementById('modal-body').innerHTML = rows;
   document.getElementById('modal-actions').innerHTML=
     '<button class="mbtn em" onclick="saveFmFilters()" style="flex:1;">💾 Save</button>'+
     '<button class="mbtn dark" onclick="closeModal()" style="flex:1;">✕ Cancel</button>';
   showModal();
 }
 
-function _fmRow(label,id,val,type,hint){
-  return '<div style="display:flex;flex-direction:column;gap:4px;">'+
-    '<div style="font-size:11px;color:var(--txt2);font-weight:600;">'+label+'</div>'+
-    '<div style="font-size:10px;color:var(--txt3);">'+hint+'</div>'+
-    '<input id="fm-f-'+id+'" type="'+type+'" value="'+val+'" style="padding:10px;border:1px solid var(--line2);border-radius:8px;background:var(--ink3);color:var(--txt);font-size:14px;font-family:JetBrains Mono,monospace;">'+
-    '</div>';
+function _fmRow(label, id, val, isOn, hint){
+  const onBg  = isOn  ? 'var(--em)'  : 'var(--ink3)';
+  const onClr = isOn  ? '#000'       : 'var(--txt3)';
+  const onTxt = isOn  ? '✅ ON'      : '⬜ OFF';
+  return '<div style="padding:10px 12px;background:var(--ink3);border-radius:10px;display:flex;flex-direction:column;gap:8px;">'+
+    '<div style="display:flex;align-items:center;justify-content:space-between;">'+
+      '<div>'+
+        '<div style="font-size:12px;font-weight:700;color:var(--txt1);">'+label+'</div>'+
+        '<div style="font-size:10px;color:var(--txt3);margin-top:2px;">'+hint+'</div>'+
+      '</div>'+
+      '<button id="fm-tog-'+id+'" data-on="'+isOn+'" onclick="_fmToggleRow(''+id+'')" '+
+        'style="padding:5px 12px;border-radius:8px;border:none;font-weight:800;font-size:11px;'+
+        'background:'+onBg+';color:'+onClr+';cursor:pointer;min-width:62px;">'+onTxt+'</button>'+
+    '</div>'+
+    '<input id="fm-f-'+id+'" type="number" value="'+val+'" '+
+      'style="padding:9px;border:1px solid var(--line2);border-radius:8px;background:var(--ink2);'+
+      'color:var(--txt);font-size:14px;font-family:JetBrains Mono,monospace;width:100%;box-sizing:border-box;">'+
+  '</div>';
+}
+
+function _fmToggleRow(id){
+  const btn = document.getElementById('fm-tog-'+id);
+  if(!btn) return;
+  const wasOn = btn.dataset.on === 'true';
+  const isOn  = !wasOn;
+  btn.dataset.on = isOn;
+  btn.textContent = isOn ? '✅ ON' : '⬜ OFF';
+  btn.style.background = isOn ? 'var(--em)' : 'var(--ink3)';
+  btn.style.color = isOn ? '#000' : 'var(--txt3)';
 }
 
 async function saveFmFilters(){
-  const fields = ['mc_max','dev_wallet_max','vol_min','buyers_min','pump_max','stop_loss'];
   const payload = {};
-  for(const f of fields){
-    const el = document.getElementById('fm-f-'+f);
-    if(el) payload[f] = parseFloat(el.value);
+  for(const key of Object.keys(_FM_FILTER_DEFAULTS)){
+    const el  = document.getElementById('fm-f-'+key);
+    const btn = document.getElementById('fm-tog-'+key);
+    if(el)  payload[key]        = parseFloat(el.value);
+    if(btn) payload[key+'_on']  = btn.dataset.on === 'true';
   }
-  const toggleBtn = document.getElementById('fm-enabled-toggle');
-  if(toggleBtn) payload['enabled'] = toggleBtn.textContent.includes('ON');
+  // overall enabled = true agar koi bhi on ho
+  payload['enabled'] = Object.keys(_FM_FILTER_DEFAULTS).some(k => payload[k+'_on']);
   const d = await fetchJSON('/set-fm-filters',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)},8000);
   if(!d||!d.ok){showToast('❌ Save failed');return;}
-  _updateFmToggleBtn(payload['enabled'] !== false);
   showToast('✅ FM Filters saved!');
   closeModal();
 }
 
-async function toggleFmFilter(){
-  const d = await fetchJSON('/get-fm-filters',{},3000);
-  const isOn = d ? d.enabled !== false : true;
-  const newState = !isOn;
-  const payload = Object.assign({}, d||{}, {enabled: newState});
-  const r = await fetchJSON('/set-fm-filters',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)},5000);
-  if(!r||!r.ok){showToast('❌ Toggle failed');return;}
-  _updateFmToggleBtn(newState);
-  showToast(newState ? '🟢 FM Filter ON' : '🔴 FM Filter OFF');
-}
-
-function _toggleFmEnabled(){
-  const btn = document.getElementById('fm-enabled-toggle');
-  if(!btn) return;
-  const isOn = btn.textContent.includes('ON');
-  btn.textContent = isOn ? '🔴 OFF' : '🟢 ON';
-  btn.style.background = isOn ? 'var(--red)' : 'var(--em)';
-}
-
 function _updateFmToggleBtn(isOn){
-  const icon = document.getElementById('fm-toggle-icon');
-  const lbl  = document.getElementById('fm-toggle-lbl');
-  if(icon) icon.textContent = isOn ? '🟢' : '🔴';
-  if(lbl){ lbl.textContent = isOn ? 'FM ON' : 'FM OFF'; lbl.style.color = isOn ? 'var(--em)' : 'var(--red)'; }
+  // kept for compatibility — no-op now
 }
 
 async function _initFmToggle(){

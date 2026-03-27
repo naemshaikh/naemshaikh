@@ -2537,14 +2537,20 @@ AUTO_MAX_POSITIONS = 50  # max concurrent positions
 
 # FM Filter settings — manually adjustable from UI
 _fm_filters = {
-    "mc_max":         10000,  # Max MC in USD
-    "dev_wallet_max": 10,     # Max dev wallet %
-    "vol_min":        0.3,    # Min BNB volume change in 2s
-    "buyers_min":     5,      # Min unique buyers
-    "price_min":      0.05,   # Min price change %
-    "pump_max":       10,     # Max pump at entry %
-    "stop_loss":      20,     # SL %
-    "enabled":        True,   # UI se ON/OFF toggle
+    "mc_max":             10000,  # Max MC in USD
+    "mc_max_on":          True,
+    "dev_wallet_max":     10,     # Max dev wallet %
+    "dev_wallet_max_on":  True,
+    "vol_min":            0.3,    # Min BNB volume change in 2s
+    "vol_min_on":         True,
+    "buyers_min":         5,      # Min unique buyers
+    "buyers_min_on":      True,
+    "price_min":          0.05,   # Min price change %
+    "pump_max":           10,     # Max pump at entry %
+    "pump_max_on":        True,
+    "stop_loss":          20,     # SL %
+    "stop_loss_on":       True,
+    "enabled":            True,   # overall
 }
 AUTO_SESSION_ID    = "AUTO_TRADER"
 
@@ -4995,7 +5001,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _mc_usd = (_last_price / 1e18) * _total_supply * _bnb_price
             else:
                 _skip(f"unsupported quote — skip"); return
-            if _mc_usd > _fm_filters["mc_max"]:
+            if _fm_filters.get("mc_max_on", True) and _mc_usd > _fm_filters["mc_max"]:
                 _skip(f"MC too high ${_mc_usd:.0f} > ${_fm_filters['mc_max']}"); return
         else:
             _skip("MC calc failed"); return
@@ -5003,10 +5009,10 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _offers = info.get("offers", 0)
         _maxOffers = info.get("maxOffers", 1)
         _pump_at_entry = round((_offers / max(_maxOffers, 1)) * 100, 1)
-        if _pump_at_entry > _fm_filters["pump_max"]:
+        if _fm_filters.get("pump_max_on", True) and _pump_at_entry > _fm_filters["pump_max"]:
             _skip(f"pump at entry {_pump_at_entry:.1f}% > {_fm_filters['pump_max']}%"); return
 
-        if _dev_pct_res[0] > _fm_filters["dev_wallet_max"]:
+        if _fm_filters.get("dev_wallet_max_on", True) and _dev_pct_res[0] > _fm_filters["dev_wallet_max"]:
             _skip(f"dev wallet too high {_dev_pct_res[0]:.0f}%"); return
 
         _dev_wallet_pct = _dev_pct_res[0]
@@ -5027,7 +5033,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         _price1 = _info_fresh.get("lastPrice", 0)
         _funds1 = _info_fresh.get("funds", 0)
-        _MIN_BUYERS = _fm_filters['buyers_min']
+        _MIN_BUYERS = _fm_filters['buyers_min'] if _fm_filters.get('buyers_min_on', True) else 0
         _price2 = 0
         _funds2 = 0
         _ub = 0
@@ -5099,7 +5105,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _s2_buyers[0] = _ub
         _s2_total_buys[0] = _total_buys
 
-        if _funds_diff < _fm_filters['vol_min']:
+        if _fm_filters.get('vol_min_on', True) and _funds_diff < _fm_filters['vol_min']:
             _skip(f"low volume {_funds_diff:.4f} BNB < {_fm_filters['vol_min']}"); return
         _momentum_pct = round((_price2 - _price1) / max(_price1, 1) * 100, 1)
 
