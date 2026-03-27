@@ -5033,7 +5033,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         _price1 = _info_fresh.get("lastPrice", 0)
         _funds1 = _info_fresh.get("funds", 0)
-        _MIN_BUYERS = _fm_filters['buyers_min'] if _fm_filters.get('buyers_min_on', True) else 0
+        _MIN_BUYERS = 0 if not _fm_filters.get("buyers_min_on", True) else _fm_filters['buyers_min'] if _fm_filters.get('buyers_min_on', True) else 0
         _price2 = 0
         _funds2 = 0
         _ub = 0
@@ -5217,7 +5217,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             _buyers_at_entry = 0
             _total_buys_at_entry = 0
 
-        add_position_to_monitor(AUTO_SESSION_ID, token_addr, token_name, entry, size_bnb, stop_loss_pct=float(_fm_filters['stop_loss']))
+        add_position_to_monitor(AUTO_SESSION_ID, token_addr, token_name, entry, size_bnb, stop_loss_pct=float(_fm_filters['stop_loss']) if _fm_filters.get("stop_loss_on", True) else 5.0)
         # FIX B: FM tradingFeeRate fetch karo — sell slippage ke liye
         _fm_fee_rate = 0.0
         try:
@@ -6430,6 +6430,10 @@ def _startup_once():
                 _load_all_settings_from_db()  # pehle — TRADE_MODE set hoga
             except Exception as e:
                 print(f"Settings load error: {e}")
+            try:
+                _load_fm_filters_from_db()    # FM filter settings restore karo
+            except Exception as e:
+                print(f"FM filters load error: {e}")
             try:
                 _load_trade_history_from_db()  # baad mein — sahi TRADE_MODE pe
             except Exception as e:
