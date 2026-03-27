@@ -2537,13 +2537,20 @@ AUTO_MAX_POSITIONS = 50  # max concurrent positions
 
 # FM Filter settings — manually adjustable from UI
 _fm_filters = {
-    "mc_max":         10000,  # Max MC in USD
-    "dev_wallet_max": 10,     # Max dev wallet %
-    "vol_min":        0.3,    # Min BNB volume change in 2s
-    "buyers_min":     5,      # Min unique buyers
-    "price_min":      0.05,   # Min price change %
-    "pump_max":       10,     # Max pump at entry %
-    "stop_loss":      20,     # SL %
+    "mc_max":             10000,
+    "mc_max_enabled":     True,
+    "dev_wallet_max":     10,
+    "dev_wallet_enabled": True,
+    "vol_min":            0.3,
+    "vol_min_enabled":    True,
+    "buyers_min":         5,
+    "buyers_min_enabled": True,
+    "price_min":          0.05,
+    "price_min_enabled":  True,
+    "pump_max":           10,
+    "pump_max_enabled":   True,
+    "stop_loss":          20,
+    "stop_loss_enabled":  True,
 }
 AUTO_SESSION_ID    = "AUTO_TRADER"
 
@@ -3186,6 +3193,7 @@ def _save_brain_to_db():
                 "cycles":         brain["total_learning_cycles"],
                 "total_tokens_discovered_ever": brain.get("total_tokens_discovered_ever", 0),
                 "smart_wallets":  _sw_snapshot,
+                "fm_filters":     _fm_filters,
                 "rug_dna":        _rug_dna[-10000:],
                 "dev_blacklist":  dict(_dev_blacklist),
                 "scanner_stats":  {k: v for k, v in _scanner_stats.items() if not k.startswith("_") and k != "history"},
@@ -3262,6 +3270,14 @@ def _load_brain_from_db():
                 with _dev_blacklist_lock:
                     _dev_blacklist.update(_db)
                 print(f"🚫 Dev blacklist loaded: {len(_db)} devs")
+            # Load fm_filters — restart pe persist
+            _ff = stored.get("fm_filters", {})
+            if isinstance(_ff, dict) and _ff:
+                global _fm_filters
+                for _fk, _fv in _ff.items():
+                    if _fk in _fm_filters:
+                        _fm_filters[_fk] = _fv
+                print(f"⚙️ FM Filters loaded: {_ff}")
             # Load scanner stats — cumulative counts restore
             _ss = stored.get("scanner_stats", {})
             if isinstance(_ss, dict) and _ss:
@@ -4993,7 +5009,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _mc_usd = (_last_price / 1e18) * _total_supply * _bnb_price
             else:
                 _skip(f"unsupported quote — skip"); return
-            if _mc_usd > _fm_filters["mc_max"]:
+            if _fm_filters.get("mc_max_enabled",True) and _mc_usd > _fm_filters["mc_max"]:
                 _skip(f"MC too high ${_mc_usd:.0f} > ${_fm_filters['mc_max']}"); return
         else:
             _skip("MC calc failed"); return
@@ -5001,10 +5017,10 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _offers = info.get("offers", 0)
         _maxOffers = info.get("maxOffers", 1)
         _pump_at_entry = round((_offers / max(_maxOffers, 1)) * 100, 1)
-        if _pump_at_entry > _fm_filters["pump_max"]:
+        if _fm_filters.get("pump_max_enabled",True) and _pump_at_entry > _fm_filters["pump_max"]:
             _skip(f"pump at entry {_pump_at_entry:.1f}% > {_fm_filters['pump_max']}%"); return
 
-        if _dev_pct_res[0] > _fm_filters["dev_wallet_max"]:
+        if _fm_filters.get("dev_wallet_enabled",True) and _dev_pct_res[0] > _fm_filters["dev_wallet_max"]:
             _skip(f"dev wallet too high {_dev_pct_res[0]:.0f}%"); return
 
         _dev_wallet_pct = _dev_pct_res[0]
@@ -5065,7 +5081,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     _funds2 = _snap2.get("funds", 0)
                     _funds_diff = (_funds2 - _funds1) / 1e18
                     _price_ok = _price1 > 0 and _price2 >= _price1 * _MIN_PRICE_MV
-                    _vol_ok = _funds_diff >= _fm_filters['vol_min']
+                    _vol_ok = not _fm_filters.get('vol_min_enabled',True) or _funds_diff >= _fm_filters['vol_min']
 
                     if _price_ok:
                         _price_ok_flag = True
@@ -5097,7 +5113,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _s2_buyers[0] = _ub
         _s2_total_buys[0] = _total_buys
 
-        if _funds_diff < _fm_filters['vol_min']:
+        if _fm_filters.get('vol_min_enabled',True) and _funds_diff < _fm_filters['vol_min']:
             _skip(f"low volume {_funds_diff:.4f} BNB < {_fm_filters['vol_min']}"); return
         _momentum_pct = round((_price2 - _price1) / max(_price1, 1) * 100, 1)
 
@@ -7616,6 +7632,7 @@ def set_fm_filters():
     for k, v in d.items():
         if k in _fm_filters:
             _fm_filters[k] = v
+    threading.Thread(target=_save_brain_to_db, daemon=True).start()
     return jsonify({"ok": True, "filters": _fm_filters})
 
 @app.route("/get-settings", methods=["GET"])

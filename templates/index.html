@@ -2632,11 +2632,32 @@ function _setFmBtn(on){
 }
 
 async function toggleFmSniper(){
+  const isOn  = document.getElementById('fm-sniper-btn')?.textContent?.includes('ON');
+  const action = isOn ? 'STOP' : 'START';
+  const emoji  = isOn ? '🛑' : '🚀';
+  const color  = isOn ? '#ff4444' : 'var(--em)';
+  const msg    = isOn ? 'FM Sniper band ho jaayega' : 'FM Sniper shuru ho jaayega';
+  document.getElementById('modal-title').textContent = emoji+' FM Sniper '+action;
+  document.getElementById('modal-sub').textContent   = msg;
+  document.getElementById('modal-pnl').textContent   = '';
+  document.getElementById('modal-body').innerHTML    =
+    '<div style="padding:16px 0;text-align:center;">'+
+      '<div style="font-size:48px;margin-bottom:12px;">'+emoji+'</div>'+
+      '<div style="font-size:14px;font-weight:700;color:var(--txt1);margin-bottom:6px;">FM Sniper '+action+'?</div>'+
+      '<div style="font-size:12px;color:var(--txt3);">'+msg+'</div>'+
+    '</div>';
+  document.getElementById('modal-actions').innerHTML =
+    '<button class="mbtn dark" onclick="closeModal()" style="flex:1;">✕ Cancel</button>'+
+    '<button class="mbtn" onclick="_doFmToggle()" style="flex:1;background:'+color+';color:#fff;font-weight:800;">'+emoji+' '+action+'</button>';
+  showModal();
+}
+async function _doFmToggle(){
+  closeModal();
   const btn=document.getElementById('fm-sniper-btn');
   if(btn){btn.disabled=true;btn.style.opacity='0.5';}
   try{
     const d=await fetchJSON('/toggle-fm',{method:'POST'},10000);
-    if(d){ _setFmBtn(d.enabled); showToast(d.enabled?'🎓 FM Sniper STARTED':'🎓 FM Sniper STOPPED'); }
+    if(d){_setFmBtn(d.enabled);showToast(d.enabled?'🎓 FM Sniper STARTED':'🎓 FM Sniper STOPPED');}
   }finally{if(btn){btn.disabled=false;btn.style.opacity='1';}}
 }
 async function loadSniperStatus(){
@@ -3637,12 +3658,12 @@ async function openFmFilters(){
   document.getElementById('modal-pnl').textContent='';
   document.getElementById('modal-body').innerHTML=
     '<div style="padding:12px 0;display:flex;flex-direction:column;gap:12px;">'+
-    _fmRow('MC Max ($)','mc_max',f.mc_max,'number','Max market cap in USD')+
-    _fmRow('Dev Wallet Max (%)','dev_wallet_max',f.dev_wallet_max,'number','Max dev holding %')+
-    _fmRow('Volume Min (BNB)','vol_min',f.vol_min,'number','Min BNB volume in 2s')+
-    _fmRow('Buyers Min','buyers_min',f.buyers_min,'number','Min unique buyers')+
-    _fmRow('Pump Max (%)','pump_max',f.pump_max,'number','Max pump at entry %')+
-    _fmRow('Stop Loss (%)','stop_loss',f.stop_loss,'number','SL %')+
+    _fmRow('MC Max ($)','mc_max',f.mc_max,'number','Max market cap in USD',f.mc_max_enabled!==false)+
+    _fmRow('Dev Wallet Max (%)','dev_wallet_max',f.dev_wallet_max,'number','Max dev holding %',f.dev_wallet_enabled!==false)+
+    _fmRow('Volume Min (BNB)','vol_min',f.vol_min,'number','Min BNB volume in 2s',f.vol_min_enabled!==false)+
+    _fmRow('Buyers Min','buyers_min',f.buyers_min,'number','Min unique buyers',f.buyers_min_enabled!==false)+
+    _fmRow('Pump Max (%)','pump_max',f.pump_max,'number','Max pump at entry %',f.pump_max_enabled!==false)+
+    _fmRow('Stop Loss (%)','stop_loss',f.stop_loss,'number','SL %',f.stop_loss_enabled!==false)+
     '</div>';
   document.getElementById('modal-actions').innerHTML=
     '<button class="mbtn em" onclick="saveFmFilters()" style="flex:1;">💾 Save</button>'+
@@ -3650,20 +3671,40 @@ async function openFmFilters(){
   showModal();
 }
 
-function _fmRow(label,id,val,type,hint){
+function _fmRow(label,id,val,type,hint,enabled){
+  const isOn = enabled !== false;
   return '<div style="display:flex;flex-direction:column;gap:4px;">'+
-    '<div style="font-size:11px;color:var(--txt2);font-weight:600;">'+label+'</div>'+
+    '<div style="display:flex;align-items:center;justify-content:space-between;">'+
+      '<div style="font-size:11px;color:var(--txt2);font-weight:600;">'+label+'</div>'+
+      '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;">'+
+        '<span style="font-size:9px;color:var(--txt3);">ON/OFF</span>'+
+        '<input type="checkbox" id="fm-f-'+id+'-enabled" '+(isOn?'checked':'')+
+          ' onchange="_fmToggleRow(''+id+'',this.checked)"'+
+          ' style="width:16px;height:16px;accent-color:var(--em);cursor:pointer;">'+
+      '</label>'+
+    '</div>'+
     '<div style="font-size:10px;color:var(--txt3);">'+hint+'</div>'+
-    '<input id="fm-f-'+id+'" type="'+type+'" value="'+val+'" style="padding:10px;border:1px solid var(--line2);border-radius:8px;background:var(--ink3);color:var(--txt);font-size:14px;font-family:JetBrains Mono,monospace;">'+
-    '</div>';
+    '<input id="fm-f-'+id+'" type="'+type+'" value="'+val+'"'+(isOn?'':' disabled')+
+      ' style="padding:10px;border:1px solid var(--line2);border-radius:8px;'+
+      'background:'+(isOn?'var(--ink3)':'var(--ink2)')+
+      ';color:'+(isOn?'var(--txt)':'var(--txt3)')+
+      ';font-size:14px;font-family:JetBrains Mono,monospace;opacity:'+(isOn?'1':'0.5')+';">'+
+  '</div>';
+}
+function _fmToggleRow(id,isOn){
+  const inp=document.getElementById('fm-f-'+id);
+  if(inp){inp.disabled=!isOn;inp.style.opacity=isOn?'1':'0.5';inp.style.background=isOn?'var(--ink3)':'var(--ink2)';inp.style.color=isOn?'var(--txt)':'var(--txt3)';}
 }
 
 async function saveFmFilters(){
   const fields = ['mc_max','dev_wallet_max','vol_min','buyers_min','pump_max','stop_loss'];
+  const enabledMap = {mc_max:'mc_max_enabled',dev_wallet_max:'dev_wallet_enabled',vol_min:'vol_min_enabled',buyers_min:'buyers_min_enabled',pump_max:'pump_max_enabled',stop_loss:'stop_loss_enabled'};
   const payload = {};
   for(const f of fields){
-    const el = document.getElementById('fm-f-'+f);
-    if(el) payload[f] = parseFloat(el.value);
+    const el  = document.getElementById('fm-f-'+f);
+    const tog = document.getElementById('fm-f-'+f+'-enabled');
+    if(el)  payload[f] = parseFloat(el.value);
+    if(tog) payload[enabledMap[f]] = tog.checked;
   }
   const d = await fetchJSON('/set-fm-filters',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)},8000);
   if(!d||!d.ok){showToast('❌ Save failed');return;}
