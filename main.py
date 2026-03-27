@@ -2544,6 +2544,7 @@ _fm_filters = {
     "price_min":      0.05,   # Min price change %
     "pump_max":       10,     # Max pump at entry %
     "stop_loss":      20,     # SL %
+    "enabled":        True,   # UI se ON/OFF toggle
 }
 AUTO_SESSION_ID    = "AUTO_TRADER"
 
@@ -4908,6 +4909,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
     try:
         if not AUTO_TRADE_ENABLED or not FM_SNIPER_ENABLED: return
+        if not _fm_filters.get("enabled", True): return  # FM filter UI se OFF
         if len(auto_trade_stats.get("running_positions", {})) >= AUTO_MAX_POSITIONS:
             _skip("max positions"); return
         sess = get_or_create_session(AUTO_SESSION_ID)
@@ -6564,6 +6566,8 @@ def _startup_once():
         # threading.Thread(target=_delayed(poll_new_pairs, 10), daemon=True).start()  # PC only — disabled
         # Load sniper state from DB — restart pe same ON/OFF state
         _load_sniper_state()
+        _load_fm_filters_from_db()
+        _load_tp_settings_from_db()
 
         if FM_SNIPER_ENABLED:
             threading.Thread(target=_delayed(poll_four_meme_v2, 15), daemon=True).start()  # 🎓 FM v2
@@ -7616,7 +7620,90 @@ def set_fm_filters():
     for k, v in d.items():
         if k in _fm_filters:
             _fm_filters[k] = v
+    _save_fm_filters_to_db()
     return jsonify({"ok": True, "filters": _fm_filters})
+
+
+def _save_fm_filters_to_db():
+    """FM filters Supabase mein save karo"""
+    if not supabase: return
+    try:
+        supabase.table("memory").upsert({
+            "session_id": "FM_FILTER_SETTINGS",
+            "role":       "system",
+            "content":    json.dumps(_fm_filters),
+            "updated_at": datetime.utcnow().isoformat()
+        }, on_conflict="session_id").execute()
+        print("✅ FM filters saved to DB")
+    except Exception as e:
+        print(f"⚠️ FM filters save error: {e}")
+
+
+def _load_fm_filters_from_db():
+    """Startup pe FM filters DB se load karo"""
+    global _fm_filters
+    if not supabase: return
+    try:
+        res = supabase.table("memory").select("content").eq("session_id", "FM_FILTER_SETTINGS").execute()
+        if res.data and res.data[0].get("content"):
+            saved = json.loads(res.data[0]["content"])
+            for k, v in saved.items():
+                if k in _fm_filters:
+                    _fm_filters[k] = v
+            print("✅ FM filters loaded from DB")
+    except Exception as e:
+        print(f"⚠️ FM filters load error: {e}")
+
+
+def _save_tp_settings_to_db():
+    """TP settings Supabase mein save karo"""
+    if not supabase: return
+    try:
+        tp_data = {k: CHECKLIST_SETTINGS[k] for k in ["tp1_pct","tp2_pct","tp3_pct","tp4_pct"] if k in CHECKLIST_SETTINGS}
+        supabase.table("memory").upsert({
+            "session_id": "TP_SETTINGS",
+            "role":       "system",
+            "content":    json.dumps(tp_data),
+            "updated_at": datetime.utcnow().isoformat()
+        }, on_conflict="session_id").execute()
+        print("✅ TP settings saved to DB")
+    except Exception as e:
+        print(f"⚠️ TP settings save error: {e}")
+
+
+def _load_tp_settings_from_db():
+    """Startup pe TP settings DB se load karo"""
+    global CHECKLIST_SETTINGS
+    if not supabase: return
+    try:
+        res = supabase.table("memory").select("content").eq("session_id", "TP_SETTINGS").execute()
+        if res.data and res.data[0].get("content"):
+            saved = json.loads(res.data[0]["content"])
+            for k in ["tp1_pct","tp2_pct","tp3_pct","tp4_pct"]:
+                if k in saved:
+                    try: CHECKLIST_SETTINGS[k] = float(saved[k])
+                    except: pass
+            print("✅ TP settings loaded from DB")
+    except Exception as e:
+        print(f"⚠️ TP settings load error: {e}")
+
+
+@app.route("/get-tp-settings", methods=["GET"])
+def get_tp_settings():
+    tp_data = {k: CHECKLIST_SETTINGS.get(k, 0) for k in ["tp1_pct","tp2_pct","tp3_pct","tp4_pct"]}
+    return jsonify(tp_data)
+
+
+@app.route("/set-tp-settings", methods=["POST"])
+def set_tp_settings():
+    global CHECKLIST_SETTINGS
+    d = request.get_json(silent=True) or {}
+    for k in ["tp1_pct","tp2_pct","tp3_pct","tp4_pct"]:
+        if k in d:
+            try: CHECKLIST_SETTINGS[k] = float(d[k])
+            except: pass
+    _save_tp_settings_to_db()
+    return jsonify({"ok": True})
 
 @app.route("/get-settings", methods=["GET"])
 def get_settings():

@@ -756,6 +756,18 @@ function _checkLock(){
         <div style="font-size:9px;font-weight:700;color:var(--gold);">FM Filters</div>
       </button>
 
+      <!-- FM ON/OFF Toggle -->
+      <button onclick="toggleFmFilter()" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:8px 4px;border-radius:10px;border:1px solid rgba(0,230,118,0.3);background:rgba(0,230,118,0.06);cursor:pointer;">
+        <div id="fm-toggle-icon" style="font-size:18px;">🟢</div>
+        <div id="fm-toggle-lbl" style="font-size:9px;font-weight:700;color:var(--em);">FM ON</div>
+      </button>
+
+      <!-- TP Settings -->
+      <button onclick="openTpSettings()" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:8px 4px;border-radius:10px;border:1px solid rgba(255,200,0,0.3);background:rgba(255,200,0,0.06);cursor:pointer;">
+        <div style="font-size:18px;">🎯</div>
+        <div style="font-size:9px;font-weight:700;color:var(--gold);">TP Settings</div>
+      </button>
+
     </div>
     <div style="padding:4px 14px 8px;">
       <div style="font-size:10px;color:var(--txt3);font-family:'JetBrains Mono',monospace;" id="last-ctrl-action">— awaiting command —</div>
@@ -1787,6 +1799,7 @@ _startLiveAgoTimer();
 // Start scanner polling — 3 second mein refresh
 fetchScannerStats();
 setInterval(fetchScannerStats, 5000); // har 5s
+_initFmToggle(); // FM toggle state load
 
 // FM events auto load on start + every 30s
 setTimeout(function(){ refreshFM(); refreshPC(); }, 2000);
@@ -3637,6 +3650,10 @@ async function openFmFilters(){
   document.getElementById('modal-pnl').textContent='';
   document.getElementById('modal-body').innerHTML=
     '<div style="padding:12px 0;display:flex;flex-direction:column;gap:12px;">'+
+    '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--ink3);border-radius:10px;">'+
+    '<span style="font-size:12px;font-weight:700;color:var(--txt1);">FM Filter Enabled</span>'+
+    '<button id="fm-enabled-toggle" onclick="_toggleFmEnabled()" style="padding:6px 14px;border-radius:8px;border:none;font-weight:800;font-size:12px;background:'+(f.enabled!==false?'var(--em)':'var(--red)')+';color:#000;cursor:pointer;">'+(f.enabled!==false?'🟢 ON':'🔴 OFF')+'</button>'+
+    '</div>'+
     _fmRow('MC Max ($)','mc_max',f.mc_max,'number','Max market cap in USD')+
     _fmRow('Dev Wallet Max (%)','dev_wallet_max',f.dev_wallet_max,'number','Max dev holding %')+
     _fmRow('Volume Min (BNB)','vol_min',f.vol_min,'number','Min BNB volume in 2s')+
@@ -3665,9 +3682,77 @@ async function saveFmFilters(){
     const el = document.getElementById('fm-f-'+f);
     if(el) payload[f] = parseFloat(el.value);
   }
+  const toggleBtn = document.getElementById('fm-enabled-toggle');
+  if(toggleBtn) payload['enabled'] = toggleBtn.textContent.includes('ON');
   const d = await fetchJSON('/set-fm-filters',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)},8000);
   if(!d||!d.ok){showToast('❌ Save failed');return;}
+  _updateFmToggleBtn(payload['enabled'] !== false);
   showToast('✅ FM Filters saved!');
+  closeModal();
+}
+
+async function toggleFmFilter(){
+  const d = await fetchJSON('/get-fm-filters',{},3000);
+  const isOn = d ? d.enabled !== false : true;
+  const newState = !isOn;
+  const payload = Object.assign({}, d||{}, {enabled: newState});
+  const r = await fetchJSON('/set-fm-filters',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)},5000);
+  if(!r||!r.ok){showToast('❌ Toggle failed');return;}
+  _updateFmToggleBtn(newState);
+  showToast(newState ? '🟢 FM Filter ON' : '🔴 FM Filter OFF');
+}
+
+function _toggleFmEnabled(){
+  const btn = document.getElementById('fm-enabled-toggle');
+  if(!btn) return;
+  const isOn = btn.textContent.includes('ON');
+  btn.textContent = isOn ? '🔴 OFF' : '🟢 ON';
+  btn.style.background = isOn ? 'var(--red)' : 'var(--em)';
+}
+
+function _updateFmToggleBtn(isOn){
+  const icon = document.getElementById('fm-toggle-icon');
+  const lbl  = document.getElementById('fm-toggle-lbl');
+  if(icon) icon.textContent = isOn ? '🟢' : '🔴';
+  if(lbl){ lbl.textContent = isOn ? 'FM ON' : 'FM OFF'; lbl.style.color = isOn ? 'var(--em)' : 'var(--red)'; }
+}
+
+async function _initFmToggle(){
+  try{
+    const d = await fetchJSON('/get-fm-filters',{},3000);
+    if(d) _updateFmToggleBtn(d.enabled !== false);
+  }catch(e){}
+}
+
+async function openTpSettings(){
+  const d = await fetchJSON('/get-tp-settings',{},5000);
+  const t = d || {tp1_pct:40,tp2_pct:120,tp3_pct:200,tp4_pct:300};
+  document.getElementById('modal-title').textContent='🎯 TP Settings';
+  document.getElementById('modal-sub').textContent='TP levels adjust karo';
+  document.getElementById('modal-pnl').textContent='';
+  document.getElementById('modal-body').innerHTML=
+    '<div style="padding:12px 0;display:flex;flex-direction:column;gap:12px;">'+
+    _fmRow('TP1 — 50% sell at (%)','tp1_pct',t.tp1_pct,'number','Entry se +% pe 50% sell')+
+    _fmRow('TP2 — 25% sell at (%)','tp2_pct',t.tp2_pct,'number','Entry se +% pe 25% sell')+
+    _fmRow('TP3 — 15% sell at (%)','tp3_pct',t.tp3_pct,'number','Entry se +% pe 15% sell')+
+    _fmRow('TP4 — 10% sell at (%)','tp4_pct',t.tp4_pct,'number','Entry se +% pe 10% sell')+
+    '</div>';
+  document.getElementById('modal-actions').innerHTML=
+    '<button class="mbtn em" onclick="saveTpSettings()" style="flex:1;">💾 Save</button>'+
+    '<button class="mbtn dark" onclick="closeModal()" style="flex:1;">✕ Cancel</button>';
+  showModal();
+}
+
+async function saveTpSettings(){
+  const fields = ['tp1_pct','tp2_pct','tp3_pct','tp4_pct'];
+  const payload = {};
+  for(const f of fields){
+    const el = document.getElementById('fm-f-'+f);
+    if(el) payload[f] = parseFloat(el.value);
+  }
+  const d = await fetchJSON('/set-tp-settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)},8000);
+  if(!d||!d.ok){showToast('❌ Save failed');return;}
+  showToast('✅ TP Settings saved!');
   closeModal();
 }
 
