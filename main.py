@@ -4591,10 +4591,12 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                 return False
 
         is_grad = _fm_is_graduated(Web3.to_checksum_address(token_addr))
+        # Double check with liquidityAdded from helper
+        if not is_grad and _tinfo and len(_tinfo) > 11:
+            try:
+                is_grad = bool(_tinfo[11])  # liquidityAdded field
+            except: pass
         print(f"🔍 [FM] Graduated to PC? {'✅ YES (Pancake)' if is_grad else '❌ NO (Curve)'}")
-
-        # Approve (Token Manager ya Router)
-        approve_to = Web3.to_checksum_address(factory_addr) if not is_grad else _FM_PANCAKE_ROUTER
 
         # SELL LOGIC — Curve ya PC auto
         # Fix 3+4+5: 3 retry turant, pending TX pe retry block, background tracker
