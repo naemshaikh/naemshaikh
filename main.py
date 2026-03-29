@@ -4630,10 +4630,10 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                     })
                     print(f"[FM v13] Pancake Sell TX — Gas:650k | chainId=56 | Gwei:{int(_fm_get_cached_gas(_w3_fast)*5.5)/1e9:.1f}")
                 else:
-                    # FIX v18: V1 vs V2 version check
-                    _token_info = _fm_get_token_info(token_addr, _w3_fast)
-                    _token_ver  = _token_info["version"] if _token_info else 2
-                    print(f"[FM v18] Token version: {_token_ver}")
+                    # FIX v19: _token_ver already set above via getTokenInfo (line ~4538)
+                    # Dobara call karne se race condition / version mismatch hoti thi → revert
+                    # _token_ver yahan already correct hai — reuse karo
+                    print(f"[FM v19] Token version (reused): {_token_ver}")
                     if _token_ver == 1:
                         # V1 — 6 params (no from)
                         _fc_v1 = _w3_fast.eth.contract(
@@ -5165,7 +5165,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     "value": int(size_bnb * 1e18),
                     "gas": 400000,
                     "gasPrice": int((_pre_gas[0] or _fm_get_cached_gas(_w3_buy)) * 1.5),
-                    "nonce": _pre_nonce[0] or _w3_buy.eth.get_transaction_count(wallet_addr, "pending"),
+                    "nonce": _w3_buy.eth.get_transaction_count(Web3.to_checksum_address(wallet_addr), "pending"),  # FIX v19: always fresh nonce at TX time — prefetch stale hota hai approve ke baad
                     "chainId": 56,
                 })
                 from eth_account import Account
