@@ -4543,7 +4543,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
 
         # FIX v18: V1 ya V2 ABI — version ke hisaab se
         _use_abi = _FM_BC_ABI_V1 if _token_ver == 1 else _FM_BC_ABI
-        fc = _w3_fast.eth.contract(address=Web3.to_checksum_address(factory_addr), abi=_use_abi)
+        fc = _w3_fast.eth.contract(address=Web3.to_checksum_address(_dynamic_manager), abi=_use_abi)
 
         # FIX v18: Approve dynamic tokenManager (factory nahi)
         try:
@@ -4629,7 +4629,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                     if _token_ver == 1:
                         # V1 — 6 params (no from)
                         _fc_v1 = _w3_fast.eth.contract(
-                            address=Web3.to_checksum_address(factory_addr),
+                            address=Web3.to_checksum_address(_dynamic_manager),
                             abi=_FM_BC_ABI_V1
                         )
                         tx = _fc_v1.functions.sellToken(
