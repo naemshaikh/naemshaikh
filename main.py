@@ -4128,20 +4128,7 @@ def _fm_get_cached_gas(w3):
             _fm_gas_cache["ts"]    = _t.time()
         return gp
     except:
-        return 3_000_000_000
-    """Har 10s mein gas price update — buy ke time 0ms"""
-    import time as _t
-    with _fm_gas_lock:
-        if _t.time() - _fm_gas_cache["ts"] < 10 and _fm_gas_cache["price"] > 0:
-            return _fm_gas_cache["price"]
-    try:
-        gp = w3.eth.gas_price
-        with _fm_gas_lock:
-            _fm_gas_cache["price"] = gp
-            _fm_gas_cache["ts"]    = _t.time()
-        return gp
-    except:
-        return 3_000_000_000  # 3 gwei fallback
+        return 3_000_000_000  # FIX v22: dead duplicate body removed
 
 # ── ABIs ──
 # Official helper contract — TokenManagerHelper3
@@ -4566,29 +4553,72 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                 from eth_account import Account as _AccA
                 _signed_a = _AccA.sign_transaction(_approve_tx, pk)
                 _ah = _w3_fast.eth.send_raw_transaction(_signed_a.raw_transaction)
-                # FIX v21: non-blocking poll — wait_for_receipt 30s block karta tha
-                # sell approve confirm hone ka wait karo phir sell TX bhejo
-                import time as _t21s
+                # FIX v22: instant poll — koi fixed sleep nahi, receipt milte hi action
+                import time as _t22a
                 _approve_confirmed = False
-                for _si in range(15):
-                    _t21s.sleep(2)
+                _ap_start = _t22a.time()
+                while _t22a.time() - _ap_start < 15:
                     try:
                         _rx2 = _w3_fast.eth.get_transaction_receipt(_ah)
                         if _rx2 is not None:
                             if _rx2["status"] == 1:
                                 _approve_confirmed = True
-                                print(f"✅ [FM] Approval confirmed ({_si*2+2}s) for sell")
+                                print(f"✅ [FM] Approval confirmed ({_t22a.time()-_ap_start:.1f}s)")
                             else:
-                                print(f"⚠️ [FM] Approval TX failed onchain — sell may revert")
+                                print(f"❌ [FM] Approval TX failed onchain")
                             break
                     except Exception:
                         pass
+                    _t22a.sleep(0.3)
                 if not _approve_confirmed:
-                    print(f"⚠️ [FM] Approval not confirmed in 30s — proceeding anyway")
+                    # FIX v22 Bug4: re-approve turant — higher gas
+                    print(f"⚠️ [FM] Approve not confirmed — re-approving higher gas...")
+                    try:
+                        _ra_nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")
+                        _ra_tx = _tc_approve.functions.approve(
+                            Web3.to_checksum_address(_dynamic_manager), 2**256 - 1
+                        ).build_transaction({
+                            "from": wallet_cs, "gas": 100000,
+                            "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 5.0),
+                            "nonce": _ra_nonce, "chainId": 56,
+                        })
+                        from eth_account import Account as _AccRA
+                        _rah = _w3_fast.eth.send_raw_transaction(
+                            _AccRA.sign_transaction(_ra_tx, pk).raw_transaction)
+                        print(f"🔁 [FM] Re-approve TX: {_rah.hex()[:12]}...")
+                        _rap_start = _t22a.time()
+                        while _t22a.time() - _rap_start < 15:
+                            try:
+                                _rrx = _w3_fast.eth.get_transaction_receipt(_rah)
+                                if _rrx is not None:
+                                    if _rrx["status"] == 1:
+                                        _approve_confirmed = True
+                                        _approve_nonce = _ra_nonce
+                                        print(f"✅ [FM] Re-approve confirmed ({_t22a.time()-_rap_start:.1f}s)")
+                                    else:
+                                        print(f"❌ [FM] Re-approve failed onchain")
+                                    break
+                            except Exception:
+                                pass
+                            _t22a.sleep(0.3)
+                    except Exception as _rae:
+                        print(f"⚠️ [FM] Re-approve error: {str(_rae)[:50]}")
+                    if not _approve_confirmed:
+                        print(f"❌ [FM] Approve 2x fail — sell aborted")
+                        _push_notif("critical", "🚨 MANUAL SELL REQUIRED",
+                            f"{token_addr[:10]} — approve 2x fail! MANUALLY SELL KARO!",
+                            token_addr[:10], token_addr)
+                        result["error"] = "approve failed 2x"
+                        with _fm_selling_lock: _fm_selling_set.discard(_t_lower)
+                        return result
+                # FIX v22 Bug2: sell nonce = approve_nonce+1 race-free
+                _sell_nonce_base = _approve_nonce + 1
             else:
                 print(f"✅ [FM] Already approved for sell")
+                _sell_nonce_base = None
         except Exception as _ae:
             print(f"⚠️ [FM] Approve error: {str(_ae)[:60]}")
+            _sell_nonce_base = None
 
         # FM GRADUATION AUTO DETECT + PC FALLBACK v6
         _FM_PANCAKE_ROUTER = "0x10ED43C718714eb63d5aA57B78B54704E256024E"
@@ -4626,10 +4656,13 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         tx_hash = None
         for _attempt in range(1, 4):
             try:
-                # FIX v15: Har retry pe fresh nonce — stale nonce = gapped-nonce error
+                # FIX v22: attempt 1 = approve_nonce+1, retry = fresh from chain
                 if _attempt > 1:
-                    import time as _nt; _nt.sleep(1)  # 1s wait before retry
-                _nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")
+                    _nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")
+                elif _sell_nonce_base is not None:
+                    _nonce = _sell_nonce_base
+                else:
+                    _nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")
                 if is_grad:
                     # Pancake sell
                     pr = _w3_fast.eth.contract(address=_FM_PANCAKE_ROUTER, abi=[{"name":"swapExactTokensForETH","type":"function","stateMutability":"nonpayable","inputs":[{"name":"amountIn","type":"uint256"},{"name":"amountOutMin","type":"uint256"},{"name":"path","type":"address[]"},{"name":"to","type":"address"},{"name":"deadline","type":"uint256"}],"outputs":[{"name":"amounts","type":"uint256[]"}]}])
@@ -4716,52 +4749,97 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         result["bnb_received"] = _est_bnb
 
         def _bc_track_and_parse(_th_hex, _t_addr, _t_name, _w3t, _min_f):
+            # FIX v22: instant poll — 0.3s interval, receipt milte hi action, revert = turant retry
+            import time as _ttr
+            def _parse_bnb(_rcpt):
+                _bnb_got = _min_f / 1e18 if _min_f > 0 else 0.0
+                _wcs = Web3.to_checksum_address(BSC_WALLET or REAL_WALLET)
+                for _log in _rcpt["logs"]:
+                    _tp = _log.get("topics", [])
+                    if len(_tp) >= 3:
+                        try:
+                            if ("0x" + _tp[2].hex()[-40:]).lower() == _wcs.lower():
+                                _d = _log.get("data", "")
+                                _d = _d.hex() if isinstance(_d, bytes) else _d
+                                _v = int(_d, 16) / 1e18
+                                if 0 < _v < 100: return _v
+                        except Exception: pass
+                return _bnb_got
+
+            def _retry_sell(_t_addr2, _w3r, _attempt_num):
+                try:
+                    _pk_r = os.getenv("WALLET_PRIVATE_KEY","") or os.getenv("PRIVATE_KEY","") or os.getenv("REAL_PRIVATE_KEY","")
+                    _wc_r = Web3.to_checksum_address(BSC_WALLET or REAL_WALLET)
+                    _tc_r = _w3r.eth.contract(address=Web3.to_checksum_address(_t_addr2), abi=_FM_ERC20_ABI)
+                    _bal_r = _tc_r.functions.balanceOf(_wc_r).call()
+                    if _bal_r <= 0:
+                        print(f"✅ [FM BC] Balance 0 — already sold"); return None
+                    _ti_r = _w3r.eth.contract(
+                        address=Web3.to_checksum_address(_FM_HELPER_ADDR), abi=_FM_HELPER_ABI
+                    ).functions.getTokenInfo(Web3.to_checksum_address(_t_addr2)).call()
+                    _tv_r = int(_ti_r[0]); _mgr_r = _ti_r[1]
+                    _fc_r = _w3r.eth.contract(
+                        address=Web3.to_checksum_address(_mgr_r),
+                        abi=_FM_BC_ABI_V1 if _tv_r == 1 else _FM_BC_ABI)
+                    _nn_r = _w3r.eth.get_transaction_count(_wc_r, "pending")
+                    _gp_r = int(_fm_get_cached_gas(_w3r) * (5.5 + _attempt_num * 2.0))
+                    _zero = "0x0000000000000000000000000000000000000000"
+                    if _tv_r == 1:
+                        _txr = _fc_r.functions.sellToken(0,Web3.to_checksum_address(_t_addr2),_bal_r,0,0,_zero
+                            ).build_transaction({"from":_wc_r,"gas":400000,"gasPrice":_gp_r,"nonce":_nn_r,"chainId":56})
+                    else:
+                        _txr = _fc_r.functions.sellToken(0,Web3.to_checksum_address(_t_addr2),_wc_r,_bal_r,0,0,_zero
+                            ).build_transaction({"from":_wc_r,"gas":400000,"gasPrice":_gp_r,"nonce":_nn_r,"chainId":56})
+                    from eth_account import Account as _AccR
+                    _hr = _w3r.eth.send_raw_transaction(_AccR.sign_transaction(_txr, _pk_r).raw_transaction)
+                    print(f"🔁 [FM BC] Retry sell #{_attempt_num}: {_hr.hex()[:12]}... gwei={_gp_r/1e9:.1f}")
+                    return _hr
+                except Exception as _re:
+                    print(f"⚠️ [FM BC] Retry #{_attempt_num} send error: {str(_re)[:60]}"); return None
+
             try:
-                for _ in range(30):  # 60s max
-                    try:
-                        _receipt = _w3t.eth.get_transaction_receipt(_th_hex)
-                        if _receipt:
-                            if _receipt["status"] == 1:
-                                # Parse actual BNB from Transfer logs
-                                _bnb_got = _min_f / 1e18 if _min_f > 0 else 0.0
-                                _wallet_cs = Web3.to_checksum_address(BSC_WALLET or REAL_WALLET)
-                                for _log in _receipt["logs"]:
-                                    _topics = _log.get("topics", [])
-                                    if len(_topics) >= 3:
-                                        try:
-                                            _to_addr = "0x" + _topics[2].hex()[-40:]
-                                            if _to_addr.lower() == _wallet_cs.lower():
-                                                _d = _log.get("data", "")
-                                                _d = _d.hex() if isinstance(_d, bytes) else _d
-                                                _val = int(_d, 16) / 1e18
-                                                if 0 < _val < 100:
-                                                    _bnb_got = _val
-                                                    break
-                                        except Exception:
-                                            pass
-                                print(f"✅ [FM BC] Sell confirmed: {_th_hex[:12]} | BNB: {_bnb_got:.6f}")
-                                _push_notif("success", "✅ BC Sell Confirmed",
-                                    f"{_t_name} sell confirmed | BNB: {_bnb_got:.6f} | TX: {_th_hex[:12]}",
-                                    _t_name, _t_addr)
-                                _fm_confirm_close(_t_addr, 100.0, "BC sell confirmed", _th_hex)
-                            else:
-                                print(f"❌ [FM BC] Sell reverted: {_th_hex[:12]}")
-                                _push_notif("critical", "🚨 BC Sell Reverted",
-                                    f"{_t_name} sell reverted — position still open! Manually sell karo! TX: {_th_hex[:12]}",
-                                    _t_name, _t_addr)
-                            # FIX v16: Lock ALWAYS release — confirm ya revert dono case
-                            with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower())
-                            return
-                    except Exception:
-                        pass
-                    import time as _t; _t.sleep(2)
-                # FIX v16: Timeout pe bhi lock release
+                _cur_hash  = _th_hex
+                _max_retry = 3
+                _retries   = 0
+                while _retries <= _max_retry:
+                    _t_start = _ttr.time()
+                    _got_rx  = False
+                    while _ttr.time() - _t_start < 20:  # 20s per attempt
+                        try:
+                            _rx = _w3t.eth.get_transaction_receipt(_cur_hash)
+                            if _rx:
+                                _got_rx = True
+                                if _rx["status"] == 1:
+                                    _bnb = _parse_bnb(_rx)
+                                    print(f"✅ [FM BC] Sell confirmed: {_cur_hash[:12]} | BNB: {_bnb:.6f}")
+                                    _push_notif("success","✅ BC Sell Confirmed",
+                                        f"{_t_name} confirmed | BNB:{_bnb:.6f} | TX:{_cur_hash[:12]}",_t_name,_t_addr)
+                                    _fm_confirm_close(_t_addr, 100.0, "BC sell confirmed", _cur_hash)
+                                    with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower())
+                                    return
+                                else:
+                                    _retries += 1
+                                    print(f"❌ [FM BC] Reverted: {_cur_hash[:12]} — turant retry #{_retries}")
+                                    if _retries > _max_retry: break
+                                    _nh = _retry_sell(_t_addr, _w3t, _retries)
+                                    if _nh: _cur_hash = _nh.hex()
+                                    else: _retries = _max_retry + 1
+                                break
+                        except Exception: pass
+                        _ttr.sleep(0.3)
+                    if not _got_rx:
+                        _retries += 1
+                        print(f"⏳ [FM BC] No receipt 20s — retry #{_retries} higher gas")
+                        if _retries > _max_retry: break
+                        _nh = _retry_sell(_t_addr, _w3t, _retries)
+                        if _nh: _cur_hash = _nh.hex()
+                        else: break
+                print(f"🚨 [FM BC] Sell {_max_retry} retry fail — MANUALLY SELL!")
+                _push_notif("critical","🚨 MANUAL SELL REQUIRED",
+                    f"{_t_name} sell {_max_retry}x fail! MANUALLY SELL! TX:{_cur_hash[:12]}",_t_name,_t_addr)
                 with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower())
-                _push_notif("critical", "⏳ BC Sell Pending",
-                    f"{_t_name} TX pending 60s — manually check! {_th_hex[:12]}", _t_name, _t_addr)
             except Exception as _te:
                 print(f"⚠️ [FM BC] tracker error: {_te}")
-                # FIX v16: Exception pe bhi lock release
                 with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower())
 
         import threading as _th
