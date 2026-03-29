@@ -4580,13 +4580,19 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
 
         def _fm_is_graduated(token):
             try:
+                # PancakeSwap pair check
                 fac = _w3_fast.eth.contract(address=_FM_PANCAKE_FACTORY, abi=[{"inputs":[{"name":"","type":"address"},{"name":"","type":"address"}],"name":"getPair","outputs":[{"name":"","type":"address"}],"type":"function"}])
                 pair = fac.functions.getPair(token, _FM_WBNB).call()
-                if pair == "0x0000000000000000000000000000000000000000":
-                    return False
-                pr = _w3_fast.eth.contract(address=pair, abi=[{"inputs":[],"name":"getReserves","outputs":[{"name":"","type":"uint112"},{"name":"","type":"uint112"},{"name":"","type":"uint32"}],"type":"function"}])
-                res = pr.functions.getReserves().call()
-                return res[0] > 0 or res[1] > 0
+                if pair != "0x0000000000000000000000000000000000000000":
+                    pr = _w3_fast.eth.contract(address=pair, abi=[{"inputs":[],"name":"getReserves","outputs":[{"name":"","type":"uint112"},{"name":"","type":"uint112"},{"name":"","type":"uint32"}],"type":"function"}])
+                    res = pr.functions.getReserves().call()
+                    if res[0] > 0 or res[1] > 0:
+                        return True
+                # liquidityAdded double check via getTokenInfo
+                _tinfo_grad = _fm_get_token_info(str(token), _w3_fast)
+                if _tinfo_grad and _tinfo_grad.get("liquidityAdded"):
+                    return True
+                return False
             except:
                 return False
 
