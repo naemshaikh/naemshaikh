@@ -4566,8 +4566,25 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                 from eth_account import Account as _AccA
                 _signed_a = _AccA.sign_transaction(_approve_tx, pk)
                 _ah = _w3_fast.eth.send_raw_transaction(_signed_a.raw_transaction)
-                _w3_fast.eth.wait_for_transaction_receipt(_ah, timeout=30)
-                print(f"✅ [FM] Approval done for sell")
+                # FIX v21: non-blocking poll — wait_for_receipt 30s block karta tha
+                # sell approve confirm hone ka wait karo phir sell TX bhejo
+                import time as _t21s
+                _approve_confirmed = False
+                for _si in range(15):
+                    _t21s.sleep(2)
+                    try:
+                        _rx2 = _w3_fast.eth.get_transaction_receipt(_ah)
+                        if _rx2 is not None:
+                            if _rx2["status"] == 1:
+                                _approve_confirmed = True
+                                print(f"✅ [FM] Approval confirmed ({_si*2+2}s) for sell")
+                            else:
+                                print(f"⚠️ [FM] Approval TX failed onchain — sell may revert")
+                            break
+                    except Exception:
+                        pass
+                if not _approve_confirmed:
+                    print(f"⚠️ [FM] Approval not confirmed in 30s — proceeding anyway")
             else:
                 print(f"✅ [FM] Already approved for sell")
         except Exception as _ae:
@@ -5185,17 +5202,32 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                                     if not _wa2 or not _pk2: return
                                     _w3p = _get_w3q() or _fm_get_w3()
                                     if not _w3p: return
+
+                                    # FIX v20: getTokenInfo se sahi tokenManager lo
+                                    # _FM_FACTORY_ADDR hardcode galat tha — har token ka alag tokenManager hota hai
+                                    _spender = _FM_FACTORY_ADDR  # safe fallback
+                                    try:
+                                        _tinfo2 = _fm_get_token_info(_addr2, _w3p)
+                                        if _tinfo2:
+                                            _tm2 = _tinfo2.get("tokenManager", "")
+                                            if _tm2 and _tm2 != "0x0000000000000000000000000000000000000000":
+                                                _spender = _tm2
+                                                print(f"✅ [FM] Pre-approve spender (tokenManager): {_tm2[:10]}")
+                                            else:
+                                                print(f"⚠️ [FM] tokenManager empty — factory fallback use ho raha hai")
+                                    except Exception as _te2:
+                                        print(f"⚠️ [FM] Pre-approve getTokenInfo failed: {str(_te2)[:40]} — factory fallback")
+
                                     _tc2 = _w3p.eth.contract(address=Web3.to_checksum_address(_addr2), abi=_FM_ERC20_ABI)
                                     _allow = _tc2.functions.allowance(
                                         Web3.to_checksum_address(_wa2),
-                                        Web3.to_checksum_address(_FM_FACTORY_ADDR)
+                                        Web3.to_checksum_address(_spender)
                                     ).call()
                                     if _allow > 0:
                                         print(f"✅ [FM] Already approved: {_addr2[:10]}"); return
                                     from eth_account import Account as _Acc
-                                    # GAS FIX: Pre-approve 1.5x → 3x — approve fast hogi sell se pehle
                                     _atx = _tc2.functions.approve(
-                                        Web3.to_checksum_address(_FM_FACTORY_ADDR),
+                                        Web3.to_checksum_address(_spender),
                                         2**256 - 1
                                     ).build_transaction({
                                         "from": _wa2,
@@ -5205,8 +5237,25 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                                     })
                                     _sa = _Acc.sign_transaction(_atx, _pk2)
                                     _ah = _w3p.eth.send_raw_transaction(_sa.raw_transaction)
-                                    _w3p.eth.wait_for_transaction_receipt(_ah, timeout=30)
-                                    print(f"✅ [FM] Pre-approve done: {_addr2[:10]}")
+                                    print(f"📡 [FM] Pre-approve TX sent: {_ah.hex()[:12]}...")
+
+                                    # FIX v21: non-blocking poll — wait_for_receipt block karta tha 30s
+                                    # Ab 2s interval pe check karo, max 30s
+                                    import time as _t21
+                                    for _pi in range(15):
+                                        _t21.sleep(2)
+                                        try:
+                                            _rx = _w3p.eth.get_transaction_receipt(_ah)
+                                            if _rx is not None:
+                                                if _rx["status"] == 1:
+                                                    print(f"✅ [FM] Pre-approve confirmed ({_pi*2+2}s): {_addr2[:10]} → spender: {_spender[:10]}")
+                                                else:
+                                                    print(f"⚠️ [FM] Pre-approve TX failed onchain: {_addr2[:10]}")
+                                                break
+                                        except Exception:
+                                            pass
+                                    else:
+                                        print(f"⚠️ [FM] Pre-approve not confirmed in 30s — sell pe runtime approve hoga")
                                 except Exception as _pe:
                                     print(f"⚠️ [FM] Pre-approve error: {str(_pe)[:50]}")
                             threading.Thread(target=_pre_approve, args=(_addr,), daemon=True).start()
