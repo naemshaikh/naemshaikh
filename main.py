@@ -5402,7 +5402,15 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _s2_total_buys[0] = _total_buys
 
         if _fm_filters.get('vol_min_enabled',True) and _funds_diff < _fm_filters['vol_min']:
-            _skip(f"low volume {_funds_diff:.4f} BNB < {_fm_filters['vol_min']}"); return
+            # FIX v33d: Exception rule for high conviction trades
+            if _fm_filters.get('vol_min_enabled', True):
+                # Exception: buyers≥10 AND momentum≥50% → volume≥0.5 allowed
+                _exception_allowed = False
+                if _ub >= 10 and _momentum_actual >= 50 and _funds_diff >= 0.5:
+                    _exception_allowed = True
+                    print(f"⚡ Exception rule triggered: buyers={_ub} momentum={_momentum_actual:.1f}% vol={_funds_diff:.4f}BNB (min 0.5)")
+                if not _exception_allowed and _funds_diff < _fm_filters['vol_min']:
+                    _skip(f"low volume {_funds_diff:.4f} BNB < {_fm_filters['vol_min']}"); return
         _momentum_pct = round((_price2 - _price1) / max(_price1, 1) * 100, 1)
 
         print(f"✅ [FM] ALL PASS: mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}%")
