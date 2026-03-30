@@ -3696,10 +3696,37 @@ function _fmToggleRow(id,isOn){
   if(inp){inp.disabled=!isOn;inp.style.opacity=isOn?'1':'0.5';inp.style.background=isOn?'var(--ink3)':'var(--ink2)';inp.style.color=isOn?'var(--txt)':'var(--txt3)';}
 }
 
+
+async function loadFMFilters() {
+    try {
+        const res = await fetch('/get-fm-filters');
+        const data = await res.json();
+        document.getElementById('fm_mc_max').value = data.mc_max || 15000;
+        document.getElementById('fm_mc_max_enabled').checked = data.mc_max_enabled !== false;
+        document.getElementById('fm_dev_wallet_max').value = data.dev_wallet_max || 10;
+        document.getElementById('fm_dev_wallet_enabled').checked = data.dev_wallet_enabled !== false;
+        document.getElementById('fm_vol_min').value = data.vol_min || 0.8;
+        document.getElementById('fm_vol_min_enabled').checked = data.vol_min_enabled !== false;
+        document.getElementById('fm_buyers_min').value = data.buyers_min || 5;
+        document.getElementById('fm_buyers_min_enabled').checked = data.buyers_min_enabled !== false;
+        document.getElementById('fm_pump_max').value = data.pump_max || 100;
+        document.getElementById('fm_pump_max_enabled').checked = data.pump_max_enabled !== false;
+        document.getElementById('fm_stop_loss').value = data.stop_loss || 20;
+        document.getElementById('fm_stop_loss_enabled').checked = data.stop_loss_enabled !== false;
+        // New momentum fields
+        document.getElementById('fm_momentum_min').value = data.momentum_min || 8;
+        document.getElementById('fm_momentum_window').value = data.momentum_window_sec || 90;
+        document.getElementById('fm_momentum_interval').value = data.momentum_interval_sec || 0.1;
+        document.getElementById('fm_momentum_min_enabled').checked = data.momentum_min_enabled !== false;
+    } catch(e) {
+        console.error('loadFMFilters error', e);
+    }
+}
+
 async function saveFmFilters(){
   const fields = ['mc_max','dev_wallet_max','vol_min','buyers_min','pump_max','stop_loss','momentum_min','momentum_window_sec','momentum_interval_sec'];
     const enabledMap = {mc_max:'mc_max_enabled',dev_wallet_max:'dev_wallet_enabled',vol_min:'vol_min_enabled',buyers_min:'buyers_min_enabled',pump_max:'pump_max_enabled',stop_loss:'stop_loss_enabled',momentum_min:'momentum_min_enabled',momentum_window_sec:'momentum_window_sec_enabled',momentum_interval_sec:'momentum_interval_sec_enabled'};
-  const enabledMap = {mc_max:'mc_max_enabled',dev_wallet_max:'dev_wallet_enabled',vol_min:'vol_min_enabled',buyers_min:'buyers_min_enabled',pump_max:'pump_max_enabled',stop_loss:'stop_loss_enabled'};
+  const enabledMap = {mc_max:'mc_max_enabled',dev_wallet_max:'dev_wallet_enabled',vol_min:'vol_min_enabled',buyers_min:'buyers_min_enabled',pump_max:'pump_max_enabled',stop_loss:'stop_loss_enabled',momentum_min:'momentum_min_enabled',momentum_window_sec:'momentum_window_sec_enabled',momentum_interval_sec:'momentum_interval_sec_enabled'};
   const payload = {};
   for(const f of fields){
     const el  = document.getElementById('fm-f-'+f);
