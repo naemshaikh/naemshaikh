@@ -3852,6 +3852,14 @@ def auto_position_manager():
                     _entry_sl = _pos_data.get("sl_pct", 12.0)
                     _sl_floor = (_pnl_high * 0.7) if _pnl_high >= 30 else -_entry_sl
 
+                    # FIX v29: Hard SL — entry se direct check, koi trail nahi
+                    if pnl <= -_entry_sl and _pnl_high < 5.0:
+                        _auto_paper_sell(addr, f"HardSL -{_entry_sl:.0f}% 🔴", 100.0)
+                        blacklist_token(addr, f"HardSL rebuy block")
+                        _trail_triggered = True
+                        print(f"🔴 HardSL: {addr[:10]} pnl={pnl:.1f}%")
+                        continue
+
                     if pnl >= 200 and tp_sold < 90:
                         _auto_paper_sell(addr, f"ProTP +200% [90% banked] 🌙", 15.0)
                         print(f"🌙 ProTP200: {addr[:10]} pnl={pnl:.1f}%")
@@ -3909,7 +3917,7 @@ def auto_position_manager():
         ):
             _sleep = 0.3
         else:
-            _sleep = 1.0
+            _sleep = 0.2  # FIX v29: 1.0s → 0.2s — SL 5x faster response
         time.sleep(_sleep)
 
 
@@ -4020,9 +4028,38 @@ _pc_sem = threading.Semaphore(5)
 _w3q_global = None
 _w3q_lock   = threading.Lock()
 
+# FIX v29: Stage 1 RPC pool — har snipe pe naya Web3 nahi
+_stage1_w3_pool = {}
+_stage1_pool_lock = threading.Lock()
+
+def _get_stage1_w3():
+    """Stage 1 ke liye RPC pool — connection reuse karo"""
+    _rpcs = [
+        "https://bsc-rpc.publicnode.com",
+        "https://bsc.drpc.org",
+        "https://1rpc.io/bnb",
+    ]
+    with _stage1_pool_lock:
+        for rpc in _rpcs:
+            if rpc in _stage1_w3_pool:
+                try:
+                    # Quick check — block_number ping nahi, sirf object check
+                    if _stage1_w3_pool[rpc] is not None:
+                        return _stage1_w3_pool[rpc]
+                except: pass
+        # Pool mein nahi — naya banao aur save karo
+        for rpc in _rpcs:
+            try:
+                _w = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 5}))
+                _stage1_w3_pool[rpc] = _w
+                return _w
+            except: continue
+    return None
+
 def _get_w3q():
     global _w3q_global
-    if _w3q_global and _w3q_global.is_connected():
+    # FIX v29: is_connected() = RPC ping — har call pe waste, hatao
+    if _w3q_global is not None:
         return _w3q_global
     with _w3q_lock:
         qn = os.getenv("QUICKNODE_HTTP", "")
@@ -5111,19 +5148,16 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _ok, _msg = DataGuard.bnb_price_ok()
         if not _ok: _skip(f"DataGuard: {_msg}"); return
         if is_token_blacklisted(token_addr): _skip("blacklisted"); return
-        if any(t.get("address","").lower() == addr_lower for t in auto_trade_stats.get("trade_history", [])):
+        # FIX v29: O(1) set lookup — 10k list scan avoid karo
+        _th_addrs = {t.get("address","").lower() for t in auto_trade_stats.get("trade_history", [])}
+        if addr_lower in _th_addrs:
             _skip("already traded"); return
         if dev_addr and is_dev_blacklisted(dev_addr):
             _skip(f"dev blacklisted: {dev_addr[:10]}"); return
 
         # ========== STAGE 1 — PRE-FILTER (parallel) ==========
-        _w3a = None
-        for _rpc in ["https://bsc-rpc.publicnode.com", "https://bsc.drpc.org", "https://1rpc.io/bnb"]:
-            try:
-                _w3a = Web3(Web3.HTTPProvider(_rpc, request_kwargs={"timeout": 6}))
-                if _w3a.is_connected(): break
-            except: continue
-
+        # FIX v29: RPC pool — har snipe pe naya Web3 object nahi, reuse karo
+        _w3a = _get_stage1_w3()
         if not _w3a:
             _push_notif("critical", "🔴 Stage1 RPC Down", "Sare free RPCs down hain — tokens filter nahi ho rahe!", token_addr[:10], token_addr)
             _skip("Stage1 RPC unavailable"); return
@@ -5133,6 +5167,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _dev_pct_res = [0.0]
         _pre_gas = [0]
         _pre_nonce = [0]
+        # FIX v29: _price1 baseline Stage 1 ke parallel — 500ms pehle momentum window shuru
+        _price_baseline = [0]
+        _funds_baseline = [0]
 
         def _fetch_token_info():
             _info_res[0] = _fm_get_token_info(token_addr, _w3a)
@@ -5158,10 +5195,20 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                             _pre_nonce[0] = _w3pf.eth.get_transaction_count(_wa, "pending")
             except: pass
 
-        with _cf.ThreadPoolExecutor(max_workers=3) as _ex:
+        def _fetch_price_baseline():
+            # FIX v29: Stage 1 ke saath hi t=0 price snapshot lo
+            try:
+                _snap = _fm_get_token_info(token_addr, _w3a)
+                if _snap:
+                    _price_baseline[0] = _snap.get("lastPrice", 0)
+                    _funds_baseline[0] = _snap.get("funds", 0)
+            except: pass
+
+        with _cf.ThreadPoolExecutor(max_workers=4) as _ex:
             _ex.submit(_fetch_token_info)
             _ex.submit(_fetch_dev_balance)
             _ex.submit(_prefetch_gas_nonce_parallel)
+            _ex.submit(_fetch_price_baseline)  # FIX v29: 4th thread
 
         info = _info_res[0]
         if not info:
@@ -5214,18 +5261,27 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         w3 = w3q
         if not w3: _skip("QuickNode not available"); return
 
-        _info_fresh = _get_token_info_cached(token_addr, w3, ttl=0.5)
-        if not _info_fresh: _skip("Stage2 snapshot failed"); return
-        if _info_fresh.get("liquidityAdded"): _skip("graduated before Stage2"); return
-
-        _price1 = _info_fresh.get("lastPrice", 0)
-        _funds1 = _info_fresh.get("funds", 0)
+        # FIX v29: _price_baseline Stage 1 ke saath fetch hua — reuse karo
+        if _price_baseline[0] > 0:
+            _price1 = _price_baseline[0]
+            _funds1 = _funds_baseline[0]
+            # Graduation check still needed
+            _info_fresh = _get_token_info_cached(token_addr, w3, ttl=0.5)
+            if not _info_fresh: _skip("Stage2 snapshot failed"); return
+            if _info_fresh.get("liquidityAdded"): _skip("graduated before Stage2"); return
+        else:
+            _info_fresh = _get_token_info_cached(token_addr, w3, ttl=0.5)
+            if not _info_fresh: _skip("Stage2 snapshot failed"); return
+            if _info_fresh.get("liquidityAdded"): _skip("graduated before Stage2"); return
+            _price1 = _info_fresh.get("lastPrice", 0)
+            _funds1 = _info_fresh.get("funds", 0)
         _MIN_BUYERS = _fm_filters['buyers_min']
         _price2 = 0
         _funds2 = 0
         _ub = 0
         _total_buys = 0
-        _t_end = time.time() + 2  # FIX v27b: 3s → 2s — aur jaldi decide karo
+        # FIX v29: 2s → 0.8s — momentum window tight, fast decision
+        _t_end = time.time() + 0.8
         _price_ok_flag = False
         _vol_ok_flag = False
         _last_check_time = 0
@@ -5241,19 +5297,14 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 else:
                     _MIN_PRICE_MV = 1.0005  # 0.05% (default)
 
-                # Parallel fetch price and buyers
-                # FIX v27: buyers sirf tab fetch karo jab price AND vol dono ok
-                # pehle OR tha — unnecessary RPC call waste hoti thi
+                # FIX v29: Buyers pehli iteration se parallel — sequential dependency hatao
+                # Price + buyers dono ek saath fetch karo
                 with _cf.ThreadPoolExecutor(max_workers=2) as _p_ex:
-                    price_future = _p_ex.submit(_get_token_info_cached, token_addr, w3, 0.5)
-                    buyers_future = _p_ex.submit(_fm_get_unique_buyers, token_addr, w3) if (_price_ok_flag and _vol_ok_flag) else None
+                    price_future  = _p_ex.submit(_get_token_info_cached, token_addr, w3, 0.5)
+                    buyers_future = _p_ex.submit(_fm_get_unique_buyers, token_addr, w3)
 
                     _snap2 = price_future.result()
-                    if buyers_future:
-                        _ub, _total_buys = buyers_future.result()
-                    else:
-                        _ub = 0
-                        _total_buys = 0
+                    _ub, _total_buys = buyers_future.result()
 
                 if _snap2:
                     if _snap2.get("liquidityAdded"):
@@ -5274,17 +5325,12 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         print(f"✅ [FM] Momentum! price+{round((_price2-_price1)/max(_price1,1)*100,2)}% vol+{_funds_diff:.4f}BNB buyers:{_ub}")
                         break
 
-                # FIX v27: Dynamic sleep — faster iterations
-                # 1.0s → 0.2s: 3s window mein ab 10-12 checks possible
-                # Chainstack safe: condition jaldi meet hoti hai toh loop jaldi break
-                if (_price_ok_flag or _vol_ok_flag) and not (_price_ok_flag and _vol_ok_flag):
-                    time.sleep(0.2)
-                else:
-                    time.sleep(0.2)
+                # FIX v29: 0.2s → 0.05s — 0.8s window mein 16 checks possible
+                time.sleep(0.05)
 
             except Exception as _me:
                 print(f"⚠️ [FM] momentum error: {str(_me)[:50]}")
-                time.sleep(0.5)
+                time.sleep(0.05)  # FIX v29: 0.5s → 0.05s
 
         if not _price2 or _price2 < _price1 * 1.0005:
             _s2_volume_change[0] = round((_funds2 - _funds1) / 1e18, 6) if _funds2 else 0
@@ -5312,7 +5358,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         size_bnb = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
         token_name = token_addr[:8]
         try:
-            entry = info["lastPrice"] / 1e18 if info.get("lastPrice", 0) > 0 else 1e-12
+            # FIX v29: _price2 = Stage 2 ka latest price — info["lastPrice"] stale hota hai
+            entry = _price2 / 1e18 if _price2 > 0 else (info["lastPrice"] / 1e18 if info.get("lastPrice", 0) > 0 else 1e-12)
         except:
             entry = 1e-12
 
@@ -5617,7 +5664,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 except Exception as _fe:
                     pass
 
-                time.sleep(1)  # har 1 second mein update
+                time.sleep(0.2)  # FIX v29: 1s → 0.2s — price update 5x faster
 
             print(f"📡 [FM] Price monitor stopped: {ta[:10]}")
 
@@ -5664,6 +5711,11 @@ def poll_four_meme_v2():
         with _fm_sniped_lock:
             if token_addr.lower() in _fm_sniped: return
 
+        # FIX v29: Thread launch se pehle hi reject karo — useless threads avoid
+        if is_token_blacklisted(token_addr): return
+        if dev_addr and is_dev_blacklisted(dev_addr): return
+        if len(auto_trade_stats.get("running_positions", {})) >= AUTO_MAX_POSITIONS: return
+
         print(f"🆕 [FM] TokenCreate: {token_addr[:10]} dev:{dev_addr[:10] if dev_addr else '?'}")
         _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
         threading.Thread(target=_fm_snipe, args=(token_addr, dev_addr, time.time()), daemon=True).start()
@@ -5682,7 +5734,7 @@ def poll_four_meme_v2():
 
                 # Same block — no new tokens, skip
                 if current == _last_block[0]:
-                    time.sleep(0.5); continue
+                    time.sleep(0.1); continue  # FIX v29: 0.5s → 0.1s
 
                 from_block    = max(_last_block[0] + 1, current - 2)
                 _last_block[0] = current
