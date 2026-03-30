@@ -2938,10 +2938,38 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
             real_sell_success = True
             real_sell_result = _real_sell
         else:
-            print(f"❌ REAL SELL FAILED — paper state NOT updated: {_real_sell.get('error', '?')}")
-            _push_notif("critical", "🔴 Sell Failed", 
-                       f"Real sell failed: {_real_sell.get('error','?')} — position still open", token, address)
-            return  # Early exit — state unchanged
+            _fail_err = _real_sell.get("error", "?")
+            print(f"❌ REAL SELL FAILED — paper state NOT updated: {_fail_err}")
+            _push_notif("critical", "🔴 Sell Failed",
+                       f"Real sell failed: {_fail_err} — position still open", token, address)
+            # FIX v24: Failed sell bhi history mein save karo
+            try:
+                if not isinstance(auto_trade_stats.get("trade_history"), list):
+                    auto_trade_stats["trade_history"] = []
+                _orig_sz_f  = pos.get("orig_size_bnb", size)
+                _buy_rsn_f  = pos.get("buy_reasoning", {}) or {}
+                auto_trade_stats["trade_history"].append({
+                    "token":       token,
+                    "address":     address,
+                    "entry":       entry,
+                    "exit":        current,
+                    "exit_price":  current,
+                    "pnl_pct":     round(pnl_pct, 2),
+                    "pnl_bnb":     round(pnl_bnb, 6),
+                    "size_bnb":    _orig_sz_f,
+                    "bought_at":   bought_at_str,
+                    "sold_at":     datetime.utcnow().isoformat(),
+                    "result":      "sell_failed",
+                    "exit_reason": f"SELL FAILED: {_fail_err}",
+                    "mode":        "real",
+                    "tx_hash":     "",
+                    "buy_reasoning": _buy_rsn_f,
+                })
+                import threading as _th24
+                _th24.Thread(target=_save_trade_history_to_db, daemon=True).start()
+            except Exception as _fe:
+                print(f"⚠️ [v24] Failed sell history save error: {_fe}")
+            return  # Early exit — position still open
     
     # ========== AB PAPER STATE UPDATE (agar real success ya paper mode) ==========
     if TRADE_MODE != "real" or real_sell_success:
@@ -7230,7 +7258,9 @@ def notifications_delete():
 
 @app.route("/trade-history", methods=["GET"])
 def trade_history_route():
-    hist   = [t for t in auto_trade_stats.get("trade_history", []) if t.get("mode", "paper") == TRADE_MODE]
+    # FIX v24: TRADE_MODE se auto filter — real mode = real trades, paper = paper trades
+    hist   = [t for t in auto_trade_stats.get("trade_history", [])
+              if isinstance(t, dict) and t.get("mode", "paper") == TRADE_MODE]
     filt   = request.args.get("filter", "all")
     search = request.args.get("q", "").lower()
     from datetime import datetime as _dt
@@ -7239,7 +7269,7 @@ def trade_history_route():
     for t in reversed(hist):
         if not t.get("sold_at"): continue
         if filt == "win"  and t.get("result") != "win":  continue
-        if filt == "loss" and t.get("result") != "loss": continue
+        if filt == "loss" and t.get("result") not in ("loss", "sell_failed"): continue
         sold_str = t.get("sold_at", "")
         if sold_str and filt in ("today","week","month"):
             try:
