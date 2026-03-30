@@ -1081,7 +1081,7 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
                 2**256 - 1
             ).build_transaction({
                 "from": wallet, "gas": 100000,
-                "gasPrice": int(_get_dynamic_gas_price() * 3.0),
+                "gasPrice": int(_get_dynamic_gas_price() * 1.5),  # FIX v23: was 3.0x
                 "nonce": nonce_a, "chainId": 56
             })
             signed_a = w3.eth.account.sign_transaction(approve_txn, REAL_PRIVATE_KEY)
@@ -1096,7 +1096,7 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
         nonce        = w3.eth.get_transaction_count(wallet, "pending")
 
         # GAS FIX: Sell pe 3x gas — rug se pehle fast niklo
-        _sell_gas_price = int(_get_dynamic_gas_price() * 3.0)
+        _sell_gas_price = int(_get_dynamic_gas_price() * 1.2)  # FIX v23: was 3.0x
         txn = router.functions.swapExactTokensForETHSupportingFeeOnTransferTokens(
             sell_amt, min_bnb,
             [token_cs, wbnb_cs],
@@ -4546,7 +4546,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                 ).build_transaction({
                     "from":     wallet_cs,
                     "gas":      100000,
-                    "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 3.0),
+                    "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 1.5),  # FIX v23: was 3.0x
                     "nonce":    _approve_nonce,
                     "chainId":  56,
                 })
@@ -4579,7 +4579,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                             Web3.to_checksum_address(_dynamic_manager), 2**256 - 1
                         ).build_transaction({
                             "from": wallet_cs, "gas": 100000,
-                            "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 5.0),
+                            "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 2.0),  # FIX v23: was 5.0x
                             "nonce": _ra_nonce, "chainId": 56,
                         })
                         from eth_account import Account as _AccRA
@@ -4674,11 +4674,11 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                     ).build_transaction({
                         "from": wallet_cs,
                         "gas": 400000,
-                        "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 5.5),
+                        "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 1.2),  # FIX v23: was 5.5x
                         "nonce": _nonce,
                         "chainId": 56,
                     })
-                    print(f"[FM v13] Pancake Sell TX — Gas:650k | chainId=56 | Gwei:{int(_fm_get_cached_gas(_w3_fast)*5.5)/1e9:.1f}")
+                    print(f"[FM v13] Pancake Sell TX — Gas:650k | chainId=56 | Gwei:{int(_fm_get_cached_gas(_w3_fast)*1.2)/1e9:.1f}")
                 else:
                     # FIX v19: _token_ver already set above via getTokenInfo (line ~4538)
                     # Dobara call karne se race condition / version mismatch hoti thi → revert
@@ -4700,11 +4700,11 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                         ).build_transaction({
                             "from":     wallet_cs,
                             "gas":      400000,
-                            "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 5.5),
+                            "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 1.2),  # FIX v23: was 5.5x
                             "nonce":    _nonce,
                             "chainId":  56,
                         })
-                        print(f"[FM v18] Curve Sell V1 TX — 6-param | Gwei:{int(_fm_get_cached_gas(_w3_fast)*5.5)/1e9:.1f}")
+                        print(f"[FM v18] Curve Sell V1 TX — Gwei:{int(_fm_get_cached_gas(_w3_fast)*1.2)/1e9:.1f}")
                     else:
                         # V2 — 7 params (with from)
                         tx = fc.functions.sellToken(
@@ -4718,11 +4718,11 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                         ).build_transaction({
                             "from":     wallet_cs,
                             "gas":      400000,
-                            "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 5.5),
+                            "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 1.2),  # FIX v23: was 5.5x
                             "nonce":    _nonce,
                             "chainId":  56,
                         })
-                        print(f"[FM v18] Curve Sell V2 TX — 7-param | Gwei:{int(_fm_get_cached_gas(_w3_fast)*5.5)/1e9:.1f}")
+                        print(f"[FM v18] Curve Sell V2 TX — Gwei:{int(_fm_get_cached_gas(_w3_fast)*1.2)/1e9:.1f}")
                 from eth_account import Account
                 signed  = Account.sign_transaction(tx, pk)
                 tx_hash = _w3_fast.eth.send_raw_transaction(signed.raw_transaction)
@@ -4782,7 +4782,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                         address=Web3.to_checksum_address(_mgr_r),
                         abi=_FM_BC_ABI_V1 if _tv_r == 1 else _FM_BC_ABI)
                     _nn_r = _w3r.eth.get_transaction_count(_wc_r, "pending")
-                    _gp_r = int(_fm_get_cached_gas(_w3r) * (5.5 + _attempt_num * 2.0))
+                    _gp_r = int(_fm_get_cached_gas(_w3r) * (1.2 + _attempt_num * 0.3))  # FIX v23: was 5.5+2.0x
                     _zero = "0x0000000000000000000000000000000000000000"
                     if _tv_r == 1:
                         _txr = _fc_r.functions.sellToken(0,Web3.to_checksum_address(_t_addr2),_bal_r,0,0,_zero
@@ -5310,7 +5310,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                                     ).build_transaction({
                                         "from": _wa2,
                                         "gas": 100000,
-                                        "gasPrice": int(_fm_get_cached_gas(_w3p) * 3.0),
+                                        "gasPrice": int(_fm_get_cached_gas(_w3p) * 1.5),  # FIX v23: was 3.0x
                                         "nonce": _w3p.eth.get_transaction_count(_wa2, "pending"),
                                     })
                                     _sa = _Acc.sign_transaction(_atx, _pk2)
