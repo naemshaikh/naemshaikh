@@ -5210,7 +5210,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _funds2 = 0
         _ub = 0
         _total_buys = 0
-        _t_end = time.time() + 3  # 15s → 3s — jaldi entry, late entry avoid
+        _t_end = time.time() + 2  # FIX v27b: 3s → 2s — aur jaldi decide karo
         _price_ok_flag = False
         _vol_ok_flag = False
         _last_check_time = 0
