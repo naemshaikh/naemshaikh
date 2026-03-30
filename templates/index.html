@@ -3697,7 +3697,8 @@ function _fmToggleRow(id,isOn){
 }
 
 async function saveFmFilters(){
-  const fields = ['mc_max','dev_wallet_max','vol_min','buyers_min','pump_max','stop_loss'];
+  const fields = ['mc_max','dev_wallet_max','vol_min','buyers_min','pump_max','stop_loss','momentum_min','momentum_window_sec','momentum_interval_sec'];
+    const enabledMap = {mc_max:'mc_max_enabled',dev_wallet_max:'dev_wallet_enabled',vol_min:'vol_min_enabled',buyers_min:'buyers_min_enabled',pump_max:'pump_max_enabled',stop_loss:'stop_loss_enabled',momentum_min:'momentum_min_enabled',momentum_window_sec:'momentum_window_sec_enabled',momentum_interval_sec:'momentum_interval_sec_enabled'};
   const enabledMap = {mc_max:'mc_max_enabled',dev_wallet_max:'dev_wallet_enabled',vol_min:'vol_min_enabled',buyers_min:'buyers_min_enabled',pump_max:'pump_max_enabled',stop_loss:'stop_loss_enabled'};
   const payload = {};
   for(const f of fields){
