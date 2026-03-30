@@ -4383,11 +4383,26 @@ def _fm_confirm_close(token_addr, sell_pct, reason, tx_hash_hex):
     Real sell ho chuka hai — dobara nahi karenge.
     """
     try:
-        if token_addr not in auto_trade_stats.get("running_positions", {}):
+        # FIX v28: case-insensitive lookup — checksummed ya lowercase dono handle
+        _rp = auto_trade_stats.get("running_positions", {})
+        _matched_key = None
+        for _k in _rp:
+            if _k.lower() == token_addr.lower():
+                _matched_key = _k
+                break
+        if not _matched_key:
+            print(f"⚠️ [FM v28] confirm_close: position not found for {token_addr[:10]} — keys={list(_rp.keys())[:3]}")
             return
-        pos  = auto_trade_stats["running_positions"][token_addr]
+        token_addr = _matched_key  # sahi key use karo
+        pos  = _rp[token_addr]
         with monitor_lock:
             mon = monitored_positions.get(token_addr, {})
+            if not mon:
+                # monitored_positions bhi case-insensitive check
+                for _mk in monitored_positions:
+                    if _mk.lower() == token_addr.lower():
+                        mon = monitored_positions[_mk]
+                        break
 
         entry   = pos.get("entry", 0)
         current = mon.get("current", entry)
