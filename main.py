@@ -2020,8 +2020,9 @@ def _save_trade_history_to_db():
                 "trade_history": json.dumps(all_hist[-10000:]),
                 "updated_at":    datetime.utcnow().isoformat(),
             }, on_conflict="session_id").execute()
-            paper_hist = [t for t in all_hist if t.get("mode", "paper") == "paper"]
-            real_hist  = [t for t in all_hist if t.get("mode") == "real"]
+            # FIX v30: mode None wali entries bhi sahi count mein dalo
+            paper_hist = [t for t in all_hist if (t.get("mode") or "paper") == "paper"]
+            real_hist  = [t for t in all_hist if (t.get("mode") or "") == "real"]
             print(f"💾 Trade history saved: {len(all_hist)} total | {len(paper_hist)} paper | {len(real_hist)} real")
             return  # success
         except Exception as e:
@@ -2041,8 +2042,9 @@ def _load_trade_history_from_db():
                 hist = json.loads(raw) if isinstance(raw, str) else raw
                 if isinstance(hist, list) and hist:
                     auto_trade_stats["trade_history"] = hist
-                    wins   = sum(1 for t in hist if t.get("result") == "win" and t.get("mode", "paper") == TRADE_MODE)
-                    losses = sum(1 for t in hist if t.get("result") == "loss" and t.get("mode", "paper") == TRADE_MODE)
+                    # FIX v30: mode default "paper" tha — real history load pe count galat tha
+                    wins   = sum(1 for t in hist if t.get("result") == "win" and (t.get("mode") or TRADE_MODE) == TRADE_MODE)
+                    losses = sum(1 for t in hist if t.get("result") == "loss" and (t.get("mode") or TRADE_MODE) == TRADE_MODE)
                     auto_trade_stats["trade_count"] = len(hist)
                     auto_trade_stats["win_count"]   = wins
                     auto_trade_stats["loss_count"]  = losses
@@ -4485,19 +4487,23 @@ def _fm_confirm_close(token_addr, sell_pct, reason, tx_hash_hex):
             _total_pnl_bnb = round(pos.get("banked_pnl_bnb", 0.0), 6)
             _total_pnl_pct = round((_total_pnl_bnb / _orig_sz * 100), 2) if _orig_sz > 0 else pnl_pct
             auto_trade_stats["trade_history"].append({
-                "token":       token,
-                "address":     token_addr,
-                "entry":       entry,
-                "exit":        current,
-                "pnl_pct":     _total_pnl_pct,
-                "pnl_bnb":     _total_pnl_bnb,
-                "size_bnb":    _orig_sz,
-                "bought_at":   bought_at_str,
-                "sold_at":     datetime.utcnow().isoformat(),
-                "result":      "win" if _total_pnl_pct > 0 else "loss",
-                "exit_reason": reason,
-                "mode":        "real",
-                "tx_hash":     tx_hash_hex,
+                "token":        token,
+                "address":      token_addr,
+                "entry":        entry,
+                "exit":         current,
+                "exit_price":   current,
+                "pnl_pct":      _total_pnl_pct,
+                "pnl_bnb":      _total_pnl_bnb,
+                "size_bnb":     _orig_sz,
+                "bought_at":    bought_at_str,
+                "sold_at":      datetime.utcnow().isoformat(),
+                "result":       "win" if _total_pnl_pct > 0 else "loss",
+                "exit_reason":  reason,
+                "reason":       reason,
+                # FIX v30: "real" hardcoded tha — TRADE_MODE use karo
+                "mode":         pos.get("mode", TRADE_MODE),
+                "tx_hash":      tx_hash_hex,
+                "snipe_source": "FM_BC",
             })
             auto_trade_stats["running_positions"].pop(token_addr, None)
             remove_position_from_monitor(token_addr)
@@ -7395,9 +7401,10 @@ def notifications_delete():
 
 @app.route("/trade-history", methods=["GET"])
 def trade_history_route():
-    # FIX v24: TRADE_MODE se auto filter — real mode = real trades, paper = paper trades
+    # FIX v30: mode default "paper" tha — real mode trades miss hoti thi
+    # Ab: agar mode field hi nahi hai toh TRADE_MODE se match karo (both ways safe)
     hist   = [t for t in auto_trade_stats.get("trade_history", [])
-              if isinstance(t, dict) and t.get("mode", "paper") == TRADE_MODE]
+              if isinstance(t, dict) and (t.get("mode") or TRADE_MODE) == TRADE_MODE]
     filt   = request.args.get("filter", "all")
     search = request.args.get("q", "").lower()
     from datetime import datetime as _dt
@@ -7504,7 +7511,8 @@ def auto_stats_route():
     # (partial TP ke baad SL pe counter galat tha — ab total pnl_bnb per position se)
     _all_hist = auto_trade_stats.get("trade_history", [])
     # Sirf current mode ki trades
-    _mode_hist = [t for t in _all_hist if t.get("mode", "paper") == TRADE_MODE]
+    # FIX v30: mode default "paper" tha — real mode pe count zero aata tha
+    _mode_hist = [t for t in _all_hist if (t.get("mode") or TRADE_MODE) == TRADE_MODE]
     _pos_pnl  = {}
     for _t in _mode_hist:
         _key = _t.get("address", "") + "|" + _t.get("bought_at", "")[:16]
@@ -7569,7 +7577,8 @@ def auto_stats_route():
 
     _hist_all = auto_trade_stats.get("trade_history", [])
     # Sirf current mode ki trades use karo PNL ke liye
-    _hist = [t for t in _hist_all if t.get("mode", "paper") == TRADE_MODE]
+    # FIX v30: mode default bug — real mode PNL zero aata tha
+    _hist = [t for t in _hist_all if (t.get("mode") or TRADE_MODE) == TRADE_MODE]
 
     # Realized — closed trades
     _realized_pnl_bnb  = sum(float(t.get("pnl_bnb", 0) or 0) for t in _hist)
