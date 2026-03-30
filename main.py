@@ -510,7 +510,7 @@ user_profile = {
     "last_seen":      None,
     "language":       "hinglish",
     "loaded":         False,
-    "user_rules":     [],
+    "user_rules":     []
 }
 
 def _load_user_profile():
@@ -537,8 +537,8 @@ def _load_user_profile():
                 "total_sessions": stored.get("total_sessions", 0),
                 "last_seen":      stored.get("last_seen"),
                 "language":       stored.get("language", "hinglish"),
-                "user_rules":     stored.get("user_rules", []),
-            })
+                "user_rules":     stored.get("user_rules", [])
+})
             user_profile["loaded"] = True
             if not user_profile.get("name"):
                 user_profile["name"] = "Naem"
@@ -580,8 +580,8 @@ def _save_user_profile():
                 "total_sessions": user_profile.get("total_sessions", 0),
                 "last_seen":      user_profile.get("last_seen"),
                 "language":       user_profile.get("language", "hinglish"),
-                "user_rules":     user_profile.get("user_rules", [])[-30:],
-            }),
+                "user_rules":     user_profile.get("user_rules", [])[-30:]
+}),
             "updated_at": datetime.utcnow().isoformat()
         }, on_conflict="session_id").execute()
     except Exception as e:
@@ -708,7 +708,7 @@ _scanner_stats = {
     "_last_min_pc_disc": 0,
     "_last_min_fm_disc": 0,
     "_last_min_pc_buy":  0,
-    "_last_min_fm_buy":  0,
+    "_last_min_fm_buy":  0
 }
 
 def _scanner_tick():
@@ -721,8 +721,8 @@ def _scanner_tick():
             "pc_disc": _scanner_stats["pc_discovered"] - _scanner_stats["_last_min_pc_disc"],
             "fm_disc": _scanner_stats["fm_discovered"] - _scanner_stats["_last_min_fm_disc"],
             "pc_buy":  _scanner_stats["pc_bought"]     - _scanner_stats["_last_min_pc_buy"],
-            "fm_buy":  _scanner_stats["fm_bought"]     - _scanner_stats["_last_min_fm_buy"],
-        }
+            "fm_buy":  _scanner_stats["fm_bought"]     - _scanner_stats["_last_min_fm_buy"]
+}
         _scanner_stats["history"].append(snap)
         _scanner_stats["history"] = _scanner_stats["history"][-1440:]  # 24h max
         _scanner_stats["_last_min_ts"]      = now
@@ -1692,8 +1692,8 @@ def _get_whale_recent_tokens(wallet: str) -> list:
             "page":       1,
             "offset":     20,
             "sort":       "desc",
-            "apikey":     BSC_SCAN_KEY,
-        }, timeout=8)
+            "apikey":     BSC_SCAN_KEY
+}, timeout=8)
         if r.status_code != 200:
             return []
         txns = r.json().get("result", [])
@@ -1936,8 +1936,8 @@ def detect_green_signals(token_address: str, goplus_data: dict, dex_data: dict) 
     return {
         "signals":         signals,
         "score":           score,
-        "size_multiplier": size_mult,
-    }
+        "size_multiplier": size_mult
+}
 
 
 # ══════════════════════════════════════════════
@@ -2018,8 +2018,8 @@ def _save_trade_history_to_db():
                 "role":          "user",
                 "content":       "",
                 "trade_history": json.dumps(all_hist[-10000:]),
-                "updated_at":    datetime.utcnow().isoformat(),
-            }, on_conflict="session_id").execute()
+                "updated_at":    datetime.utcnow().isoformat()
+}, on_conflict="session_id").execute()
             # FIX v30: mode None wali entries bhi sahi count mein dalo
             paper_hist = [t for t in all_hist if (t.get("mode") or "paper") == "paper"]
             real_hist  = [t for t in all_hist if (t.get("mode") or "") == "real"]
@@ -2158,25 +2158,25 @@ self_awareness = {
         "name":       "MrBlack",
         "version":    "4.0",
         "born_at":    BIRTH_TIME.isoformat(),
-        "deployment": os.getenv("RENDER_SERVICE_NAME", "local"),
-    },
+        "deployment": os.getenv("RENDER_SERVICE_NAME", "local")
+},
     "performance_intelligence": {
         "overall_accuracy": 0.0,
-        "trading_iq":       50,
-    },
+        "trading_iq":       50
+},
     "cognitive_state": {
         "mood":            "FOCUSED",
-        "active_warnings": [],
-    },
+        "active_warnings": []
+},
     "current_state": {
         "status":        "ONLINE",
         "uptime_seconds": 0,
-        "errors_today":  0,
-    },
+        "errors_today":  0
+},
     "growth_tracking": {
-        "milestones": [],
-    },
-    "introspection_log": [],
+        "milestones": []
+},
+    "introspection_log": []
 }
 
 # ========== BRAIN (early init needed) ==========
@@ -2212,10 +2212,10 @@ brain: Dict = {
         "trading_questions": 0,
         "airdrop_questions": 0,
         "coding_questions":  0,
-        "general_chat":      0,
-    },
+        "general_chat":      0
+},
     "user_pain_points": [],
-    "milestones": [],
+    "milestones": []
 }
 
 # ========== SESSIONS ==========
@@ -2277,8 +2277,8 @@ def _load_session_from_db(session_id: str):
                 "daily_loss_date":  _today,
                 "trade_count":      int(row.get("trade_count")      or 0),
                 "win_count":        int(row.get("win_count")        or 0),
-                "pattern_database": _safe_json(row.get("pattern_database"), {}),
-            })
+                "pattern_database": _safe_json(row.get("pattern_database"), {})
+})
             # Restore auto_trade_stats if this is AUTO session
             if session_id == AUTO_SESSION_ID:
                 raw = _safe_json(row.get("pattern_database"), {})
@@ -2327,8 +2327,8 @@ def _save_session_to_db(session_id: str):
                     "today_wins":    auto_trade_stats.get("today_wins",   0),
                     "today_losses":  auto_trade_stats.get("today_losses", 0),
                     "today_pnl":     auto_trade_stats.get("today_pnl",    0.0),
-                    "today_date":    auto_trade_stats.get("today_date",   ""),
-                }
+                    "today_date":    auto_trade_stats.get("today_date",   "")
+}
             else:
                 extra["pattern_database"] = sess.get("pattern_database", [])
             supabase.table("memory").upsert({
@@ -2373,8 +2373,8 @@ def _persist_positions():
                 "sl_pct":         v.get("sl_pct", 12.0),
                 "tp_sold":        v.get("tp_sold", 0.0),
                 "banked_pnl_bnb": v.get("banked_pnl_bnb", 0.0),  # ✅ partial sell profits
-                "mode":           v.get("mode", "paper"),
-            }
+                "mode":           v.get("mode", "paper")
+}
             for k, v in auto_trade_stats["running_positions"].items()
         }
         sessions[AUTO_SESSION_ID] = _ss
@@ -2409,8 +2409,8 @@ def _push_notif(severity: str, title: str, detail: str, token: str = "", address
         "address":  address,
         "ts":       _now_ist(),
         "ts_epoch": __import__("time").time(),
-        "read":     False,
-    }
+        "read":     False
+}
     _notifications.insert(0, notif)
     if len(_notifications) > _NOTIF_MAX:
         _notifications.pop()
@@ -2425,8 +2425,8 @@ def _save_notifs_to_db():
             "role":       "system",
             "content":    "",
             "history":    __import__("json").dumps(_notifications[:_NOTIF_MAX]),
-            "updated_at": __import__("datetime").datetime.utcnow().isoformat(),
-        }, on_conflict="session_id").execute()
+            "updated_at": __import__("datetime").datetime.utcnow().isoformat()
+}, on_conflict="session_id").execute()
     except Exception as _e:
         pass  # Silent fail — notifications are best-effort
 
@@ -2451,8 +2451,8 @@ def _log(event_type: str, token: str, detail: str, address: str = ""):
         "token":   token,
         "detail":  detail,
         "address": address,
-        "ts":      _now_ist(),
-    })
+        "ts":      _now_ist()
+})
 discovered_addresses: dict = {}
 _discovered_lock  = threading.Lock()          # RACE FIX: protect discovered_addresses
 
@@ -2554,7 +2554,7 @@ _fm_filters = {
     "stop_loss":          20,
     "stop_loss_enabled":  True,
     "momentum_min":       8,                # FIX v33: NEW — 25% minimum momentum (5-minute window)
-    "momentum_min_enabled": True,
+    "momentum_min_enabled": True
 }
 AUTO_SESSION_ID    = "AUTO_TRADER"
 
@@ -2570,7 +2570,7 @@ auto_trade_stats = {
     "today_wins":        0,
     "today_losses":      0,
     "today_pnl":         0.0,
-    "today_date":        "",
+    "today_date":        ""
 }
 
 # Telegram removed
@@ -2624,8 +2624,8 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
         "discovered": datetime.utcnow().isoformat(),
         "liquidity":  0,
         "volume_24h": 0,
-        "source":     source,
-    })
+        "source":     source
+})
     print(f"🆕 [{source}] {token_address[:10]}")
 
     # DexScreener naam — background mein, detection block nahi hoga
@@ -2836,8 +2836,8 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         "buys_5m":     int(_dex_d.get("buys_5m", 0) or 0),
         "sells_5m":    int(_dex_d.get("sells_5m", 0) or 0),
         "assumption":  f"Score {score}/{total} SAFE, signals: {', '.join(_buy_signals[:3]) if _buy_signals else 'checklist only'}",
-        "ts":          datetime.utcnow().isoformat(),
-    }
+        "ts":          datetime.utcnow().isoformat()
+}
     auto_trade_stats["running_positions"][address] = {
         "token":          token_name or address[:10],
         "entry":          entry_price,
@@ -2967,8 +2967,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                     "exit_reason": f"SELL FAILED: {_fail_err}",
                     "mode":        "real",
                     "tx_hash":     "",
-                    "buy_reasoning": _buy_rsn_f,
-                })
+                    "buy_reasoning": _buy_rsn_f
+})
                 import threading as _th24
                 _th24.Thread(target=_save_trade_history_to_db, daemon=True).start()
             except Exception as _fe:
@@ -3030,8 +3030,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 "snipe_strategy": _buy_rsn.get("strategy", "Normal_Checklist"),
                 "ath_price":    monitored_positions.get(address, {}).get("high", current),
                 "ath_pct":      round((monitored_positions.get(address, {}).get("high", current) - entry) / entry * 100, 1) if entry > 0 else 0,
-                "hold_minutes": round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds() / 60, 1) if bought_at_str else 0,
-            })
+                "hold_minutes": round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds() / 60, 1) if bought_at_str else 0
+})
         if len(auto_trade_stats["trade_history"]) > 10000:
             auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-10000:]
         
@@ -3063,8 +3063,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                     "bnb_price_at_entry": market_cache.get("bnb_price", 0),
                     "fear_greed_at_entry":_fg_sell,
                     "market_condition":   _mkt_sell,
-                    "token_type":         "meme",
-                },), daemon=True).start()
+                    "token_type":         "meme"
+},), daemon=True).start()
             except Exception as _de:
                 print(f"⚠️ sell decision log error: {_de}")
         
@@ -3116,8 +3116,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 "sell_pct":      sell_pct,
                 "size_bnb":      size,
                 "win":           pnl_pct > 0,
-                "lesson":        f"Auto: {reason} | PnL:{pnl_pct:+.1f}%",
-            })
+                "lesson":        f"Auto: {reason} | PnL:{pnl_pct:+.1f}%"
+})
             sess["positions"] = [p for p in sess.get("positions", []) if p.get("address") != address]
         else:
             if not isinstance(sess.get("positions"), list):
@@ -3143,8 +3143,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 "gas_bnb":     _gas_bnb,
                 "gas_usd":     round(_gas_bnb * _bnb_at_tp, 3),
                 "tokens_sold": round(sell_size / current, 0) if current > 0 else 0,
-                "sold_at":     datetime.utcnow().isoformat(),
-            })
+                "sold_at":     datetime.utcnow().isoformat()
+})
             _persist_positions()
         
         if TRADE_MODE == "real" and real_sell_success:
@@ -3228,8 +3228,8 @@ def _save_brain_to_db():
                 "fm_filters":     _fm_filters,
                 "rug_dna":        _rug_dna[-10000:],
                 "dev_blacklist":  dict(_dev_blacklist),
-                "scanner_stats":  {k: v for k, v in _scanner_stats.items() if not k.startswith("_") and k != "history"},
-            })
+                "scanner_stats":  {k: v for k, v in _scanner_stats.items() if not k.startswith("_") and k != "history"}
+})
         }, on_conflict="session_id").execute()
         print(f"🧠 Brain saved (cycle #{brain['total_learning_cycles']})")
     except Exception as e:
@@ -3388,8 +3388,8 @@ def _learn_trading_patterns():
                     "reason":   reason,
                     "signals":  t.get("signals_used", []),
                     "post_mortem": t.get("post_mortem", ""),
-                    "ts":       ts,
-                }
+                    "ts":       ts
+}
                 best = brain["trading"]["best_patterns"]
                 # String entries clean karo + duplicate check
                 brain["trading"]["best_patterns"] = [p for p in best if isinstance(p, dict)]
@@ -3404,8 +3404,8 @@ def _learn_trading_patterns():
                     "reason":   reason,
                     "signals":  t.get("signals_used", []),
                     "post_mortem": t.get("post_mortem", ""),
-                    "ts":       ts,
-                }
+                    "ts":       ts
+}
                 avoid = brain["trading"]["avoid_patterns"]
                 # String entries clean karo + duplicate check
                 brain["trading"]["avoid_patterns"] = [p for p in avoid if isinstance(p, dict)]
@@ -3436,8 +3436,8 @@ def _deep_llm_learning():
                 "token":    t.get("token", ""),
                 "pnl_pct":  t.get("pnl_pct", 0),
                 "hold_min": t.get("hold_minutes", 0),
-                "ts":       t.get("sold_at", "")[:10],
-            }
+                "ts":       t.get("sold_at", "")[:10]
+}
             best = brain["trading"]["best_patterns"]
             if not any(p.get("token") == pat["token"] for p in best):
                 best.append(pat)
@@ -3450,8 +3450,8 @@ def _deep_llm_learning():
                 "pnl_pct":  t.get("pnl_pct", 0),
                 "hold_min": t.get("hold_minutes", 0),
                 "reason":   t.get("exit_reason", ""),
-                "ts":       t.get("sold_at", "")[:10],
-            }
+                "ts":       t.get("sold_at", "")[:10]
+}
             avoid = brain["trading"]["avoid_patterns"]
             if not any(p.get("token") == pat["token"] for p in avoid):
                 avoid.append(pat)
@@ -3470,8 +3470,8 @@ def _deep_llm_learning():
             "avg_win_hold": avg_win_hold,
             "avg_loss_hold":avg_loss_hold,
             "avg_win_pnl":  avg_win_pnl,
-            "avg_loss_pnl": avg_loss_pnl,
-        }
+            "avg_loss_pnl": avg_loss_pnl
+}
         brain["trading"]["market_insights"].append(insight)
         brain["trading"]["market_insights"] = brain["trading"]["market_insights"][-200:]
 
@@ -3480,8 +3480,8 @@ def _deep_llm_learning():
                      f"AvgLoss={avg_loss_pnl:+.0f}% in {avg_loss_hold}m | Trades={total}")
         brain["trading"]["strategy_notes"].append({
             "note": note_text,
-            "ts":   datetime.utcnow().isoformat()[:16],
-        })
+            "ts":   datetime.utcnow().isoformat()[:16]
+})
         brain["trading"]["strategy_notes"] = brain["trading"]["strategy_notes"][-100:]
 
         brain["total_learning_cycles"] = brain.get("total_learning_cycles", 0) + 1
@@ -4284,8 +4284,8 @@ def _fm_get_unique_buyers(token_addr, w3=None):
             "address": Web3.to_checksum_address(token_addr),
             "topics": [TRANSFER_TOPIC],
             "fromBlock": current - 20,  # ~60s, QuickNode safe
-            "toBlock": "latest",
-        })
+            "toBlock": "latest"
+})
         _ZERO = "0x0000000000000000000000000000000000000000"
         _DEAD = "0x000000000000000000000000000000000000dead"
         _FM_FACTORY_L = _FM_FACTORY_ADDR.lower()
@@ -4350,8 +4350,8 @@ def _fm_get_token_info(token_addr, w3=None):
             "funds":          info[9],
             "maxFunds":       info[10],
             "liquidityAdded": info[11],
-            "factory":        token_manager,
-        }
+            "factory":        token_manager
+}
     except Exception as e:
         print(f"⚠️ [FM] getTokenInfo error: {str(e)[:60]}")
     return None
@@ -4392,8 +4392,8 @@ def _fm_dev_history_onchain(dev_addr, w3=None):
                 "topics":    [TRANSFER_TOPIC, ZERO_PADDED,
                               "0x" + dev_lower[2:].zfill(64)],  # dev address filter
                 "fromBlock": from_block,
-                "toBlock":   "latest",
-            })
+                "toBlock":   "latest"
+})
             dev_tokens = [log["address"] for log in logs]
             result["total"] = len(dev_tokens)
 
@@ -4505,8 +4505,8 @@ def _fm_confirm_close(token_addr, sell_pct, reason, tx_hash_hex):
                 # FIX v30: "real" hardcoded tha — TRADE_MODE use karo
                 "mode":         pos.get("mode", TRADE_MODE),
                 "tx_hash":      tx_hash_hex,
-                "snipe_source": "FM_BC",
-            })
+                "snipe_source": "FM_BC"
+})
             auto_trade_stats["running_positions"].pop(token_addr, None)
             remove_position_from_monitor(token_addr)
             # FIX v25: DB mein bhi position remove karo — redeploy pe wapis na aaye
@@ -4648,8 +4648,8 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                     "gas":      100000,
                     "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 1.5),  # FIX v23: was 3.0x
                     "nonce":    _approve_nonce,
-                    "chainId":  56,
-                })
+                    "chainId":  56
+})
                 from eth_account import Account as _AccA
                 _signed_a = _AccA.sign_transaction(_approve_tx, pk)
                 _ah = _w3_fast.eth.send_raw_transaction(_signed_a.raw_transaction)
@@ -4680,8 +4680,8 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                         ).build_transaction({
                             "from": wallet_cs, "gas": 100000,
                             "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 2.0),  # FIX v23: was 5.0x
-                            "nonce": _ra_nonce, "chainId": 56,
-                        })
+                            "nonce": _ra_nonce, "chainId": 56
+})
                         from eth_account import Account as _AccRA
                         _rah = _w3_fast.eth.send_raw_transaction(
                             _AccRA.sign_transaction(_ra_tx, pk).raw_transaction)
@@ -4776,8 +4776,8 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                         "gas": 400000,
                         "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 1.2),  # FIX v23: was 5.5x
                         "nonce": _nonce,
-                        "chainId": 56,
-                    })
+                        "chainId": 56
+})
                     print(f"[FM v13] Pancake Sell TX — Gas:650k | chainId=56 | Gwei:{int(_fm_get_cached_gas(_w3_fast)*1.2)/1e9:.1f}")
                 else:
                     # FIX v19: _token_ver already set above via getTokenInfo (line ~4538)
@@ -4802,8 +4802,8 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                             "gas":      400000,
                             "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 1.2),  # FIX v23: was 5.5x
                             "nonce":    _nonce,
-                            "chainId":  56,
-                        })
+                            "chainId":  56
+})
                         print(f"[FM v18] Curve Sell V1 TX — Gwei:{int(_fm_get_cached_gas(_w3_fast)*1.2)/1e9:.1f}")
                     else:
                         # V2 — 7 params (with from)
@@ -4820,8 +4820,8 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                             "gas":      400000,
                             "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 1.2),  # FIX v23: was 5.5x
                             "nonce":    _nonce,
-                            "chainId":  56,
-                        })
+                            "chainId":  56
+})
                         print(f"[FM v18] Curve Sell V2 TX — Gwei:{int(_fm_get_cached_gas(_w3_fast)*1.2)/1e9:.1f}")
                 from eth_account import Account
                 signed  = Account.sign_transaction(tx, pk)
@@ -5070,8 +5070,8 @@ def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, resul
             "price1":              float(price1 or 0),
             "price2":              float(price2 or 0),
             "actual_fill":         float(actual_fill or 0),
-            "slippage_pct":        round(float(slippage_pct or 0), 2),
-        }).execute()
+            "slippage_pct":        round(float(slippage_pct or 0), 2)
+}).execute()
 
         # Post-skip tracking — 5 min baad price check karo
         if result == "SKIP" and skip_reason != "blacklisted":
@@ -5170,8 +5170,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             "stage1_ms":          _dbg_stage1_ms,
             "stage2_ms":          _dbg_stage2_ms,
             "price1":             _dbg_price1,
-            "price2":             _dbg_price2,
-        }, daemon=True).start()
+            "price2":             _dbg_price2
+}, daemon=True).start()
 
     try:
         if not AUTO_TRADE_ENABLED or not FM_SNIPER_ENABLED: return
@@ -5481,8 +5481,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     "gas": 400000,
                     "gasPrice": int((_pre_gas[0] or _fm_get_cached_gas(_w3_buy)) * 1.5),
                     "nonce": _w3_buy.eth.get_transaction_count(Web3.to_checksum_address(wallet_addr), "pending"),  # FIX v19: always fresh nonce at TX time — prefetch stale hota hai approve ke baad
-                    "chainId": 56,
-                })
+                    "chainId": 56
+})
                 from eth_account import Account
                 signed = Account.sign_transaction(tx, pk)
                 tx_hash = _w3_buy.eth.send_raw_transaction(signed.raw_transaction)
@@ -5517,8 +5517,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                                         if supabase:
                                             supabase.table("fm_events").update({
                                                 "actual_fill":   float(_real_entry),
-                                                "slippage_pct":  float(_slip),
-                                            }).eq("token_address", _addr).order("detected_at", desc=True).limit(1).execute()
+                                                "slippage_pct":  float(_slip)
+}).eq("token_address", _addr).order("detected_at", desc=True).limit(1).execute()
                                     except: pass
                             except Exception as _ep:
                                 print(f"⚠️ [FM] Entry update error: {str(_ep)[:40]}")
@@ -5560,8 +5560,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                                         "from": _wa2,
                                         "gas": 100000,
                                         "gasPrice": int(_fm_get_cached_gas(_w3p) * 1.5),  # FIX v23: was 3.0x
-                                        "nonce": _w3p.eth.get_transaction_count(_wa2, "pending"),
-                                    })
+                                        "nonce": _w3p.eth.get_transaction_count(_wa2, "pending")
+})
                                     _sa = _Acc.sign_transaction(_atx, _pk2)
                                     _ah = _w3p.eth.send_raw_transaction(_sa.raw_transaction)
                                     print(f"📡 [FM] Pre-approve TX sent: {_ah.hex()[:12]}...")
@@ -5664,9 +5664,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             "buy_reasoning": {
                 "source": "FM_BC_v2",
                 "mc_usd": f"${_mc_usd:.0f}",
-                "momentum": f"+{_momentum_pct:.1f}%",
-            },
-        }
+                "momentum": f"+{_momentum_pct:.1f}%"
+}
+}
         auto_trade_stats["total_auto_buys"] += 1
         _scanner_stats["fm_bought"] = _scanner_stats.get("fm_bought", 0) + 1
         threading.Thread(target=_persist_positions, daemon=True).start()
@@ -5704,8 +5704,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             "price1":       _dbg_price1,
             "price2":       _dbg_price2,
             "actual_fill":  _dbg_actual_fill,
-            "slippage_pct": _dbg_slippage,
-        }, daemon=True).start()
+            "slippage_pct": _dbg_slippage
+}, daemon=True).start()
         print(f"✅ [FM] BC SNIPED: {token_name} mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}% {ms}ms")
 
         def _fm_price_monitor(ta, t_name):
@@ -5757,8 +5757,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                                 "address": Web3.to_checksum_address(ta),
                                 "topics": [TRANSFER_TOPIC],
                                 "fromBlock": _cur - 20,
-                                "toBlock": "latest",
-                            })
+                                "toBlock": "latest"
+})
                             _ZERO = "0x0000000000000000000000000000000000000000"
                             _DEAD = "0x000000000000000000000000000000000000dead"
                             _FM_FAC = _FM_FACTORY_ADDR.lower()
@@ -5863,8 +5863,8 @@ def poll_four_meme_v2():
                             "address":   Web3.to_checksum_address(_FM_FACTORY_ADDR),
                             "topics":    [[topic_hash]],
                             "fromBlock": from_block,
-                            "toBlock":   "latest",
-                        })
+                            "toBlock":   "latest"
+})
 
                         if logs and _active_topic[0] != topic_hash:
                             print(f"✅ [FM] Active topic: {topic_hash[:10]}")
@@ -6329,8 +6329,8 @@ def run_full_sniper_checklist(address: str, prefetched_dex: dict = None) -> Dict
                     "address": creator_addr,
                     "page":    "1",
                     "offset":  "50",
-                    "sort":    "desc",
-                },
+                    "sort":    "desc"
+},
                 timeout=6
             )
             if _bsc_r.status_code == 200:
@@ -6530,8 +6530,8 @@ def _save_bot_decision(data: dict):
             "exit_price":           data.get("exit_price"),
             "token_type":           data.get("token_type", "meme"),
             "market_condition":     data.get("market_condition", "unknown"),
-            "exit_type":            data.get("exit_type"),
-        }
+            "exit_type":            data.get("exit_type")
+}
         supabase.table("bot_decisions").insert(row).execute()
     except Exception as e:
         print(f"⚠️ bot_decision save error: {e}")
@@ -6785,8 +6785,8 @@ def _persist_settings():
                 "max_positions": AUTO_MAX_POSITIONS,
                 "trade_mode":    TRADE_MODE,
                 "real_wallet":   REAL_WALLET,
-                "checklist":     CHECKLIST_SETTINGS,
-            }),
+                "checklist":     CHECKLIST_SETTINGS
+}),
             "updated_at": datetime.utcnow().isoformat()
         }, on_conflict="session_id").execute()
     except Exception as e:
@@ -7088,8 +7088,8 @@ def _startup_once():
                                         "sl_pct":         _sl_pct,
                                         "tp_sold":        _tp_sold,
                                         "banked_pnl_bnb": _banked,
-                                        "mode":           _pd.get("mode", TRADE_MODE),
-                                    }
+                                        "mode":           _pd.get("mode", TRADE_MODE)
+}
                                     add_position_to_monitor(AUTO_SESSION_ID, _addr, _pd.get("token", _addr[:10]), _entry, _size_bnb, _sl_pct)
                                     _restored += 1
                                     print(f"  ↳ Restored {_pd.get('token',_addr[:10])}: tp_sold={_tp_sold:.0f}% size={_size_bnb:.4f} sl={_sl_pct:.0f}%")
@@ -7189,8 +7189,8 @@ def init_session():
         "status":        "ok",
         "is_returning":  bool(sess.get("trade_count", 0) > 0 or sess.get("history")),
         "trade_count":   sess.get("trade_count", 0),
-        "paper_balance": sess.get("paper_balance", 5.0),
-    })
+        "paper_balance": sess.get("paper_balance", 5.0)
+})
 
 @app.route("/trading-data", methods=["GET", "POST"])
 def trading_data():
@@ -7444,8 +7444,8 @@ def activity_route():
             "type":   "wss_error",
             "token":  "WSS",
             "detail": f"WebSocket status: {wss}",
-            "ts":     _now_ist(),
-        })
+            "ts":     _now_ist()
+})
 
     # QuickNode — credits check (simple heuristic)
     _qn_errors = market_cache.get("qn_errors", 0)
@@ -7454,8 +7454,8 @@ def activity_route():
             "type":   "ql_limit",
             "token":  "QuickNode",
             "detail": f"QuickNode errors: {_qn_errors} — check credits",
-            "ts":     _now_ist(),
-        })
+            "ts":     _now_ist()
+})
 
     # BNB price stale
     _last_bnb = market_cache.get("last_updated", "")
@@ -7467,8 +7467,8 @@ def activity_route():
                     "type":   "error",
                     "token":  "BNB Price",
                     "detail": f"BNB price stale — last update {int(_age)}s ago",
-                    "ts":     _now_ist(),
-                })
+                    "ts":     _now_ist()
+})
         except Exception:
             pass
 
@@ -7479,8 +7479,8 @@ def notifications_route():
     return jsonify({
         "notifications": _notifications[:1000],
         "unread": sum(1 for n in _notifications if not n.get("read", False)),
-        "total":  len(_notifications),
-    })
+        "total":  len(_notifications)
+})
 
 @app.route("/notifications/read", methods=["POST"])
 def notifications_read():
@@ -7553,8 +7553,8 @@ def trade_history_route():
         "win_rate":      round(len(wins)/max(len(filtered),1)*100, 1),
         "total_pnl_bnb": round(sum(x.get("pnl_bnb",0) for x in filtered), 4),
         "best_trade":    best,
-        "worst_trade":   worst,
-    })
+        "worst_trade":   worst
+})
 
 # FIX 5: /airdrops route properly defined (was missing def line)
 @app.route("/airdrops", methods=["GET"])
@@ -7586,9 +7586,9 @@ def self_awareness_route():
             "avoid_patterns":   len(brain["trading"]["avoid_patterns"]),
             "blacklisted":      len(brain["trading"]["token_blacklist"]),
             "whitelisted":      len(brain["trading"]["token_whitelist"]),
-            "total_cycles":     brain["total_learning_cycles"],
-        },
-    })
+            "total_cycles":     brain["total_learning_cycles"]
+}
+})
 
 
 def self_introspect() -> str:
@@ -7753,8 +7753,8 @@ def auto_stats_route():
         "brain_best":         len(brain["trading"].get("best_patterns", [])),
         "brain_avoid":        len(brain["trading"].get("avoid_patterns", [])),
         "wss_status":         market_cache.get("wss_status", "unknown"),
-        "brain_loaded":       _brain_loaded_from_db or brain.get("total_learning_cycles", 0) > 0 or len(_smart_wallets) > 0 or len(_rug_dna) > 0,
-    })
+        "brain_loaded":       _brain_loaded_from_db or brain.get("total_learning_cycles", 0) > 0 or len(_smart_wallets) > 0 or len(_rug_dna) > 0
+})
   except Exception as e:
     print(f"❌ auto_stats_route error: {e}")
     return jsonify({
@@ -7764,8 +7764,8 @@ def auto_stats_route():
         "fear_greed": 50, "bnb_usd": 1500, "enabled": AUTO_TRADE_ENABLED,
         "last_action": "", "open_trades": [], "positions": {},
         "trade_history": [], "learning_cycles": 0, "new_pairs_found": 0,
-        "daily_loss": 0, "auto_buys": 0, "auto_sells": 0,
-    })
+        "daily_loss": 0, "auto_buys": 0, "auto_sells": 0
+})
 @app.route("/sys-stats")
 def sys_stats():
     """Live RAM usage — paper vs real mode breakdown"""
@@ -7819,15 +7819,15 @@ def sys_stats():
                 "brain_patterns": brain_pats,
                 "whale_wallets": whale_count,
                 "rug_dna": rug_count,
-                "discovered": disc_count,
-            },
+                "discovered": disc_count
+},
             "real_items": {
-                "open_positions": pos_count,
-            },
+                "open_positions": pos_count
+},
             "trade_mode": TRADE_MODE,
             "plan_name":  plan_name,
-            "total_mb":   total_mb,
-        })
+            "total_mb":   total_mb
+})
     except Exception as e:
         return jsonify({"error": str(e), "rss_mb": 0, "used_pct": 0})
 
@@ -7851,8 +7851,8 @@ def rug_dna_route():
                 "liq_band": d.get("liq_band", "—"),
                 "reason":   d.get("reason", "SL/Rug"),
                 "pnl_pct":  d.get("pnl_pct", 0),
-                "ts":       ist_time,
-            })
+                "ts":       ist_time
+})
         return jsonify({"dna": result, "total": len(_rug_dna)})
     except Exception as e:
         return jsonify({"dna": [], "total": 0, "error": str(e)})
@@ -7885,8 +7885,8 @@ def brain_insights():
             "latest_note":    notes[-1].get("note","") if notes else "Not enough data yet",
             "top_wins":       [{"token": t.get("token",""), "pnl": t.get("pnl_pct",0), "hold": t.get("hold_minutes",0)} for t in top_wins],
             "top_losses":     [{"token": t.get("token",""), "pnl": t.get("pnl_pct",0), "hold": t.get("hold_minutes",0)} for t in top_losses],
-            "insights":       insights[-20:],
-        })
+            "insights":       insights[-20:]
+})
     except Exception as e:
         return jsonify({"error": str(e)})
 
@@ -7912,8 +7912,8 @@ def whale_detail():
                 "total_pnl":  round(d.get("total_pnl", 0), 4),
                 "qualified":  d.get("qualified", False),
                 "first_seen": d.get("first_seen", "")[:10] if d.get("first_seen") else "—",
-                "last_seen":  _to_ist(d.get("last_seen", "")) if d.get("last_seen") else "—",
-            })
+                "last_seen":  _to_ist(d.get("last_seen", "")) if d.get("last_seen") else "—"
+})
         # Sort by wins desc
         result.sort(key=lambda x: (x["qualified"], x["wins"]), reverse=True)
         return jsonify({"wallets": result[:50], "total": len(result)})
@@ -8083,8 +8083,8 @@ def get_settings():
     return jsonify({
         "buy_amount":    AUTO_BUY_SIZE_BNB,
         "max_positions": AUTO_MAX_POSITIONS,
-        "auto_enabled":  AUTO_TRADE_ENABLED,
-    })
+        "auto_enabled":  AUTO_TRADE_ENABLED
+})
 
 @app.route("/close-one", methods=["POST"])
 def close_one_position():
@@ -8171,8 +8171,8 @@ def force_close_position():
             "result":       "win" if pnl_pct > 0 else "loss",
             "exit_reason":  "Force Close (no gas)",
             "mode":         TRADE_MODE,
-            "tx_hash":      "force_closed",
-        })
+            "tx_hash":      "force_closed"
+})
 
         # Stats update
         if pnl_pct > 0:
@@ -8243,32 +8243,32 @@ def scanner_stats():
             "checklist_fail": _scanner_stats["pc_checklist_fail"],
             "bought":         _scanner_stats["pc_bought"],
             "queue":          pc_q,
-            "avg_speed_s":    pc_spd,
-        },
+            "avg_speed_s":    pc_spd
+},
         "fm": {
             "discovered": _scanner_stats["fm_discovered"],
             "bought":     _scanner_stats["fm_bought"],
             "queue":      fm_q,
-            "avg_speed_s": fm_spd,
-        },
+            "avg_speed_s": fm_spd
+},
         "per_min": {
             "pc_disc": _avg(last5, "pc_disc"),
             "fm_disc": _avg(last5, "fm_disc"),
             "pc_buy":  _avg(last5, "pc_buy"),
-            "fm_buy":  _avg(last5, "fm_buy"),
-        },
+            "fm_buy":  _avg(last5, "fm_buy")
+},
         "per_hour": {
             "pc_disc": _sum(last60, "pc_disc"),
             "fm_disc": _sum(last60, "fm_disc"),
             "pc_buy":  _sum(last60, "pc_buy"),
-            "fm_buy":  _sum(last60, "fm_buy"),
-        },
+            "fm_buy":  _sum(last60, "fm_buy")
+},
         "per_day": {
             "pc_disc": _sum(last1d, "pc_disc"),
             "fm_disc": _sum(last1d, "fm_disc"),
             "pc_buy":  _sum(last1d, "pc_buy"),
-            "fm_buy":  _sum(last1d, "fm_buy"),
-        },
+            "fm_buy":  _sum(last1d, "fm_buy")
+},
         "history_points": len(hist),
         "pc_enabled": False,
         "fm_enabled": FM_SNIPER_ENABLED,
@@ -8278,9 +8278,9 @@ def scanner_stats():
             "honeypot":  _scanner_stats["rej_honeypot"],
             "danger":    _scanner_stats["rej_danger"],
             "too_old":   _scanner_stats["rej_too_old"],
-            "blacklist": _scanner_stats["rej_blacklist"],
-        },
-    })
+            "blacklist": _scanner_stats["rej_blacklist"]
+}
+})
 
 
 
@@ -8293,8 +8293,8 @@ def auto_status():
             "enabled":    AUTO_TRADE_ENABLED,
             "bnb_price":  market_cache.get("bnb_price", 0),
             "fear_greed": market_cache.get("fear_greed", 50),
-            "positions":  len(auto_trade_stats.get("running_positions", {})),
-        })
+            "positions":  len(auto_trade_stats.get("running_positions", {}))
+})
     except Exception as e:
         return jsonify({"ready": False, "error": str(e)[:60]})
 
@@ -8398,8 +8398,8 @@ def health():
         "last_update":   market_cache.get("last_updated"),
         "uptime_min":    int((datetime.utcnow() - BIRTH_TIME).total_seconds() / 60),
         "positions":     len(auto_trade_stats.get("running_positions", {})),
-        "learning_cycles": brain.get("total_learning_cycles", 0),
-    })
+        "learning_cycles": brain.get("total_learning_cycles", 0)
+})
 
 
 @app.route("/moralis-test")
@@ -8586,8 +8586,8 @@ def analyze_wallet(wallet_address):
                 "total_gas_bnb":  total_gas_bnb,
                 "bnb_spent":      total_bnb_spent,
                 "tp_pattern":     tp_pattern,
-                "sell_intervals_sec": sell_intervals,
-            })
+                "sell_intervals_sec": sell_intervals
+})
 
         # Sort by first_buy desc (latest first)
         results.sort(key=lambda x: x["first_buy"], reverse=True)
@@ -8620,8 +8620,8 @@ def analyze_wallet(wallet_address):
             "avg_liq_usd_now":  avg_liq_usd,
             "liq_distribution": liq_buckets,
             "bnb_price":        bnb_price,
-            "trades":           results,
-        })
+            "trades":           results
+})
 
     except Exception as e:
         return jsonify({"error": str(e)[:200]})
@@ -8631,8 +8631,8 @@ def client_config():
     """Frontend ke liye safe config — Moralis key expose karo"""
     return jsonify({
         "moralis_key": MORALIS_API_KEY or "",
-        "bsc_wallet":  BSC_WALLET or REAL_WALLET or "",
-    })
+        "bsc_wallet":  BSC_WALLET or REAL_WALLET or ""
+})
 
 @app.route("/wallet-info")
 def wallet_info():
