@@ -4397,11 +4397,21 @@ def _fm_confirm_close(token_addr, sell_pct, reason, tx_hash_hex):
         if entry <= 0:
             return
 
-        current    = current * 0.995 if current > 0 else 0
+        # FIX v26: exit price actual BNB received / tokens sold se calculate karo
+        # lastPrice stale hoti hai — TX data se sahi price milta hai
+        _actual_bnb_received = pos.get("_actual_bnb_received", 0.0)
+        _actual_tokens_sold  = pos.get("_actual_tokens_sold",  0.0)
+        if _actual_bnb_received > 0 and _actual_tokens_sold > 0:
+            current = _actual_bnb_received / _actual_tokens_sold
+            print(f"✅ [FM v26] Exit price from TX: {current:.4e} BNB "
+                  f"({_actual_tokens_sold:.0f} tokens → {_actual_bnb_received:.6f} BNB)")
+        else:
+            current = current * 0.995 if current > 0 else 0
+
         pnl_pct    = ((current - entry) / entry) * 100 if entry > 0 and current > 0 else -100.0
         sell_size  = size * (sell_pct / 100.0)
         pnl_bnb    = sell_size * (pnl_pct / 100.0)
-        return_bnb = sell_size * (1 + pnl_pct / 100.0) if current > 0 else 0.0
+        return_bnb = _actual_bnb_received if _actual_bnb_received > 0 else sell_size * (1 + pnl_pct / 100.0)
 
         sess = get_or_create_session(AUTO_SESSION_ID)
         sess["paper_balance"] = round(sess.get("paper_balance", 5.0) + return_bnb, 6)
@@ -4844,6 +4854,27 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                                     print(f"✅ [FM BC] Sell confirmed: {_cur_hash[:12]} | BNB: {_bnb:.6f}")
                                     _push_notif("success","✅ BC Sell Confirmed",
                                         f"{_t_name} confirmed | BNB:{_bnb:.6f} | TX:{_cur_hash[:12]}",_t_name,_t_addr)
+                                    # FIX v26: actual BNB + tokens position mein save karo
+                                    # _fm_confirm_close sahi exit price calculate karega
+                                    try:
+                                        _pos_upd = auto_trade_stats["running_positions"].get(_t_addr, {})
+                                        if _pos_upd:
+                                            _pos_upd["_actual_bnb_received"] = _bnb
+                                            # Tokens sold — tx logs se parse karo
+                                            for _lg in _rx["logs"]:
+                                                _tp = _lg.get("topics", [])
+                                                if len(_tp) >= 3:
+                                                    _d = _lg.get("data", "")
+                                                    _d = _d.hex() if isinstance(_d, bytes) else _d
+                                                    try:
+                                                        _tok_amt = int(_d, 16) / 1e18
+                                                        if _tok_amt > 1000:  # reasonable token amount
+                                                            _pos_upd["_actual_tokens_sold"] = _tok_amt
+                                                            break
+                                                    except Exception:
+                                                        pass
+                                    except Exception as _upd_e:
+                                        print(f"⚠️ [FM v26] Position update error: {str(_upd_e)[:40]}")
                                     _fm_confirm_close(_t_addr, 100.0, "BC sell confirmed", _cur_hash)
                                     with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower())
                                     return
@@ -5395,6 +5426,24 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             _buyers_at_entry = 0
             _total_buys_at_entry = 0
 
+        # FIX v26: entry price actual TX se calculate karo
+        # lastPrice stale hoti hai — actual BNB sent / tokens received = sahi price
+        try:
+            _w3_entry = _get_w3q() or _fm_get_w3()
+            if _w3_entry:
+                _tc_entry = _w3_entry.eth.contract(
+                    address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
+                _token_bal = _tc_entry.functions.balanceOf(
+                    Web3.to_checksum_address(BSC_WALLET or REAL_WALLET)).call()
+                if _token_bal > 0:
+                    _dec_entry = _get_dec(token_addr)
+                    _tokens_received = _token_bal / (10 ** _dec_entry)
+                    if _tokens_received > 0:
+                        entry = size_bnb / _tokens_received
+                        print(f"✅ [FM v26] Entry price from TX: {entry:.4e} BNB "
+                              f"({_tokens_received:.0f} tokens for {size_bnb} BNB)")
+        except Exception as _ep:
+            print(f"⚠️ [FM v26] Entry price calc error: {str(_ep)[:50]} — lastPrice fallback")
         add_position_to_monitor(AUTO_SESSION_ID, token_addr, token_name, entry, size_bnb, stop_loss_pct=float(_fm_filters['stop_loss']))
         # FIX B: FM tradingFeeRate fetch karo — sell slippage ke liye
         _fm_fee_rate = 0.0
