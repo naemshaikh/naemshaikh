@@ -2539,7 +2539,7 @@ AUTO_MAX_POSITIONS = 50  # max concurrent positions
 
 # FM Filter settings — manually adjustable from UI
 _fm_filters = {
-    "mc_max":             10000,
+    "mc_max":             15000,
     "mc_max_enabled":     True,
     "dev_wallet_max":     10,
     "dev_wallet_enabled": True,
@@ -2549,8 +2549,8 @@ _fm_filters = {
     "buyers_min_enabled": True,
     "price_min":          0.05,
     "price_min_enabled":  True,
-    "pump_max":           10,
-    "pump_max_enabled":   True,
+    "pump_max":           100,
+    "pump_max_enabled":   False,
     "stop_loss":          20,
     "stop_loss_enabled":  True,
 }
@@ -5319,8 +5319,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _dbg_price1 = float(_price1)  # FIX v32: Supabase ke liye
         # FIX v31: DEBUG — Stage2 shuru, price1 baseline log karo
         print(f"⏱️ [FM-DEBUG] STAGE2 START | +{int((time.time()-_t_start)*1000)}ms | price1={_price1:.6e} funds1={_funds1/1e18:.4f}BNB min_buyers={_MIN_BUYERS}")
-        # FIX v29: 2s → 0.8s — momentum window tight, fast decision
-        _t_end = time.time() + 0.8
+        # FIX: 5s momentum window — 0.8s was too short
+        _t_end = time.time() + 5
         _price_ok_flag = False
         _vol_ok_flag = False
         _last_check_time = 0
