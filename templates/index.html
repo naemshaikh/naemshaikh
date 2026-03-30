@@ -1397,6 +1397,52 @@ async function fetchStats(){
 
 
 // ─── INIT — retry on cold start ──────────────────────────────
+
+// Load saved FM filters from Supabase on page load
+async function loadSavedFmSettings() {
+    try {
+        const d = await fetchJSON('/get-fm-filters', {}, 5000);
+        if(d && Object.keys(d).length > 0) {
+            console.log('✅ Loaded saved FM filters from Supabase');
+            return d;
+        }
+    } catch(e) {
+        console.log('No saved filters found, using defaults');
+    }
+    return null;
+}
+
+// Call this after page loads
+setTimeout(async () => {
+    const saved = await loadSavedFmSettings();
+    if(saved && document.getElementById('fm_mc_max')) {
+        // Populate UI if visible
+        if(document.getElementById('fm_mc_max')) {
+            document.getElementById('fm_mc_max').value = saved.mc_max || 15000;
+            document.getElementById('fm_mc_max_enabled').checked = saved.mc_max_enabled !== false;
+            document.getElementById('fm_dev_wallet_max').value = saved.dev_wallet_max || 10;
+            document.getElementById('fm_dev_wallet_enabled').checked = saved.dev_wallet_enabled !== false;
+            document.getElementById('fm_vol_min').value = saved.vol_min || 0.8;
+            document.getElementById('fm_vol_min_enabled').checked = saved.vol_min_enabled !== false;
+            document.getElementById('fm_buyers_min').value = saved.buyers_min || 5;
+            document.getElementById('fm_buyers_min_enabled').checked = saved.buyers_min_enabled !== false;
+            document.getElementById('fm_pump_max').value = saved.pump_max || 100;
+            document.getElementById('fm_pump_max_enabled').checked = saved.pump_max_enabled !== false;
+            document.getElementById('fm_stop_loss').value = saved.stop_loss || 20;
+            document.getElementById('fm_stop_loss_enabled').checked = saved.stop_loss_enabled !== false;
+            if(document.getElementById('fm_momentum_min')) {
+                document.getElementById('fm_momentum_min').value = saved.momentum_min || 8;
+                document.getElementById('fm_momentum_min_enabled').checked = saved.momentum_min_enabled !== false;
+                document.getElementById('fm_momentum_window').value = saved.momentum_window_sec || 90;
+                document.getElementById('fm_momentum_window_enabled').checked = saved.momentum_window_sec_enabled !== false;
+                document.getElementById('fm_momentum_interval').value = saved.momentum_interval_sec || 0.1;
+                document.getElementById('fm_momentum_interval_enabled').checked = saved.momentum_interval_sec_enabled !== false;
+            }
+        }
+    }
+}, 1000);
+
+
 async function init(){
   loadSniperStatus();
   dbg('🚀 Init started — SID='+SID.slice(0,12));
@@ -3697,28 +3743,44 @@ function _fmToggleRow(id,isOn){
 }
 
 
+
 async function loadFMFilters() {
     try {
         const res = await fetch('/get-fm-filters');
         const data = await res.json();
-        document.getElementById('fm_mc_max').value = data.mc_max || 15000;
-        document.getElementById('fm_mc_max_enabled').checked = data.mc_max_enabled !== false;
-        document.getElementById('fm_dev_wallet_max').value = data.dev_wallet_max || 10;
-        document.getElementById('fm_dev_wallet_enabled').checked = data.dev_wallet_enabled !== false;
-        document.getElementById('fm_vol_min').value = data.vol_min || 0.8;
-        document.getElementById('fm_vol_min_enabled').checked = data.vol_min_enabled !== false;
-        document.getElementById('fm_buyers_min').value = data.buyers_min || 5;
-        document.getElementById('fm_buyers_min_enabled').checked = data.buyers_min_enabled !== false;
-        document.getElementById('fm_pump_max').value = data.pump_max || 100;
-        document.getElementById('fm_pump_max_enabled').checked = data.pump_max_enabled !== false;
-        document.getElementById('fm_stop_loss').value = data.stop_loss || 20;
-        document.getElementById('fm_stop_loss_enabled').checked = data.stop_loss_enabled !== false;
-        // New momentum fields
-        document.getElementById('fm_momentum_min').value = data.momentum_min || 8;
-        document.getElementById('fm_momentum_window').value = data.momentum_window_sec || 90;
-        document.getElementById('fm_momentum_interval').value = data.momentum_interval_sec || 0.1;
-        document.getElementById('fm_momentum_min_enabled').checked = data.momentum_min_enabled !== false;
+        // Helper to safely set value
+        const setVal = (id, val, def) => {
+            const el = document.getElementById(id);
+            if(el) el.value = data[val] !== undefined ? data[val] : def;
+        };
+        const setCheck = (id, val, def) => {
+            const el = document.getElementById(id);
+            if(el) el.checked = data[val] !== undefined ? data[val] : def;
+        };
+        // Basic filters
+        setVal('fm_mc_max', 'mc_max', 15000);
+        setCheck('fm_mc_max_enabled', 'mc_max_enabled', true);
+        setVal('fm_dev_wallet_max', 'dev_wallet_max', 10);
+        setCheck('fm_dev_wallet_enabled', 'dev_wallet_enabled', true);
+        setVal('fm_vol_min', 'vol_min', 0.8);
+        setCheck('fm_vol_min_enabled', 'vol_min_enabled', true);
+        setVal('fm_buyers_min', 'buyers_min', 5);
+        setCheck('fm_buyers_min_enabled', 'buyers_min_enabled', true);
+        setVal('fm_pump_max', 'pump_max', 100);
+        setCheck('fm_pump_max_enabled', 'pump_max_enabled', true);
+        setVal('fm_stop_loss', 'stop_loss', 20);
+        setCheck('fm_stop_loss_enabled', 'stop_loss_enabled', true);
+        // Momentum filters
+        setVal('fm_momentum_min', 'momentum_min', 8);
+        setCheck('fm_momentum_min_enabled', 'momentum_min_enabled', true);
+        setVal('fm_momentum_window', 'momentum_window_sec', 90);
+        setCheck('fm_momentum_window_enabled', 'momentum_window_sec_enabled', true);
+        setVal('fm_momentum_interval', 'momentum_interval_sec', 0.1);
+        setCheck('fm_momentum_interval_enabled', 'momentum_interval_sec_enabled', true);
     } catch(e) {
+        console.error('loadFMFilters error', e);
+    }
+} catch(e) {
         console.error('loadFMFilters error', e);
     }
 }
@@ -4392,6 +4454,15 @@ setInterval(fetchNotifications, 10000);
   // Removed duplicate — line 1933 already handles 30s refresh
 
 </script>
+
+
+<!-- FM Momentum filter inputs (hidden, used by loadFMFilters) -->
+<input type="hidden" id="fm_momentum_min" value="8">
+<input type="hidden" id="fm_momentum_min_enabled" value="true">
+<input type="hidden" id="fm_momentum_window" value="90">
+<input type="hidden" id="fm_momentum_window_enabled" value="true">
+<input type="hidden" id="fm_momentum_interval" value="0.1">
+<input type="hidden" id="fm_momentum_interval_enabled" value="true">
 
 <!-- Ghost elements — fetchStats ke liye, UI mein invisible -->
 <div style="display:none;">
