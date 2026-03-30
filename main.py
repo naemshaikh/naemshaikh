@@ -5334,6 +5334,21 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         _r = _w3b.eth.wait_for_transaction_receipt(_th, timeout=60)
                         if _r["status"] == 1:
                             print(f"✅ [FM] Buy confirmed: {_th.hex()[:12]}")
+                            # FIX: Actual fill price fetch karo — entry update karo
+                            try:
+                                _real_info = _fm_get_token_info(_addr, _w3b)
+                                if _real_info and _real_info.get("lastPrice", 0) > 0:
+                                    _real_entry = _real_info["lastPrice"] / 1e18
+                                    with monitor_lock:
+                                        if _addr in monitored_positions:
+                                            monitored_positions[_addr]["entry"] = _real_entry
+                                            monitored_positions[_addr]["current"] = _real_entry
+                                    with _auto_lock:
+                                        if _addr in auto_trade_stats.get("running_positions", {}):
+                                            auto_trade_stats["running_positions"][_addr]["entry"] = _real_entry
+                                    print(f"✅ [FM] Entry updated: {_real_entry:.10f} (was {entry:.10f})")
+                            except Exception as _ep:
+                                print(f"⚠️ [FM] Entry update error: {str(_ep)[:40]}")
                             def _pre_approve(_addr2):
                                 try:
                                     _pk2 = os.getenv("WALLET_PRIVATE_KEY","") or os.getenv("PRIVATE_KEY","") or os.getenv("REAL_PRIVATE_KEY","")
