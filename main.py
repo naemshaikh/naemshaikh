@@ -5026,7 +5026,10 @@ def _fm_honeypot_sim(token_addr, factory_addr, w3=None):
 # REMOVED: duplicate _fm_real_sell_bc (old buggy version with approve) — FIX A
 
 def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, result, skip_reason, time_ms,
-                   buyers_at_entry=0, momentum_pct=0.0, volume_change=0.0, pump_at_entry=0.0, dev_wallet_pct=0.0, mc_usd=0.0, total_buys_at_entry=0):
+                   buyers_at_entry=0, momentum_pct=0.0, volume_change=0.0, pump_at_entry=0.0, dev_wallet_pct=0.0, mc_usd=0.0, total_buys_at_entry=0,
+                   # FIX v32: ye params pehle undefined the — NameError se har event fail hota tha
+                   stage1_ms=0, stage2_ms=0, buy_submit_ms=0,
+                   price1=0.0, price2=0.0, actual_fill=0.0, slippage_pct=0.0):
     """FM event Supabase mein save karo — extra analytics data bhi"""
     try:
         if not supabase: return
@@ -5651,7 +5654,16 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         threading.Thread(target=_save_fm_event, args=(
             token_addr, round(_funds2/1e18, 4), 0, entry, _momentum_pct, "BUY", "", ms,
             _buyers_at_entry, _momentum_pct, round(_funds_diff, 6), _pump_at_entry, _dev_wallet_pct, _mc_usd, _total_buys_at_entry
-        ), daemon=True).start()
+        ), kwargs={
+            # FIX v32: timing debug data BUY event ke liye bhi save karo
+            "stage1_ms":    _dbg_stage1_ms,
+            "stage2_ms":    _dbg_stage2_ms,
+            "buy_submit_ms": _dbg_buy_ms,
+            "price1":       _dbg_price1,
+            "price2":       _dbg_price2,
+            "actual_fill":  _dbg_actual_fill,
+            "slippage_pct": _dbg_slippage,
+        }, daemon=True).start()
         print(f"✅ [FM] BC SNIPED: {token_name} mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}% {ms}ms")
 
         def _fm_price_monitor(ta, t_name):
