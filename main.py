@@ -4439,6 +4439,8 @@ def _fm_confirm_close(token_addr, sell_pct, reason, tx_hash_hex):
             })
             auto_trade_stats["running_positions"].pop(token_addr, None)
             remove_position_from_monitor(token_addr)
+            # FIX v25: DB mein bhi position remove karo — redeploy pe wapis na aaye
+            threading.Thread(target=_persist_positions, daemon=True).start()
             if pnl_pct > 0:
                 auto_trade_stats["wins"]   = auto_trade_stats.get("wins", 0) + 1
             else:
