@@ -2553,7 +2553,7 @@ _fm_filters = {
     "pump_max_enabled":   False,
     "stop_loss":          20,
     "stop_loss_enabled":  True,
-    "momentum_min":       25,                # FIX v33: NEW — 25% minimum momentum (5-minute window)
+    "momentum_min":       8,                # FIX v33: NEW — 25% minimum momentum (5-minute window)
     "momentum_min_enabled": True,
 }
 AUTO_SESSION_ID    = "AUTO_TRADER"
@@ -5324,63 +5324,91 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _dbg_price1 = float(_price1)  # FIX v32: Supabase ke liye
         # FIX v31: DEBUG — Stage2 shuru, price1 baseline log karo
         print(f"⏱️ [FM-DEBUG] STAGE2 START | +{int((time.time()-_t_start)*1000)}ms | price1={_price1:.6e} funds1={_funds1/1e18:.4f}BNB min_buyers={_MIN_BUYERS}")
-        # FIX: 5s momentum window — 0.8s was too short
-        _t_end = time.time() + 5
-        _price_ok_flag = False
-        _vol_ok_flag = False
-        _last_check_time = 0
-
-        while time.time() < _t_end:
+        # FIX v34: Ultra-fast momentum monitor — 90-second max window, early exit
+        _t_start_loop = time.time()
+        _t_end_loop = _t_start_loop + _fm_filters.get("momentum_window_sec", 90)
+        _check_interval = _fm_filters.get("momentum_interval_sec", 0.1)
+        
+        _price1 = _price_baseline[0] if _price_baseline[0] > 0 else _price1
+        _funds1 = _funds_baseline[0] if _funds_baseline[0] > 0 else _funds1
+        
+        _momentum_hit = False
+        _buyers_checked = False
+        _ub = 0
+        _total_buys = 0
+        
+        print(f"⏱️ [FM-DEBUG] MOMENTUM MONITOR START | window={_fm_filters.get('momentum_window_sec', 90)}s interval={_check_interval}s")
+        
+        while time.time() < _t_end_loop:
             try:
-                # Dynamic threshold based on volume momentum
-                _funds_diff_sofar = (_funds2 - _funds1) / 1e18 if _funds2 else 0
-                if _funds_diff_sofar >= 0.5:  # High volume
-                    _MIN_PRICE_MV = 1.0001  # Only 0.01% price move
-                elif _funds_diff_sofar >= 0.2:
-                    _MIN_PRICE_MV = 1.0003  # 0.03%
+                # Fetch current price and funds
+                _info_current = _get_token_info_cached(token_addr, w3, 0.5)
+                if not _info_current:
+                    time.sleep(_check_interval)
+                    continue
+                    
+                if _info_current.get("liquidityAdded"):
+                    _skip("graduated during momentum check")
+                    return
+                    
+                _price2 = _info_current.get("lastPrice", 0)
+                _funds2 = _info_current.get("funds", 0)
+                
+                if _price2 <= 0:
+                    time.sleep(_check_interval)
+                    continue
+                    
+                # Calculate momentum %
+                _momentum_current = round((_price2 - _price1) / max(_price1, 1) * 100, 2)
+                _funds_diff = (_funds2 - _funds1) / 1e18 if _funds2 else 0
+                
+                # Fetch buyers every 2 seconds (not every iteration)
+                _elapsed = time.time() - _t_start_loop
+                if not _buyers_checked or _elapsed > 2:
+                    _buyers_checked = True
+                    _ub, _total_buys = _fm_get_unique_buyers(token_addr, w3)
+                
+                # Dynamic momentum threshold based on volume inflow
+                if _funds_diff >= 0.5:
+                    _target_momentum = 5      # High volume → 5% enough
+                elif _funds_diff >= 0.3:
+                    _target_momentum = 8      # Medium volume → 8%
+                elif _funds_diff >= 0.15:
+                    _target_momentum = 12     # Low-medium volume → 12%
                 else:
-                    _MIN_PRICE_MV = 1.0005  # 0.05% (default)
-
-                # FIX v29: Buyers pehli iteration se parallel — sequential dependency hatao
-                # Price + buyers dono ek saath fetch karo
-                with _cf.ThreadPoolExecutor(max_workers=2) as _p_ex:
-                    price_future  = _p_ex.submit(_get_token_info_cached, token_addr, w3, 0.5)
-                    buyers_future = _p_ex.submit(_fm_get_unique_buyers, token_addr, w3)
-
-                    _snap2 = price_future.result()
-                    _ub, _total_buys = buyers_future.result()
-
-                if _snap2:
-                    if _snap2.get("liquidityAdded"):
-                        _skip("graduated during momentum check"); return
-                    _price2 = _snap2.get("lastPrice", 0)
-                    _funds2 = _snap2.get("funds", 0)
-                    _funds_diff = (_funds2 - _funds1) / 1e18
-                    _price_ok = _price1 > 0 and _price2 >= _price1 * _MIN_PRICE_MV
-                    _vol_ok = not _fm_filters.get('vol_min_enabled',True) or _funds_diff >= _fm_filters['vol_min']
-
-                    if _price_ok:
-                        _price_ok_flag = True
-                    if _vol_ok:
-                        _vol_ok_flag = True
-
-                    # Check conditions
-                    if _price_ok_flag and _vol_ok_flag and _ub >= _MIN_BUYERS:
-                        _mom_pct = round((_price2-_price1)/max(_price1,1)*100, 2)
-                        # FIX v32: Supabase ke liye timing + price capture
-                        _dbg_price2   = float(_price2)
-                        _dbg_stage2_ms = int((time.time()-_t_start)*1000) - _dbg_stage1_ms
-                        print(f"✅ [FM] Momentum! price+{_mom_pct}% vol+{_funds_diff:.4f}BNB buyers:{_ub}")
-                        # FIX v31: DEBUG — momentum detect ke waqt exact price aur timing
-                        print(f"⏱️ [FM-DEBUG] MOMENTUM HIT | +{int((time.time()-_t_start)*1000)}ms | price1={_price1:.6e} → price2={_price2:.6e} (+{_mom_pct}%) | vol={_funds_diff:.4f}BNB | buyers={_ub}")
-                        break
-
-                # FIX v29: 0.2s → 0.05s — 0.8s window mein 16 checks possible
-                time.sleep(0.05)
-
+                    _target_momentum = 20     # Low volume → 20%
+                
+                # Volume check with exception rule
+                _vol_ok = not _fm_filters.get('vol_min_enabled', True) or _funds_diff >= _fm_filters['vol_min']
+                
+                # Exception rule for high conviction trades
+                if not _vol_ok and _ub >= 10 and _momentum_current >= 50 and _funds_diff >= 0.5:
+                    _vol_ok = True
+                    print(f"⚡ Exception rule triggered: buyers={_ub} momentum={_momentum_current:.1f}% vol={_funds_diff:.4f}BNB")
+                
+                # Check if momentum threshold hit
+                if _momentum_current >= _target_momentum and _ub >= _fm_filters['buyers_min'] and _vol_ok:
+                    _dbg_price2 = float(_price2)
+                    _dbg_stage2_ms = int((time.time() - _t_start) * 1000) - _dbg_stage1_ms
+                    print(f"✅ [FM] MOMENTUM HIT! +{_momentum_current:.1f}% in {_elapsed:.1f}s | vol={_funds_diff:.4f}BNB | buyers={_ub}")
+                    print(f"⏱️ [FM-DEBUG] EARLY EXIT | +{int((time.time()-_t_start)*1000)}ms | momentum={_momentum_current:.1f}% | target={_target_momentum}%")
+                    _momentum_hit = True
+                    break
+                
+                # Log progress every 5 seconds
+                if int(_elapsed) % 5 == 0 and _elapsed > 0:
+                    print(f"⏱️ [FM] Monitoring... {_elapsed:.0f}s | mom={_momentum_current:.1f}% target={_target_momentum}% vol={_funds_diff:.4f}BNB buyers={_ub}")
+                
+                time.sleep(_check_interval)
+                
             except Exception as _me:
                 print(f"⚠️ [FM] momentum error: {str(_me)[:50]}")
-                time.sleep(0.05)  # FIX v29: 0.5s → 0.05s
+                time.sleep(_check_interval)
+        
+        if not _momentum_hit:
+            _s2_volume_change[0] = round((_funds2 - _funds1) / 1e18, 6) if _funds2 else 0
+            _skip(f"no momentum in {_fm_filters.get('momentum_window_sec', 90)}s")
+            return
 
         if not _price2 or _price2 < _price1 * 1.0005:
             _s2_volume_change[0] = round((_funds2 - _funds1) / 1e18, 6) if _funds2 else 0
@@ -8035,14 +8063,18 @@ def get_fm_filters():
 def set_fm_filters():
     global _fm_filters
     d = request.get_json(silent=True) or {}
-    # FIX v33: Support new momentum_min filter
+    # FIX v34: Support new momentum_min, momentum_window_sec, momentum_interval_sec
     for k, v in d.items():
         if k in _fm_filters:
             _fm_filters[k] = v
-    # Ensure momentum_min has default if not set
+    # Ensure new keys have defaults if not set
     if "momentum_min" not in _fm_filters:
-        _fm_filters["momentum_min"] = 25
+        _fm_filters["momentum_min"] = 8
         _fm_filters["momentum_min_enabled"] = True
+    if "momentum_window_sec" not in _fm_filters:
+        _fm_filters["momentum_window_sec"] = 90
+    if "momentum_interval_sec" not in _fm_filters:
+        _fm_filters["momentum_interval_sec"] = 0.1
     threading.Thread(target=_save_brain_to_db, daemon=True).start()
     return jsonify({"ok": True, "filters": _fm_filters})
 
