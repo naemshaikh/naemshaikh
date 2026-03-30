@@ -7479,18 +7479,25 @@ def trade_history_route():
     now = _dt.utcnow()
     filtered = []
     for t in reversed(hist):
-        if not t.get("sold_at"): continue
+        # FIX v33: sold_at missing hone pe skip mat karo — bought_at fallback use karo
+        sold_str = t.get("sold_at") or t.get("bought_at", "")
+        if not sold_str and not t.get("result"): continue
         if filt == "win"  and t.get("result") != "win":  continue
         if filt == "loss" and t.get("result") not in ("loss", "sell_failed"): continue
-        sold_str = t.get("sold_at", "")
         if sold_str and filt in ("today","week","month"):
             try:
-                sold_dt = _dt.fromisoformat(sold_str)
+                # FIX v33: robust parse — Z aur microseconds handle karo
+                _s = sold_str[:19].replace("Z","")
+                sold_dt = _dt.fromisoformat(_s)
                 if filt == "today" and (now-sold_dt).days > 0: continue
                 if filt == "week"  and (now-sold_dt).days > 7: continue
                 if filt == "month" and (now-sold_dt).days > 30: continue
             except: pass
         if search and search not in t.get("token","").lower() and search not in t.get("address","").lower(): continue
+        # FIX v33: sold_at missing hone pe bought_at se fill karo
+        if not t.get("sold_at"):
+            t = dict(t)
+            t["sold_at"] = sold_str
         filtered.append(t)
     wins   = [x for x in filtered if x.get("result") == "win"]
     losses = [x for x in filtered if x.get("result") == "loss"]
