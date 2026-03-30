@@ -3787,7 +3787,6 @@ async function loadFMFilters() {
 
 async function saveFmFilters(){
   const fields = ['mc_max','dev_wallet_max','vol_min','buyers_min','pump_max','stop_loss','momentum_min','momentum_window_sec','momentum_interval_sec'];
-    const enabledMap = {mc_max:'mc_max_enabled',dev_wallet_max:'dev_wallet_enabled',vol_min:'vol_min_enabled',buyers_min:'buyers_min_enabled',pump_max:'pump_max_enabled',stop_loss:'stop_loss_enabled',momentum_min:'momentum_min_enabled',momentum_window_sec:'momentum_window_sec_enabled',momentum_interval_sec:'momentum_interval_sec_enabled'};
   const enabledMap = {mc_max:'mc_max_enabled',dev_wallet_max:'dev_wallet_enabled',vol_min:'vol_min_enabled',buyers_min:'buyers_min_enabled',pump_max:'pump_max_enabled',stop_loss:'stop_loss_enabled',momentum_min:'momentum_min_enabled',momentum_window_sec:'momentum_window_sec_enabled',momentum_interval_sec:'momentum_interval_sec_enabled'};
   const payload = {};
   for(const f of fields){
@@ -3796,9 +3795,77 @@ async function saveFmFilters(){
     if(el)  payload[f] = parseFloat(el.value);
     if(tog) payload[enabledMap[f]] = tog.checked;
   }
+  const toggleBtn = document.getElementById('fm-enabled-toggle');
+  if(toggleBtn) payload['enabled'] = toggleBtn.textContent.includes('ON');
   const d = await fetchJSON('/set-fm-filters',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)},8000);
   if(!d||!d.ok){showToast('❌ Save failed');return;}
+  _updateFmToggleBtn(payload['enabled'] !== false);
   showToast('✅ FM Filters saved!');
+  closeModal();
+}
+
+async function toggleFmFilter(){
+  const d = await fetchJSON('/get-fm-filters',{},3000);
+  const isOn = d ? d.enabled !== false : true;
+  const newState = !isOn;
+  const payload = Object.assign({}, d||{}, {enabled: newState});
+  const r = await fetchJSON('/set-fm-filters',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)},5000);
+  if(!r||!r.ok){showToast('❌ Toggle failed');return;}
+  _updateFmToggleBtn(newState);
+  showToast(newState ? '🟢 FM Filter ON' : '🔴 FM Filter OFF');
+}
+
+function _toggleFmEnabled(){
+  const btn = document.getElementById('fm-enabled-toggle');
+  if(!btn) return;
+  const isOn = btn.textContent.includes('ON');
+  btn.textContent = isOn ? '🔴 OFF' : '🟢 ON';
+  btn.style.background = isOn ? 'var(--red)' : 'var(--em)';
+}
+
+function _updateFmToggleBtn(isOn){
+  const icon = document.getElementById('fm-toggle-icon');
+  const lbl  = document.getElementById('fm-toggle-lbl');
+  if(icon) icon.textContent = isOn ? '🟢' : '🔴';
+  if(lbl){ lbl.textContent = isOn ? 'FM ON' : 'FM OFF'; lbl.style.color = isOn ? 'var(--em)' : 'var(--red)'; }
+}
+
+async function _initFmToggle(){
+  try{
+    const d = await fetchJSON('/get-fm-filters',{},3000);
+    if(d) _updateFmToggleBtn(d.enabled !== false);
+  }catch(e){}
+}
+
+async function openTpSettings(){
+  const d = await fetchJSON('/get-tp-settings',{},5000);
+  const t = d || {tp1_pct:40,tp2_pct:120,tp3_pct:200,tp4_pct:300};
+  document.getElementById('modal-title').textContent='🎯 TP Settings';
+  document.getElementById('modal-sub').textContent='TP levels adjust karo';
+  document.getElementById('modal-pnl').textContent='';
+  document.getElementById('modal-body').innerHTML=
+    '<div style="padding:12px 0;display:flex;flex-direction:column;gap:12px;">'+
+    _fmRow('TP1 — 50% sell at (%)','tp1_pct',t.tp1_pct,'number','Entry se +% pe 50% sell')+
+    _fmRow('TP2 — 25% sell at (%)','tp2_pct',t.tp2_pct,'number','Entry se +% pe 25% sell')+
+    _fmRow('TP3 — 15% sell at (%)','tp3_pct',t.tp3_pct,'number','Entry se +% pe 15% sell')+
+    _fmRow('TP4 — 10% sell at (%)','tp4_pct',t.tp4_pct,'number','Entry se +% pe 10% sell')+
+    '</div>';
+  document.getElementById('modal-actions').innerHTML=
+    '<button class="mbtn em" onclick="saveTpSettings()" style="flex:1;">💾 Save</button>'+
+    '<button class="mbtn dark" onclick="closeModal()" style="flex:1;">✕ Cancel</button>';
+  showModal();
+}
+
+async function saveTpSettings(){
+  const fields = ['tp1_pct','tp2_pct','tp3_pct','tp4_pct'];
+  const payload = {};
+  for(const f of fields){
+    const el = document.getElementById('fm-f-'+f);
+    if(el) payload[f] = parseFloat(el.value);
+  }
+  const d = await fetchJSON('/set-tp-settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)},8000);
+  if(!d||!d.ok){showToast('❌ Save failed');return;}
+  showToast('✅ TP Settings saved!');
   closeModal();
 }
 
