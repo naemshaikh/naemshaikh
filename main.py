@@ -2543,9 +2543,9 @@ _fm_filters = {
     "mc_max_enabled":     True,
     "dev_wallet_max":     10,
     "dev_wallet_enabled": True,
-    "vol_min":            0.3,
+    "vol_min":            0.8,               # FIX v33: 0.3 → 0.8 BNB (94% losers filter)
     "vol_min_enabled":    True,
-    "buyers_min":         5,
+    "buyers_min":         5,                 # FIX v33: unchanged — 74% winners pass
     "buyers_min_enabled": True,
     "price_min":          0.05,
     "price_min_enabled":  True,
@@ -2553,6 +2553,8 @@ _fm_filters = {
     "pump_max_enabled":   False,
     "stop_loss":          20,
     "stop_loss_enabled":  True,
+    "momentum_min":       25,                # FIX v33: NEW — 25% minimum momentum (5-minute window)
+    "momentum_min_enabled": True,
 }
 AUTO_SESSION_ID    = "AUTO_TRADER"
 
@@ -5383,6 +5385,10 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if not _price2 or _price2 < _price1 * 1.0005:
             _s2_volume_change[0] = round((_funds2 - _funds1) / 1e18, 6) if _funds2 else 0
             _skip("no momentum in 3s"); return
+        # FIX v33: New momentum threshold check based on analysis
+        _momentum_actual = round((_price2 - _price1) / max(_price1, 1) * 100, 2)
+        if _fm_filters.get("momentum_min_enabled", True) and _momentum_actual < _fm_filters.get("momentum_min", 25):
+            _skip(f"momentum {_momentum_actual:.1f}% < {_fm_filters['momentum_min']}%"); return
 
         # ✅ BUG FIX: timeout pe bhi buyers check — _MIN_BUYERS bypass nahi hoga
         if _ub < _MIN_BUYERS:
@@ -8014,15 +8020,21 @@ def save_checklist_settings():
 
 @app.route("/get-fm-filters", methods=["GET"])
 def get_fm_filters():
+    # FIX v33: Return updated filters with momentum_min
     return jsonify(_fm_filters)
 
 @app.route("/set-fm-filters", methods=["POST"])
 def set_fm_filters():
     global _fm_filters
     d = request.get_json(silent=True) or {}
+    # FIX v33: Support new momentum_min filter
     for k, v in d.items():
         if k in _fm_filters:
             _fm_filters[k] = v
+    # Ensure momentum_min has default if not set
+    if "momentum_min" not in _fm_filters:
+        _fm_filters["momentum_min"] = 25
+        _fm_filters["momentum_min_enabled"] = True
     threading.Thread(target=_save_brain_to_db, daemon=True).start()
     return jsonify({"ok": True, "filters": _fm_filters})
 
