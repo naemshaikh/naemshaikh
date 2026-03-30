@@ -5227,10 +5227,12 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     _MIN_PRICE_MV = 1.0005  # 0.05% (default)
 
                 # Parallel fetch price and buyers
+                # FIX v27: buyers sirf tab fetch karo jab price AND vol dono ok
+                # pehle OR tha — unnecessary RPC call waste hoti thi
                 with _cf.ThreadPoolExecutor(max_workers=2) as _p_ex:
                     price_future = _p_ex.submit(_get_token_info_cached, token_addr, w3, 0.5)
-                    buyers_future = _p_ex.submit(_fm_get_unique_buyers, token_addr, w3) if (_price_ok_flag or _vol_ok_flag) else None
-                    
+                    buyers_future = _p_ex.submit(_fm_get_unique_buyers, token_addr, w3) if (_price_ok_flag and _vol_ok_flag) else None
+
                     _snap2 = price_future.result()
                     if buyers_future:
                         _ub, _total_buys = buyers_future.result()
@@ -5257,11 +5259,13 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         print(f"✅ [FM] Momentum! price+{round((_price2-_price1)/max(_price1,1)*100,2)}% vol+{_funds_diff:.4f}BNB buyers:{_ub}")
                         break
 
-                # Dynamic sleep
+                # FIX v27: Dynamic sleep — faster iterations
+                # 1.0s → 0.2s: 3s window mein ab 10-12 checks possible
+                # Chainstack safe: condition jaldi meet hoti hai toh loop jaldi break
                 if (_price_ok_flag or _vol_ok_flag) and not (_price_ok_flag and _vol_ok_flag):
-                    time.sleep(0.5)
+                    time.sleep(0.2)
                 else:
-                    time.sleep(1.0)
+                    time.sleep(0.2)
 
             except Exception as _me:
                 print(f"⚠️ [FM] momentum error: {str(_me)[:50]}")
