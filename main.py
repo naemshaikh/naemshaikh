@@ -5210,7 +5210,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _funds2 = 0
         _ub = 0
         _total_buys = 0
-        _t_end = time.time() + 15
+        _t_end = time.time() + 3  # 15s → 3s — jaldi entry, late entry avoid
         _price_ok_flag = False
         _vol_ok_flag = False
         _last_check_time = 0
@@ -5269,7 +5269,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         if not _price2 or _price2 < _price1 * 1.0005:
             _s2_volume_change[0] = round((_funds2 - _funds1) / 1e18, 6) if _funds2 else 0
-            _skip("no momentum in 10s"); return
+            _skip("no momentum in 3s"); return
 
         # ✅ BUG FIX: timeout pe bhi buyers check — _MIN_BUYERS bypass nahi hoga
         if _ub < _MIN_BUYERS:
