@@ -5461,27 +5461,20 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                                         if _addr in monitored_positions:
                                             monitored_positions[_addr]["entry"] = _real_entry
                                             monitored_positions[_addr]["current"] = _real_entry
-                                    with _auto_lock:
+                                    with monitor_lock:
                                         if _addr in auto_trade_stats.get("running_positions", {}):
                                             auto_trade_stats["running_positions"][_addr]["entry"] = _real_entry
                                     # FIX v31: DEBUG — actual fill vs intended — slippage track karo
                                     _slip = round((_real_entry - entry) / max(entry, 1e-18) * 100, 2)
                                     print(f"✅ [FM] Entry updated: {_real_entry:.10f} (was {entry:.10f})")
                                     print(f"⏱️ [FM-DEBUG] TX CONFIRMED | intended={entry:.6e} | actual_fill={_real_entry:.6e} | slippage={_slip:+.2f}% | tx={_th.hex()[:16]}")
-                                    # FIX v32: Supabase fm_events mein timing data update karo
                                     try:
                                         if supabase:
                                             supabase.table("fm_events").update({
                                                 "actual_fill":   float(_real_entry),
                                                 "slippage_pct":  float(_slip),
-                                                "buy_submit_ms": _dbg_buy_ms,
-                                                "stage1_ms":     _dbg_stage1_ms,
-                                                "stage2_ms":     _dbg_stage2_ms,
-                                                "price1":        _dbg_price1,
-                                                "price2":        _dbg_price2,
                                             }).eq("token_address", _addr).order("detected_at", desc=True).limit(1).execute()
-                                    except Exception as _dbu:
-                                        print(f"⚠️ [FM-DEBUG] Supabase timing update error: {str(_dbu)[:50]}")
+                                    except: pass
                             except Exception as _ep:
                                 print(f"⚠️ [FM] Entry update error: {str(_ep)[:40]}")
                             def _pre_approve(_addr2):
