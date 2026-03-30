@@ -5099,6 +5099,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if addr_lower in _fm_sniped: return
         _fm_sniped.add(addr_lower)
 
+    # FIX v31: DEBUG — token detect timestamp
+    print(f"⏱️ [FM-DEBUG] DETECTED | +0ms | token={token_addr[:10]} dev={dev_addr[:10] if dev_addr else '?'}")
+
     # Cache helper
     def _get_token_info_cached(addr, w3, ttl=0.5):
         key = addr.lower()
@@ -5162,6 +5165,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             _skip(f"dev blacklisted: {dev_addr[:10]}"); return
 
         # ========== STAGE 1 — PRE-FILTER (parallel) ==========
+        # FIX v31: DEBUG — Stage1 shuru
+        print(f"⏱️ [FM-DEBUG] STAGE1 START | +{int((time.time()-_t_start)*1000)}ms | token={token_addr[:10]}")
         # FIX v29: RPC pool — har snipe pe naya Web3 object nahi, reuse karo
         _w3a = _get_stage1_w3()
         if not _w3a:
@@ -5260,7 +5265,10 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _s1_pump_at_entry[0] = _pump_at_entry
         _s1_dev_wallet[0] = _dev_wallet_pct
 
+        _s1_ms = int((time.time() - _t_start) * 1000)
         print(f"✅ [FM] Stage1 PASS: mc=${_mc_usd:.0f}")
+        # FIX v31: DEBUG — Stage1 kitne ms mein complete hua
+        print(f"⏱️ [FM-DEBUG] STAGE1 DONE | +{_s1_ms}ms | mc=${_mc_usd:.0f} pump={_s1_pump_at_entry[0]:.1f}% dev={_s1_dev_wallet[0]:.1f}% price_baseline={_price_baseline[0]:.6e}")
 
         # ========== STAGE 2 — ULTIMATE OPTIMIZED MOMENTUM ==========
         w3q = _get_w3q()
@@ -5286,6 +5294,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _funds2 = 0
         _ub = 0
         _total_buys = 0
+        # FIX v31: DEBUG — Stage2 shuru, price1 baseline log karo
+        print(f"⏱️ [FM-DEBUG] STAGE2 START | +{int((time.time()-_t_start)*1000)}ms | price1={_price1:.6e} funds1={_funds1/1e18:.4f}BNB min_buyers={_MIN_BUYERS}")
         # FIX v29: 2s → 0.8s — momentum window tight, fast decision
         _t_end = time.time() + 0.8
         _price_ok_flag = False
@@ -5328,7 +5338,10 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
                     # Check conditions
                     if _price_ok_flag and _vol_ok_flag and _ub >= _MIN_BUYERS:
-                        print(f"✅ [FM] Momentum! price+{round((_price2-_price1)/max(_price1,1)*100,2)}% vol+{_funds_diff:.4f}BNB buyers:{_ub}")
+                        _mom_pct = round((_price2-_price1)/max(_price1,1)*100, 2)
+                        print(f"✅ [FM] Momentum! price+{_mom_pct}% vol+{_funds_diff:.4f}BNB buyers:{_ub}")
+                        # FIX v31: DEBUG — momentum detect ke waqt exact price aur timing
+                        print(f"⏱️ [FM-DEBUG] MOMENTUM HIT | +{int((time.time()-_t_start)*1000)}ms | price1={_price1:.6e} → price2={_price2:.6e} (+{_mom_pct}%) | vol={_funds_diff:.4f}BNB | buyers={_ub}")
                         break
 
                 # FIX v29: 0.2s → 0.05s — 0.8s window mein 16 checks possible
@@ -5369,6 +5382,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         except:
             entry = 1e-12
 
+        # FIX v31: DEBUG — buy execute shuru — detect se yahan tak total time
+        print(f"⏱️ [FM-DEBUG] BUY START | +{int((time.time()-_t_start)*1000)}ms | entry_price={entry:.6e} BNB | size={size_bnb:.4f}BNB | mode={TRADE_MODE}")
+
         if TRADE_MODE == "real":
             try:
                 wallet_addr = BSC_WALLET or REAL_WALLET
@@ -5399,7 +5415,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 from eth_account import Account
                 signed = Account.sign_transaction(tx, pk)
                 tx_hash = _w3_buy.eth.send_raw_transaction(signed.raw_transaction)
+                # FIX v31: DEBUG — TX blockchain pe submit — detect se yahan tak
                 print(f"✅ [FM] Real buy sent: {tx_hash.hex()}")
+                print(f"⏱️ [FM-DEBUG] TX SENT | +{int((time.time()-_t_start)*1000)}ms | tx={tx_hash.hex()[:16]} | entry={entry:.6e} BNB")
 
                 def _wait_receipt(_th, _w3b, _addr):
                     try:
@@ -5418,7 +5436,10 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                                     with _auto_lock:
                                         if _addr in auto_trade_stats.get("running_positions", {}):
                                             auto_trade_stats["running_positions"][_addr]["entry"] = _real_entry
+                                    # FIX v31: DEBUG — actual fill vs intended — slippage track karo
+                                    _slip = round((_real_entry - entry) / max(entry, 1e-18) * 100, 2)
                                     print(f"✅ [FM] Entry updated: {_real_entry:.10f} (was {entry:.10f})")
+                                    print(f"⏱️ [FM-DEBUG] TX CONFIRMED | intended={entry:.6e} | actual_fill={_real_entry:.6e} | slippage={_slip:+.2f}% | tx={_th.hex()[:16]}")
                             except Exception as _ep:
                                 print(f"⚠️ [FM] Entry update error: {str(_ep)[:40]}")
                             def _pre_approve(_addr2):
