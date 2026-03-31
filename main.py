@@ -3777,6 +3777,14 @@ def auto_position_manager():
                 _pos_data = auto_trade_stats["running_positions"].get(addr, pos)
                 entry   = _pos_data.get("entry", 0)
                 high    = mon.get("high", entry)
+                # ── FIX v36 Bug1: ATH race condition — price_monitor ka wait mat karo ──
+                # Fast dump coins mein monitor pehla update karne se pehle HardSL fire
+                # hota tha. Same iteration mein high sync karo.
+                if current > 0 and current > high:
+                    high = current
+                    with monitor_lock:
+                        if addr in monitored_positions:
+                            monitored_positions[addr]["high"] = current
                 tp_sold = _pos_data.get("tp_sold", 0.0)
                 sl_pct  = _pos_data.get("sl_pct", 12.0)
                 if entry <= 0:
@@ -3862,7 +3870,7 @@ def auto_position_manager():
                     # FIX 1: _auto_paper_sell real mode bhi handle karta hai internally
 
                 if not _trail_triggered:
-                    # ── pnl_high track karo ──
+                    # ── FIX v36 Bug2: pnl_high track karo (ATH bug fix ke baad sahi kaam karega) ──
                     _pnl_high = _pos_data.get("pnl_high", 0.0)
                     if pnl > _pnl_high:
                         _pos_data["pnl_high"] = pnl
@@ -3878,16 +3886,41 @@ def auto_position_manager():
                         print(f"🔴 HardSL: {addr[:10]} pnl={pnl:.1f}%")
                         continue
 
-                    # ── Universal Momentum Dead Check (v35e) ──
-                    # Teeno true = momentum khatam = 100% exit, har zone pe
+                    # ── FIX v36 Bug2+3: MomDead — buy se turant active, tight trail ──
+                    # Bug2 fix: _fading ab pnl_high se -15% trail karta hai (-20 tha)
+                    #           Pehle pnl_high=0 tha → _fading sirf pnl<-20% pe fire hota
+                    #           Ab pnl_high sahi hoga → jaise hi coin +50% se -15% gire = _fading=True
+                    # Bug3 fix: _sell_heavy mein b5=0,s5=0 wala edge case handle kiya
+                    #           Fresh buy pe RT data nahi hota → b5=s5=0
+                    #           Pehle: sell_heavy = (0 > 0*1.5) = False → MomDead kabhi fire nahi hota
+                    #           Ab: agar hold > 45s aur pnl <= -20% → EmergSL fire karo
                     _vol_live   = _get_vol_pressure_rt(addr)
                     _bv5_live   = _vol_live.get("buy_vol5", 0.0)
                     _b5_live    = _vol_live.get("buys5",    0)
                     _s5_live    = _vol_live.get("sells5",   0)
-                    _vol_dying  = _bv5_live < 0.3             # volume sukh gaya
-                    _sell_heavy = _s5_live > _b5_live * 1.5  # sellers dominant
-                    _fading     = pnl < (_pnl_high - 20)     # high se -20% neeche
+
+                    # Hold time — bought_at se calculate karo
+                    _bought_str  = _pos_data.get("bought_at", "")
+                    try:
+                        _hold_secs = (datetime.utcnow() - datetime.fromisoformat(_bought_str[:19])).total_seconds() if _bought_str else 999
+                    except Exception:
+                        _hold_secs = 999
+
+                    _vol_dying  = _bv5_live < 0.3
+                    # FIX Bug3: b5=0 AND s5>=2 bhi sell_heavy hai (data nahi = sellers only)
+                    _sell_heavy = (_s5_live > _b5_live * 1.5) or (_s5_live >= 2 and _b5_live == 0)
+                    # FIX Bug2: -15% trail (was -20), OR 30s ke baad -8% gir raha = fading
+                    _fading     = (pnl < (_pnl_high - 15)) or (_hold_secs > 30 and pnl < -8 and _pnl_high < 5)
                     _mom_dead   = _vol_dying and _sell_heavy and _fading
+
+                    # Emergency SL: 45s baad bhi MomDead nahi + coin -20% gaya
+                    # (RT data nahi tha isliye MomDead fire nahi kiya — emergency backup)
+                    _emergency_sl = (
+                        _hold_secs > 45
+                        and pnl <= -20
+                        and not _mom_dead
+                        and _pnl_high < 5.0
+                    )
 
                     # ── TP1: +40% → 50% sell ──
                     if pnl >= 40 and tp_sold < 50:
@@ -3904,7 +3937,14 @@ def auto_position_manager():
                         _zone = "Moonbag" if tp_sold >= 80 else ("Post-TP1" if tp_sold >= 50 else "Pre-TP")
                         _auto_paper_sell(addr, f"MomDead {_zone} 📉", 100.0)
                         _trail_triggered = True
-                        print(f"📉 MomDead [{_zone}]: {addr[:10]} pnl={pnl:.1f}% high={_pnl_high:.1f}% bv5={_bv5_live:.3f} s={_s5_live} b={_b5_live}")
+                        print(f"📉 MomDead [{_zone}]: {addr[:10]} pnl={pnl:.1f}% high={_pnl_high:.1f}% bv5={_bv5_live:.3f} s={_s5_live} b={_b5_live} hold={_hold_secs:.0f}s")
+
+                    # ── Emergency SL: RT data nahi tha, MomDead nahi chala, coin dump ──
+                    elif _emergency_sl:
+                        _auto_paper_sell(addr, f"EmergSL -20% 🚨", 100.0)
+                        blacklist_token(addr, "EmergSL rebuy block")
+                        _trail_triggered = True
+                        print(f"🚨 EmergSL: {addr[:10]} pnl={pnl:.1f}% hold={_hold_secs:.0f}s bv5={_bv5_live:.3f}")
 
             except Exception as e:
                 print(f"Auto manager err {addr[:10]}: {e}")
