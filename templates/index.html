@@ -4158,6 +4158,7 @@ setInterval(fetchNotifications, 10000);
   function refreshFM() {
     const btn  = document.getElementById('fm-refresh-btn');
     const icon = document.getElementById('fm-refresh-icon');
+    const el   = document.getElementById('fm-events-table');
     if (btn)  btn.disabled = true;
     if (icon) icon.textContent = '⏳';
     fetchScannerStats();
@@ -4170,12 +4171,14 @@ setInterval(fetchNotifications, 10000);
         const events = d.events || [];
         const cnt = document.getElementById('fm-events-count');
         if (cnt) cnt.textContent = events.length + ' events';
+        window._fmEventsData = events;
         renderFMEvents(events);
         _updateFM24H(events);
         showToast && showToast('✅ FM Refreshed');
       })
-      .catch(() => {
+      .catch(err => {
         clearTimeout(_fmTimer);
+        if (el) el.innerHTML = '<div style="color:var(--red);text-align:center;padding:16px;font-size:12px;">❌ Load failed — Refresh dabao</div>';
         showToast && showToast('❌ FM load failed — retry karo');
       })
       .finally(() => {
@@ -4194,12 +4197,13 @@ setInterval(fetchNotifications, 10000);
         const events = d.events || [];
         const cnt = document.getElementById('fm-events-count');
         if (cnt) cnt.textContent = events.length + ' events';
+        window._fmEventsData = events;
         renderFMEvents(events);
         _updateFM24H(events);
       })
       .catch(e => {
         const el = document.getElementById('fm-events-table');
-        if (el) el.innerHTML = '<div style="color:var(--txt3);text-align:center;padding:12px;font-size:11px;">Data load failed — retry ho raha hai</div>';
+        if (el) el.innerHTML = '<div style="color:var(--red);text-align:center;padding:12px;font-size:11px;">❌ Load failed — Refresh dabao</div>';
       });
   }
 
