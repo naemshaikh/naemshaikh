@@ -2553,7 +2553,7 @@ _fm_filters = {
     "pump_max_enabled":   False,
     "stop_loss":          20,
     "stop_loss_enabled":  True,
-    "momentum_min":       8,                # FIX v33: NEW — 25% minimum momentum (5-minute window)
+    "momentum_min":       25,               # FIX v35a: Fixed 25% minimum momentum
     "momentum_min_enabled": True
 }
 AUTO_SESSION_ID    = "AUTO_TRADER"
@@ -5368,15 +5368,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     _buyers_checked = True
                     _ub, _total_buys = _fm_get_unique_buyers(token_addr, w3)
                 
-                # Dynamic momentum threshold based on volume inflow
-                if _funds_diff >= 0.5:
-                    _target_momentum = 5      # High volume → 5% enough
-                elif _funds_diff >= 0.3:
-                    _target_momentum = 8      # Medium volume → 8%
-                elif _funds_diff >= 0.15:
-                    _target_momentum = 12     # Low-medium volume → 12%
-                else:
-                    _target_momentum = 20     # Low volume → 20%
+                # Fixed momentum threshold — 25% minimum always
+                _target_momentum = 25
                 
                 # Volume check with exception rule
                 _vol_ok = not _fm_filters.get('vol_min_enabled', True) or _funds_diff >= _fm_filters['vol_min']
