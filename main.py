@@ -3314,6 +3314,16 @@ def _load_brain_from_db():
                     if _fk in _fm_filters:
                         _fm_filters[_fk] = _fv
                 print(f"⚙️ FM Filters loaded: {_ff}")
+            # Force correct values — DB mein purane values ho sakte hain
+            _fm_filters["vol_min"]              = 0.8
+            _fm_filters["vol_min_enabled"]      = True
+            _fm_filters["momentum_min"]         = 25
+            _fm_filters["momentum_min_enabled"] = True
+            _fm_filters["mc_max"]               = 15000
+            _fm_filters["pump_max"]             = 100
+            _fm_filters["pump_max_enabled"]     = False
+            _fm_filters["stop_loss_enabled"]    = True
+            print(f"⚙️ FM Filters forced: vol_min=0.8 momentum_min=25 mc_max=15000")
             # Load scanner stats — cumulative counts restore
             _ss = stored.get("scanner_stats", {})
             if isinstance(_ss, dict) and _ss:
