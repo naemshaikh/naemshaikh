@@ -3652,7 +3652,7 @@ async function setMaxPos(val){
 // FM Filters
 async function openFmFilters(){
   const d = await fetchJSON('/get-fm-filters',{},5000);
-  const f = d || {mc_max:10000,dev_wallet_max:10,vol_min:0.3,buyers_min:5,pump_max:10,stop_loss:20};
+  const f = d || {mc_max:30000,dev_wallet_max:10,vol_min:0.8,buyers_min:5,price_min:0.05,pump_max:100,stop_loss:20,momentum_min:25};
   document.getElementById('modal-title').textContent='⚙️ FM Filter Settings';
   document.getElementById('modal-sub').textContent='Bonding curve sniper ke filters adjust karo';
   document.getElementById('modal-pnl').textContent='';
@@ -3662,8 +3662,10 @@ async function openFmFilters(){
     _fmRow('Dev Wallet Max (%)','dev_wallet_max',f.dev_wallet_max,'number','Max dev holding %',f.dev_wallet_enabled!==false)+
     _fmRow('Volume Min (BNB)','vol_min',f.vol_min,'number','Min BNB volume in 2s',f.vol_min_enabled!==false)+
     _fmRow('Buyers Min','buyers_min',f.buyers_min,'number','Min unique buyers',f.buyers_min_enabled!==false)+
+    _fmRow('Price Min','price_min',f.price_min??0.05,'number','Min token price filter',f.price_min_enabled!==false)+
     _fmRow('Pump Max (%)','pump_max',f.pump_max,'number','Max pump at entry %',f.pump_max_enabled!==false)+
     _fmRow('Stop Loss (%)','stop_loss',f.stop_loss,'number','SL %',f.stop_loss_enabled!==false)+
+    _fmRow('Momentum Min (%)','momentum_min',f.momentum_min??25,'number','Min momentum % required',f.momentum_min_enabled!==false)+
     '</div>';
   document.getElementById('modal-actions').innerHTML=
     '<button class="mbtn em" onclick="saveFmFilters()" style="flex:1;">💾 Save</button>'+
@@ -3697,8 +3699,8 @@ function _fmToggleRow(id,isOn){
 }
 
 async function saveFmFilters(){
-  const fields = ['mc_max','dev_wallet_max','vol_min','buyers_min','pump_max','stop_loss'];
-  const enabledMap = {mc_max:'mc_max_enabled',dev_wallet_max:'dev_wallet_enabled',vol_min:'vol_min_enabled',buyers_min:'buyers_min_enabled',pump_max:'pump_max_enabled',stop_loss:'stop_loss_enabled'};
+  const fields = ['mc_max','dev_wallet_max','vol_min','buyers_min','price_min','pump_max','stop_loss','momentum_min'];
+  const enabledMap = {mc_max:'mc_max_enabled',dev_wallet_max:'dev_wallet_enabled',vol_min:'vol_min_enabled',buyers_min:'buyers_min_enabled',price_min:'price_min_enabled',pump_max:'pump_max_enabled',stop_loss:'stop_loss_enabled',momentum_min:'momentum_min_enabled'};
   const payload = {};
   for(const f of fields){
     const el  = document.getElementById('fm-f-'+f);
