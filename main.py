@@ -3848,15 +3848,15 @@ def auto_position_manager():
                     # FIX 1: _auto_paper_sell real mode bhi handle karta hai internally
 
                 if not _trail_triggered:
+                    # ── pnl_high track karo ──
                     _pnl_high = _pos_data.get("pnl_high", 0.0)
                     if pnl > _pnl_high:
                         _pos_data["pnl_high"] = pnl
                         _pnl_high = pnl
 
                     _entry_sl = _pos_data.get("sl_pct", 12.0)
-                    _sl_floor = (_pnl_high * 0.7) if _pnl_high >= 30 else -_entry_sl
 
-                    # FIX v29: Hard SL — entry se direct check, koi trail nahi
+                    # ── Hard SL: entry se seedha neeche, koi pump nahi tha ──
                     if pnl <= -_entry_sl and _pnl_high < 5.0:
                         _auto_paper_sell(addr, f"HardSL -{_entry_sl:.0f}% 🔴", 100.0)
                         blacklist_token(addr, f"HardSL rebuy block")
@@ -3864,38 +3864,33 @@ def auto_position_manager():
                         print(f"🔴 HardSL: {addr[:10]} pnl={pnl:.1f}%")
                         continue
 
+                    # ── Universal Momentum Dead Check (v35e) ──
+                    # Teeno true = momentum khatam = 100% exit, har zone pe
+                    _vol_live   = _get_vol_pressure_rt(addr)
+                    _bv5_live   = _vol_live.get("buy_vol5", 0.0)
+                    _b5_live    = _vol_live.get("buys5",    0)
+                    _s5_live    = _vol_live.get("sells5",   0)
+                    _vol_dying  = _bv5_live < 0.3             # volume sukh gaya
+                    _sell_heavy = _s5_live > _b5_live * 1.5  # sellers dominant
+                    _fading     = pnl < (_pnl_high - 20)     # high se -20% neeche
+                    _mom_dead   = _vol_dying and _sell_heavy and _fading
+
                     # ── TP1: +40% → 50% sell ──
                     if pnl >= 40 and tp_sold < 50:
-                        _auto_paper_sell(addr, f"TP1 +40% [50% sell] 🔒", 50.0)
+                        _auto_paper_sell(addr, f"TP1 +40% 🔒", 50.0)
                         print(f"🔒 TP1: {addr[:10]} pnl={pnl:.1f}%")
 
                     # ── TP2: +150% → 30% sell (total 80% sold) ──
                     elif pnl >= 150 and tp_sold < 80:
-                        _auto_paper_sell(addr, f"TP2 +150% [30% sell] 🔥", 30.0)
+                        _auto_paper_sell(addr, f"TP2 +150% 🔥", 30.0)
                         print(f"🔥 TP2: {addr[:10]} pnl={pnl:.1f}%")
 
-                    # ── Hard SL: entry se -20% drop (only if pnl_high < 40%) ──
-                    elif pnl <= -_entry_sl and _pnl_high < 40.0:
-                        _auto_paper_sell(addr, f"HardSL -{_entry_sl:.0f}% 🔴", 100.0)
+                    # ── Momentum Dead → 100% exit (sab zones) ──
+                    elif _mom_dead:
+                        _zone = "Moonbag" if tp_sold >= 80 else ("Post-TP1" if tp_sold >= 50 else "Pre-TP")
+                        _auto_paper_sell(addr, f"MomDead {_zone} 📉", 100.0)
                         _trail_triggered = True
-                        blacklist_token(addr, f"HardSL rebuy block")
-                        print(f"🔴 HardSL: {addr[:10]} pnl={pnl:.1f}%")
-
-                    # ── Moonbag volume exit: 20% remaining hold karo ──
-                    # Sirf tab exit karo jab volume genuinely dead ho
-                    elif tp_sold >= 80:
-                        _vol_mb   = _get_vol_pressure_rt(addr)
-                        _bv5_mb   = _vol_mb.get("buy_vol5",  0.0)
-                        _s5_mb    = _vol_mb.get("sells5",    0)
-                        _b5_mb    = _vol_mb.get("buys5",     0)
-                        _last_buy = _rt_swap_data.get(addr.lower(), {}).get("last_buy_ts", 0)
-                        _buy_dead = (time.time() - _last_buy) > 300  # 5 min koi buy nahi
-                        _sell_dom = _s5_mb > _b5_mb * 2              # sells double buys
-                        _vol_dead = _bv5_mb < 0.1                    # volume dead
-                        if _buy_dead and _sell_dom and _vol_dead:
-                            _auto_paper_sell(addr, f"Moonbag Exit 📉 vol dead", 100.0)
-                            _trail_triggered = True
-                            print(f"📉 Moonbag exit: {addr[:10]} bv5={_bv5_mb:.3f} s5={_s5_mb} b5={_b5_mb}")
+                        print(f"📉 MomDead [{_zone}]: {addr[:10]} pnl={pnl:.1f}% high={_pnl_high:.1f}% bv5={_bv5_live:.3f} s={_s5_live} b={_b5_live}")
 
             except Exception as e:
                 print(f"Auto manager err {addr[:10]}: {e}")
