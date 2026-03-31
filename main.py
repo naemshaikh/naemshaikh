@@ -3864,50 +3864,38 @@ def auto_position_manager():
                         print(f"🔴 HardSL: {addr[:10]} pnl={pnl:.1f}%")
                         continue
 
-                    if pnl >= 200 and tp_sold < 90:
-                        _auto_paper_sell(addr, f"ProTP +200% [90% banked] 🌙", 15.0)
-                        print(f"🌙 ProTP200: {addr[:10]} pnl={pnl:.1f}%")
-                    elif pnl >= 120 and tp_sold < 75:
-                        _auto_paper_sell(addr, f"ProTP +120% [75% banked] 💰", 25.0)
-                        print(f"💰 ProTP120: {addr[:10]} pnl={pnl:.1f}%")
-                    elif pnl >= 40 and tp_sold < 50:
-                        _auto_paper_sell(addr, f"ProTP +40% [50% banked] 🔒", 50.0)
-                        print(f"🔒 ProTP40: {addr[:10]} pnl={pnl:.1f}%")
-                    elif pnl <= _sl_floor and _pnl_high >= 40:
-                        _auto_paper_sell(addr, f"TrailSL locked +{_sl_floor:.0f}%", 100.0)
+                    # ── TP1: +40% → 50% sell ──
+                    if pnl >= 40 and tp_sold < 50:
+                        _auto_paper_sell(addr, f"TP1 +40% [50% sell] 🔒", 50.0)
+                        print(f"🔒 TP1: {addr[:10]} pnl={pnl:.1f}%")
+
+                    # ── TP2: +150% → 30% sell (total 80% sold) ──
+                    elif pnl >= 150 and tp_sold < 80:
+                        _auto_paper_sell(addr, f"TP2 +150% [30% sell] 🔥", 30.0)
+                        print(f"🔥 TP2: {addr[:10]} pnl={pnl:.1f}%")
+
+                    # ── Hard SL: entry se -20% drop (only if pnl_high < 40%) ──
+                    elif pnl <= -_entry_sl and _pnl_high < 40.0:
+                        _auto_paper_sell(addr, f"HardSL -{_entry_sl:.0f}% 🔴", 100.0)
                         _trail_triggered = True
-                        print(f"🔒 TrailSL: {addr[:10]} pnl={pnl:.1f}% floor={_sl_floor:.0f}%")
-                    elif drop_hi <= -_entry_sl:
-                        _auto_paper_sell(addr, f"TrailSL -{_entry_sl:.0f}% entry", 100.0)
-                        _trail_triggered = True
-                        blacklist_token(addr, f"TrailSL -{_entry_sl:.0f}% rebuy block")
-                        print(f"🔒 TrailSL entry: {addr[:10]} drop={drop_hi:.1f}%")
-                    elif _pos_data.get("trail_tp_active") and drop_hi <= -_pos_data.get("trail_tp_pct", 20.0):
-                        _ttp = _pos_data.get("trail_tp_pct", 20.0)
-                        _auto_paper_sell(addr, f"TrailTP -{_ttp:.0f}% from high 🎯", 100.0)
-                        print(f"🎯 TrailTP exit: {addr[:10]} drop={drop_hi:.1f}%")
-                    elif pnl >= 9900 and tp_sold < 90:
-                        _auto_paper_sell(addr, "Ladder 100x 🌙", 10.0)
-                        _pos_data["trail_tp_pct"] = 10.0
-                    elif pnl >= 4900 and tp_sold < 80:
-                        _auto_paper_sell(addr, "Ladder 50x 🌟", 15.0)
-                        _pos_data["trail_tp_pct"] = 12.0
-                    elif pnl >= 1900 and tp_sold < 65:
-                        _auto_paper_sell(addr, "Ladder 20x 💎", 15.0)
-                        _pos_data["trail_tp_active"] = True
-                        _pos_data["trail_tp_pct"]    = 15.0
-                    elif pnl >= 900 and tp_sold < 50:
-                        _auto_paper_sell(addr, "Ladder 10x 🚀", 15.0)
-                        _pos_data["trail_tp_active"] = True
-                        _pos_data["trail_tp_pct"]    = 20.0
-                    elif pnl >= 400 and tp_sold < 35:
-                        _auto_paper_sell(addr, "Ladder 5x 🔥", 15.0)
-                        _pos_data["trail_tp_active"] = True
-                        _pos_data["trail_tp_pct"]    = 25.0
-                    elif pnl >= _tp4 and tp_sold < 20:
-                        _auto_paper_sell(addr, "Ladder 3x 💰", 10.0)
-                    elif pnl >= _tp3 and tp_sold < 10:
-                        _auto_paper_sell(addr, "Ladder 2x ✅", 10.0)
+                        blacklist_token(addr, f"HardSL rebuy block")
+                        print(f"🔴 HardSL: {addr[:10]} pnl={pnl:.1f}%")
+
+                    # ── Moonbag volume exit: 20% remaining hold karo ──
+                    # Sirf tab exit karo jab volume genuinely dead ho
+                    elif tp_sold >= 80:
+                        _vol_mb   = _get_vol_pressure_rt(addr)
+                        _bv5_mb   = _vol_mb.get("buy_vol5",  0.0)
+                        _s5_mb    = _vol_mb.get("sells5",    0)
+                        _b5_mb    = _vol_mb.get("buys5",     0)
+                        _last_buy = _rt_swap_data.get(addr.lower(), {}).get("last_buy_ts", 0)
+                        _buy_dead = (time.time() - _last_buy) > 300  # 5 min koi buy nahi
+                        _sell_dom = _s5_mb > _b5_mb * 2              # sells double buys
+                        _vol_dead = _bv5_mb < 0.1                    # volume dead
+                        if _buy_dead and _sell_dom and _vol_dead:
+                            _auto_paper_sell(addr, f"Moonbag Exit 📉 vol dead", 100.0)
+                            _trail_triggered = True
+                            print(f"📉 Moonbag exit: {addr[:10]} bv5={_bv5_mb:.3f} s5={_s5_mb} b5={_b5_mb}")
 
             except Exception as e:
                 print(f"Auto manager err {addr[:10]}: {e}")
