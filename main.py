@@ -1298,33 +1298,43 @@ def _record_swap(token_addr: str, is_buy: bool, bnb_amount: float = 0.0):
 
 def _get_vol_pressure_rt(token_address: str) -> dict:
     """
-    Real-time volume pressure — on-chain swap events se.
-    Agar real-time data nahi hai (position abhi add hui) toh
-    DexScreener fallback use karo.
+    FIX v37 B: Real-time volume pressure — sirf onchain RT data.
+    DexScreener fallback HATAYA — 60s stale data se MomDead late fire hota tha.
+    RT data nahi = koi buyers nahi = vol_dead assume karo (safe/fast exit).
     """
     now = time.time()
     key = token_address.lower()
     with _rt_swap_lock:
         rt = _rt_swap_data.get(key)
 
-    # Real-time data hai aur 5 min se zyada purana nahi
+    # RT data hai aur 5 min se zyada purana nahi — use karo
     if rt and (now - rt.get("ts", 0)) < 300:
         return {
             "buys5":      rt.get("buys5",    0),
             "sells5":     rt.get("sells5",   0),
             "buys1h":     rt.get("buys1h",   0),
             "sells1h":    rt.get("sells1h",  0),
-            "buy_vol5":   rt.get("buy_vol5",  0.0),   # ✅ BNB volume
-            "sell_vol5":  rt.get("sell_vol5", 0.0),   # ✅ BNB volume
+            "buy_vol5":   rt.get("buy_vol5",  0.0),
+            "sell_vol5":  rt.get("sell_vol5", 0.0),
             "buy_vol1h":  rt.get("buy_vol1h", 0.0),
             "sell_vol1h": rt.get("sell_vol1h",0.0),
             "ts":         rt["ts"],
             "source":     "onchain"
         }
-    # Fallback: DexScreener
-    fallback = _get_vol_pressure(token_address)
-    fallback["source"] = "dexscreener"
-    return fallback
+    # FIX v37 B: DexScreener fallback NAHI — RT data nahi = vol dead
+    # Agar koi swap event nahi aaya = koi buyer nahi = bv5=0
+    return {
+        "buys5":      0,
+        "sells5":     0,
+        "buys1h":     0,
+        "sells1h":    0,
+        "buy_vol5":   0.0,
+        "sell_vol5":  0.0,
+        "buy_vol1h":  0.0,
+        "sell_vol1h": 0.0,
+        "ts":         now,
+        "source":     "no_rt_data"
+    }
 
 
 def start_swap_monitor():
@@ -3922,29 +3932,36 @@ def auto_position_manager():
                         and _pnl_high < 5.0
                     )
 
+                    # ── FIX v37 A: TP1/TP2 independent — MomDead same iteration check ──
+                    # Pehle: elif chain — TP1 fire kiya toh MomDead skip
+                    # Ab: TP1/TP2 alag if, MomDead/EmergSL alag if — dono same iteration
+
                     # ── TP1: +40% → 50% sell ──
                     if pnl >= 40 and tp_sold < 50:
                         _auto_paper_sell(addr, f"TP1 +40% 🔒", 50.0)
                         print(f"🔒 TP1: {addr[:10]} pnl={pnl:.1f}%")
+                        # tp_sold ab 50 ho gaya — turant update karo is iteration ke liye
+                        tp_sold = auto_trade_stats["running_positions"].get(addr, {}).get("tp_sold", 50.0)
 
                     # ── TP2: +150% → 30% sell (total 80% sold) ──
                     elif pnl >= 150 and tp_sold < 80:
                         _auto_paper_sell(addr, f"TP2 +150% 🔥", 30.0)
                         print(f"🔥 TP2: {addr[:10]} pnl={pnl:.1f}%")
+                        tp_sold = auto_trade_stats["running_positions"].get(addr, {}).get("tp_sold", 80.0)
 
-                    # ── Momentum Dead → 100% exit (sab zones) ──
-                    elif _mom_dead:
-                        _zone = "Moonbag" if tp_sold >= 80 else ("Post-TP1" if tp_sold >= 50 else "Pre-TP")
-                        _auto_paper_sell(addr, f"MomDead {_zone} 📉", 100.0)
-                        _trail_triggered = True
-                        print(f"📉 MomDead [{_zone}]: {addr[:10]} pnl={pnl:.1f}% high={_pnl_high:.1f}% bv5={_bv5_live:.3f} s={_s5_live} b={_b5_live} hold={_hold_secs:.0f}s")
+                    # ── MomDead + EmergSL: INDEPENDENT if — TP1/TP2 ke baad bhi check ──
+                    if addr in auto_trade_stats["running_positions"] and not _trail_triggered:
+                        if _mom_dead:
+                            _zone = "Moonbag" if tp_sold >= 80 else ("Post-TP1" if tp_sold >= 50 else "Pre-TP")
+                            _auto_paper_sell(addr, f"MomDead {_zone} 📉", 100.0)
+                            _trail_triggered = True
+                            print(f"📉 MomDead [{_zone}]: {addr[:10]} pnl={pnl:.1f}% high={_pnl_high:.1f}% bv5={_bv5_live:.3f} s={_s5_live} b={_b5_live} hold={_hold_secs:.0f}s")
 
-                    # ── Emergency SL: RT data nahi tha, MomDead nahi chala, coin dump ──
-                    elif _emergency_sl:
-                        _auto_paper_sell(addr, f"EmergSL -20% 🚨", 100.0)
-                        blacklist_token(addr, "EmergSL rebuy block")
-                        _trail_triggered = True
-                        print(f"🚨 EmergSL: {addr[:10]} pnl={pnl:.1f}% hold={_hold_secs:.0f}s bv5={_bv5_live:.3f}")
+                        elif _emergency_sl:
+                            _auto_paper_sell(addr, f"EmergSL -20% 🚨", 100.0)
+                            blacklist_token(addr, "EmergSL rebuy block")
+                            _trail_triggered = True
+                            print(f"🚨 EmergSL: {addr[:10]} pnl={pnl:.1f}% hold={_hold_secs:.0f}s bv5={_bv5_live:.3f}")
 
             except Exception as e:
                 print(f"Auto manager err {addr[:10]}: {e}")
@@ -3958,7 +3975,7 @@ def auto_position_manager():
         ):
             _sleep = 0.3
         else:
-            _sleep = 0.2  # FIX v29: 1.0s → 0.2s — SL 5x faster response
+            _sleep = 0.05  # FIX v37 C: 0.2s → 0.05s — 4x faster, ~20 checks/sec
         time.sleep(_sleep)
 
 
@@ -4018,7 +4035,7 @@ def price_monitor_loop():
                     alerts_sent.append("dump_50")
             except Exception as e:
                 print(f"⚠️ Price monitor error ({addr}): {e}")
-        _sleep = 1.0 if monitored_positions else 15
+        _sleep = 0.2 if monitored_positions else 15  # FIX v37 C: 1s → 0.2s price monitor
         time.sleep(_sleep)
 
 
@@ -5807,7 +5824,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 except Exception as _fe:
                     pass
 
-                time.sleep(0.2)  # FIX v29: 1s → 0.2s — price update 5x faster
+                time.sleep(0.1)  # FIX v37 C: 0.2s → 0.1s — FM price 10x/sec
 
             print(f"📡 [FM] Price monitor stopped: {ta[:10]}")
 
