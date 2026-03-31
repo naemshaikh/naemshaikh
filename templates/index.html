@@ -3652,7 +3652,7 @@ async function setMaxPos(val){
 // FM Filters
 async function openFmFilters(){
   const d = await fetchJSON('/get-fm-filters',{},5000);
-  const f = d || {mc_max:30000,dev_wallet_max:10,vol_min:0.8,buyers_min:5,price_min:0.05,pump_max:100,stop_loss:20,momentum_min:25};
+  const f = d || {mc_max:15000,mc_max_enabled:true,dev_wallet_max:10,dev_wallet_enabled:true,vol_min:0.8,vol_min_enabled:true,buyers_min:5,buyers_min_enabled:true,price_min:0.05,price_min_enabled:true,pump_max:100,pump_max_enabled:false,stop_loss:20,stop_loss_enabled:true,momentum_min:25,momentum_min_enabled:true};
   document.getElementById('modal-title').textContent='⚙️ FM Filter Settings';
   document.getElementById('modal-sub').textContent='Bonding curve sniper ke filters adjust karo';
   document.getElementById('modal-pnl').textContent='';
