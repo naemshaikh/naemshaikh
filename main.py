@@ -3923,11 +3923,12 @@ def auto_position_manager():
                     _fading     = (pnl < (_pnl_high - 15)) or (_hold_secs > 30 and pnl < -8 and _pnl_high < 5)
                     _mom_dead   = _vol_dying and _sell_heavy and _fading
 
-                    # Emergency SL: 45s baad bhi MomDead nahi + coin -20% gaya
-                    # (RT data nahi tha isliye MomDead fire nahi kiya — emergency backup)
+                    # Emergency SL: FIX v38 E: 45s → 20s — fast dump coins ke liye
+                    # v37 Fix B se MomDead ab RT data nahi pe bhi fire hoga
+                    # Lekin edge case backup — 20s mein -12% = niklo
                     _emergency_sl = (
-                        _hold_secs > 45
-                        and pnl <= -20
+                        _hold_secs > 20
+                        and pnl <= -12
                         and not _mom_dead
                         and _pnl_high < 5.0
                     )
@@ -5692,7 +5693,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             "size_bnb": size_bnb,
             "orig_size_bnb": size_bnb,
             "bought_usd": round(size_bnb * market_cache.get("bnb_price",0), 2),
-            "sl_pct": 20.0,
+            "sl_pct": 12.0,   # FIX v38 D: 20% → 12% (same as checklist — FM coins bhi tight SL)
             "trail_pct": 20.0,        # FIX B: position manager ke liye
             "tp_sold": 0.0,
             "banked_pnl_bnb": 0.0,
