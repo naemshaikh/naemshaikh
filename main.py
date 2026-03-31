@@ -5365,8 +5365,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     _buyers_checked = True
                     _ub, _total_buys = _fm_get_unique_buyers(token_addr, w3)
                 
-                # Fixed momentum threshold — 25% minimum always
-                _target_momentum = 25
+                # Momentum threshold — UI se set hoga (_fm_filters)
+                _target_momentum = _fm_filters.get("momentum_min", 25)
                 
                 # Volume check with exception rule
                 _vol_ok = not _fm_filters.get('vol_min_enabled', True) or _funds_diff >= _fm_filters['vol_min']
@@ -8056,7 +8056,7 @@ def set_fm_filters():
             _fm_filters[k] = v
     # Ensure new keys have defaults if not set
     if "momentum_min" not in _fm_filters:
-        _fm_filters["momentum_min"] = 8
+        _fm_filters["momentum_min"] = 25
         _fm_filters["momentum_min_enabled"] = True
     if "momentum_window_sec" not in _fm_filters:
         _fm_filters["momentum_window_sec"] = 90
