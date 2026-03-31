@@ -3921,7 +3921,10 @@ def auto_position_manager():
                     _sell_heavy = (_s5_live > _b5_live * 1.5) or (_s5_live >= 2 and _b5_live == 0)
                     # FIX Bug2: -15% trail (was -20), OR 30s ke baad -8% gir raha = fading
                     _fading     = (pnl < (_pnl_high - 15)) or (_hold_secs > 30 and pnl < -8 and _pnl_high < 5)
-                    _mom_dead   = _vol_dying and _sell_heavy and _fading
+                    # FIX v39 F: 20s grace period — FM fresh mint pe RT data settle hone do
+                    # Data: koi win < 30s nahi hua, avg fast dump = 22s
+                    # EmergSL bhi 20s pe hai — dono consistent
+                    _mom_dead   = _vol_dying and _sell_heavy and _fading and _hold_secs > 20
 
                     # Emergency SL: FIX v38 E: 45s → 20s — fast dump coins ke liye
                     # v37 Fix B se MomDead ab RT data nahi pe bhi fire hoga
