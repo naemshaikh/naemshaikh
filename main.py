@@ -3030,6 +3030,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 "snipe_strategy": _buy_rsn.get("strategy", "Normal_Checklist"),
                 "ath_price":    monitored_positions.get(address, {}).get("high", current),
                 "ath_pct":      round((monitored_positions.get(address, {}).get("high", current) - entry) / entry * 100, 1) if entry > 0 else 0,
+                "pnl_high":     pos.get("pnl_high", 0.0),
                 "hold_minutes": round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds() / 60, 1) if bought_at_str else 0
 })
         if len(auto_trade_stats["trade_history"]) > 10000:
@@ -3040,9 +3041,10 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 _hold_min  = round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds() / 60, 1) if bought_at_str else 0
                 _peak      = monitored_positions.get(address, {}).get("peak_price", current)
                 _left_pct  = round((_peak - current) / _peak * 100, 1) if _peak and _peak > 0 and current > 0 else 0
-                _exit_type = ("tp_hit" if ("TP" in reason or "Profit" in reason)
-                              else "sl_hit" if "SL" in reason
-                              else "rug"    if ("Rug" in reason or "Dump" in reason)
+                _exit_type = ("tp_hit"   if ("TP" in reason or "Profit" in reason)
+                              else "sl_hit"   if ("SL" in reason or "HardSL" in reason)
+                              else "mom_dead" if "MomDead" in reason
+                              else "rug"      if ("Rug" in reason or "Dump" in reason or "LP Burn" in reason)
                               else "manual")
                 _fg_sell   = market_cache.get("fear_greed", 50)
                 _mkt_sell  = "bullish" if _fg_sell >= 60 else ("bearish" if _fg_sell <= 35 else "neutral")
@@ -3063,7 +3065,9 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                     "bnb_price_at_entry": market_cache.get("bnb_price", 0),
                     "fear_greed_at_entry":_fg_sell,
                     "market_condition":   _mkt_sell,
-                    "token_type":         "meme"
+                    "token_type":         "meme",
+                    "pnl_high":           pos.get("pnl_high", 0.0),
+                    "exit_zone":          ("moonbag" if pos.get("tp_sold", 0) >= 80 else ("post_tp1" if pos.get("tp_sold", 0) >= 50 else "pre_tp"))
 },), daemon=True).start()
             except Exception as _de:
                 print(f"⚠️ sell decision log error: {_de}")
