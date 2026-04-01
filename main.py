@@ -5495,40 +5495,62 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             except: pass
 
         def _check_genuine(price_history, funds_history, ub_history, price_samples):
-            score = 0; reasons = []
+            score = 0
+            reasons = []
 
-            # Data nahi hai — check possible nahi, fail karo
-            if len(price_history) < 2 or len(funds_history) < 2 or len(ub_history) < 2:
+            if len(price_history) < 6 or len(funds_history) < 6 or len(ub_history) < 6:
                 return False, ["insufficient_data"], 0
 
-            # Check 1: Price sustained — consecutively up hona chahiye
-            if price_history[-1] > price_history[-2]:
-                score += 1
+            # 1. Price sustained (at least 4/6 green)
+            green_price = sum(1 for i in range(1, len(price_history)) if price_history[i] > price_history[i-1])
+            if green_price >= 4:
+                score += 2
             else:
-                reasons.append(f"price_flat")
+                reasons.append("price_not_sustained(" + str(green_price) + "/6)")
 
-            # Check 2: Volume sustained — consecutively up hona chahiye
-            if funds_history[-1] > funds_history[-2]:
-                score += 1
+            # 2. Volume sustained
+            green_vol = sum(1 for i in range(1, len(funds_history)) if funds_history[i] > funds_history[i-1])
+            if green_vol >= 4:
+                score += 2
             else:
-                reasons.append(f"vol_flat")
+                reasons.append("vol_flat_or_dying(" + str(green_vol) + "/6)")
 
-            # Check 3: Holders increasing — strictly badhne chahiye
-            if ub_history[-1] > ub_history[-2]:
-                score += 1
+            # 3. Holders strictly increasing
+            green_holders = sum(1 for i in range(1, len(ub_history)) if ub_history[i] > ub_history[i-1])
+            if green_holders >= 5:
+                score += 2
             else:
-                reasons.append(f"holders_flat={ub_history[-1]}")
+                reasons.append("holders_stagnant(" + str(green_holders) + "/6)")
 
-            # Check 4: No spike — 40%+ single candle = wash trading
+            # 4. No big spike (bot wash trade)
             steady = True
-            if len(price_samples) >= 3:
-                diffs = [abs(price_samples[i]-price_samples[i-1])/max(price_samples[i-1],1e-18)*100 for i in range(1,len(price_samples))]
-                if max(diffs) > 40: steady = False; reasons.append(f"spike={max(diffs):.0f}%")
-            if steady: score += 1
+            if len(price_samples) >= 4:
+                diffs = [abs(price_samples[i] - price_samples[i-1]) / max(price_samples[i-1], 1e-18) * 100 for i in range(1, len(price_samples))]
+                if max(diffs) > 25:
+                    steady = False
+                    reasons.append("spike_" + str(int(max(diffs))) + "%")
+            if steady:
+                score += 2
 
-            # 3/4 chahiye — genuine sustained pump ka proof
-            return score >= 3, reasons, score
+            # 5. Single-block heavy buy concentration
+            deltas = [ub_history[i] - ub_history[i-1] for i in range(1, len(ub_history))]
+            max_delta = max(deltas) if deltas else 0
+            if max_delta > 8:
+                avg_delta = sum(deltas) / len(deltas)
+                if max_delta > avg_delta * 2.5:
+                    reasons.append("heavy_block_buy(" + str(max_delta) + ")")
+                    score -= 1
 
+            # 6. Pump ke dauran volume drop
+            if len(funds_history) >= 3:
+                recent_vol_drop = funds_history[-1] <= funds_history[-2] and funds_history[-2] <= funds_history[-3]
+                recent_price_up = price_history[-1] > price_history[-2]
+                if recent_price_up and recent_vol_drop:
+                    reasons.append("pump_with_vol_drop")
+                    score -= 1
+
+            genuine = score >= 6
+            return genuine, reasons, score
         while time.time() < _t_end_loop:
             try:
                 _elapsed = time.time() - _t_start_loop
