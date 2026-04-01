@@ -4385,7 +4385,7 @@ def _fm_get_unique_buyers(token_addr, w3=None):
     """Token pe unique buyers + recent buys (last 20 blocks ~60s) count karo"""
     try:
         if not w3: w3 = _fm_get_w3()
-        if not w3: return 0, 0
+        if not w3: return 0, 0, {}
         TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
         current = w3.eth.block_number
         logs = w3.eth.get_logs({
@@ -4399,6 +4399,7 @@ def _fm_get_unique_buyers(token_addr, w3=None):
         _FM_FACTORY_L = _FM_FACTORY_ADDR.lower()
         buyers = set()
         recent_buys = 0
+        block_wallets = {}
         for log in logs:
             if len(log["topics"]) < 3: continue
             from_addr = "0x" + log["topics"][1].hex()[-40:].lower()
@@ -4408,10 +4409,14 @@ def _fm_get_unique_buyers(token_addr, w3=None):
                 buyers.add(to_addr)
                 if log["blockNumber"] >= current - 20:
                     recent_buys += 1
-        return len(buyers), recent_buys
+                blk = log["blockNumber"]
+                if blk not in block_wallets:
+                    block_wallets[blk] = set()
+                block_wallets[blk].add(to_addr)
+        return len(buyers), recent_buys, block_wallets
     except Exception as e:
         print(f"⚠️ [FM] buyers fetch error: {str(e)[:50]}")
-        return 0, 0
+        return 0, 0, {}
 
 _fm_sniped      = set()
 _fm_sniped_lock = threading.Lock()
