@@ -5497,28 +5497,29 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         def _check_genuine(price_history, funds_history, ub_history, price_samples):
             score = 0; reasons = []
 
-            # Check 1: Price sustained — last 2 readings consecutively up
-            # len < 2 = first iteration — benefit of doubt (score milega)
-            if len(price_history) < 2 or price_history[-1] > price_history[-2]:
+            # Data nahi hai — check possible nahi, fail karo
+            if len(price_history) < 2 or len(funds_history) < 2 or len(ub_history) < 2:
+                return False, ["insufficient_data"], 0
+
+            # Check 1: Price sustained — consecutively up hona chahiye
+            if price_history[-1] > price_history[-2]:
                 score += 1
             else:
                 reasons.append(f"price_flat")
 
-            # Check 2: Volume sustained — last 2 readings consecutively up
-            if len(funds_history) < 2 or funds_history[-1] > funds_history[-2]:
+            # Check 2: Volume sustained — consecutively up hona chahiye
+            if funds_history[-1] > funds_history[-2]:
                 score += 1
             else:
                 reasons.append(f"vol_flat")
 
-            # Check 3: Holders strictly increasing — flat nahi chalega
-            # len < 2 = first iteration benefit-of-doubt
-            # len >= 2 = strictly > chahiye (genuine pump mein buyers badhte hain)
-            if len(ub_history) < 2 or ub_history[-1] > ub_history[-2]:
+            # Check 3: Holders increasing — strictly badhne chahiye
+            if ub_history[-1] > ub_history[-2]:
                 score += 1
             else:
-                reasons.append(f"holders_flat={ub_history[-1] if ub_history else 0}")
+                reasons.append(f"holders_flat={ub_history[-1]}")
 
-            # Check 4: Price steady — koi single candle 30%+ spike nahi (wash trading)
+            # Check 4: No spike — 40%+ single candle = wash trading
             steady = True
             if len(price_samples) >= 3:
                 diffs = [abs(price_samples[i]-price_samples[i-1])/max(price_samples[i-1],1e-18)*100 for i in range(1,len(price_samples))]
@@ -5581,7 +5582,10 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     else:
                         _fake_count += 1
                         _last_fail_reasons = _fail_reasons
-                        print(f"🚫 [GM] FAKE score={_gm_score}/4 | fail={_fail_reasons} | mom={_momentum_current:.1f}%")
+                        if _fail_reasons == ["insufficient_data"]:
+                            print(f"⏳ [GM] WAIT data collecting... iter={_iter_count} mom={_momentum_current:.1f}%")
+                        else:
+                            print(f"🚫 [GM] FAKE score={_gm_score}/4 | fail={_fail_reasons} | mom={_momentum_current:.1f}%")
                 else:
                     _funds_prev = _funds2; _bc_prev = _bc_curr
                 if int(_elapsed) % 5 == 0 and _elapsed > 0:
