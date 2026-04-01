@@ -5481,6 +5481,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         def _check_genuine(price2, funds2, ub, bw_curr, bw_prev, funds_prev, price_samples, bc_curr, bc_prev_val):
             score = 0; reasons = []
+
+            # Check 1: Repeat wallet ratio — relaxed to 0.7 (pehle 0.5 tha, too strict)
             all_prev = set()
             for ws in bw_prev.values(): all_prev.update(ws)
             new_w = 0; rep_w = 0
@@ -5488,22 +5490,31 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 cs = bw_curr.get(blk, set())
                 new_w += len(cs - all_prev); rep_w += len(cs & all_prev)
             rep_ratio = rep_w / max(new_w + rep_w, 1)
-            if rep_ratio <= 0.5: score += 1
+            if rep_ratio <= 0.7: score += 1
             else: reasons.append(f"repeat={rep_ratio:.0%}")
-            if bc_curr > bc_prev_val: score += 1
+
+            # Check 2: Bonding curve progress — allow small tolerance
+            if bc_curr >= bc_prev_val - 0.1: score += 1
             else: reasons.append("bc_flat")
+
+            # Check 3: Enough unique buyers
             if ub >= _fm_filters.get("buyers_min", 5): score += 1
             else: reasons.append(f"buyers={ub}")
+
+            # Check 4: Volume increasing overall (vs start, not prev)
             fd_curr = (funds2 - _funds1) / 1e18 if funds2 else 0
-            fd_prev = (funds_prev - _funds1) / 1e18 if funds_prev else 0
-            if fd_curr > fd_prev: score += 1
-            else: reasons.append("vol_flat")
+            if fd_curr > 0: score += 1
+            else: reasons.append("vol_zero")
+
+            # Check 5: No extreme price spike (> 60% single candle — relaxed from 40%)
             steady = True
             if len(price_samples) >= 3:
                 diffs = [abs(price_samples[i]-price_samples[i-1])/max(price_samples[i-1],1e-18)*100 for i in range(1,len(price_samples))]
-                if max(diffs) > 40: steady = False; reasons.append(f"spike={max(diffs):.0f}%")
+                if max(diffs) > 60: steady = False; reasons.append(f"spike={max(diffs):.0f}%")
             if steady: score += 1
-            return score >= 4, reasons, score
+
+            # Threshold: 3/5 enough (pehle 4/5 tha — too strict)
+            return score >= 3, reasons, score
 
         while time.time() < _t_end_loop:
             try:
