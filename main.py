@@ -5444,64 +5444,112 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _buyers_checked = False
         _ub = 0
         _total_buys = 0
-        
+        _block_wallets_prev = {}
+        _block_wallets_curr = {}
+        _funds_prev = _funds1
+        _price_samples = []
+        _bc_prev = 0.0
+
         print(f"⏱️ [FM-DEBUG] MOMENTUM MONITOR START | window={_fm_filters.get('momentum_window_sec', 90)}s interval={_check_interval}s")
-        
+
+        def _parallel_fetch(results_dict):
+            def _fetch_price():
+                try:
+                    info = _get_token_info_cached(token_addr, w3, 0.5)
+                    results_dict["info"] = info
+                except Exception as e:
+                    results_dict["info"] = None
+            def _fetch_buyers():
+                try:
+                    ub, tb, bw = _fm_get_unique_buyers(token_addr, w3)
+                    results_dict["ub"] = ub
+                    results_dict["tb"] = tb
+                    results_dict["bw"] = bw
+                except Exception as e:
+                    results_dict["ub"] = 0; results_dict["tb"] = 0; results_dict["bw"] = {}
+            t1 = threading.Thread(target=_fetch_price,  daemon=True)
+            t2 = threading.Thread(target=_fetch_buyers, daemon=True)
+            t1.start(); t2.start()
+            t1.join(timeout=3); t2.join(timeout=3)
+
+        def _check_genuine(price2, funds2, ub, bw_curr, bw_prev, funds_prev, price_samples, bc_curr, bc_prev_val):
+            score = 0; reasons = []
+            all_prev = set()
+            for ws in bw_prev.values(): all_prev.update(ws)
+            new_w = 0; rep_w = 0
+            for blk in sorted(bw_curr.keys())[-3:]:
+                cs = bw_curr.get(blk, set())
+                new_w += len(cs - all_prev); rep_w += len(cs & all_prev)
+            rep_ratio = rep_w / max(new_w + rep_w, 1)
+            if rep_ratio <= 0.5: score += 1
+            else: reasons.append(f"repeat={rep_ratio:.0%}")
+            if bc_curr > bc_prev_val: score += 1
+            else: reasons.append("bc_flat")
+            if ub >= _fm_filters.get("buyers_min", 5): score += 1
+            else: reasons.append(f"buyers={ub}")
+            fd_curr = (funds2 - _funds1) / 1e18 if funds2 else 0
+            fd_prev = (funds_prev - _funds1) / 1e18 if funds_prev else 0
+            if fd_curr > fd_prev: score += 1
+            else: reasons.append("vol_flat")
+            steady = True
+            if len(price_samples) >= 3:
+                diffs = [abs(price_samples[i]-price_samples[i-1])/max(price_samples[i-1],1e-18)*100 for i in range(1,len(price_samples))]
+                if max(diffs) > 40: steady = False; reasons.append(f"spike={max(diffs):.0f}%")
+            if steady: score += 1
+            return score >= 4, reasons, score
+
         while time.time() < _t_end_loop:
             try:
-                # Fetch current price and funds
-                _info_current = _get_token_info_cached(token_addr, w3, 0.5)
+                _elapsed = time.time() - _t_start_loop
+                _res = {}
+                _parallel_fetch(_res)
+                _info_current = _res.get("info")
                 if not _info_current:
-                    time.sleep(_check_interval)
-                    continue
-                    
+                    time.sleep(_check_interval); continue
                 if _info_current.get("liquidityAdded"):
-                    _skip("graduated during momentum check")
-                    return
-                    
+                    _skip("graduated during momentum check"); return
                 _price2 = _info_current.get("lastPrice", 0)
                 _funds2 = _info_current.get("funds", 0)
-                
                 if _price2 <= 0:
-                    time.sleep(_check_interval)
-                    continue
-                    
-                # Calculate momentum %
+                    time.sleep(_check_interval); continue
+                _ub         = _res.get("ub", _ub)
+                _total_buys = _res.get("tb", _total_buys)
+                _block_wallets_prev = _block_wallets_curr.copy() if _block_wallets_curr else {}
+                _block_wallets_curr = _res.get("bw", {})
+                _price_samples.append(float(_price2))
+                if len(_price_samples) > 6: _price_samples.pop(0)
+                _max_funds = _info_current.get("maxFunds", 1)
+                _bc_curr = (_funds2 / max(_max_funds, 1)) * 100 if _max_funds else 0
+                if _bc_prev == 0: _bc_prev = _bc_curr
                 _momentum_current = round((_price2 - _price1) / max(_price1, 1) * 100, 2)
                 _funds_diff = (_funds2 - _funds1) / 1e18 if _funds2 else 0
-                
-                # Fetch buyers every 2 seconds (not every iteration)
-                _elapsed = time.time() - _t_start_loop
-                if not _buyers_checked or _elapsed > 2:
-                    _buyers_checked = True
-                    _ub, _total_buys = _fm_get_unique_buyers(token_addr, w3)
-                
-                # Momentum threshold — UI se set hoga (_fm_filters)
                 _target_momentum = _fm_filters.get("momentum_min", 25)
-                
-                # Volume check with exception rule
                 _vol_ok = not _fm_filters.get('vol_min_enabled', True) or _funds_diff >= _fm_filters['vol_min']
-                
-                # Exception rule for high conviction trades
                 if not _vol_ok and _ub >= 10 and _momentum_current >= 50 and _funds_diff >= 0.5:
                     _vol_ok = True
                     print(f"⚡ Exception rule triggered: buyers={_ub} momentum={_momentum_current:.1f}% vol={_funds_diff:.4f}BNB")
-                
-                # Check if momentum threshold hit
-                if _momentum_current >= _target_momentum and _ub >= _fm_filters['buyers_min'] and _vol_ok:
-                    _dbg_price2 = float(_price2)
-                    _dbg_stage2_ms = int((time.time() - _t_start) * 1000) - _dbg_stage1_ms
-                    print(f"✅ [FM] MOMENTUM HIT! +{_momentum_current:.1f}% in {_elapsed:.1f}s | vol={_funds_diff:.4f}BNB | buyers={_ub}")
-                    print(f"⏱️ [FM-DEBUG] EARLY EXIT | +{int((time.time()-_t_start)*1000)}ms | momentum={_momentum_current:.1f}% | target={_target_momentum}%")
-                    _momentum_hit = True
-                    break
-                
-                # Log progress every 5 seconds
+                _basic_ok = _momentum_current >= _target_momentum and _ub >= _fm_filters['buyers_min'] and _vol_ok
+                if _basic_ok:
+                    _is_genuine, _fail_reasons, _gm_score = _check_genuine(
+                        _price2, _funds2, _ub,
+                        _block_wallets_curr, _block_wallets_prev,
+                        _funds_prev, _price_samples, _bc_curr, _bc_prev
+                    )
+                    _funds_prev = _funds2; _bc_prev = _bc_curr
+                    if _is_genuine:
+                        _dbg_price2    = float(_price2)
+                        _dbg_stage2_ms = int((time.time() - _t_start) * 1000) - _dbg_stage1_ms
+                        print(f"✅ [FM] GENUINE MOMENTUM! score={_gm_score}/5 +{_momentum_current:.1f}% in {_elapsed:.1f}s | vol={_funds_diff:.4f}BNB | buyers={_ub}")
+                        print(f"⏱️ [FM-DEBUG] EARLY EXIT | +{int((time.time()-_t_start)*1000)}ms | momentum={_momentum_current:.1f}% | target={_target_momentum}%")
+                        _momentum_hit = True
+                        break
+                    else:
+                        print(f"🚫 [GM] FAKE score={_gm_score}/5 | fail={_fail_reasons} | mom={_momentum_current:.1f}%")
+                else:
+                    _funds_prev = _funds2; _bc_prev = _bc_curr
                 if int(_elapsed) % 5 == 0 and _elapsed > 0:
                     print(f"⏱️ [FM] Monitoring... {_elapsed:.0f}s | mom={_momentum_current:.1f}% target={_target_momentum}% vol={_funds_diff:.4f}BNB buyers={_ub}")
-                
                 time.sleep(_check_interval)
-                
             except Exception as _me:
                 print(f"⚠️ [FM] momentum error: {str(_me)[:50]}")
                 time.sleep(_check_interval)
