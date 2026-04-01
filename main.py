@@ -2581,7 +2581,8 @@ auto_trade_stats = {
     "today_losses":      0,
     "today_pnl":         0.0,
     "today_date":        "",
-    "vol_weak_count":    {}  # FIX v43: consecutive weak vol counter
+    "vol_weak_count":    {},  # FIX v43: consecutive weak vol counter
+    "entry_guard_count": {}   # FIX v44: entry confirmation window counter
 }
 
 # Telegram removed
@@ -3888,6 +3889,42 @@ def auto_position_manager():
                         _pnl_high = pnl
 
                     _entry_sl = _pos_data.get("sl_pct", 12.0)
+
+                    # ── ENTRY GUARD v44: TP1 se pehle only, fake signal protection ──
+                    # Case 1: Seedha neeche — 3 consecutive no-buyer readings → min loss exit
+                    # Case 2: Thoda upar fir girna — tight trail, sell volume confirm
+                    # TP1 ke baad bilkul touch nahi — wo alag logic hai
+                    if tp_sold == 0:
+                        _egc = auto_trade_stats["entry_guard_count"]
+
+                        # Case 1: No pump at all, buyers absent
+                        if _pnl_high < 3.0 and pnl <= -2.0:
+                            if _bv5_live < 0.3:
+                                _egc[addr] = _egc.get(addr, 0) + 1
+                            else:
+                                _egc[addr] = 0  # buyer aaya = reset, fake signal
+
+                            if _egc.get(addr, 0) >= 3:
+                                _auto_paper_sell(addr, f"EntryGuard NoMom -{abs(pnl):.1f}% 🔵", 100.0)
+                                _egc.pop(addr, None)
+                                _trail_triggered = True
+                                print(f"🔵 EntryGuard Case1: {addr[:10]} pnl={pnl:.1f}% bv5={_bv5_live:.3f}")
+                                continue
+
+                        # Case 2: Pumped then fading — sell vol confirm karo
+                        elif _pnl_high >= 3.0 and pnl < (_pnl_high - 8):
+                            _sv5_live = _get_vol_pressure_rt(addr).get("sell_vol5", 0.0)
+                            if _bv5_live < 0.3 and _sv5_live > _bv5_live:
+                                _egc[addr] = _egc.get(addr, 0) + 1
+                            else:
+                                _egc[addr] = 0  # buyers active = fake pullback = reset
+
+                            if _egc.get(addr, 0) >= 2:
+                                _auto_paper_sell(addr, f"EntryGuard Faded -{abs(pnl):.1f}% 🔵", 100.0)
+                                _egc.pop(addr, None)
+                                _trail_triggered = True
+                                print(f"🔵 EntryGuard Case2: {addr[:10]} pnl={pnl:.1f}% high={_pnl_high:.1f}% sv5={_sv5_live:.3f}")
+                                continue
 
                     # ── Hard SL: entry se seedha neeche, koi pump nahi tha ──
                     if pnl <= -_entry_sl and _pnl_high < 5.0:
