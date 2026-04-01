@@ -5480,25 +5480,26 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             t1 = threading.Thread(target=_fetch_price,  daemon=True)
             t2 = threading.Thread(target=_fetch_buyers, daemon=True)
             t1.start(); t2.start()
-            t1.join(timeout=3); t2.join(timeout=3)
+            t1.join(timeout=1.5); t2.join(timeout=1.5)
 
         def _check_genuine(price_history, funds_history, ub_history, price_samples):
             score = 0; reasons = []
 
             # Check 1: Price sustained — last 2 readings consecutively up
-            if len(price_history) >= 2 and price_history[-1] > price_history[-2]:
+            # len < 2 = first iteration — benefit of doubt (score milega)
+            if len(price_history) < 2 or price_history[-1] > price_history[-2]:
                 score += 1
             else:
-                reasons.append(f"price_flat={price_history[-1]:.2e if len(price_history)>=1 else 0}")
+                reasons.append(f"price_flat")
 
             # Check 2: Volume sustained — last 2 readings consecutively up
-            if len(funds_history) >= 2 and funds_history[-1] > funds_history[-2]:
+            if len(funds_history) < 2 or funds_history[-1] > funds_history[-2]:
                 score += 1
             else:
                 reasons.append(f"vol_flat")
 
             # Check 3: Holders increasing — ub badh raha hai ya stable
-            if len(ub_history) >= 2 and ub_history[-1] >= ub_history[-2]:
+            if len(ub_history) < 2 or ub_history[-1] >= ub_history[-2]:
                 score += 1
             else:
                 reasons.append(f"holders_drop={ub_history[-1] if ub_history else 0}")
@@ -5636,10 +5637,24 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _w3_buy = _get_w3q()
                 if not _w3_buy:
                     _skip("QuickNode not available"); return
-                _bal_check = _w3_buy.eth.get_balance(Web3.to_checksum_address(wallet_addr)) / 1e18
+                # SPEED: balance + nonce parallel fetch
+                _bal_result  = [0.0]
+                _nonce_result = [0]
+                def _fetch_bal():
+                    try: _bal_result[0] = _w3_buy.eth.get_balance(Web3.to_checksum_address(wallet_addr)) / 1e18
+                    except: pass
+                def _fetch_nonce():
+                    try: _nonce_result[0] = _w3_buy.eth.get_transaction_count(Web3.to_checksum_address(wallet_addr), "pending")
+                    except: pass
+                _bt1 = threading.Thread(target=_fetch_bal,   daemon=True)
+                _bt2 = threading.Thread(target=_fetch_nonce, daemon=True)
+                _bt1.start(); _bt2.start()
+                _bt1.join(timeout=2); _bt2.join(timeout=2)
+                _bal_check = _bal_result[0]
                 if _bal_check < size_bnb + 0.002:
                     _skip(f"insufficient wallet balance {_bal_check:.4f} BNB"); return
                 _min_tokens = 0
+                _fresh_nonce = _nonce_result[0] or _w3_buy.eth.get_transaction_count(Web3.to_checksum_address(wallet_addr), "pending")
 
                 fc = _w3_buy.eth.contract(address=Web3.to_checksum_address(_FM_FACTORY_ADDR), abi=_FM_BC_ABI)
                 tx = fc.functions.buyTokenAMAP(
@@ -5651,7 +5666,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     "value": int(size_bnb * 1e18),
                     "gas": 400000,
                     "gasPrice": int((_pre_gas[0] or _fm_get_cached_gas(_w3_buy)) * 1.5),
-                    "nonce": _w3_buy.eth.get_transaction_count(Web3.to_checksum_address(wallet_addr), "pending"),  # FIX v19: always fresh nonce at TX time — prefetch stale hota hai approve ke baad
+                    "nonce": _fresh_nonce,
                     "chainId": 56
 })
                 from eth_account import Account
