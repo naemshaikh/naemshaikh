@@ -5449,6 +5449,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _funds_prev = _funds1
         _price_samples = []
         _bc_prev = 0.0
+        _fake_count = 0
+        _last_fail_reasons = []
 
         print(f"⏱️ [FM-DEBUG] MOMENTUM MONITOR START | window={_fm_filters.get('momentum_window_sec', 90)}s interval={_check_interval}s")
 
@@ -5544,6 +5546,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         _momentum_hit = True
                         break
                     else:
+                        _fake_count += 1
+                        _last_fail_reasons = _fail_reasons
                         print(f"🚫 [GM] FAKE score={_gm_score}/5 | fail={_fail_reasons} | mom={_momentum_current:.1f}%")
                 else:
                     _funds_prev = _funds2; _bc_prev = _bc_curr
@@ -5556,7 +5560,11 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         
         if not _momentum_hit:
             _s2_volume_change[0] = round((_funds2 - _funds1) / 1e18, 6) if _funds2 else 0
-            _skip(f"no momentum in {_fm_filters.get('momentum_window_sec', 90)}s")
+            if _fake_count > 0:
+                _fail_str = ",".join(str(r) for r in _last_fail_reasons[:2])
+                _skip(f"fake momentum x{_fake_count} ({_fail_str})")
+            else:
+                _skip(f"no momentum in {_fm_filters.get('momentum_window_sec', 90)}s")
             return
 
         # FIX v33: New momentum threshold check based on analysis
