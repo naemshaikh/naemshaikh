@@ -5456,6 +5456,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _bc_prev = 0.0
         _fake_count = 0
         _last_fail_reasons = []
+        _price_history = []   # sustained price trend track
+        _funds_history = []   # sustained volume trend track
+        _ub_history    = []   # holders increasing trend track
 
         print(f"⏱️ [FM-DEBUG] MOMENTUM MONITOR START | window={_fm_filters.get('momentum_window_sec', 90)}s interval={_check_interval}s")
 
@@ -5479,42 +5482,36 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             t1.start(); t2.start()
             t1.join(timeout=3); t2.join(timeout=3)
 
-        def _check_genuine(price2, funds2, ub, bw_curr, bw_prev, funds_prev, price_samples, bc_curr, bc_prev_val):
+        def _check_genuine(price_history, funds_history, ub_history, price_samples):
             score = 0; reasons = []
 
-            # Check 1: New wallets aa rahe hain — repeat 60% se kam hona chahiye
-            all_prev = set()
-            for ws in bw_prev.values(): all_prev.update(ws)
-            new_w = 0; rep_w = 0
-            for blk in sorted(bw_curr.keys())[-3:]:
-                cs = bw_curr.get(blk, set())
-                new_w += len(cs - all_prev); rep_w += len(cs & all_prev)
-            rep_ratio = rep_w / max(new_w + rep_w, 1)
-            if rep_ratio <= 0.6: score += 1
-            else: reasons.append(f"repeat={rep_ratio:.0%}")
+            # Check 1: Price sustained — last 2 readings consecutively up
+            if len(price_history) >= 2 and price_history[-1] > price_history[-2]:
+                score += 1
+            else:
+                reasons.append(f"price_flat={price_history[-1]:.2e if len(price_history)>=1 else 0}")
 
-            # Check 2: Bonding curve aage badh rahi hai
-            if bc_curr >= bc_prev_val - 0.05: score += 1
-            else: reasons.append("bc_flat")
+            # Check 2: Volume sustained — last 2 readings consecutively up
+            if len(funds_history) >= 2 and funds_history[-1] > funds_history[-2]:
+                score += 1
+            else:
+                reasons.append(f"vol_flat")
 
-            # Check 3: Minimum unique buyers
-            if ub >= _fm_filters.get("buyers_min", 5): score += 1
-            else: reasons.append(f"buyers={ub}")
+            # Check 3: Holders increasing — ub badh raha hai ya stable
+            if len(ub_history) >= 2 and ub_history[-1] >= ub_history[-2]:
+                score += 1
+            else:
+                reasons.append(f"holders_drop={ub_history[-1] if ub_history else 0}")
 
-            # Check 4: Volume positive vs start
-            fd_curr = (funds2 - _funds1) / 1e18 if funds2 else 0
-            if fd_curr > 0.05: score += 1
-            else: reasons.append(f"vol_low={fd_curr:.3f}")
-
-            # Check 5: Price steady — 50% se zyada single spike nahi
+            # Check 4: Price steady — koi single candle 30%+ spike nahi (wash trading)
             steady = True
             if len(price_samples) >= 3:
                 diffs = [abs(price_samples[i]-price_samples[i-1])/max(price_samples[i-1],1e-18)*100 for i in range(1,len(price_samples))]
-                if max(diffs) > 50: steady = False; reasons.append(f"spike={max(diffs):.0f}%")
+                if max(diffs) > 30: steady = False; reasons.append(f"spike={max(diffs):.0f}%")
             if steady: score += 1
 
-            # 4/5 chahiye — genuine sustained pump ka proof
-            return score >= 4, reasons, score
+            # 3/4 chahiye — genuine sustained pump ka proof
+            return score >= 3, reasons, score
 
         while time.time() < _t_end_loop:
             try:
@@ -5536,6 +5533,12 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _block_wallets_curr = _res.get("bw", {})
                 _price_samples.append(float(_price2))
                 if len(_price_samples) > 6: _price_samples.pop(0)
+                _price_history.append(float(_price2))
+                if len(_price_history) > 4: _price_history.pop(0)
+                _funds_history.append(float(_funds2))
+                if len(_funds_history) > 4: _funds_history.pop(0)
+                _ub_history.append(int(_ub))
+                if len(_ub_history) > 4: _ub_history.pop(0)
                 _max_funds = _info_current.get("maxFunds", 1)
                 _bc_curr = (_funds2 / max(_max_funds, 1)) * 100 if _max_funds else 0
                 if _bc_prev == 0: _bc_prev = _bc_curr
@@ -5549,22 +5552,20 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _basic_ok = _momentum_current >= _target_momentum and _ub >= _fm_filters['buyers_min'] and _vol_ok
                 if _basic_ok:
                     _is_genuine, _fail_reasons, _gm_score = _check_genuine(
-                        _price2, _funds2, _ub,
-                        _block_wallets_curr, _block_wallets_prev,
-                        _funds_prev, _price_samples, _bc_curr, _bc_prev
+                        _price_history, _funds_history, _ub_history, _price_samples
                     )
                     _funds_prev = _funds2; _bc_prev = _bc_curr
                     if _is_genuine:
                         _dbg_price2    = float(_price2)
                         _dbg_stage2_ms = int((time.time() - _t_start) * 1000) - _dbg_stage1_ms
-                        print(f"✅ [FM] GENUINE MOMENTUM! score={_gm_score}/5 +{_momentum_current:.1f}% in {_elapsed:.1f}s | vol={_funds_diff:.4f}BNB | buyers={_ub}")
+                        print(f"✅ [FM] GENUINE MOMENTUM! score={_gm_score}/4 +{_momentum_current:.1f}% in {_elapsed:.1f}s | vol={_funds_diff:.4f}BNB | buyers={_ub}")
                         print(f"⏱️ [FM-DEBUG] EARLY EXIT | +{int((time.time()-_t_start)*1000)}ms | momentum={_momentum_current:.1f}% | target={_target_momentum}%")
                         _momentum_hit = True
                         break
                     else:
                         _fake_count += 1
                         _last_fail_reasons = _fail_reasons
-                        print(f"🚫 [GM] FAKE score={_gm_score}/5 | fail={_fail_reasons} | mom={_momentum_current:.1f}%")
+                        print(f"🚫 [GM] FAKE score={_gm_score}/4 | fail={_fail_reasons} | mom={_momentum_current:.1f}%")
                 else:
                     _funds_prev = _funds2; _bc_prev = _bc_curr
                 if int(_elapsed) % 5 == 0 and _elapsed > 0:
