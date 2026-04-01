@@ -5496,13 +5496,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         def _check_genuine(price_history, funds_history, ub_history, price_samples):
     """
-    FINAL IMPROVED GENUINE MOMENTUM CHECK
-    - Longer memory (10 samples)
-    - Strict sustained price + volume + holders
-    - Spike filter tightened (25%)
-    - NEW: Single-block heavy buy concentration catch
-    - NEW: Pump ke dauran sell pressure / volume drop catch
-    - No config/filter changed
+    FINAL IMPROVED GENUINE MOMENTUM (8+ heavy block + pump vol drop)
     """
     score = 0
     reasons = []
@@ -5510,39 +5504,27 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
     if len(price_history) < 6 or len(funds_history) < 6 or len(ub_history) < 6:
         return False, ["insufficient_data"], 0
 
-    # 1. Price sustained (at least 4/6 green)
     green_price = sum(1 for i in range(1, len(price_history)) if price_history[i] > price_history[i-1])
-    if green_price >= 4:
-        score += 2
-    else:
-        reasons.append(f"price_not_sustained({green_price}/6)")
+    if green_price >= 4: score += 2
+    else: reasons.append(f"price_not_sustained({green_price}/6)")
 
-    # 2. Volume sustained
     green_vol = sum(1 for i in range(1, len(funds_history)) if funds_history[i] > funds_history[i-1])
-    if green_vol >= 4:
-        score += 2
-    else:
-        reasons.append(f"vol_flat_or_dying({green_vol}/6)")
+    if green_vol >= 4: score += 2
+    else: reasons.append(f"vol_flat_or_dying({green_vol}/6)")
 
-    # 3. Holders strictly increasing
     green_holders = sum(1 for i in range(1, len(ub_history)) if ub_history[i] > ub_history[i-1])
-    if green_holders >= 5:
-        score += 2
-    else:
-        reasons.append(f"holders_stagnant({green_holders}/6)")
+    if green_holders >= 5: score += 2
+    else: reasons.append(f"holders_stagnant({green_holders}/6)")
 
-    # 4. No big spike (bot wash trade)
     steady = True
     if len(price_samples) >= 4:
-        diffs = [abs(price_samples[i] - price_samples[i-1]) / max(price_samples[i-1], 1e-18) * 100 
-                 for i in range(1, len(price_samples))]
+        diffs = [abs(price_samples[i] - price_samples[i-1]) / max(price_samples[i-1], 1e-18) * 100 for i in range(1, len(price_samples))]
         if max(diffs) > 25:
             steady = False
             reasons.append(f"spike_{max(diffs):.0f}%")
-    if steady:
-        score += 2
+    if steady: score += 2
 
-    # 5. NEW: Single-block heavy buy concentration
+    # Heavy block buy (8+ threshold)
     deltas = [ub_history[i] - ub_history[i-1] for i in range(1, len(ub_history))]
     max_delta = max(deltas) if deltas else 0
     if max_delta > 8:
@@ -5551,7 +5533,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             reasons.append(f"heavy_block_buy({max_delta})")
             score -= 1
 
-    # 6. NEW: Pump ke dauran sell pressure / volume drop
+    # Pump with vol drop
     if len(funds_history) >= 3:
         recent_vol_drop = funds_history[-1] <= funds_history[-2] and funds_history[-2] <= funds_history[-3]
         recent_price_up = price_history[-1] > price_history[-2]
