@@ -3916,24 +3916,19 @@ def auto_position_manager():
                     except Exception:
                         _hold_secs = 999
 
-                    # FIX v40 G: vol_dying threshold tight — 0.3 → 0.5
-                    # QMONEY case: bv5=0.3-0.5 tha, buyers the lekin price -58% gira
-                    # 0.5 se kam bv5 = buyers bahut weak = momentum dead consider karo
+                    # FIX v42 I: vol_dying — bv5 < 0.5 = buyers weak = momentum dead
+                    # 辟谣侠 case: ATH se -86% gira lekin sell_heavy block kar raha tha
+                    # _sell_heavy hataya — redundant tha, vol_dying hi kaafi hai
                     _vol_dying  = _bv5_live < 0.5
-
-                    # FIX v40 G: sell_heavy Post-TP1 tighter — 1.5x → 1.2x
-                    # Post-TP1 coin already peaked hai — thode bhi zyada sellers = dead
-                    # Pre-TP1: 1.5x (loose — fresh mint mein fluctuation normal)
-                    _sell_ratio = 1.2 if tp_sold >= 50 else 1.5
-                    # FIX Bug3: b5=0 AND s5>=2 bhi sell_heavy hai (data nahi = sellers only)
-                    _sell_heavy = (_s5_live > _b5_live * _sell_ratio) or (_s5_live >= 2 and _b5_live == 0)
 
                     # FIX Bug2: -15% trail (was -20), OR 30s ke baad -8% gir raha = fading
                     _fading     = (pnl < (_pnl_high - 15)) or (_hold_secs > 30 and pnl < -8 and _pnl_high < 5)
 
-                    # FIX v39 F: 20s grace period — FM fresh mint pe RT data settle hone do
-                    # FIX v40 G: vol_dying + sell_heavy tighter
-                    _mom_dead   = _vol_dying and _sell_heavy and _fading and _hold_secs > 20
+                    # FIX v42 I: _sell_heavy HATAYA — vol_dying + fading = kaafi
+                    # Agar buyers nahi hain (vol_dying) toh sellers naturally zyada hain
+                    # _sell_heavy ne sirf exit delay kiya — koi value nahi thi
+                    # FIX v39 F: 20s grace period intact
+                    _mom_dead   = _vol_dying and _fading and _hold_secs > 20
 
                     # Emergency SL: FIX v38 E: 45s → 20s — fast dump coins ke liye
                     # v37 Fix B se MomDead ab RT data nahi pe bhi fire hoga
