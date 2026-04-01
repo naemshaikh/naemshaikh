@@ -2580,7 +2580,8 @@ auto_trade_stats = {
     "today_wins":        0,
     "today_losses":      0,
     "today_pnl":         0.0,
-    "today_date":        ""
+    "today_date":        "",
+    "vol_weak_count":    {}  # FIX v43: consecutive weak vol counter
 }
 
 # Telegram removed
@@ -3919,7 +3920,13 @@ def auto_position_manager():
                     # FIX v42 I: vol_dying — bv5 < 0.5 = buyers weak = momentum dead
                     # 辟谣侠 case: ATH se -86% gira lekin sell_heavy block kar raha tha
                     # _sell_heavy hataya — redundant tha, vol_dying hi kaafi hai
-                    _vol_dying  = _bv5_live < 0.5
+                    # FIX v43: 3 consecutive weak readings tab hi vol_dying=True
+                    _vwc = auto_trade_stats["vol_weak_count"]
+                    if _bv5_live < 0.5:
+                        _vwc[addr] = _vwc.get(addr, 0) + 1
+                    else:
+                        _vwc[addr] = 0
+                    _vol_dying  = _vwc.get(addr, 0) >= 3
 
                     # FIX Bug2: -15% trail (was -20), OR 30s ke baad -8% gir raha = fading
                     _fading     = (pnl < (_pnl_high - 15)) or (_hold_secs > 30 and pnl < -8 and _pnl_high < 5)
@@ -3963,7 +3970,8 @@ def auto_position_manager():
                             _zone = "Moonbag" if tp_sold >= 80 else ("Post-TP1" if tp_sold >= 50 else "Pre-TP")
                             _auto_paper_sell(addr, f"MomDead {_zone} 📉", 100.0)
                             _trail_triggered = True
-                            print(f"📉 MomDead [{_zone}]: {addr[:10]} pnl={pnl:.1f}% high={_pnl_high:.1f}% bv5={_bv5_live:.3f} s={_s5_live} b={_b5_live} hold={_hold_secs:.0f}s")
+                            print(f"📉 MomDead [{_zone}]: {addr[:10]} pnl={pnl:.1f}% high={_pnl_high:.1f}% bv5={_bv5_live:.3f} s={_s5_live} b={_b5_live} hold={_hold_secs:.0f}s cnt={auto_trade_stats[\"vol_weak_count\"].get(addr,0)}")
+                            auto_trade_stats["vol_weak_count"].pop(addr, None)  # FIX v43: cleanup
 
                         elif _emergency_sl:
                             _auto_paper_sell(addr, f"EmergSL -20% 🚨", 100.0)
