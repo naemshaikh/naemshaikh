@@ -5495,200 +5495,72 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             except: pass
 
         def _check_genuine(price_history, funds_history, ub_history, price_samples):
-            score = 0; reasons = []
+    """
+    FINAL IMPROVED GENUINE MOMENTUM CHECK
+    - Longer memory (10 samples)
+    - Strict sustained price + volume + holders
+    - Spike filter tightened (25%)
+    - NEW: Single-block heavy buy concentration catch
+    - NEW: Pump ke dauran sell pressure / volume drop catch
+    - No config/filter changed
+    """
+    score = 0
+    reasons = []
 
-            # Data nahi hai — check possible nahi, fail karo
-            if len(price_history) < 2 or len(funds_history) < 2 or len(ub_history) < 2:
-                return False, ["insufficient_data"], 0
+    if len(price_history) < 6 or len(funds_history) < 6 or len(ub_history) < 6:
+        return False, ["insufficient_data"], 0
 
-            # Check 1: Price sustained — consecutively up hona chahiye
-            if price_history[-1] > price_history[-2]:
-                score += 1
-            else:
-                reasons.append(f"price_flat")
+    # 1. Price sustained (at least 4/6 green)
+    green_price = sum(1 for i in range(1, len(price_history)) if price_history[i] > price_history[i-1])
+    if green_price >= 4:
+        score += 2
+    else:
+        reasons.append(f"price_not_sustained({green_price}/6)")
 
-            # Check 2: Volume sustained — consecutively up hona chahiye
-            if funds_history[-1] > funds_history[-2]:
-                score += 1
-            else:
-                reasons.append(f"vol_flat")
+    # 2. Volume sustained
+    green_vol = sum(1 for i in range(1, len(funds_history)) if funds_history[i] > funds_history[i-1])
+    if green_vol >= 4:
+        score += 2
+    else:
+        reasons.append(f"vol_flat_or_dying({green_vol}/6)")
 
-            # Check 3: Holders increasing — strictly badhne chahiye
-            if ub_history[-1] > ub_history[-2]:
-                score += 1
-            else:
-                reasons.append(f"holders_flat={ub_history[-1]}")
+    # 3. Holders strictly increasing
+    green_holders = sum(1 for i in range(1, len(ub_history)) if ub_history[i] > ub_history[i-1])
+    if green_holders >= 5:
+        score += 2
+    else:
+        reasons.append(f"holders_stagnant({green_holders}/6)")
 
-            # Check 4: No spike — 40%+ single candle = wash trading
-            steady = True
-            if len(price_samples) >= 3:
-                diffs = [abs(price_samples[i]-price_samples[i-1])/max(price_samples[i-1],1e-18)*100 for i in range(1,len(price_samples))]
-                if max(diffs) > 40: steady = False; reasons.append(f"spike={max(diffs):.0f}%")
-            if steady: score += 1
+    # 4. No big spike (bot wash trade)
+    steady = True
+    if len(price_samples) >= 4:
+        diffs = [abs(price_samples[i] - price_samples[i-1]) / max(price_samples[i-1], 1e-18) * 100 
+                 for i in range(1, len(price_samples))]
+        if max(diffs) > 25:
+            steady = False
+            reasons.append(f"spike_{max(diffs):.0f}%")
+    if steady:
+        score += 2
 
-            # 3/4 chahiye — genuine sustained pump ka proof
-            return score >= 3, reasons, score
+    # 5. NEW: Single-block heavy buy concentration
+    deltas = [ub_history[i] - ub_history[i-1] for i in range(1, len(ub_history))]
+    max_delta = max(deltas) if deltas else 0
+    if max_delta > 8:
+        avg_delta = sum(deltas) / len(deltas)
+        if max_delta > avg_delta * 2.5:
+            reasons.append(f"heavy_block_buy({max_delta})")
+            score -= 1
 
-        while time.time() < _t_end_loop:
-            try:
-                _elapsed = time.time() - _t_start_loop
-                _res = {}
-                _parallel_fetch(_res)
-                _info_current = _res.get("info")
-                if not _info_current:
-                    time.sleep(_check_interval); continue
-                if _info_current.get("liquidityAdded"):
-                    _skip("graduated during momentum check"); return
-                _price2 = _info_current.get("lastPrice", 0)
-                _funds2 = _info_current.get("funds", 0)
-                if _price2 <= 0:
-                    time.sleep(_check_interval); continue
-                _ub         = _res.get("ub", _ub)
-                _total_buys = _res.get("tb", _total_buys)
-                _block_wallets_prev = _block_wallets_curr.copy() if _block_wallets_curr else {}
-                _block_wallets_curr = _res.get("bw", {})
-                _iter_count += 1
-                _price_samples.append(float(_price2))
-                if len(_price_samples) > 6: _price_samples.pop(0)
-                _price_history.append(float(_price2))
-                if len(_price_history) > 4: _price_history.pop(0)
-                _funds_history.append(float(_funds2))
-                if len(_funds_history) > 4: _funds_history.pop(0)
-                _ub_history.append(int(_ub))
-                if len(_ub_history) > 4: _ub_history.pop(0)
-                _max_funds = _info_current.get("maxFunds", 1)
-                _bc_curr = (_funds2 / max(_max_funds, 1)) * 100 if _max_funds else 0
-                if _bc_prev == 0: _bc_prev = _bc_curr
-                _momentum_current = round((_price2 - _price1) / max(_price1, 1) * 100, 2)
-                _funds_diff = (_funds2 - _funds1) / 1e18 if _funds2 else 0
-                _target_momentum = _fm_filters.get("momentum_min", 25)
-                _vol_ok = not _fm_filters.get('vol_min_enabled', True) or _funds_diff >= _fm_filters['vol_min']
-                if not _vol_ok and _ub >= 10 and _momentum_current >= 50 and _funds_diff >= 0.5:
-                    _vol_ok = True
-                    print(f"⚡ Exception rule triggered: buyers={_ub} momentum={_momentum_current:.1f}% vol={_funds_diff:.4f}BNB")
-                _basic_ok = _momentum_current >= _target_momentum and _ub >= _fm_filters['buyers_min'] and _vol_ok
-                if _basic_ok:
-                    _is_genuine, _fail_reasons, _gm_score = _check_genuine(
-                        _price_history, _funds_history, _ub_history, _price_samples
-                    )
-                    _funds_prev = _funds2; _bc_prev = _bc_curr
-                    if _is_genuine:
-                        _dbg_price2    = float(_price2)
-                        _dbg_stage2_ms = int((time.time() - _t_start) * 1000) - _dbg_stage1_ms
-                        print(f"✅ [FM] GENUINE MOMENTUM! score={_gm_score}/4 +{_momentum_current:.1f}% in {_elapsed:.1f}s | vol={_funds_diff:.4f}BNB | buyers={_ub}")
-                        print(f"⏱️ [FM-DEBUG] EARLY EXIT | +{int((time.time()-_t_start)*1000)}ms | momentum={_momentum_current:.1f}% | target={_target_momentum}%")
-                        _momentum_hit = True
-                        break
-                    else:
-                        _fake_count += 1
-                        _last_fail_reasons = _fail_reasons
-                        if _fail_reasons == ["insufficient_data"]:
-                            print(f"⏳ [GM] WAIT data collecting... iter={_iter_count} mom={_momentum_current:.1f}%")
-                        else:
-                            print(f"🚫 [GM] FAKE score={_gm_score}/4 | fail={_fail_reasons} | mom={_momentum_current:.1f}%")
-                else:
-                    _funds_prev = _funds2; _bc_prev = _bc_curr
-                if int(_elapsed) % 5 == 0 and _elapsed > 0:
-                    print(f"⏱️ [FM] Monitoring... {_elapsed:.0f}s | mom={_momentum_current:.1f}% target={_target_momentum}% vol={_funds_diff:.4f}BNB buyers={_ub}")
-                time.sleep(_check_interval)
-            except Exception as _me:
-                print(f"⚠️ [FM] momentum error: {str(_me)[:50]}")
-                time.sleep(_check_interval)
-        
-        try: _mom_executor.shutdown(wait=False)
-        except: pass
-        if not _momentum_hit:
-            _s2_volume_change[0] = round((_funds2 - _funds1) / 1e18, 6) if _funds2 else 0
-            if _fake_count > 0:
-                _fail_str = ",".join(str(r) for r in _last_fail_reasons[:2])
-                _skip(f"fake momentum x{_fake_count} ({_fail_str})")
-            else:
-                _skip(f"no momentum in {_fm_filters.get('momentum_window_sec', 90)}s")
-            return
+    # 6. NEW: Pump ke dauran sell pressure / volume drop
+    if len(funds_history) >= 3:
+        recent_vol_drop = funds_history[-1] <= funds_history[-2] and funds_history[-2] <= funds_history[-3]
+        recent_price_up = price_history[-1] > price_history[-2]
+        if recent_price_up and recent_vol_drop:
+            reasons.append("pump_with_vol_drop")
+            score -= 1
 
-        # FIX v33: New momentum threshold check based on analysis
-        _momentum_actual = round((_price2 - _price1) / max(_price1, 1) * 100, 2)
-        if _fm_filters.get("momentum_min_enabled", True) and _momentum_actual < _fm_filters.get("momentum_min", 25):
-            _skip(f"momentum {_momentum_actual:.1f}% < {_fm_filters['momentum_min']}%"); return
-
-        # ✅ BUG FIX: timeout pe bhi buyers check — _MIN_BUYERS bypass nahi hoga
-        if _ub < _MIN_BUYERS:
-            _s2_buyers[0] = _ub
-            _skip(f"low buyers {_ub} < {_MIN_BUYERS}"); return
-
-        _funds_diff = (_funds2 - _funds1) / 1e18
-        _s2_volume_change[0] = round(_funds_diff, 6)
-        _s2_momentum_pct[0] = round((_price2 - _price1) / max(_price1, 1) * 100, 1)
-        _s2_buyers[0] = _ub
-        _s2_total_buys[0] = _total_buys
-
-        if _fm_filters.get('vol_min_enabled',True) and _funds_diff < _fm_filters['vol_min']:
-            # FIX v33d: Exception rule for high conviction trades
-            if _fm_filters.get('vol_min_enabled', True):
-                # Exception: buyers≥10 AND momentum≥50% → volume≥0.5 allowed
-                _exception_allowed = False
-                if _ub >= 10 and _momentum_actual >= 50 and _funds_diff >= 0.5:
-                    _exception_allowed = True
-                    print(f"⚡ Exception rule triggered: buyers={_ub} momentum={_momentum_actual:.1f}% vol={_funds_diff:.4f}BNB (min 0.5)")
-                if not _exception_allowed and _funds_diff < _fm_filters['vol_min']:
-                    _skip(f"low volume {_funds_diff:.4f} BNB < {_fm_filters['vol_min']}"); return
-        _momentum_pct = round((_price2 - _price1) / max(_price1, 1) * 100, 1)
-
-        print(f"✅ [FM] ALL PASS: mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}%")
-        _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
-
-        # ========== BUY EXECUTION ==========
-        size_bnb = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
-        token_name = token_addr[:8]
-        try:
-            # FIX v29: _price2 = Stage 2 ka latest price — info["lastPrice"] stale hota hai
-            entry = _price2 / 1e18 if _price2 > 0 else (info["lastPrice"] / 1e18 if info.get("lastPrice", 0) > 0 else 1e-12)
-        except:
-            entry = 1e-12
-
-        # FIX v31: DEBUG — buy execute shuru — detect se yahan tak total time
-        print(f"⏱️ [FM-DEBUG] BUY START | +{int((time.time()-_t_start)*1000)}ms | entry_price={entry:.6e} BNB | size={size_bnb:.4f}BNB | mode={TRADE_MODE}")
-
-        if TRADE_MODE == "real":
-            try:
-                wallet_addr = BSC_WALLET or REAL_WALLET
-                pk = os.getenv("WALLET_PRIVATE_KEY", "") or os.getenv("PRIVATE_KEY", "") or os.getenv("REAL_PRIVATE_KEY", "")
-                if not wallet_addr or not pk:
-                    _skip("no wallet/key"); return
-                _w3_buy = _get_w3q()
-                if not _w3_buy:
-                    _skip("QuickNode not available"); return
-                # SPEED: balance + nonce parallel fetch
-                _bal_result  = [0.0]
-                _nonce_result = [0]
-                def _fetch_bal():
-                    try: _bal_result[0] = _w3_buy.eth.get_balance(Web3.to_checksum_address(wallet_addr)) / 1e18
-                    except: pass
-                def _fetch_nonce():
-                    try: _nonce_result[0] = _w3_buy.eth.get_transaction_count(Web3.to_checksum_address(wallet_addr), "pending")
-                    except: pass
-                _bt1 = threading.Thread(target=_fetch_bal,   daemon=True)
-                _bt2 = threading.Thread(target=_fetch_nonce, daemon=True)
-                _bt1.start(); _bt2.start()
-                _bt1.join(timeout=2); _bt2.join(timeout=2)
-                _bal_check = _bal_result[0]
-                if _bal_check < size_bnb + 0.002:
-                    _skip(f"insufficient wallet balance {_bal_check:.4f} BNB"); return
-                _min_tokens = 0
-                _fresh_nonce = _nonce_result[0] or _w3_buy.eth.get_transaction_count(Web3.to_checksum_address(wallet_addr), "pending")
-
-                fc = _w3_buy.eth.contract(address=Web3.to_checksum_address(_FM_FACTORY_ADDR), abi=_FM_BC_ABI)
-                tx = fc.functions.buyTokenAMAP(
-                    Web3.to_checksum_address(token_addr),
-                    int(size_bnb * 1e18),
-                    _min_tokens
-                ).build_transaction({
-                    "from": wallet_addr,
-                    "value": int(size_bnb * 1e18),
-                    "gas": 400000,
-                    "gasPrice": int((_pre_gas[0] or _fm_get_cached_gas(_w3_buy)) * 1.5),
-                    "nonce": _fresh_nonce,
-                    "chainId": 56
+    genuine = score >= 6
+    return genuine, reasons, score
 })
                 from eth_account import Account
                 signed = Account.sign_transaction(tx, pk)
