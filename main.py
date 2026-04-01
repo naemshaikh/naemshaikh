@@ -4007,7 +4007,8 @@ def auto_position_manager():
                             _zone = "Moonbag" if tp_sold >= 80 else ("Post-TP1" if tp_sold >= 50 else "Pre-TP")
                             _auto_paper_sell(addr, f"MomDead {_zone} 📉", 100.0)
                             _trail_triggered = True
-                            print(f"📉 MomDead [{_zone}]: {addr[:10]} pnl={pnl:.1f}% high={_pnl_high:.1f}% bv5={_bv5_live:.3f} s={_s5_live} b={_b5_live} hold={_hold_secs:.0f}s cnt={auto_trade_stats[\"vol_weak_count\"].get(addr,0)}")
+                            _vwc_cnt = auto_trade_stats["vol_weak_count"].get(addr, 0)
+                            print(f"📉 MomDead [{_zone}]: {addr[:10]} pnl={pnl:.1f}% high={_pnl_high:.1f}% bv5={_bv5_live:.3f} s={_s5_live} b={_b5_live} hold={_hold_secs:.0f}s cnt={_vwc_cnt}")
                             auto_trade_stats["vol_weak_count"].pop(addr, None)  # FIX v43: cleanup
 
                         elif _emergency_sl:
