@@ -5459,28 +5459,40 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _price_history = []   # sustained price trend track
         _funds_history = []   # sustained volume trend track
         _ub_history    = []   # holders increasing trend track
+        _iter_count    = 0    # SPEED: buyers throttle counter
 
         print(f"⏱️ [FM-DEBUG] MOMENTUM MONITOR START | window={_fm_filters.get('momentum_window_sec', 90)}s interval={_check_interval}s")
+
+        import concurrent.futures as _cf2
+        _mom_executor = _cf2.ThreadPoolExecutor(max_workers=2)
 
         def _parallel_fetch(results_dict):
             def _fetch_price():
                 try:
                     info = _get_token_info_cached(token_addr, w3, 0.5)
                     results_dict["info"] = info
-                except Exception as e:
+                except Exception:
                     results_dict["info"] = None
             def _fetch_buyers():
+                # SPEED: buyers har 3rd iteration pe fetch — on-chain heavy call
+                if _iter_count % 3 != 0:
+                    results_dict["ub"] = _ub          # cached value reuse
+                    results_dict["tb"] = _total_buys
+                    results_dict["bw"] = _block_wallets_curr
+                    return
                 try:
                     ub, tb, bw = _fm_get_unique_buyers(token_addr, w3)
                     results_dict["ub"] = ub
                     results_dict["tb"] = tb
                     results_dict["bw"] = bw
-                except Exception as e:
-                    results_dict["ub"] = 0; results_dict["tb"] = 0; results_dict["bw"] = {}
-            t1 = threading.Thread(target=_fetch_price,  daemon=True)
-            t2 = threading.Thread(target=_fetch_buyers, daemon=True)
-            t1.start(); t2.start()
-            t1.join(timeout=1.5); t2.join(timeout=1.5)
+                except Exception:
+                    results_dict["ub"] = _ub; results_dict["tb"] = _total_buys; results_dict["bw"] = _block_wallets_curr
+            f1 = _mom_executor.submit(_fetch_price)
+            f2 = _mom_executor.submit(_fetch_buyers)
+            try: f1.result(timeout=1.5)
+            except: pass
+            try: f2.result(timeout=1.5)
+            except: pass
 
         def _check_genuine(price_history, funds_history, ub_history, price_samples):
             score = 0; reasons = []
@@ -5498,17 +5510,19 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             else:
                 reasons.append(f"vol_flat")
 
-            # Check 3: Holders increasing — ub badh raha hai ya stable
-            if len(ub_history) < 2 or ub_history[-1] >= ub_history[-2]:
+            # Check 3: Holders strictly increasing — flat nahi chalega
+            # len < 2 = first iteration benefit-of-doubt
+            # len >= 2 = strictly > chahiye (genuine pump mein buyers badhte hain)
+            if len(ub_history) < 2 or ub_history[-1] > ub_history[-2]:
                 score += 1
             else:
-                reasons.append(f"holders_drop={ub_history[-1] if ub_history else 0}")
+                reasons.append(f"holders_flat={ub_history[-1] if ub_history else 0}")
 
             # Check 4: Price steady — koi single candle 30%+ spike nahi (wash trading)
             steady = True
             if len(price_samples) >= 3:
                 diffs = [abs(price_samples[i]-price_samples[i-1])/max(price_samples[i-1],1e-18)*100 for i in range(1,len(price_samples))]
-                if max(diffs) > 30: steady = False; reasons.append(f"spike={max(diffs):.0f}%")
+                if max(diffs) > 40: steady = False; reasons.append(f"spike={max(diffs):.0f}%")
             if steady: score += 1
 
             # 3/4 chahiye — genuine sustained pump ka proof
@@ -5532,6 +5546,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _total_buys = _res.get("tb", _total_buys)
                 _block_wallets_prev = _block_wallets_curr.copy() if _block_wallets_curr else {}
                 _block_wallets_curr = _res.get("bw", {})
+                _iter_count += 1
                 _price_samples.append(float(_price2))
                 if len(_price_samples) > 6: _price_samples.pop(0)
                 _price_history.append(float(_price2))
@@ -5576,6 +5591,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 print(f"⚠️ [FM] momentum error: {str(_me)[:50]}")
                 time.sleep(_check_interval)
         
+        try: _mom_executor.shutdown(wait=False)
+        except: pass
         if not _momentum_hit:
             _s2_volume_change[0] = round((_funds2 - _funds1) / 1e18, 6) if _funds2 else 0
             if _fake_count > 0:
