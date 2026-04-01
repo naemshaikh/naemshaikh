@@ -5572,11 +5572,18 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                                     print(f"⏱️ [FM-DEBUG] TX CONFIRMED | intended={entry:.6e} | actual_fill={_real_entry:.6e} | slippage={_slip:+.2f}% | tx={_th.hex()[:16]}")
                                     try:
                                         if supabase:
+                                            # FIX v41 H: Restore timing data update — b54a874 ne delete kiya tha
                                             supabase.table("fm_events").update({
                                                 "actual_fill":   float(_real_entry),
-                                                "slippage_pct":  float(_slip)
-}).eq("token_address", _addr).order("detected_at", desc=True).limit(1).execute()
-                                    except: pass
+                                                "slippage_pct":  float(_slip),
+                                                "buy_submit_ms": int(_dbg_buy_ms or 0),
+                                                "stage1_ms":     int(_dbg_stage1_ms or 0),
+                                                "stage2_ms":     int(_dbg_stage2_ms or 0),
+                                                "price1":        float(_dbg_price1 or 0),
+                                                "price2":        float(_dbg_price2 or 0),
+                                            }).eq("token_address", _addr).order("detected_at", desc=True).limit(1).execute()
+                                    except Exception as _dbu:
+                                        print(f"⚠️ [FM] Supabase timing update error: {str(_dbu)[:50]}")
                             except Exception as _ep:
                                 print(f"⚠️ [FM] Entry update error: {str(_ep)[:40]}")
                             def _pre_approve(_addr2):
