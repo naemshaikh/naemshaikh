@@ -3956,11 +3956,10 @@ def auto_position_manager():
                                 print(f"🔵 EntryGuard Case2: {addr[:10]} pnl={pnl:.1f}% high={_pnl_high:.1f}% sv5={_sv5_live:.3f}")
                                 continue
 
-                    # ── Hard SL: safety net ──
-                    # Primary exit: MomDead — momentum dead hote hi sell (any %)
-                    # HardSL: sirf backup — agar -12% hit ho aur momentum dead hai
-                    #   momentum alive at -12% → HOLD (MomDead handle karega jab dead hoga)
-                    if pnl <= -_entry_sl and _mom_dead:
+                    # ── Hard SL: absolute exit at -12%, no conditions ──
+                    # MomDead handles early exits (any %)
+                    # HardSL = hard floor, fires regardless of momentum
+                    if pnl <= -_entry_sl:
                         _auto_paper_sell(addr, f"HardSL -{_entry_sl:.0f}% 🔴", 100.0)
                         blacklist_token(addr, f"HardSL rebuy block")
                         _trail_triggered = True
