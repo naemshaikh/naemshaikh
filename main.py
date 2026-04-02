@@ -5489,9 +5489,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     results_dict["ub"] = _ub; results_dict["tb"] = _total_buys; results_dict["bw"] = _block_wallets_curr
             f1 = _mom_executor.submit(_fetch_price)
             f2 = _mom_executor.submit(_fetch_buyers)
-            try: f1.result(timeout=1.5)
+            try: f1.result(timeout=0.8)
             except: pass
-            try: f2.result(timeout=1.5)
+            try: f2.result(timeout=0.8)
             except: pass
 
         def _check_genuine(price_history, funds_history, ub_history, price_samples):
