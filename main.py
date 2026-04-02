@@ -5573,11 +5573,11 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _price_samples.append(float(_price2))
                 if len(_price_samples) > 6: _price_samples.pop(0)
                 _price_history.append(float(_price2))
-                if len(_price_history) > 4: _price_history.pop(0)
+                if len(_price_history) > 6: _price_history.pop(0)
                 _funds_history.append(float(_funds2))
-                if len(_funds_history) > 4: _funds_history.pop(0)
+                if len(_funds_history) > 6: _funds_history.pop(0)
                 _ub_history.append(int(_ub))
-                if len(_ub_history) > 4: _ub_history.pop(0)
+                if len(_ub_history) > 6: _ub_history.pop(0)
                 _max_funds = _info_current.get("maxFunds", 1)
                 _bc_curr = (_funds2 / max(_max_funds, 1)) * 100 if _max_funds else 0
                 if _bc_prev == 0: _bc_prev = _bc_curr
