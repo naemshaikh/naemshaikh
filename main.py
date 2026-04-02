@@ -2553,7 +2553,7 @@ _fm_filters = {
     "mc_max_enabled":     True,
     "dev_wallet_max":     10,
     "dev_wallet_enabled": True,
-    "vol_min":            0.8,               # FIX v33: 0.3 → 0.8 BNB (94% losers filter)
+    "vol_min":            0.4,               # v48: 0.8 → 0.4 BNB (faster entry)
     "vol_min_enabled":    True,
     "buyers_min":         5,                 # FIX v33: unchanged — 74% winners pass
     "buyers_min_enabled": True,
@@ -2563,7 +2563,7 @@ _fm_filters = {
     "pump_max_enabled":   False,
     "stop_loss":          20,
     "stop_loss_enabled":  True,
-    "momentum_min":       25,               # FIX v35a: Fixed 25% minimum momentum
+    "momentum_min":       12,               # v48: 25 → 12% (faster entry confirmation)
     "momentum_min_enabled": True
 }
 AUTO_SESSION_ID    = "AUTO_TRADER"
@@ -3327,9 +3327,9 @@ def _load_brain_from_db():
                         _fm_filters[_fk] = _fv
                 print(f"⚙️ FM Filters loaded: {_ff}")
             # Force correct values — DB mein purane values ho sakte hain
-            _fm_filters["vol_min"]              = 0.8
+            _fm_filters["vol_min"]              = 0.4
             _fm_filters["vol_min_enabled"]      = True
-            _fm_filters["momentum_min"]         = 25
+            _fm_filters["momentum_min"]         = 12
             _fm_filters["momentum_min_enabled"] = True
             _fm_filters["mc_max"]               = 15000
             _fm_filters["pump_max"]             = 100
