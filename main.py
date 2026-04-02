@@ -5517,7 +5517,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
             # 3. Holders strictly increasing
             green_holders = sum(1 for i in range(1, len(ub_history)) if ub_history[i] > ub_history[i-1])
-            if green_holders >= 4:
+            if green_holders >= 5:
                 score += 2
             else:
                 reasons.append("holders_stagnant(" + str(green_holders) + "/6)")
@@ -5549,7 +5549,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     reasons.append("pump_with_vol_drop")
                     score -= 1
 
-            genuine = score >= 4
+            genuine = score >= 5
             return genuine, reasons, score
         while time.time() < _t_end_loop:
             try:
