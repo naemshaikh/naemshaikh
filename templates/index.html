@@ -1061,7 +1061,7 @@ async function downloadTrades(count){
 }
 function setHF(f,el){histFilter=f;document.querySelectorAll('.hf').forEach(b=>b.classList.remove('on'));el.classList.add('on');fetchHistory();}
 async function fetchHistory(){
-  const d=await fetchJSON('/trade-history?filter=all',{},20000);if(!d)return;
+  const d=await fetchJSON('/trade-history?filter='+histFilter,{},20000);if(!d)return;
   // Cache for PNL card 1D/7D/1M tabs
   if(d.history) window._cachedTradeHistory = d.history;
   const wr=d.win_rate||0;
@@ -1073,7 +1073,7 @@ async function fetchHistory(){
   const hist=d.history||[],list=document.getElementById('hist-list');
   // Sirf completed trades — win ya loss (holding wale nahi) + current mode
   const curMode = window._tradeMode || 'paper';
-  const closedTrades = hist.filter(function(t){ return (t.result==='win'||t.result==='loss') && t.sold_at && t.sold_at !== null && t.sold_at !== '' && (t.mode||'paper') === curMode; });
+  const closedTrades = hist.filter(function(t){ return (t.result==='win'||t.result==='loss'||t.result==='sell_failed'||(t.sold_at&&t.result!=='holding')) && (t.mode||'paper') === curMode; });
   if(!closedTrades.length){list.innerHTML='<div class="empty-state">No completed trades yet</div>';return;}
   // Group by address
   const groups = {};
