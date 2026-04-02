@@ -2380,7 +2380,7 @@ def _persist_positions():
                 "orig_size_bnb":  v.get("orig_size_bnb", v.get("size_bnb", AUTO_BUY_SIZE_BNB)),
                 "bought_usd":     v.get("bought_usd", 0.0),
                 "bought_at":      v.get("bought_at", ""),
-                "sl_pct":         v.get("sl_pct", 12.0),
+                "sl_pct":         v.get("sl_pct", 15.0),
                 "tp_sold":        v.get("tp_sold", 0.0),
                 "banked_pnl_bnb": v.get("banked_pnl_bnb", 0.0),  # ✅ partial sell profits
                 "mode":           v.get("mode", "paper")
@@ -2533,7 +2533,7 @@ CHECKLIST_SETTINGS = {
     "min_token_age":     3.0,    # Stage 3: Min token age (min)
     "sniper_wait":       5.0,    # Stage 3: Sniper pump over (min)
     "min_volume_24h":  1000.0,   # Stage 4: Min 24h volume USD
-    "sl_new":           12.0,    # Stage 10: SL % for new tokens
+    "sl_new":           15.0,    # Stage 10: SL % for new tokens
     "sl_hyped":         20.0,    # Stage 10: SL % for hyped tokens
     "sl_mature":        10.0,    # Stage 10: SL % for mature tokens
     "score_safe":       50.0,    # Auto buy: SAFE min score % (raised from 40)
@@ -2669,7 +2669,7 @@ def _process_new_token(token_address: str, pair_address: str, source: str = "web
     _discovery_queue.put(token_address)
 
 # ========== POSITION MONITOR ==========
-def add_position_to_monitor(session_id, token_address, token_name, entry_price, size_bnb, stop_loss_pct=12.0):
+def add_position_to_monitor(session_id, token_address, token_name, entry_price, size_bnb, stop_loss_pct=15.0):
     with monitor_lock:
         if entry_price <= 0:
             print(f"❌ Monitoring BLOCKED: price=0 for {token_address[:10]}")
@@ -2832,7 +2832,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     # Paper mode: balance simulate karo (real mode mein skip)
     if TRADE_MODE != "real":
         sess["paper_balance"] = round(paper_balance - size_bnb, 6)
-    _sl = CHECKLIST_SETTINGS.get("sl_new", 12.0)
+    _sl = CHECKLIST_SETTINGS.get("sl_new", 15.0)
     add_position_to_monitor(AUTO_SESSION_ID, address, token_name or address[:10], entry_price, size_bnb, stop_loss_pct=_sl)
     _bnb_at_buy = market_cache.get("bnb_price", 0)  # real only — DataGuard already verified
     # ── Buy Reasoning — kyu buy kiya ──
@@ -2856,7 +2856,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         "size_bnb":       size_bnb,
         "orig_size_bnb":  size_bnb,
         "bought_usd":     round(size_bnb * _bnb_at_buy, 2),
-        "sl_pct":         CHECKLIST_SETTINGS.get("sl_new", 12.0),
+        "sl_pct":         CHECKLIST_SETTINGS.get("sl_new", 15.0),
         "trail_pct":      20.0,
         "tp_sold":        0.0,
         "banked_pnl_bnb": 0.0,
@@ -3807,7 +3807,7 @@ def auto_position_manager():
                     if _rp3:
                         _rp3["ath_price"] = current
                 tp_sold = _pos_data.get("tp_sold", 0.0)
-                sl_pct  = _pos_data.get("sl_pct", 12.0)
+                sl_pct  = _pos_data.get("sl_pct", 15.0)
                 if entry <= 0:
                     continue
 
@@ -3897,7 +3897,7 @@ def auto_position_manager():
                         _pos_data["pnl_high"] = pnl
                         _pnl_high = pnl
 
-                    _entry_sl = _pos_data.get("sl_pct", 12.0)
+                    _entry_sl = _pos_data.get("sl_pct", 15.0)
 
                     # ── MomDead pre-calc: HardSL se pehle calculate karo taaki priority sahi rahe ──
                     _vol_live   = _get_vol_pressure_rt(addr)
@@ -5876,7 +5876,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             "size_bnb": size_bnb,
             "orig_size_bnb": size_bnb,
             "bought_usd": round(size_bnb * market_cache.get("bnb_price",0), 2),
-            "sl_pct": 12.0,   # FIX v38 D: 20% → 12% (same as checklist — FM coins bhi tight SL)
+            "sl_pct": 15.0,   # FIX v38 D: 20% → 12% (same as checklist — FM coins bhi tight SL)
             "trail_pct": 20.0,        # FIX B: position manager ke liye
             "tp_sold": 0.0,
             "banked_pnl_bnb": 0.0,
@@ -7297,7 +7297,7 @@ def _startup_once():
                                         continue
                                     # ✅ FIX: Full position data restore — tp_sold, sl_pct, bought_usd sab wapas
                                     _tp_sold   = float(_pd.get("tp_sold",    0.0))
-                                    _sl_pct    = float(_pd.get("sl_pct",    12.0))
+                                    _sl_pct    = float(_pd.get("sl_pct",    15.0))
                                     _size_bnb  = float(_pd.get("size_bnb",  AUTO_BUY_SIZE_BNB))
                                     _bought_usd= float(_pd.get("bought_usd", 0.0))
                                     # orig_size_bnb: DB se lo, warna tp_sold se back-calculate karo
@@ -7909,7 +7909,7 @@ def auto_stats_route():
             "size":           f"{sz_rem:.4f} BNB",
             "bought_usd":     pos.get("bought_usd") or round(pos.get("size_bnb", AUTO_BUY_SIZE_BNB) * bnb_price, 2),
             "bought_at":      pos.get("bought_at", ""),
-            "sl_pct":         pos.get("sl_pct", 12.0),
+            "sl_pct":         pos.get("sl_pct", 15.0),
             "tp_sold":        pos.get("tp_sold", 0.0),
             "banked_pnl_bnb": banked,
             "tp_events":      pos.get("tp_events", []),
