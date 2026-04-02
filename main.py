@@ -3040,8 +3040,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 "signals_used": _signals_used,
                 "snipe_source": _buy_rsn.get("source", "checklist"),
                 "snipe_strategy": _buy_rsn.get("strategy", "Normal_Checklist"),
-                "ath_price":    monitored_positions.get(address, {}).get("high", current),
-                "ath_pct":      round((monitored_positions.get(address, {}).get("high", current) - entry) / entry * 100, 1) if entry > 0 else 0,
+                "ath_price":    pos.get("ath_price") or monitored_positions.get(address, {}).get("high", current),
+                "ath_pct":      round(((pos.get("ath_price") or monitored_positions.get(address, {}).get("high", current)) - entry) / entry * 100, 1) if entry > 0 else 0,
                 "pnl_high":     pos.get("pnl_high", 0.0),
                 "hold_minutes": round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds() / 60, 1) if bought_at_str else 0
 })
@@ -3644,6 +3644,9 @@ def continuous_learning():
                                                         monitored_positions[_addr]["current"] = _price
                                                         if _price > monitored_positions[_addr].get("high", 0):
                                                             monitored_positions[_addr]["high"] = _price
+                                                            _rp = auto_trade_stats["running_positions"].get(_addr)
+                                                            if _rp:
+                                                                _rp["ath_price"] = _price
                                 except Exception:
                                     pass
                             else:
@@ -3655,6 +3658,9 @@ def continuous_learning():
                                             monitored_positions[_addr]["current"] = _price
                                             if _price > monitored_positions[_addr].get("high", 0):
                                                 monitored_positions[_addr]["high"] = _price
+                                                _rp2 = auto_trade_stats["running_positions"].get(_addr)
+                                                if _rp2:
+                                                    _rp2["ath_price"] = _price
                         except Exception:
                             pass
                 except Exception as _pe:
@@ -3797,6 +3803,9 @@ def auto_position_manager():
                     with monitor_lock:
                         if addr in monitored_positions:
                             monitored_positions[addr]["high"] = current
+                    _rp3 = auto_trade_stats["running_positions"].get(addr)
+                    if _rp3:
+                        _rp3["ath_price"] = current
                 tp_sold = _pos_data.get("tp_sold", 0.0)
                 sl_pct  = _pos_data.get("sl_pct", 12.0)
                 if entry <= 0:
