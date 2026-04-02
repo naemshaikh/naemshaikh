@@ -5517,7 +5517,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
             # 3. Holders strictly increasing
             green_holders = sum(1 for i in range(1, len(ub_history)) if ub_history[i] > ub_history[i-1])
-            if green_holders >= 5:
+            if green_holders >= 4:
                 score += 2
             else:
                 reasons.append("holders_stagnant(" + str(green_holders) + "/6)")
@@ -5526,7 +5526,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             steady = True
             if len(price_samples) >= 4:
                 diffs = [abs(price_samples[i] - price_samples[i-1]) / max(price_samples[i-1], 1e-18) * 100 for i in range(1, len(price_samples))]
-                if max(diffs) > 25:
+                if max(diffs) > 50:
                     steady = False
                     reasons.append("spike_" + str(int(max(diffs))) + "%")
             if steady:
@@ -5549,7 +5549,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     reasons.append("pump_with_vol_drop")
                     score -= 1
 
-            genuine = score >= 6
+            genuine = score >= 4
             return genuine, reasons, score
         while time.time() < _t_end_loop:
             try:
