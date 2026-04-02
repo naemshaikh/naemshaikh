@@ -3890,6 +3890,27 @@ def auto_position_manager():
 
                     _entry_sl = _pos_data.get("sl_pct", 12.0)
 
+                    # ── MomDead pre-calc: HardSL se pehle calculate karo taaki priority sahi rahe ──
+                    _vol_live   = _get_vol_pressure_rt(addr)
+                    _bv5_live   = _vol_live.get("buy_vol5", 0.0)
+                    _b5_live    = _vol_live.get("buys5",    0)
+                    _s5_live    = _vol_live.get("sells5",   0)
+
+                    _bought_str  = _pos_data.get("bought_at", "")
+                    try:
+                        _hold_secs = (datetime.utcnow() - datetime.fromisoformat(_bought_str[:19])).total_seconds() if _bought_str else 999
+                    except Exception:
+                        _hold_secs = 999
+
+                    _vwc = auto_trade_stats["vol_weak_count"]
+                    if _bv5_live < 0.5:
+                        _vwc[addr] = _vwc.get(addr, 0) + 1
+                    else:
+                        _vwc[addr] = 0
+                    _vol_dying  = _vwc.get(addr, 0) >= 3
+                    _fading     = (pnl < (_pnl_high - 15)) or (_hold_secs > 30 and pnl < -8 and _pnl_high < 5)
+                    _mom_dead   = _vol_dying and _fading and _hold_secs > 20
+
                     # ── ENTRY GUARD v44: TP1 se pehle only, fake signal protection ──
                     # Case 1: Seedha neeche — 3 consecutive no-buyer readings → min loss exit
                     # Case 2: Thoda upar fir girna — tight trail, sell volume confirm
@@ -3927,52 +3948,14 @@ def auto_position_manager():
                                 continue
 
                     # ── Hard SL: entry se seedha neeche, koi pump nahi tha ──
-                    if pnl <= -_entry_sl and _pnl_high < 5.0:
+                    # FIX v45: MomDead ko priority — agar momentum still alive hai (buyers hain)
+                    # toh HardSL nahi chalega, MomDead ka chance milega pehle
+                    if pnl <= -_entry_sl and _pnl_high < 5.0 and not _mom_dead:
                         _auto_paper_sell(addr, f"HardSL -{_entry_sl:.0f}% 🔴", 100.0)
                         blacklist_token(addr, f"HardSL rebuy block")
                         _trail_triggered = True
                         print(f"🔴 HardSL: {addr[:10]} pnl={pnl:.1f}%")
                         continue
-
-                    # ── FIX v36 Bug2+3: MomDead — buy se turant active, tight trail ──
-                    # Bug2 fix: _fading ab pnl_high se -15% trail karta hai (-20 tha)
-                    #           Pehle pnl_high=0 tha → _fading sirf pnl<-20% pe fire hota
-                    #           Ab pnl_high sahi hoga → jaise hi coin +50% se -15% gire = _fading=True
-                    # Bug3 fix: _sell_heavy mein b5=0,s5=0 wala edge case handle kiya
-                    #           Fresh buy pe RT data nahi hota → b5=s5=0
-                    #           Pehle: sell_heavy = (0 > 0*1.5) = False → MomDead kabhi fire nahi hota
-                    #           Ab: agar hold > 45s aur pnl <= -20% → EmergSL fire karo
-                    _vol_live   = _get_vol_pressure_rt(addr)
-                    _bv5_live   = _vol_live.get("buy_vol5", 0.0)
-                    _b5_live    = _vol_live.get("buys5",    0)
-                    _s5_live    = _vol_live.get("sells5",   0)
-
-                    # Hold time — bought_at se calculate karo
-                    _bought_str  = _pos_data.get("bought_at", "")
-                    try:
-                        _hold_secs = (datetime.utcnow() - datetime.fromisoformat(_bought_str[:19])).total_seconds() if _bought_str else 999
-                    except Exception:
-                        _hold_secs = 999
-
-                    # FIX v42 I: vol_dying — bv5 < 0.5 = buyers weak = momentum dead
-                    # 辟谣侠 case: ATH se -86% gira lekin sell_heavy block kar raha tha
-                    # _sell_heavy hataya — redundant tha, vol_dying hi kaafi hai
-                    # FIX v43: 3 consecutive weak readings tab hi vol_dying=True
-                    _vwc = auto_trade_stats["vol_weak_count"]
-                    if _bv5_live < 0.5:
-                        _vwc[addr] = _vwc.get(addr, 0) + 1
-                    else:
-                        _vwc[addr] = 0
-                    _vol_dying  = _vwc.get(addr, 0) >= 3
-
-                    # FIX Bug2: -15% trail (was -20), OR 30s ke baad -8% gir raha = fading
-                    _fading     = (pnl < (_pnl_high - 15)) or (_hold_secs > 30 and pnl < -8 and _pnl_high < 5)
-
-                    # FIX v42 I: _sell_heavy HATAYA — vol_dying + fading = kaafi
-                    # Agar buyers nahi hain (vol_dying) toh sellers naturally zyada hain
-                    # _sell_heavy ne sirf exit delay kiya — koi value nahi thi
-                    # FIX v39 F: 20s grace period intact
-                    _mom_dead   = _vol_dying and _fading and _hold_secs > 20
 
                     # Emergency SL: FIX v38 E: 45s → 20s — fast dump coins ke liye
                     # v37 Fix B se MomDead ab RT data nahi pe bhi fire hoga
