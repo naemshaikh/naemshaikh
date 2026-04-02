@@ -5547,9 +5547,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 recent_price_up = price_history[-1] > price_history[-2]
                 if recent_price_up and recent_vol_drop:
                     reasons.append("pump_with_vol_drop")
-                    score -= 1
+                    score -= 2
 
-            genuine = score >= 5
+            genuine = score >= 6
             return genuine, reasons, score
         while time.time() < _t_end_loop:
             try:
