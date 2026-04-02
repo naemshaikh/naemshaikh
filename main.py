@@ -1246,6 +1246,10 @@ def _get_pair_for_token(token_address: str) -> str:
     pair = _get_v2_pair(token_address)
     if pair:
         with _pair_addr_lock:
+            if len(_pair_addr_cache) > 500:
+                # oldest 100 entries remove karo
+                for _k in list(_pair_addr_cache.keys())[:100]:
+                    del _pair_addr_cache[_k]
             _pair_addr_cache[tl] = pair.lower()
     return pair.lower() if pair else ""
 
@@ -4002,6 +4006,7 @@ def auto_position_manager():
                             _vwc_cnt = auto_trade_stats["vol_weak_count"].get(addr, 0)
                             print(f"📉 MomDead [{_zone}]: {addr[:10]} pnl={pnl:.1f}% high={_pnl_high:.1f}% bv5={_bv5_live:.3f} s={_s5_live} b={_b5_live} hold={_hold_secs:.0f}s cnt={_vwc_cnt}")
                             auto_trade_stats["vol_weak_count"].pop(addr, None)  # FIX v43: cleanup
+                            auto_trade_stats["entry_guard_count"].pop(addr, None)  # memory fix
 
                         elif _emergency_sl:
                             _auto_paper_sell(addr, f"EmergSL -20% 🚨", 100.0)
@@ -4519,6 +4524,9 @@ def _fm_dev_history_onchain(dev_addr, w3=None):
 
     # Cache result
     with _fm_dev_cache_lock:
+        if len(_fm_dev_cache) > 300:
+            for _k in list(_fm_dev_cache.keys())[:100]:
+                del _fm_dev_cache[_k]
         _fm_dev_cache[dev_lower] = result
 
     return result
