@@ -3933,7 +3933,10 @@ def auto_position_manager():
 
                         # Case 1: No pump at all, buyers absent
                         if _pnl_high < 3.0 and pnl <= -2.0:
-                            if _bv5_live < 0.3:
+                            # FIX v46: Fast dump — 30s mein -8% se zyada gira
+                            # Buyers hone ke bawajood count reset mat karo (wash trade pattern)
+                            _fast_dump = pnl <= -8 and _hold_secs < 30
+                            if _bv5_live < 0.3 or _fast_dump:
                                 _egc[addr] = _egc.get(addr, 0) + 1
                             else:
                                 _egc[addr] = 0  # buyer aaya = reset, fake signal
@@ -3942,7 +3945,7 @@ def auto_position_manager():
                                 _auto_paper_sell(addr, f"EntryGuard NoMom -{abs(pnl):.1f}% 🔵", 100.0)
                                 _egc.pop(addr, None)
                                 _trail_triggered = True
-                                print(f"🔵 EntryGuard Case1: {addr[:10]} pnl={pnl:.1f}% bv5={_bv5_live:.3f}")
+                                print(f"🔵 EntryGuard Case1: {addr[:10]} pnl={pnl:.1f}% bv5={_bv5_live:.3f} fast_dump={_fast_dump}")
                                 continue
 
                         # Case 2: Pumped then fading — sell vol confirm karo
