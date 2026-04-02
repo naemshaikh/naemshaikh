@@ -3956,23 +3956,16 @@ def auto_position_manager():
                                 print(f"🔵 EntryGuard Case2: {addr[:10]} pnl={pnl:.1f}% high={_pnl_high:.1f}% sv5={_sv5_live:.3f}")
                                 continue
 
-                    # ── Hard SL: entry se seedha neeche, koi pump nahi tha ──
-                    # v46: Sirf tab apply hoga jab price kabhi entry ke upar nahi gaya (_pnl_high <= 0)
-                    # Agar upar gaya tha toh MomDead/trailing handle karega
-                    # Logic:
-                    #   -12% hit + momentum alive → hold (stop hunt ho sakta hai)
-                    #   -12% hit + momentum dead  → exit
-                    #   -20% hit → exit no matter what (absolute floor)
-                    if pnl <= -_entry_sl and _pnl_high <= 0:
-                        if _mom_dead or pnl <= -20.0:
-                            _sl_reason = f"HardSL Floor -20% 🔴" if pnl <= -20.0 else f"HardSL -{_entry_sl:.0f}% 🔴"
-                            _auto_paper_sell(addr, _sl_reason, 100.0)
-                            blacklist_token(addr, f"HardSL rebuy block")
-                            _trail_triggered = True
-                            print(f"🔴 HardSL: {addr[:10]} pnl={pnl:.1f}% mom_dead={_mom_dead}")
-                            continue
-                        else:
-                            print(f"⏳ HardSL held: {addr[:10]} pnl={pnl:.1f}% momentum alive, waiting for bounce or -20%")
+                    # ── Hard SL: safety net ──
+                    # Primary exit: MomDead — momentum dead hote hi sell (any %)
+                    # HardSL: sirf backup — agar -12% hit ho aur momentum dead hai
+                    #   momentum alive at -12% → HOLD (MomDead handle karega jab dead hoga)
+                    if pnl <= -_entry_sl and _mom_dead:
+                        _auto_paper_sell(addr, f"HardSL -{_entry_sl:.0f}% 🔴", 100.0)
+                        blacklist_token(addr, f"HardSL rebuy block")
+                        _trail_triggered = True
+                        print(f"🔴 HardSL: {addr[:10]} pnl={pnl:.1f}%")
+                        continue
 
                     # Emergency SL: FIX v38 E: 45s → 20s — fast dump coins ke liye
                     # v37 Fix B se MomDead ab RT data nahi pe bhi fire hoga
