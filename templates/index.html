@@ -1648,7 +1648,7 @@ function _updateScFMTab(d) {
 
 async function fetchScannerStats() {
   try {
-    const d = await fetchJSON('/scanner-stats', {}, 5000);
+    const d = await fetchJSON('/scanner-stats', {}, 12000);
     if (!d) return;
     _scData = d;
     _lastScannerFetch = Date.now();
