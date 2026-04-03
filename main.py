@@ -5711,9 +5711,13 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         # Last 2 funds readings se volume direction pata karo
         _entry_price_check = _price2  # momentum confirm waqt ka price
         _fh = _funds_history  # already tracked in momentum loop
-        _vol_rising = len(_fh) >= 2 and _fh[-1] > _fh[-2]  # volume upar ja raha hai = buy pressure
-        _bv_now = 1.0 if _vol_rising else 0.0
-        _sv_now = 0.0 if _vol_rising else 1.0
+        # Agar 2 se kam entries hain → data nahi → turant buy (safe default)
+        if len(_fh) < 2:
+            _bv_now = 1.0; _sv_now = 0.0
+        else:
+            _vol_rising = _fh[-1] > _fh[-2]  # volume upar = buy pressure
+            _bv_now = 1.0 if _vol_rising else 0.0
+            _sv_now = 0.0 if _vol_rising else 1.0
 
         if _sv_now > _bv_now:
             # Sell pressure hai — price reversal ka wait karo
