@@ -5349,19 +5349,21 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             except: pass
 
         def _fetch_price_baseline():
-            # FIX v29: Stage 1 ke saath hi t=0 price snapshot lo
+            # FIX v47: _fetch_token_info result reuse karo — duplicate RPC call hataya
             try:
-                _snap = _fm_get_token_info(token_addr, _w3a)
-                if _snap:
-                    _price_baseline[0] = _snap.get("lastPrice", 0)
-                    _funds_baseline[0] = _snap.get("funds", 0)
+                if _info_res[0]:
+                    _price_baseline[0] = _info_res[0].get("lastPrice", 0)
+                    _funds_baseline[0] = _info_res[0].get("funds", 0)
             except: pass
 
-        with _cf.ThreadPoolExecutor(max_workers=4) as _ex:
-            _ex.submit(_fetch_token_info)
-            _ex.submit(_fetch_dev_balance)
-            _ex.submit(_prefetch_gas_nonce_parallel)
-            _ex.submit(_fetch_price_baseline)  # FIX v29: 4th thread
+        with _cf.ThreadPoolExecutor(max_workers=3) as _ex:
+            f1 = _ex.submit(_fetch_token_info)
+            f2 = _ex.submit(_fetch_dev_balance)
+            f3 = _ex.submit(_prefetch_gas_nonce_parallel)
+            # Wait for token info first, then extract baseline (no extra RPC call)
+            try: f1.result(timeout=2)
+            except: pass
+            _fetch_price_baseline()
 
         info = _info_res[0]
         if not info:
@@ -5418,20 +5420,51 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         w3 = w3q
         if not w3: _skip("QuickNode not available"); return
 
+        # FIX v47: Pre-sampling — Stage1 filter pass hone ke baad se hi
+        # background mein price history collect karna shuru karo
+        # Jab momentum loop shuru ho, already 3-5 samples ready honge
+        _pre_price_history = []
+        _pre_funds_history = []
+        _pre_price_samples = []
+        _pre_stop = [False]
+
+        def _pre_sample_loop():
+            _w3ps = w3q
+            if not _w3ps: return
+            while not _pre_stop[0] and len(_pre_price_history) < 8:
+                try:
+                    _snap = _fm_get_token_info(token_addr, _w3ps)
+                    if _snap and not _snap.get("liquidityAdded"):
+                        _p = _snap.get("lastPrice", 0)
+                        _f = _snap.get("funds", 0)
+                        if _p > 0:
+                            _pre_price_history.append(float(_p))
+                            _pre_funds_history.append(float(_f))
+                            _pre_price_samples.append(float(_p))
+                except: pass
+                time.sleep(0.1)
+
+        import threading as _th47
+        _pre_sampler = _th47.Thread(target=_pre_sample_loop, daemon=True)
+        _pre_sampler.start()
+
         # FIX v29: _price_baseline Stage 1 ke saath fetch hua — reuse karo
         if _price_baseline[0] > 0:
             _price1 = _price_baseline[0]
             _funds1 = _funds_baseline[0]
             # Graduation check still needed
             _info_fresh = _get_token_info_cached(token_addr, w3, ttl=0.5)
-            if not _info_fresh: _skip("Stage2 snapshot failed"); return
-            if _info_fresh.get("liquidityAdded"): _skip("graduated before Stage2"); return
+            if not _info_fresh: _pre_stop[0] = True; _skip("Stage2 snapshot failed"); return
+            if _info_fresh.get("liquidityAdded"): _pre_stop[0] = True; _skip("graduated before Stage2"); return
         else:
             _info_fresh = _get_token_info_cached(token_addr, w3, ttl=0.5)
-            if not _info_fresh: _skip("Stage2 snapshot failed"); return
-            if _info_fresh.get("liquidityAdded"): _skip("graduated before Stage2"); return
+            if not _info_fresh: _pre_stop[0] = True; _skip("Stage2 snapshot failed"); return
+            if _info_fresh.get("liquidityAdded"): _pre_stop[0] = True; _skip("graduated before Stage2"); return
             _price1 = _info_fresh.get("lastPrice", 0)
             _funds1 = _info_fresh.get("funds", 0)
+
+        _pre_stop[0] = True  # Pre-sampler stop karo
+
         _MIN_BUYERS = _fm_filters['buyers_min']
         _price2 = 0
         _funds2 = 0
@@ -5439,15 +5472,15 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _total_buys = 0
         _dbg_price1 = float(_price1)  # FIX v32: Supabase ke liye
         # FIX v31: DEBUG — Stage2 shuru, price1 baseline log karo
-        print(f"⏱️ [FM-DEBUG] STAGE2 START | +{int((time.time()-_t_start)*1000)}ms | price1={_price1:.6e} funds1={_funds1/1e18:.4f}BNB min_buyers={_MIN_BUYERS}")
+        print(f"⏱️ [FM-DEBUG] STAGE2 START | +{int((time.time()-_t_start)*1000)}ms | price1={_price1:.6e} funds1={_funds1/1e18:.4f}BNB min_buyers={_MIN_BUYERS} pre_samples={len(_pre_price_history)}")
         # FIX v34: Ultra-fast momentum monitor — 90-second max window, early exit
         _t_start_loop = time.time()
         _t_end_loop = _t_start_loop + _fm_filters.get("momentum_window_sec", 90)
         _check_interval = _fm_filters.get("momentum_interval_sec", 0.1)
-        
+
         _price1 = _price_baseline[0] if _price_baseline[0] > 0 else _price1
         _funds1 = _funds_baseline[0] if _funds_baseline[0] > 0 else _funds1
-        
+
         _momentum_hit = False
         _buyers_checked = False
         _ub = 0
@@ -5455,16 +5488,17 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _block_wallets_prev = {}
         _block_wallets_curr = {}
         _funds_prev = _funds1
-        _price_samples = []
         _bc_prev = 0.0
         _fake_count = 0
         _last_fail_reasons = []
-        _price_history = []   # sustained price trend track
-        _funds_history = []   # sustained volume trend track
+        # FIX v47: Pre-sampled history inject karo — momentum faster detect hoga
+        _price_history = list(_pre_price_history[-6:])
+        _funds_history = list(_pre_funds_history[-6:])
+        _price_samples = list(_pre_price_samples[-6:])
         _ub_history    = []   # holders increasing trend track
         _iter_count    = 0    # SPEED: buyers throttle counter
 
-        print(f"⏱️ [FM-DEBUG] MOMENTUM MONITOR START | window={_fm_filters.get('momentum_window_sec', 90)}s interval={_check_interval}s")
+        print(f"⏱️ [FM-DEBUG] MOMENTUM MONITOR START | window={_fm_filters.get('momentum_window_sec', 90)}s interval={_check_interval}s pre_samples={len(_price_history)}")
 
         import concurrent.futures as _cf2
         _mom_executor = _cf2.ThreadPoolExecutor(max_workers=2)
