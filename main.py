@@ -5721,7 +5721,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             print(f"⏳ [FM] Sell pressure at entry: sv={_sv_now:.3f} bv={_bv_now:.3f} — waiting for reversal")
             _reversal_found = False
             _price_low      = _entry_price_check  # lowest price track karo
-            for _ri in range(20):  # max ~4s (20 x 0.2s)
+            for _ri in range(50):  # max ~10s (50 x 0.2s)
                 time.sleep(0.2)
                 try:
                     _ri_info = _get_token_info_cached(token_addr, w3, ttl=0.1)
@@ -5744,7 +5744,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 except Exception:
                     break
             if not _reversal_found:
-                _skip("sell pressure — no reversal in 4s"); return
+                _skip("sell pressure — no reversal in 10s"); return
         else:
             print(f"✅ [FM] Buy pressure at entry: bv={_bv_now:.3f} sv={_sv_now:.3f} — ENTERING NOW")
 
