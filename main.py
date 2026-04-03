@@ -3922,8 +3922,9 @@ def auto_position_manager():
                     else:
                         _vwc[addr] = 0
                     _vol_dying  = _vwc.get(addr, 0) >= 3
-                    _fading     = (pnl < (_pnl_high - 15)) or (_hold_secs > 30 and pnl < -8 and _pnl_high < 5)
-                    _mom_dead   = _vol_dying and _fading and _hold_secs > 20
+                    # FIX v51: _fading condition hatao — momentum dead = buyers nahi, simple
+                    # Price upar gaya ya neeche — irrelevant, sirf buyers check karo
+                    _mom_dead   = _vol_dying and _hold_secs > 20
 
                     # ── ENTRY GUARD v44: TP1 se pehle only, fake signal protection ──
                     # Case 1: Seedha neeche — 3 consecutive no-buyer readings → min loss exit
