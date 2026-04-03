@@ -3935,19 +3935,25 @@ def auto_position_manager():
 
                         # Case 1: No pump at all, buyers absent
                         if _pnl_high < 3.0 and pnl <= -2.0:
-                            # FIX v46: Fast dump — 30s mein -8% se zyada gira
-                            # Buyers hone ke bawajood count reset mat karo (wash trade pattern)
-                            _fast_dump = pnl <= -8 and _hold_secs < 30
-                            if _bv5_live < 0.3 or _fast_dump:
+                            # Fast dump — 10s mein -8% → turant exit, no readings wait
+                            _fast_dump = pnl <= -8 and _hold_secs < 10
+                            if _fast_dump:
+                                _auto_paper_sell(addr, f"FastDump -{abs(pnl):.1f}% 🔵", 100.0)
+                                _egc.pop(addr, None)
+                                _trail_triggered = True
+                                print(f"🔵 FastDump: {addr[:10]} pnl={pnl:.1f}% hold={_hold_secs:.0f}s")
+                                continue
+
+                            if _bv5_live < 0.3:
                                 _egc[addr] = _egc.get(addr, 0) + 1
                             else:
-                                _egc[addr] = 0  # buyer aaya = reset, fake signal
+                                _egc[addr] = 0  # buyer aaya = reset
 
                             if _egc.get(addr, 0) >= 3:
                                 _auto_paper_sell(addr, f"EntryGuard NoMom -{abs(pnl):.1f}% 🔵", 100.0)
                                 _egc.pop(addr, None)
                                 _trail_triggered = True
-                                print(f"🔵 EntryGuard Case1: {addr[:10]} pnl={pnl:.1f}% bv5={_bv5_live:.3f} fast_dump={_fast_dump}")
+                                print(f"🔵 EntryGuard Case1: {addr[:10]} pnl={pnl:.1f}% bv5={_bv5_live:.3f}")
                                 continue
 
                         # Case 2: Pumped then fading — sell vol confirm karo
@@ -5711,13 +5717,26 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         # Last 2 funds readings se volume direction pata karo
         _entry_price_check = _price2  # momentum confirm waqt ka price
         _fh = _funds_history  # already tracked in momentum loop
-        # Agar 2 se kam entries hain → data nahi → turant buy (safe default)
-        if len(_fh) < 2:
-            _bv_now = 1.0; _sv_now = 0.0
+
+        # Price direction check — _fh < 2 ho ya >= 2, dono case mein price compare karo
+        # _price_history bhi available hai momentum loop se
+        _ph = _price_history
+        if len(_ph) >= 2:
+            # Price last 2 readings se direction
+            _price_rising = _ph[-1] >= _ph[-2]
         else:
-            _vol_rising = _fh[-1] > _fh[-2]  # volume upar = buy pressure
-            _bv_now = 1.0 if _vol_rising else 0.0
-            _sv_now = 0.0 if _vol_rising else 1.0
+            # Single reading — latest price vs baseline compare karo
+            _latest_p = _ph[-1] if _ph else _price2
+            _price_rising = _latest_p >= _price1  # momentum baseline se upar = buy pressure
+
+        if len(_fh) >= 2:
+            _vol_rising = _fh[-1] > _fh[-2]
+        else:
+            _vol_rising = _price_rising  # vol data nahi → price se infer karo
+
+        # Dono agree karein toh strong signal
+        _bv_now = 1.0 if (_price_rising and _vol_rising) else 0.0
+        _sv_now = 0.0 if (_price_rising and _vol_rising) else 1.0
 
         if _sv_now > _bv_now:
             # Sell pressure hai — price reversal ka wait karo
