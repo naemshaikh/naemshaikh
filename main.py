@@ -5737,13 +5737,11 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         _price_low = _ri_price  # naya low note karo
                     elif _ri_price > _price_low * 1.01:
                         # Price low se 1% upar aaya = sellers gone, buyers aa gaye
-                        _vol_ri = _get_vol_pressure_rt(token_addr)
-                        _bv_ri  = _vol_ri.get("buy_vol5", 0.0)
-                        if _bv_ri > 0.1:  # buyers genuine hain
-                            print(f"✅ [FM] Reversal confirmed: price={_ri_price:.2e} low={_price_low:.2e} bv={_bv_ri:.3f} — ENTERING")
-                            _entry_price_check = _ri_price  # updated entry price
-                            _reversal_found = True
-                            break
+                        # No extra lock call — price reversal hi kaafi confirmation hai
+                        print(f"✅ [FM] Reversal confirmed: price={_ri_price:.2e} low={_price_low:.2e} — ENTERING")
+                        _entry_price_check = _ri_price
+                        _reversal_found = True
+                        break
                 except Exception:
                     break
             if not _reversal_found:
