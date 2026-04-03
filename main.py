@@ -5565,7 +5565,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             score = 0
             reasons = []
 
-            if len(price_history) < 6 or len(funds_history) < 6 or len(ub_history) < 6:
+            if len(price_history) < 6 or len(funds_history) < 6:
                 return False, ["insufficient_data"], 0
 
             # 1. Price sustained (at least 4/6 green)
@@ -5582,12 +5582,15 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             else:
                 reasons.append("vol_flat_or_dying(" + str(green_vol) + "/6)")
 
-            # 3. Holders strictly increasing
-            green_holders = sum(1 for i in range(1, len(ub_history)) if ub_history[i] > ub_history[i-1])
-            if green_holders >= 5:
-                score += 2
+            # 3. Holders strictly increasing (only if enough data)
+            if len(ub_history) >= 6:
+                green_holders = sum(1 for i in range(1, len(ub_history)) if ub_history[i] > ub_history[i-1])
+                if green_holders >= 5:
+                    score += 2
+                else:
+                    reasons.append("holders_stagnant(" + str(green_holders) + "/6)")
             else:
-                reasons.append("holders_stagnant(" + str(green_holders) + "/6)")
+                score += 2  # data nahi hai — penalize mat karo
 
             # 4. No big spike (bot wash trade)
             steady = True
@@ -5600,13 +5603,14 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 score += 2
 
             # 5. Single-block heavy buy concentration
-            deltas = [ub_history[i] - ub_history[i-1] for i in range(1, len(ub_history))]
-            max_delta = max(deltas) if deltas else 0
-            if max_delta > 8:
-                avg_delta = sum(deltas) / len(deltas)
-                if max_delta > avg_delta * 2.5:
-                    reasons.append("heavy_block_buy(" + str(max_delta) + ")")
-                    score -= 1
+            if len(ub_history) >= 2:
+                deltas = [ub_history[i] - ub_history[i-1] for i in range(1, len(ub_history))]
+                max_delta = max(deltas) if deltas else 0
+                if max_delta > 8:
+                    avg_delta = sum(deltas) / len(deltas)
+                    if max_delta > avg_delta * 2.5:
+                        reasons.append("heavy_block_buy(" + str(max_delta) + ")")
+                        score -= 1
 
             # 6. Pump ke dauran volume drop
             if len(funds_history) >= 3:
