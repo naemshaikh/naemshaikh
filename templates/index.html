@@ -4165,7 +4165,7 @@ setInterval(fetchNotifications, 10000);
     if (icon) icon.textContent = '⏳';
     fetchScannerStats();
     const _fmCtrl = new AbortController();
-    const _fmTimer = setTimeout(() => _fmCtrl.abort(), 8000);
+    const _fmTimer = setTimeout(() => _fmCtrl.abort(), 25000);
     fetch('/fm-events', {signal: _fmCtrl.signal})
       .then(r => r.json())
       .then(d => {
