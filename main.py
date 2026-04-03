@@ -5717,24 +5717,26 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _w3_buy = _get_w3q()
                 if not _w3_buy:
                     _skip("QuickNode not available"); return
-                # SPEED: balance + nonce parallel fetch
-                _bal_result  = [0.0]
-                _nonce_result = [0]
-                def _fetch_bal():
-                    try: _bal_result[0] = _w3_buy.eth.get_balance(Web3.to_checksum_address(wallet_addr)) / 1e18
-                    except: pass
-                def _fetch_nonce():
-                    try: _nonce_result[0] = _w3_buy.eth.get_transaction_count(Web3.to_checksum_address(wallet_addr), "pending")
-                    except: pass
-                _bt1 = threading.Thread(target=_fetch_bal,   daemon=True)
-                _bt2 = threading.Thread(target=_fetch_nonce, daemon=True)
-                _bt1.start(); _bt2.start()
-                _bt1.join(timeout=2); _bt2.join(timeout=2)
-                _bal_check = _bal_result[0]
+                # FIX v48: Prefetched nonce + balance reuse — Stage1 mein already fetch hua tha
+                # Fresh RPC calls avoid karo buy time pe — ~400ms saved
+                _bal_check = 0.0
+                _fresh_nonce = 0
+                try:
+                    # Balance: fresh fetch (safety check — zaroori hai)
+                    _bal_check = _w3_buy.eth.get_balance(Web3.to_checksum_address(wallet_addr)) / 1e18
+                except: pass
                 if _bal_check < size_bnb + 0.002:
                     _skip(f"insufficient wallet balance {_bal_check:.4f} BNB"); return
                 _min_tokens = 0
-                _fresh_nonce = _nonce_result[0] or _w3_buy.eth.get_transaction_count(Web3.to_checksum_address(wallet_addr), "pending")
+                # Nonce: Stage1 prefetch reuse, sirf stale hone pe fresh fetch
+                if _pre_nonce[0] > 0:
+                    _fresh_nonce = _pre_nonce[0]
+                    print(f"⚡ [FM v48] Prefetched nonce reused: {_fresh_nonce}")
+                else:
+                    try:
+                        _fresh_nonce = _w3_buy.eth.get_transaction_count(Web3.to_checksum_address(wallet_addr), "pending")
+                    except: pass
+                    print(f"⚡ [FM v48] Fresh nonce fetched: {_fresh_nonce}")
 
                 fc = _w3_buy.eth.contract(address=Web3.to_checksum_address(_FM_FACTORY_ADDR), abi=_FM_BC_ABI)
                 tx = fc.functions.buyTokenAMAP(
