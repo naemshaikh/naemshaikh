@@ -5299,7 +5299,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 }, daemon=True).start()
 
     try:
-        if not AUTO_TRADE_ENABLED or not FM_SNIPER_ENABLED: return
+        if not AUTO_TRADE_ENABLED or not FM_SNIPER_ENABLED:
+            print(f"⛔ [FM] Snipe blocked: AUTO={AUTO_TRADE_ENABLED} FM={FM_SNIPER_ENABLED}")
+            return
         if len(auto_trade_stats.get("running_positions", {})) >= AUTO_MAX_POSITIONS:
             _skip("max positions"); return
         sess = get_or_create_session(AUTO_SESSION_ID)
