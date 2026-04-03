@@ -5705,6 +5705,49 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         print(f"✅ [FM] ALL PASS: mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}%")
         _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
 
+        # ========== SMART ENTRY: Buy/Sell pressure check ==========
+        # Momentum confirm ho gaya — ab check karo ki abhi buy pressure hai ya sell
+        # Buy pressure → turant entry
+        # Sell pressure → price monitor karo
+        #   → Price wapas upar aaya (sellers gone, buyers aaye) → ENTRY
+        #   → Price aur neeche gaya → SKIP (genuine dump)
+        _entry_price_check = _price2  # momentum confirm waqt ka price
+        _vol_now = _get_vol_pressure_rt(token_addr)
+        _bv_now  = _vol_now.get("buy_vol5", 0.0)
+        _sv_now  = _vol_now.get("sell_vol5", 0.0)
+
+        if _sv_now > _bv_now:
+            # Sell pressure hai — price reversal ka wait karo
+            print(f"⏳ [FM] Sell pressure at entry: sv={_sv_now:.3f} bv={_bv_now:.3f} — waiting for reversal")
+            _reversal_found = False
+            _price_low      = _entry_price_check  # lowest price track karo
+            for _ri in range(20):  # max ~4s (20 x 0.2s)
+                time.sleep(0.2)
+                try:
+                    _ri_info = _get_token_info_cached(token_addr, w3, ttl=0.1)
+                    if not _ri_info: break
+                    if _ri_info.get("liquidityAdded"): 
+                        _skip("graduated during entry wait"); return
+                    _ri_price = _ri_info.get("lastPrice", 0)
+                    if _ri_price <= 0: continue
+                    if _ri_price < _price_low:
+                        _price_low = _ri_price  # naya low note karo
+                    elif _ri_price > _price_low * 1.01:
+                        # Price low se 1% upar aaya = sellers gone, buyers aa gaye
+                        _vol_ri = _get_vol_pressure_rt(token_addr)
+                        _bv_ri  = _vol_ri.get("buy_vol5", 0.0)
+                        if _bv_ri > 0.1:  # buyers genuine hain
+                            print(f"✅ [FM] Reversal confirmed: price={_ri_price:.2e} low={_price_low:.2e} bv={_bv_ri:.3f} — ENTERING")
+                            _entry_price_check = _ri_price  # updated entry price
+                            _reversal_found = True
+                            break
+                except Exception:
+                    break
+            if not _reversal_found:
+                _skip("sell pressure — no reversal in 4s"); return
+        else:
+            print(f"✅ [FM] Buy pressure at entry: bv={_bv_now:.3f} sv={_sv_now:.3f} — ENTERING NOW")
+
         # ========== BUY EXECUTION ==========
         size_bnb = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
         token_name = token_addr[:8]
