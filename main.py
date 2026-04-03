@@ -3049,8 +3049,9 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 "pnl_high":     pos.get("pnl_high", 0.0),
                 "hold_minutes": round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds() / 60, 1) if bought_at_str else 0
 })
-        if len(auto_trade_stats["trade_history"]) > 10000:
-            auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-10000:]
+        if len(auto_trade_stats["trade_history"]) > 500:
+            # FIX v50: in-memory 500 kaafi — Supabase mein full history hai
+            auto_trade_stats["trade_history"] = auto_trade_stats["trade_history"][-500:]
         
         if sell_pct >= 100.0:
             try:
@@ -4420,6 +4421,7 @@ def _fm_get_unique_buyers(token_addr, w3=None):
 
 _fm_sniped      = set()
 _fm_sniped_lock = threading.Lock()
+_fm_sniped_ts:  dict = {}  # FIX v50: timestamp per entry — stale cleanup ke liye
 
 # FIX v15: Sell dedup — ek token pe ek hi sell ek waqt mein
 _fm_selling_set  = set()
@@ -5248,6 +5250,12 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         data = _fm_get_token_info(addr, w3)
         if data:
             _info_cache[key] = {'data': data, 'ts': now}
+            # FIX v50: cache size limit — unbounded growth prevent karo
+            if len(_info_cache) > 200:
+                # Oldest entries remove karo
+                _sorted = sorted(_info_cache.items(), key=lambda x: x[1]['ts'])
+                for _ck, _ in _sorted[:50]:
+                    _info_cache.pop(_ck, None)
         return data
 
     # Analytics containers
@@ -6101,6 +6109,13 @@ def poll_four_meme_v2():
             if _al in _seen: return
             _seen.add(_al)
             _fm_sniped.add(_al)  # turant add — koi doosra thread aage nahi nikal sakta
+            _fm_sniped_ts[_al] = time.time()
+            # FIX v50: 1 hour se purane entries cleanup karo — memory leak fix
+            _now_ts = time.time()
+            _stale = [k for k, t in _fm_sniped_ts.items() if _now_ts - t > 3600]
+            for _sk in _stale:
+                _fm_sniped.discard(_sk)
+                _fm_sniped_ts.pop(_sk, None)
         if len(_seen) > 1000: _seen.clear()
 
         if not FM_SNIPER_ENABLED: return
