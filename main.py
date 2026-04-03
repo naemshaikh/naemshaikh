@@ -1,4 +1,15 @@
 import os
+import signal as _signal
+
+# Global shutdown flag — SIGTERM pe set hoga, momentum threads gracefully exit honge
+_BOT_SHUTDOWN = False
+
+def _handle_sigterm(signum, frame):
+    global _BOT_SHUTDOWN
+    _BOT_SHUTDOWN = True
+    print("⚠️ SIGTERM received — graceful shutdown started")
+
+_signal.signal(_signal.SIGTERM, _handle_sigterm)
 import re
 import gc
 from flask import Flask, render_template, request, jsonify
@@ -5605,7 +5616,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
             genuine = score >= 6
             return genuine, reasons, score
-        while time.time() < _t_end_loop:
+        while time.time() < _t_end_loop and not _BOT_SHUTDOWN:
             try:
                 _elapsed = time.time() - _t_start_loop
                 _res = {}

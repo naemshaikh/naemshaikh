@@ -8,7 +8,7 @@ timeout          = 120
 keepalive        = 5
 preload_app      = False
 loglevel         = "info"
-graceful_timeout = 30
+graceful_timeout = 120
 worker_exit_on_app_init_error = False
 
 # Health check logs filter karo — clutter kam karo
