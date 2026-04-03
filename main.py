@@ -1582,7 +1582,7 @@ _smart_wallets_lock = threading.Lock()
 WHALE_MIN_WINS      = 2       # kam se kam 2 profitable trades
 WHALE_MIN_WIN_RATE  = 0.60    # 60%+ win rate
 WHALE_MIN_BNB_TXN   = 0.05    # minimum 0.05 BNB per transaction (noise filter)
-WHALE_MAX_WALLETS   = 10000   # memory cap
+WHALE_MAX_WALLETS   = 500   # memory cap
 
 def _update_whale_stats(wallet: str, win: bool, pnl_pct: float):
     """Wallet ka track record update karo"""
@@ -2072,7 +2072,7 @@ _rug_dna: list = []
 # Stage2 info cache — 0.5s TTL for faster polling
 _info_cache: dict = {}  # {addr_lower: {'data': {...}, 'ts': float}}
    # [{"creator": str, "buy_tax": float, "sell_tax": float, "liq_usd": float, "ts": float}]
-_RUG_DNA_MAX = 10000  # max fingerprints store
+_RUG_DNA_MAX = 2000  # memory cap
 
 def _record_rug_dna(token_address: str, creator: str, buy_tax: float, sell_tax: float, liq_usd: float, reason: str = "", pnl_pct: float = 0.0):
     """Rug token ka DNA fingerprint save karo — smart dedup + smart cleanup"""
@@ -3114,6 +3114,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         
         if sell_pct >= 100.0:
             auto_trade_stats["running_positions"].pop(address, None)
+            auto_trade_stats["vol_weak_count"].pop(address, None)
+            auto_trade_stats["entry_guard_count"].pop(address, None)
             remove_position_from_monitor(address)
             _today_key = datetime.utcnow().strftime("%Y-%m-%d")
             if auto_trade_stats.get("today_date") != _today_key:
