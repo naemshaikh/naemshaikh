@@ -6093,14 +6093,17 @@ def poll_four_meme_v2():
     ]
 
     def _handle_token(token_addr, dev_addr):
-        with _seen_lock:
-            if token_addr.lower() in _seen: return
-            _seen.add(token_addr.lower())
+        # FIX v49: Single lock mein dono check — race condition fix
+        # Pehle _seen aur _fm_sniped alag locks the → 3 workers same token parallel process kar sakte the
+        with _fm_sniped_lock:
+            _al = token_addr.lower()
+            if _al in _fm_sniped: return
+            if _al in _seen: return
+            _seen.add(_al)
+            _fm_sniped.add(_al)  # turant add — koi doosra thread aage nahi nikal sakta
         if len(_seen) > 1000: _seen.clear()
 
         if not FM_SNIPER_ENABLED: return
-        with _fm_sniped_lock:
-            if token_addr.lower() in _fm_sniped: return
 
         # FIX v29: Thread launch se pehle hi reject karo — useless threads avoid
         if is_token_blacklisted(token_addr): return
