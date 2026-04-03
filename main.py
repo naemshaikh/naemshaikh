@@ -4472,6 +4472,9 @@ _fm_sniped_ts:  dict = {}  # FIX v50: timestamp per entry — stale cleanup ke l
 
 # FIX v15: Sell dedup — ek token pe ek hi sell ek waqt mein
 _fm_selling_set  = set()
+# FIX v46: In-memory approve cache — sell pe allowance RPC skip karne ke liye
+# Key: "token_addr_lower:spender_addr_lower" → True agar approve confirmed hai
+_fm_approved_cache: dict = {}
 _fm_selling_lock = threading.Lock()
 
 # Dev history cache — on-chain results cache karo
@@ -4804,11 +4807,18 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         fc = _w3_fast.eth.contract(address=Web3.to_checksum_address(_dynamic_manager), abi=_use_abi)
 
         # FIX v18: Approve dynamic tokenManager (factory nahi)
+        # FIX v46: cache check pehle — allowance RPC call skip karo agar pehle approve ho chuka
         try:
             _tc_approve = _w3_fast.eth.contract(
                 address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
-            _allowance = _tc_approve.functions.allowance(
-                wallet_cs, Web3.to_checksum_address(_dynamic_manager)).call()
+            _v46_cache_key = f"{token_addr.lower()}:{_dynamic_manager.lower()}"
+            _v46_cache_hit = _fm_approved_cache.get(_v46_cache_key, False)
+            if _v46_cache_hit:
+                print(f"⚡ [FM] Approve cache HIT — allowance RPC skip: {token_addr[:10]}")
+                _allowance = 2**256 - 1  # treat as max approved
+            else:
+                _allowance = _tc_approve.functions.allowance(
+                    wallet_cs, Web3.to_checksum_address(_dynamic_manager)).call()
             if _allowance < _amt:
                 print(f"🔑 [FM] Approving Token Manager for sell...")
                 _approve_nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")
@@ -4835,6 +4845,10 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                             if _rx2["status"] == 1:
                                 _approve_confirmed = True
                                 print(f"✅ [FM] Approval confirmed ({_t22a.time()-_ap_start:.1f}s)")
+                                # FIX v46: runtime approve bhi cache karo — next sell instant hogi
+                                _v46_rt_key = f"{token_addr.lower()}:{_dynamic_manager.lower()}"
+                                _fm_approved_cache[_v46_rt_key] = True
+                                print(f"⚡ [FM] Runtime approve cached: {token_addr[:10]}")
                             else:
                                 print(f"❌ [FM] Approval TX failed onchain")
                             break
@@ -5975,6 +5989,10 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                                             if _rx is not None:
                                                 if _rx["status"] == 1:
                                                     print(f"✅ [FM] Pre-approve confirmed ({_pi*2+2}s): {_addr2[:10]} → spender: {_spender[:10]}")
+                                                    # FIX v46: cache mein daal do — sell pe allowance RPC skip hogi
+                                                    _cache_key = f"{_addr2.lower()}:{_spender.lower()}"
+                                                    _fm_approved_cache[_cache_key] = True
+                                                    print(f"⚡ [FM] Approve cached: {_cache_key[:24]}")
                                                 else:
                                                     print(f"⚠️ [FM] Pre-approve TX failed onchain: {_addr2[:10]}")
                                                 break
