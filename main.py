@@ -3935,8 +3935,8 @@ def auto_position_manager():
 
                         # Case 1: No pump at all, buyers absent
                         if _pnl_high < 3.0 and pnl <= -2.0:
-                            # Fast dump — 10s mein -8% → turant exit, no readings wait
-                            _fast_dump = pnl <= -8 and _hold_secs < 10
+                            # Fast dump — -8% + no pump = turant exit, koi time check nahi
+                            _fast_dump = pnl <= -8
                             if _fast_dump:
                                 _auto_paper_sell(addr, f"FastDump -{abs(pnl):.1f}% 🔵", 100.0)
                                 _egc.pop(addr, None)
