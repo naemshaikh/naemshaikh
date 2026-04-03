@@ -5227,9 +5227,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
     addr_lower = token_addr.lower()
     _t_start = time.time()
 
-    with _fm_sniped_lock:
-        if addr_lower in _fm_sniped: return
-        _fm_sniped.add(addr_lower)
+    # FIX v49: _handle_token mein already _fm_sniped check + add ho gaya — duplicate check removed
 
     # FIX v31: DEBUG — token detect timestamp
     print(f"⏱️ [FM-DEBUG] DETECTED | +0ms | token={token_addr[:10]} dev={dev_addr[:10] if dev_addr else '?'}")
