@@ -2408,7 +2408,7 @@ new_pairs_queue: deque = deque(maxlen=30)
 # ── NOTIFICATION SYSTEM ──
 import uuid as _uuid
 _notifications: list = []  # [{id, type, severity, title, detail, token, address, ts, read}]
-_NOTIF_MAX = 10000
+_NOTIF_MAX = 200
 
 def _push_notif(severity: str, title: str, detail: str, token: str = "", address: str = ""):
     """
@@ -7834,7 +7834,7 @@ def activity_route():
 @app.route("/notifications", methods=["GET"])
 def notifications_route():
     return jsonify({
-        "notifications": _notifications[:1000],
+        "notifications": _notifications[:50],
         "unread": sum(1 for n in _notifications if not n.get("read", False)),
         "total":  len(_notifications)
 })
