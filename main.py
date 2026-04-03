@@ -2057,6 +2057,32 @@ def _save_trade_history_to_db():
                 print(f"⚠️ Trade history save error (3 retries failed): {e}")
 
 def _load_trade_history_from_db():
+    # FIX v45: real_trade_history table bhi load karo — pehle sirf memory table tha
+    try:
+        _REAL_TABLE = "real_trade_history"
+        _real_res = supabase.table(_REAL_TABLE).select("*").order("id", desc=True).limit(500).execute()
+        if _real_res.data:
+            _real_rows = []
+            for row in _real_res.data:
+                try:
+                    import json as _rj
+                    _entry = _rj.loads(row.get("data", "{}")) if isinstance(row.get("data"), str) else row
+                    if isinstance(_entry, dict) and _entry.get("token"):
+                        _entry["mode"] = "real"
+                        _real_rows.append(_entry)
+                except Exception:
+                    pass
+            if _real_rows:
+                _existing = auto_trade_stats.get("trade_history", [])
+                _existing_addrs = {(t.get("address","").lower(), t.get("sold_at","")) for t in _existing}
+                _new_real = [t for t in _real_rows
+                             if (t.get("address","").lower(), t.get("sold_at","")) not in _existing_addrs]
+                auto_trade_stats["trade_history"] = _existing + _new_real
+                print(f"✅ [v45] Real trades loaded from DB: {len(_new_real)} new entries")
+    except Exception as _rle:
+        print(f"⚠️ [v45] Real trade history load skip: {str(_rle)[:60]}")
+
+def _load_trade_history_from_db_ORIGINAL():
     """Startup pe Supabase se history load karo"""
     if not supabase: return
     try:
@@ -4706,9 +4732,15 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
             print(f"⏭️ [FM] Sell already in progress for {token_addr[:10]} — skip")
             result["error"] = "sell already in progress"
             return result
-        _fm_selling_set.add(_t_lower)
+        # FIX v45: add() TX ke baad hoga — pehle add() hoti thi TX se pehle
+        # TP fire → add() → MomDead check → "already in progress" → TP skip → SL hit
+        # Ab: duplicate check pass hone ke baad lock hold karo, TX ke baad add()
 
+    _selling_lock_held = False
     try:
+        with _fm_selling_lock:
+            _fm_selling_set.add(_t_lower)
+            _selling_lock_held = True
         pk = os.getenv("WALLET_PRIVATE_KEY", "") or os.getenv("PRIVATE_KEY", "") or os.getenv("REAL_PRIVATE_KEY", "")
         wallet_addr = BSC_WALLET or REAL_WALLET
         if not wallet_addr or not pk:
@@ -4965,6 +4997,9 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                 from eth_account import Account
                 signed  = Account.sign_transaction(tx, pk)
                 tx_hash = _w3_fast.eth.send_raw_transaction(signed.raw_transaction)
+                # FIX v45: TX successfully sent — ab lock add karo
+                with _fm_selling_lock:
+                    _fm_selling_set.add(_t_lower)
                 print(f"🔴 [FM] Sell TX attempt {_attempt}: {tx_hash.hex()[:12]}...")
                 break  # TX sent — loop se niklo
             except Exception as _se:
