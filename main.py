@@ -5169,7 +5169,8 @@ def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, resul
                    buyers_at_entry=0, momentum_pct=0.0, volume_change=0.0, pump_at_entry=0.0, dev_wallet_pct=0.0, mc_usd=0.0, total_buys_at_entry=0,
                    # FIX v32: ye params pehle undefined the — NameError se har event fail hota tha
                    stage1_ms=0, stage2_ms=0, buy_submit_ms=0,
-                   price1=0.0, price2=0.0, actual_fill=0.0, slippage_pct=0.0):
+                   price1=0.0, price2=0.0, actual_fill=0.0, slippage_pct=0.0,
+                   entry_type=""):
     """FM event Supabase mein save karo — extra analytics data bhi"""
     try:
         if not supabase: return
@@ -5208,7 +5209,8 @@ def _save_fm_event(token_addr, liq_bnb, grad_price, snipe_price, pump_pct, resul
             "price1":              float(price1 or 0),
             "price2":              float(price2 or 0),
             "actual_fill":         float(actual_fill or 0),
-            "slippage_pct":        round(float(slippage_pct or 0), 2)
+            "slippage_pct":        round(float(slippage_pct or 0), 2),
+            "entry_type":          str(entry_type or ""),
 }).execute()
 
         # Post-skip tracking — 5 min baad price check karo
@@ -5726,60 +5728,57 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         # ========== SMART ENTRY: Buy/Sell pressure check ==========
         # Momentum confirm ho gaya — ab check karo ki abhi buy pressure hai ya sell
-        # _funds_history already available hai — extra RPC call nahi
-        # Last 2 funds readings se volume direction pata karo
         _entry_price_check = _price2  # momentum confirm waqt ka price
-        _fh = _funds_history  # already tracked in momentum loop
+        _entry_type = "direct"        # CSV ke liye: direct / waited / skipped
 
-        # Price direction check — _fh < 2 ho ya >= 2, dono case mein price compare karo
-        # _price_history bhi available hai momentum loop se
+        # FIX: strictly falling price = sell pressure, flat/rising = ok
         _ph = _price_history
+        _fh = _funds_history
+
         if len(_ph) >= 2:
-            # Price last 2 readings se direction
-            _price_rising = _ph[-1] >= _ph[-2]
+            _price_falling = _ph[-1] < _ph[-2]   # strictly gir raha ho
         else:
-            # Single reading — latest price vs baseline compare karo
             _latest_p = _ph[-1] if _ph else _price2
-            _price_rising = _latest_p >= _price1  # momentum baseline se upar = buy pressure
+            _price_falling = _latest_p < _price1  # baseline se neeche = falling
 
         if len(_fh) >= 2:
-            _vol_rising = _fh[-1] > _fh[-2]
+            _vol_falling = _fh[-1] < _fh[-2]
         else:
-            _vol_rising = _price_rising  # vol data nahi → price se infer karo
+            _vol_falling = _price_falling
 
-        # Dono agree karein toh strong signal
-        _bv_now = 1.0 if (_price_rising and _vol_rising) else 0.0
-        _sv_now = 0.0 if (_price_rising and _vol_rising) else 1.0
+        # Sell pressure = price actually gir raha ho (flat = ok, rising = ok)
+        _sell_pressure = _price_falling and _vol_falling
 
-        if _sv_now > _bv_now:
-            # Sell pressure hai — price reversal ka wait karo
-            print(f"⏳ [FM] Sell pressure at entry: sv={_sv_now:.3f} bv={_bv_now:.3f} — waiting for reversal")
+        if _sell_pressure:
+            # Sell pressure hai — reversal ka wait karo max 10s
+            print(f"⏳ [FM] Sell pressure at entry — waiting reversal (max 10s)")
             _reversal_found = False
-            _price_low      = _entry_price_check  # lowest price track karo
-            for _ri in range(50):  # max ~10s (50 x 0.2s)
+            _price_low = _entry_price_check
+            for _ri in range(50):  # 50 x 0.2s = 10s max
                 time.sleep(0.2)
                 try:
                     _ri_info = _get_token_info_cached(token_addr, w3, ttl=0.1)
                     if not _ri_info: break
-                    if _ri_info.get("liquidityAdded"): 
+                    if _ri_info.get("liquidityAdded"):
                         _skip("graduated during entry wait"); return
                     _ri_price = _ri_info.get("lastPrice", 0)
                     if _ri_price <= 0: continue
                     if _ri_price < _price_low:
-                        _price_low = _ri_price  # naya low note karo
+                        _price_low = _ri_price
                     elif _ri_price > _price_low * 1.01:
-                        # Price low se 1% upar aaya = sellers gone, buyers aa gaye
-                        # No extra lock call — price reversal hi kaafi confirmation hai
+                        # Low se 1% upar = sellers gone
                         print(f"✅ [FM] Reversal confirmed: price={_ri_price:.2e} low={_price_low:.2e} — ENTERING")
                         _entry_price_check = _ri_price
                         _reversal_found = True
+                        _entry_type = "waited"
                         break
                 except Exception:
                     break
             if not _reversal_found:
+                _entry_type = "skipped"
                 _skip("sell pressure — no reversal in 10s"); return
         else:
-            print(f"✅ [FM] Buy pressure at entry: bv={_bv_now:.3f} sv={_sv_now:.3f} — ENTERING NOW")
+            print(f"✅ [FM] Buy pressure at entry (price={'falling' if _price_falling else 'rising/flat'} vol={'falling' if _vol_falling else 'rising/flat'}) — ENTERING NOW")
 
         # ========== BUY EXECUTION ==========
         size_bnb = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
@@ -6064,7 +6063,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             "price1":       _dbg_price1,
             "price2":       _dbg_price2,
             "actual_fill":  _dbg_actual_fill,
-            "slippage_pct": _dbg_slippage
+            "slippage_pct": _dbg_slippage,
+            "entry_type":   _entry_type,
 }, daemon=True).start()
         print(f"✅ [FM] BC SNIPED: {token_name} mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}% {ms}ms")
 
