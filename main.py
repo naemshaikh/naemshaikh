@@ -5707,14 +5707,13 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         # ========== SMART ENTRY: Buy/Sell pressure check ==========
         # Momentum confirm ho gaya — ab check karo ki abhi buy pressure hai ya sell
-        # Buy pressure → turant entry
-        # Sell pressure → price monitor karo
-        #   → Price wapas upar aaya (sellers gone, buyers aaye) → ENTRY
-        #   → Price aur neeche gaya → SKIP (genuine dump)
+        # _funds_history already available hai — extra RPC call nahi
+        # Last 2 funds readings se volume direction pata karo
         _entry_price_check = _price2  # momentum confirm waqt ka price
-        _vol_now = _get_vol_pressure_rt(token_addr)
-        _bv_now  = _vol_now.get("buy_vol5", 0.0)
-        _sv_now  = _vol_now.get("sell_vol5", 0.0)
+        _fh = _funds_history  # already tracked in momentum loop
+        _vol_rising = len(_fh) >= 2 and _fh[-1] > _fh[-2]  # volume upar ja raha hai = buy pressure
+        _bv_now = 1.0 if _vol_rising else 0.0
+        _sv_now = 0.0 if _vol_rising else 1.0
 
         if _sv_now > _bv_now:
             # Sell pressure hai — price reversal ka wait karo
