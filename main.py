@@ -7027,11 +7027,12 @@ def log_trade_internal(session_id: str, trade: dict):
         sess["trade_count"] += 1
         if win:
             sess["win_count"] += 1
-            sess["pnl_24h"] += pnl
         else:
             _size = float(trade.get("size_bnb", AUTO_BUY_SIZE_BNB) or AUTO_BUY_SIZE_BNB)
             _bnb_lost = _size * abs(pnl) / 100.0
             sess["daily_loss"] = sess.get("daily_loss", 0) + _bnb_lost
+        # FIX: pnl_24h win+loss dono track karo — pehle sirf win pe add hota tha
+        sess["pnl_24h"] = round(sess.get("pnl_24h", 0.0) + pnl, 2)
     
     # History save only for full sell
     if trade.get("sell_pct", 100.0) >= 100.0:
@@ -7665,23 +7666,30 @@ def init_session():
 @app.route("/trading-data", methods=["GET", "POST"])
 def trading_data():
   try:
-    # FIX: Hamesha AUTO_SESSION_ID ka data do — random SID se ghost sessions mat banao
-    # Random SID se get_or_create_session call hoti thi → memory leak
     _auto_sess_td = sessions.get(AUTO_SESSION_ID) or {"paper_balance":5.0,"trade_count":0,"win_count":0,"loss_count":0,"positions":[],"pnl":0,"daily_loss":0}
-    bnb_price     = market_cache.get("bnb_price", 0) or 300  # BUG FIX: 0 nahi dikhao
-    trade_count   = _auto_sess_td.get("trade_count", 0)
-    win_count     = _auto_sess_td.get("win_count", 0)
-    win_rate      = round((win_count / trade_count * 100), 1) if trade_count > 0 else 0
-    paper_bal     = float(_auto_sess_td.get("paper_balance") or 5.0)
-    daily_loss    = float(_auto_sess_td.get("daily_loss") or 0)
+    bnb_price     = market_cache.get("bnb_price", 0) or 300
+    # FIX: trade_count/win_count session reset pe zero ho jaata tha — auto_trade_stats se lo
+    _wins   = auto_trade_stats.get("wins", 0)
+    _losses = auto_trade_stats.get("losses", 0)
+    trade_count = _wins + _losses or _auto_sess_td.get("trade_count", 0)
+    win_count   = _wins or _auto_sess_td.get("win_count", 0)
+    win_rate    = round((win_count / trade_count * 100), 1) if trade_count > 0 else 0
+    paper_bal   = float(_auto_sess_td.get("paper_balance") or 5.0)
+    daily_loss  = float(_auto_sess_td.get("daily_loss") or 0)
+    # FIX: pnl_24h — auto_trade_stats se today_pnl lo (BNB), session se % bhi
+    _today_pnl_bnb = auto_trade_stats.get("today_pnl", 0.0)
+    _pnl_display = _auto_sess_td.get("pnl_24h", 0)
     return jsonify({
         "paper":          f"{paper_bal:.4f}",
         "real":           "0.000",
-        "pnl":            f"+{_auto_sess_td.get('pnl_24h', 0):.1f}%",
+        "pnl":            f"{_pnl_display:+.1f}%",
+        "pnl_bnb":        round(_today_pnl_bnb, 4),
         "bnb_price":      bnb_price,
         "fear_greed":     market_cache.get("fear_greed", 50),
         "positions":      list(auto_trade_stats.get("running_positions", {}).keys()),
         "trade_count":    trade_count,
+        "win_count":      win_count,
+        "loss_count":     _losses,
         "win_rate":       win_rate,
         "daily_loss":     round(daily_loss, 4),
         "limit_reached":  daily_loss >= (paper_bal * 0.15),
