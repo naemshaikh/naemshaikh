@@ -2094,9 +2094,8 @@ def _load_trade_history_from_db_ORIGINAL():
                 if isinstance(hist, list) and hist:
                     auto_trade_stats["trade_history"] = hist
                     # FIX v30: mode default "paper" tha — real history load pe count galat tha
-                    # FIX v51b: mode default fix — real trades miss nahi honge DB load pe
-                    wins   = sum(1 for t in hist if t.get("result") == "win"  and t.get("mode", TRADE_MODE) == TRADE_MODE)
-                    losses = sum(1 for t in hist if t.get("result") == "loss" and t.get("mode", TRADE_MODE) == TRADE_MODE)
+                    wins   = sum(1 for t in hist if t.get("result") == "win" and (t.get("mode") or TRADE_MODE) == TRADE_MODE)
+                    losses = sum(1 for t in hist if t.get("result") == "loss" and (t.get("mode") or TRADE_MODE) == TRADE_MODE)
                     auto_trade_stats["trade_count"] = len(hist)
                     auto_trade_stats["win_count"]   = wins
                     auto_trade_stats["loss_count"]  = losses
@@ -2870,10 +2869,6 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         # Real buy successful → entry price on-chain se lo
         if _real_result.get("entry_price", 0) > 0:
             entry_price = _real_result["entry_price"]
-        # FIX gas: real buy gas save karo
-        _buy_gas_used  = _real_result.get("gas_used", 0)
-        _buy_gas_price = _get_dynamic_gas_price()
-        _buy_gas_bnb   = round((_buy_gas_used * _buy_gas_price) / 1e18, 8) if _buy_gas_used else 0.0
         print(f"✅ REAL BUY executed: tx={_real_result.get('tx_hash','')[:20]}")
     # Paper mode: balance simulate karo (real mode mein skip)
     if TRADE_MODE != "real":
@@ -2911,7 +2906,6 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         "buy_reasoning":  _buy_reasoning,
         "buy_tax":        _buy_tax,   # FIX2: sell slippage ke liye zaroori
         "sell_tax":       _sell_tax,  # FIX2: sell slippage ke liye zaroori
-        "buy_gas_bnb":    _buy_gas_bnb if TRADE_MODE == "real" else 0.0,  # FIX gas: real buy gas
     }
     auto_trade_stats["total_auto_buys"] += 1
     auto_trade_stats["last_action"] = f"BUY {token_name or address[:10]}"
@@ -2932,23 +2926,8 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     print(f"AUTO BUY: {address[:10]} @ {entry_price:.10f} size={size_bnb:.4f}")
 
 # ========== AUTO PAPER SELL ==========  FIX 3: All variable names fixed
-def _already_won(address: str) -> bool:
-    """Check karo — is address pe already win entry hai trade_history mein?"""
-    hist = auto_trade_stats.get("trade_history", [])
-    return any(
-        t.get("address", "").lower() == address.lower()
-        and t.get("result") == "win"
-        for t in hist
-    )
-
 def _auto_paper_sell(address, reason, sell_pct=100.0):
     if address not in auto_trade_stats["running_positions"]:
-        return
-    # FIX ghost: 100% sell aur already win hai toh duplicate mat karo
-    if sell_pct >= 100.0 and _already_won(address):
-        print(f"⏭️ _auto_paper_sell skip — {address[:10]} already won [{reason}]")
-        auto_trade_stats["running_positions"].pop(address, None)
-        remove_position_from_monitor(address)
         return
     pos = auto_trade_stats["running_positions"][address]
     with monitor_lock:
@@ -3022,10 +3001,6 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                        f"Real sell failed: {_fail_err} — position still open", token, address)
             # FIX v24: Failed sell bhi history mein save karo
             try:
-                # FIX ghost: already win hai toh sell_failed mat save karo
-                if _already_won(address):
-                    print(f"⏭️ sell_failed skip — {address[:10]} already won")
-                    return
                 if not isinstance(auto_trade_stats.get("trade_history"), list):
                     auto_trade_stats["trade_history"] = []
                 _orig_sz_f  = pos.get("orig_size_bnb", size)
@@ -3071,34 +3046,10 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
             _bnb_at_sell = market_cache.get("bnb_price", 0)
             _saved_bought_usd = auto_trade_stats["running_positions"].get(address, {}).get("bought_usd", 0)
             _orig_sz = pos.get("orig_size_bnb", size)
-            # FIX v51: Real mode mein actual bnb_received use karo (on-chain receipt)
-            # Pehle: estimated price se pnl_bnb calculate hoti thi — galat tha
-            # Ab: real_sell_result["bnb_received"] se actual return lo
-            if TRADE_MODE == "real" and real_sell_result and real_sell_result.get("bnb_received", 0) > 0:
-                _actual_received  = real_sell_result["bnb_received"]
-                # FIX v56: sell_cost = sirf is sell ka size (remaining position)
-                # Pehle: _orig_sz * 100% = total cost laga raha tha even after TP1
-                # Ab: size = current remaining position size (TP1 ke baad half ho jaata hai)
-                _sell_cost = size * (sell_pct / 100.0)
-                _total_pnl_bnb_trade = round(
-                    pos.get("banked_pnl_bnb", 0.0) - (_sell_cost - _actual_received), 6
-                )
-            else:
-                _total_pnl_bnb_trade = round(pos.get("banked_pnl_bnb", 0.0), 6)
-            # FIX v58: gas baad mein deduct hoga, pct abhi pre-gas hai
+            _total_pnl_bnb_trade = round(pos.get("banked_pnl_bnb", 0.0), 6)
             _total_pnl_pct_trade = round((_total_pnl_bnb_trade / _orig_sz * 100), 2) if _orig_sz > 0 else pnl_pct
-            # FIX gas: real sell gas calculate karo
-            _sell_gas_used  = (real_sell_result or {}).get("gas_used", 0)
-            _sell_gas_price = (real_sell_result or {}).get("gas_price", 0)
-            if TRADE_MODE == "real" and _sell_gas_used and _sell_gas_price:
-                _gas_bnb_sell = round((_sell_gas_used * _sell_gas_price) / 1e18, 8)
-            else:
-                _gas_bnb_sell = DataGuard.get_real_gas_bnb()
-
-            # FIX gas: buy gas bhi lo position se
-            _buy_gas_bnb_saved = pos.get("buy_gas_bnb", 0.0)
-            _total_gas_bnb     = round(_gas_bnb_sell + _buy_gas_bnb_saved, 8)
-
+            _gas_bnb_sell = DataGuard.get_real_gas_bnb()
+            
             _buy_rsn = pos.get("buy_reasoning", {}) or {}
             _assumption = _buy_rsn.get("assumption", "N/A")
             _signals_used = _buy_rsn.get("signals", [])
@@ -3112,14 +3063,10 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 "entry":        entry,
                 "exit":         current,
                 "exit_price":   current,
-                # FIX v58: pnl_pct bhi gas-adjusted hona chahiye
-                "pnl_pct":      round((((_total_pnl_bnb_trade - _total_gas_bnb) / _orig_sz) * 100), 2) if _orig_sz > 0 else _total_pnl_pct_trade,
-                "pnl_bnb":      round(_total_pnl_bnb_trade - _total_gas_bnb, 6),  # FIX gas: gas deduct
-                "pnl_bnb_before_gas": _total_pnl_bnb_trade,  # debug ke liye
+                "pnl_pct":      _total_pnl_pct_trade,
+                "pnl_bnb":      _total_pnl_bnb_trade,
                 "size_bnb":     _orig_sz,
-                "gas_bnb":      _total_gas_bnb,   # FIX gas: buy+sell total real gas
-                "buy_gas_bnb":  _buy_gas_bnb_saved,
-                "sell_gas_bnb": _gas_bnb_sell,
+                "gas_bnb":      _gas_bnb_sell,
                 "bought_usd":   _saved_bought_usd if _saved_bought_usd else round(_orig_sz * _bnb_at_sell, 2),
                 "sold_usd":     round(max(0.0, (_saved_bought_usd / _bnb_at_sell if _bnb_at_sell > 0 else _orig_sz) + _total_pnl_bnb_trade) * _bnb_at_sell, 2) if _bnb_at_sell > 0 else 0,
                 "bought_at":    bought_at_str,
@@ -3127,9 +3074,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 "result":       "win" if _total_pnl_pct_trade > 0 else "loss",
                 "exit_reason":  reason,
                 "reason":       reason,
-                # FIX v51: TRADE_MODE directly — pos["mode"] stale/wrong ho sakta hai
-                "mode":         TRADE_MODE,
-                "tx_hash":      (real_sell_result or {}).get("tx_hash", "") if TRADE_MODE == "real" else "",
+                "mode":         pos.get("mode", TRADE_MODE),
                 "tp_events":    pos.get("tp_events", []),
                 "buy_reasoning":_buy_rsn,
                 "post_mortem":  _post_mortem,
@@ -4028,10 +3973,9 @@ def auto_position_manager():
 
                         if len(_fm_price_hist) >= 3:
                             # Last 3 prices mein se 2 flat/down hain → volume weak
-                            # FIX: 0.1% → 1.5% tolerance — normal fluctuation ignore karo
                             _fm_declining = sum(
                                 1 for i in range(1, len(_fm_price_hist))
-                                if _fm_price_hist[i] <= _fm_price_hist[i-1] * 1.015  # 1.5% tolerance
+                                if _fm_price_hist[i] <= _fm_price_hist[i-1] * 1.001  # 0.1% tolerance
                             )
                             if _fm_declining >= 2:
                                 _vwc[addr] = _vwc.get(addr, 0) + 1
@@ -4046,12 +3990,11 @@ def auto_position_manager():
                         else:
                             _vwc[addr] = 0
 
-                    # FIX: >= 6 readings — fluctuation survive, genuine downtrend exit
-                    _vol_dying  = _vwc.get(addr, 0) >= 6
-                    # FM BC: koi time check nahi — 1.5% tolerance + 6 readings hi kaafi
-                    # Clear downtrend = turant exit, fluctuation = survive
+                    _vol_dying  = _vwc.get(addr, 0) >= 3
+                    # FM BC: hold_secs guard hataya — ab FM-specific price check hai
+                    # PancakeSwap tokens: hold_secs > 20 guard rakhna zaroori hai (bv5 lag)
                     if _is_fm_bc:
-                        _mom_dead = _vol_dying
+                        _mom_dead = _vol_dying and _hold_secs > 5  # 5s grace period only
                     else:
                         _mom_dead = _vol_dying and _hold_secs > 20
 
@@ -4064,7 +4007,7 @@ def auto_position_manager():
 
                         # Case 1: No pump at all, buyers absent
                         if _pnl_high < 3.0 and pnl <= -2.0:
-                            # Fast dump — -5% + no pump = turant exit
+                            # Fast dump — -5% + no pump = turant exit, koi time check nahi
                             _fast_dump = pnl <= -5
                             if _fast_dump:
                                 _auto_paper_sell(addr, f"FastDump -{abs(pnl):.1f}% 🔵", 100.0)
@@ -4073,61 +4016,31 @@ def auto_position_manager():
                                 print(f"🔵 FastDump: {addr[:10]} pnl={pnl:.1f}% hold={_hold_secs:.0f}s")
                                 continue
 
-                            # FM BC: bv5 hamesha 0 hota hai — price history use karo
-                            if _is_fm_bc:
-                                _eg_hist = _pos_data.get("_eg_price_hist", [])
-                                _eg_hist.append(current)
-                                if len(_eg_hist) > 5: _eg_hist.pop(0)
-                                _pos_data["_eg_price_hist"] = _eg_hist
-                                if len(_eg_hist) >= 3:
-                                    _eg_down = sum(1 for i in range(1, len(_eg_hist)) if _eg_hist[i] < _eg_hist[i-1] * 0.99)
-                                    if _eg_down >= 2:
-                                        _egc[addr] = _egc.get(addr, 0) + 1
-                                    else:
-                                        _egc[addr] = 0
-                                else:
-                                    _egc[addr] = 0
+                            if _bv5_live < 0.3:
+                                _egc[addr] = _egc.get(addr, 0) + 1
                             else:
-                                if _bv5_live < 0.3:
-                                    _egc[addr] = _egc.get(addr, 0) + 1
-                                else:
-                                    _egc[addr] = 0
+                                _egc[addr] = 0  # buyer aaya = reset
 
-                            if _egc.get(addr, 0) >= 4:  # 4 readings — FM BC fluctuation survive
+                            if _egc.get(addr, 0) >= 2:
                                 _auto_paper_sell(addr, f"EntryGuard NoMom -{abs(pnl):.1f}% 🔵", 100.0)
                                 _egc.pop(addr, None)
                                 _trail_triggered = True
-                                print(f"🔵 EntryGuard Case1: {addr[:10]} pnl={pnl:.1f}% fm_bc={_is_fm_bc}")
+                                print(f"🔵 EntryGuard Case1: {addr[:10]} pnl={pnl:.1f}% bv5={_bv5_live:.3f}")
                                 continue
 
                         # Case 2: Pumped then fading — sell vol confirm karo
                         elif _pnl_high >= 3.0 and pnl < (_pnl_high - 8):
-                            if _is_fm_bc:
-                                # FM BC: price declining check
-                                _eg_hist2 = _pos_data.get("_eg_price_hist", [])
-                                _eg_hist2.append(current)
-                                if len(_eg_hist2) > 5: _eg_hist2.pop(0)
-                                _pos_data["_eg_price_hist"] = _eg_hist2
-                                if len(_eg_hist2) >= 3:
-                                    _eg_down2 = sum(1 for i in range(1, len(_eg_hist2)) if _eg_hist2[i] < _eg_hist2[i-1] * 0.99)
-                                    if _eg_down2 >= 2:
-                                        _egc[addr] = _egc.get(addr, 0) + 1
-                                    else:
-                                        _egc[addr] = 0
-                                else:
-                                    _egc[addr] = 0
+                            _sv5_live = _get_vol_pressure_rt(addr).get("sell_vol5", 0.0)
+                            if _bv5_live < 0.3 and _sv5_live > _bv5_live:
+                                _egc[addr] = _egc.get(addr, 0) + 1
                             else:
-                                _sv5_live = _get_vol_pressure_rt(addr).get("sell_vol5", 0.0)
-                                if _bv5_live < 0.3 and _sv5_live > _bv5_live:
-                                    _egc[addr] = _egc.get(addr, 0) + 1
-                                else:
-                                    _egc[addr] = 0
+                                _egc[addr] = 0  # buyers active = fake pullback = reset
 
-                            if _egc.get(addr, 0) >= 4:
+                            if _egc.get(addr, 0) >= 2:
                                 _auto_paper_sell(addr, f"EntryGuard Faded -{abs(pnl):.1f}% 🔵", 100.0)
                                 _egc.pop(addr, None)
                                 _trail_triggered = True
-                                print(f"🔵 EntryGuard Case2: {addr[:10]} pnl={pnl:.1f}% high={_pnl_high:.1f}% fm_bc={_is_fm_bc}")
+                                print(f"🔵 EntryGuard Case2: {addr[:10]} pnl={pnl:.1f}% high={_pnl_high:.1f}% sv5={_sv5_live:.3f}")
                                 continue
 
                     # ── Hard SL: absolute exit at sl_pct%, no conditions ──
@@ -4772,62 +4685,25 @@ def _fm_confirm_close(token_addr, sell_pct, reason, tx_hash_hex):
             bought_at_str = pos.get("bought_at", "")
             _orig_sz      = pos.get("orig_size_bnb", size)
             _total_pnl_bnb = round(pos.get("banked_pnl_bnb", 0.0), 6)
-            # FIX v58: gas deduct karo pnl se
-            _gas_bnb_confirm = round(pos.get("buy_gas_bnb", 0.0) + DataGuard.get_real_gas_bnb(), 8)
-            _total_pnl_bnb_after_gas = round(_total_pnl_bnb - _gas_bnb_confirm, 6)
-            _total_pnl_pct = round((_total_pnl_bnb_after_gas / _orig_sz * 100), 2) if _orig_sz > 0 else pnl_pct
-
-            # FIX v57: Double recording check — _auto_paper_sell ne already record kiya hoga
-            # Same address ka trade last 120s mein already hai? → update karo, add nahi
-            _now_iso = datetime.utcnow().isoformat()
-            _existing_idx = None
-            for _idx, _tr in enumerate(reversed(auto_trade_stats["trade_history"])):
-                if _tr.get("address", "").lower() == token_addr.lower():
-                    try:
-                        _tr_sold = _tr.get("sold_at", "")
-                        if _tr_sold:
-                            _diff = (datetime.utcnow() - datetime.fromisoformat(_tr_sold[:19])).total_seconds()
-                            if abs(_diff) < 120:
-                                _existing_idx = len(auto_trade_stats["trade_history"]) - 1 - _idx
-                    except: pass
-                    break
-
-            if _existing_idx is not None:
-                # Update existing record with confirmed data
-                _existing = auto_trade_stats["trade_history"][_existing_idx]
-                _existing["tx_hash"]   = tx_hash_hex
-                _existing["pnl_pct"]   = _total_pnl_pct
-                _existing["pnl_bnb"]   = _total_pnl_bnb
-                _existing["exit"]      = current
-                _existing["exit_price"] = current
-                print(f"✅ [FM v57] Trade updated (no duplicate): {token_addr[:10]} pnl={_total_pnl_pct:.1f}%")
-            else:
-                auto_trade_stats["trade_history"].append({
+            _total_pnl_pct = round((_total_pnl_bnb / _orig_sz * 100), 2) if _orig_sz > 0 else pnl_pct
+            auto_trade_stats["trade_history"].append({
                 "token":        token,
                 "address":      token_addr,
                 "entry":        entry,
                 "exit":         current,
                 "exit_price":   current,
                 "pnl_pct":      _total_pnl_pct,
-                "pnl_bnb":      _total_pnl_bnb_after_gas,
-                "pnl_bnb_before_gas": _total_pnl_bnb,
+                "pnl_bnb":      _total_pnl_bnb,
                 "size_bnb":     _orig_sz,
                 "bought_at":    bought_at_str,
                 "sold_at":      datetime.utcnow().isoformat(),
                 "result":       "win" if _total_pnl_pct > 0 else "loss",
                 "exit_reason":  reason,
                 "reason":       reason,
-                # FIX v51c: TRADE_MODE directly — pos["mode"] stale ho sakta hai
-                "mode":         TRADE_MODE,
+                # FIX v30: "real" hardcoded tha — TRADE_MODE use karo
+                "mode":         pos.get("mode", TRADE_MODE),
                 "tx_hash":      tx_hash_hex,
-                "snipe_source": "FM_BC",
-                # FIX v56: gas fees add karo — UI mein dikh sake
-                "gas_bnb":      round(pos.get("buy_gas_bnb", 0.0) + DataGuard.get_real_gas_bnb(), 8),
-                "buy_gas_bnb":  pos.get("buy_gas_bnb", 0.0),
-                "sell_gas_bnb": DataGuard.get_real_gas_bnb(),
-                "ath_price":    pos.get("ath_price") or monitored_positions.get(token_addr, {}).get("high", current),
-                "ath_pct":      round(((pos.get("ath_price") or monitored_positions.get(token_addr, {}).get("high", current)) - entry) / entry * 100, 1) if entry > 0 else 0,
-                "hold_minutes": round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds() / 60, 1) if bought_at_str else 0
+                "snipe_source": "FM_BC"
 })
             auto_trade_stats["running_positions"].pop(token_addr, None)
             remove_position_from_monitor(token_addr)
@@ -5686,18 +5562,12 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if _price_baseline[0] > 0:
             _price1 = _price_baseline[0]
             _funds1 = _funds_baseline[0]
-            # Graduation check still needed — 2 retries
+            # Graduation check still needed
             _info_fresh = _get_token_info_cached(token_addr, w3, ttl=0.5)
-            if not _info_fresh:
-                time.sleep(0.3)
-                _info_fresh = _get_token_info_cached(token_addr, w3, ttl=0.1)
             if not _info_fresh: _pre_stop[0] = True; _skip("Stage2 snapshot failed"); return
             if _info_fresh.get("liquidityAdded"): _pre_stop[0] = True; _skip("graduated before Stage2"); return
         else:
             _info_fresh = _get_token_info_cached(token_addr, w3, ttl=0.5)
-            if not _info_fresh:
-                time.sleep(0.3)
-                _info_fresh = _get_token_info_cached(token_addr, w3, ttl=0.1)
             if not _info_fresh: _pre_stop[0] = True; _skip("Stage2 snapshot failed"); return
             if _info_fresh.get("liquidityAdded"): _pre_stop[0] = True; _skip("graduated before Stage2"); return
             _price1 = _info_fresh.get("lastPrice", 0)
@@ -7151,12 +7021,11 @@ def log_trade_internal(session_id: str, trade: dict):
         sess["trade_count"] += 1
         if win:
             sess["win_count"] += 1
+            sess["pnl_24h"] += pnl
         else:
             _size = float(trade.get("size_bnb", AUTO_BUY_SIZE_BNB) or AUTO_BUY_SIZE_BNB)
             _bnb_lost = _size * abs(pnl) / 100.0
             sess["daily_loss"] = sess.get("daily_loss", 0) + _bnb_lost
-        # FIX: pnl_24h win+loss dono track karo — pehle sirf win pe add hota tha
-        sess["pnl_24h"] = round(sess.get("pnl_24h", 0.0) + pnl, 2)
     
     # History save only for full sell
     if trade.get("sell_pct", 100.0) >= 100.0:
@@ -7790,30 +7659,23 @@ def init_session():
 @app.route("/trading-data", methods=["GET", "POST"])
 def trading_data():
   try:
+    # FIX: Hamesha AUTO_SESSION_ID ka data do — random SID se ghost sessions mat banao
+    # Random SID se get_or_create_session call hoti thi → memory leak
     _auto_sess_td = sessions.get(AUTO_SESSION_ID) or {"paper_balance":5.0,"trade_count":0,"win_count":0,"loss_count":0,"positions":[],"pnl":0,"daily_loss":0}
-    bnb_price     = market_cache.get("bnb_price", 0) or 300
-    # FIX: trade_count/win_count session reset pe zero ho jaata tha — auto_trade_stats se lo
-    _wins   = auto_trade_stats.get("wins", 0)
-    _losses = auto_trade_stats.get("losses", 0)
-    trade_count = _wins + _losses or _auto_sess_td.get("trade_count", 0)
-    win_count   = _wins or _auto_sess_td.get("win_count", 0)
-    win_rate    = round((win_count / trade_count * 100), 1) if trade_count > 0 else 0
-    paper_bal   = float(_auto_sess_td.get("paper_balance") or 5.0)
-    daily_loss  = float(_auto_sess_td.get("daily_loss") or 0)
-    # FIX: pnl_24h — auto_trade_stats se today_pnl lo (BNB), session se % bhi
-    _today_pnl_bnb = auto_trade_stats.get("today_pnl", 0.0)
-    _pnl_display = _auto_sess_td.get("pnl_24h", 0)
+    bnb_price     = market_cache.get("bnb_price", 0) or 300  # BUG FIX: 0 nahi dikhao
+    trade_count   = _auto_sess_td.get("trade_count", 0)
+    win_count     = _auto_sess_td.get("win_count", 0)
+    win_rate      = round((win_count / trade_count * 100), 1) if trade_count > 0 else 0
+    paper_bal     = float(_auto_sess_td.get("paper_balance") or 5.0)
+    daily_loss    = float(_auto_sess_td.get("daily_loss") or 0)
     return jsonify({
         "paper":          f"{paper_bal:.4f}",
         "real":           "0.000",
-        "pnl":            f"{_pnl_display:+.1f}%",
-        "pnl_bnb":        round(_today_pnl_bnb, 4),
+        "pnl":            f"+{_auto_sess_td.get('pnl_24h', 0):.1f}%",
         "bnb_price":      bnb_price,
         "fear_greed":     market_cache.get("fear_greed", 50),
         "positions":      list(auto_trade_stats.get("running_positions", {}).keys()),
         "trade_count":    trade_count,
-        "win_count":      win_count,
-        "loss_count":     _losses,
         "win_rate":       win_rate,
         "daily_loss":     round(daily_loss, 4),
         "limit_reached":  daily_loss >= (paper_bal * 0.15),
@@ -8116,7 +7978,7 @@ def trade_history_route():
     # FIX v30: mode default "paper" tha — real mode trades miss hoti thi
     # Ab: agar mode field hi nahi hai toh TRADE_MODE se match karo (both ways safe)
     hist   = [t for t in auto_trade_stats.get("trade_history", [])
-              if isinstance(t, dict) and t.get("mode", TRADE_MODE) == TRADE_MODE]
+              if isinstance(t, dict) and (t.get("mode") or TRADE_MODE) == TRADE_MODE]
     filt   = request.args.get("filter", "all")
     search = request.args.get("q", "").lower()
     from datetime import datetime as _dt
@@ -8231,15 +8093,19 @@ def auto_stats_route():
     _all_hist = auto_trade_stats.get("trade_history", [])
     # Sirf current mode ki trades
     # FIX v30: mode default "paper" tha — real mode pe count zero aata tha
-    _mode_hist = [t for t in _all_hist if t.get("mode", TRADE_MODE) == TRADE_MODE]
-    # FIX v51: count fix — har closed trade ek trade hai, grouping nahi
-    # Pehle address+bought_at grouping thi — ek token multiple times buy hone pe
-    # count galat aata tha (24 vs 20 mismatch)
-    _wins_list   = [t for t in _mode_hist if t.get("result") == "win"]
-    _losses_list = [t for t in _mode_hist if t.get("result") in ("loss", "sell_failed")]
-    wins         = len(_wins_list)
-    losses       = len(_losses_list)
-    trade_count  = wins + losses
+    _mode_hist = [t for t in _all_hist if (t.get("mode") or TRADE_MODE) == TRADE_MODE]
+    _pos_pnl  = {}
+    for _t in _mode_hist:
+        _key = _t.get("address", "") + "|" + _t.get("bought_at", "")[:16]
+        _pos_pnl[_key] = _pos_pnl.get(_key, 0) + float(_t.get("pnl_bnb", 0) or 0)
+    if _pos_pnl:
+        wins   = sum(1 for v in _pos_pnl.values() if v > 0)
+        losses = sum(1 for v in _pos_pnl.values() if v <= 0)
+    else:
+        # Real mode mein 0 — paper counter use nahi karna
+        wins   = 0
+        losses = 0
+    trade_count = wins + losses
     win_rate    = round(wins / trade_count * 100, 1) if trade_count > 0 else 0.0
 
 
@@ -8293,7 +8159,7 @@ def auto_stats_route():
     _hist_all = auto_trade_stats.get("trade_history", [])
     # Sirf current mode ki trades use karo PNL ke liye
     # FIX v30: mode default bug — real mode PNL zero aata tha
-    _hist = [t for t in _hist_all if t.get("mode", TRADE_MODE) == TRADE_MODE]
+    _hist = [t for t in _hist_all if (t.get("mode") or TRADE_MODE) == TRADE_MODE]
 
     # Realized — closed trades
     _realized_pnl_bnb  = sum(float(t.get("pnl_bnb", 0) or 0) for t in _hist)
@@ -8754,12 +8620,6 @@ def force_close_position():
         bought_at_str = pos.get("bought_at", "")
 
         # Trade history mein save karo
-        # FIX ghost: already win hai toh force_close ghost entry mat save karo
-        if _already_won(target_addr):
-            print(f"⏭️ force_close skip — {target_addr[:10]} already won, removing position only")
-            auto_trade_stats["running_positions"].pop(target_addr, None)
-            remove_position_from_monitor(target_addr)
-            return jsonify({"status": "skipped", "message": "Already won — ghost entry prevented"})
         if not isinstance(auto_trade_stats.get("trade_history"), list):
             auto_trade_stats["trade_history"] = []
         auto_trade_stats["trade_history"].append({
@@ -9320,25 +9180,17 @@ def pnl_breakdown():
     """PNL breakdown — today, week, all time — current mode filtered"""
     try:
         hist = auto_trade_stats.get("trade_history", [])
-        # FIX v51: mode filter — TRADE_MODE default (real mode trades miss nahi hongi)
-        hist = [t for t in hist if t.get("mode", TRADE_MODE) == TRADE_MODE]
+        # Sirf current mode ke trades
+        hist = [t for t in hist if (t.get("mode") or "paper") == TRADE_MODE]
         now  = datetime.utcnow()
         def _calc(trades):
-            # FIX v51: sirf win/loss count karo — sell_failed skip
-            _real_trades = [t for t in trades if t.get("result") in ("win", "loss")]
-            wins   = sum(1 for t in _real_trades if t.get("result") == "win")
-            losses = sum(1 for t in _real_trades if t.get("result") == "loss")
-            pnl    = round(sum(float(t.get("pnl_bnb", 0) or 0) for t in _real_trades), 6)
+            wins   = sum(1 for t in trades if float(t.get("pnl_bnb", 0) or 0) > 0)
+            losses = sum(1 for t in trades if float(t.get("pnl_bnb", 0) or 0) <= 0)
+            pnl    = round(sum(float(t.get("pnl_bnb", 0) or 0) for t in trades), 6)
             wr     = round(wins / max(wins+losses, 1) * 100, 1)
-            return {"trades": len(_real_trades), "wins": wins, "losses": losses, "pnl_bnb": pnl, "win_rate": wr}
-        # FIX v51: today filter robust — sold_at missing hone pe skip, safe parse
-        def _safe_days(t):
-            try:
-                s = (t.get("sold_at") or t.get("bought_at") or "")[:19]
-                return (now - datetime.fromisoformat(s)).days if s else 9999
-            except: return 9999
-        today = [t for t in hist if _safe_days(t) == 0]
-        week  = [t for t in hist if _safe_days(t) <= 7]
+            return {"trades": len(trades), "wins": wins, "losses": losses, "pnl_bnb": pnl, "win_rate": wr}
+        today = [t for t in hist if t.get("sold_at","")[:10] == now.strftime("%Y-%m-%d")]
+        week  = [t for t in hist if t.get("sold_at") and (now - datetime.fromisoformat(t["sold_at"][:19])).days <= 7]
         return jsonify({
             "today":    _calc(today),
             "week":     _calc(week),

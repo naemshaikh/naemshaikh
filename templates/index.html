@@ -993,7 +993,7 @@ function openTrade(t){
     <div class="mrow"><span class="mlbl">Holding</span><span class="mval">${holdTime(t.bought_at)}</span></div>`;
   document.getElementById('modal-actions').innerHTML=addr?`
     <button class="mbtn dark" onclick="copyAddr('${addr}');closeModal()">📋 Copy</button>
-    <a class="mbtn gold" href="https://gmgn.ai/bsc/token/${addr}" target="_blank">📈 Chart</a>`
+    <a class="mbtn gold" href="https://dexscreener.com/bsc/${addr}" target="_blank">📊 DexScreener</a>`
     :'<button class="mbtn dark" onclick="closeModal()">Close</button>';
   showModal();
 }
@@ -1073,7 +1073,7 @@ async function fetchHistory(){
   const hist=d.history||[],list=document.getElementById('hist-list');
   // Sirf completed trades — win ya loss (holding wale nahi) + current mode
   const curMode = window._tradeMode || 'paper';
-  const closedTrades = hist.filter(function(t){ return (t.result==='win'||t.result==='loss'||t.result==='sell_failed'||(t.sold_at&&t.result!=='holding')) && (t.mode||curMode) === curMode; });
+  const closedTrades = hist.filter(function(t){ return (t.result==='win'||t.result==='loss'||t.result==='sell_failed'||(t.sold_at&&t.result!=='holding')) && (t.mode||'paper') === curMode; });
   if(!closedTrades.length){list.innerHTML='<div class="empty-state">No completed trades yet</div>';return;}
   // Group by address
   const groups = {};
@@ -1917,7 +1917,7 @@ let _autoEnabled = false;
 
 // ─── WALLET + MODE STATE ────────────────────────────────────
 let _walletAddr = localStorage.getItem('mb_wallet') || '';
-window._tradeMode = localStorage.getItem('mb_mode') || 'paper'; // FIX v51e: window. se global — fetchHistory aur PNL card dono access kar sakein
+window._tradeMode = localStorage.getItem('mb_mode') || 'paper'; // FIX: window. se global — fetchHistory access kar sake
 let _tradeMode = window._tradeMode; // 'paper' or 'real'
 
 // Apply mode on load
@@ -2102,7 +2102,7 @@ window._renderPnlCard = function(_as){
     // trade_history auto-stats mein nahi hai — /trade-history se fetch karo
     var hist = window._cachedTradeHistory || [];
     var curMode = window._tradeMode || 'paper';
-    var modeFiltered = hist.filter(function(t){ return (t.mode||curMode) === curMode; });
+    var modeFiltered = hist.filter(function(t){ return (t.mode||'paper') === curMode; });
     var filtered = _pnlPeriodFilter(modeFiltered, period);
     var invested = filtered.reduce(function(s,t){ return s+parseFloat(t.size_bnb||0.01); },0);
     var pnlBnb   = filtered.reduce(function(s,t){ return s+parseFloat(t.pnl_bnb||0); },0);
@@ -2499,7 +2499,7 @@ function _confirmPaperSwitch(){
 async function _doModeSwitch(){
   const isPaper = _tradeMode === 'paper';
   _tradeMode = isPaper ? 'real' : 'paper';
-  window._tradeMode = _tradeMode; // FIX v51e: global sync
+  window._tradeMode = _tradeMode; // FIX: sync window global
   localStorage.setItem('mb_mode', _tradeMode);
   // Notify backend
   await fetchJSON('/set-trade-mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:_tradeMode, wallet:_walletAddr})},8000);
@@ -3098,7 +3098,7 @@ function openHoldDetail(json){
 
   document.getElementById('modal-actions').innerHTML=addr?
     '<button class="mbtn dark" onclick="copyAddr(\''+addr+'\');closeModal()" style="flex:1;">📋 Copy</button>'+
-    '<a class="mbtn gold" href="https://gmgn.ai/bsc/token/'+addr+'" target="_blank" style="flex:1;">📈 Chart</a>'
+    '<a class="mbtn gold" href="https://dexscreener.com/bsc/'+addr+'" target="_blank" style="flex:1;">📊 DexScreener</a>'
     :'<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
 
   showModal();
@@ -3153,7 +3153,7 @@ window._renderTPage = function(){
     const label= t.reason||'SELL';
     const labelBg=pnl>=0?'rgba(0,230,118,0.15)':'rgba(255,71,87,0.15)';
     const encoded=encodeURIComponent(JSON.stringify(t));
-    return '<div onclick="openTradeDetail(this)" data-t="'+encoded+'" style="display:grid;grid-template-columns:1fr auto auto;align-items:center;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;gap:8px;" onmouseover="this.style.background=\'rgba(255,255,255,0.03)\'" onmouseout="this.style.background=\'\'">'+
+    return '<div onclick="openTradeDetail(\''+encoded+'\')" style="display:grid;grid-template-columns:1fr auto auto;align-items:center;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;gap:8px;" onmouseover="this.style.background=\'rgba(255,255,255,0.03)\'" onmouseout="this.style.background=\'\'">'+
       '<div style="display:flex;align-items:center;gap:9px;min-width:0;">'+
         '<div style="width:36px;height:36px;border-radius:50%;background:'+ic+'22;border:2px solid '+ic+'55;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:'+ic+';flex-shrink:0;">'+sym.slice(0,2)+'</div>'+
         '<div style="min-width:0;">'+
@@ -3253,12 +3253,8 @@ function openGroupTradeDetail(encoded){
     const tokensS=exit>0?(proceedsBNB/exit).toFixed(0):'—';
     const buyIST=t.bought_at?new Date(_toUTC(t.bought_at)).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}):'—';
     const sellIST=t.sold_at?new Date(_toUTC(t.sold_at)).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}):'—';
-    const gasBNB=parseFloat(t.gas_bnb||t.gas_fee||0)||0;  // FIX gas: no fake default
+    const gasBNB=parseFloat(t.gas_bnb||t.gas_fee||0)||0.0005;
     const gasUSD=(gasBNB*bnbP).toFixed(3);
-    // FIX gas: gas-adjusted real PnL
-    const gasAdjPnlB = pnlB - gasBNB;
-    const gasAdjPnlUSD = (Math.abs(gasAdjPnlB)*bnbP).toFixed(2);
-    const gasAdjPnlPct = sz>0?(gasAdjPnlB/sz*100):pnlPctT;
     return (
       '<div style="display:grid;grid-template-columns:90px 1fr auto;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:8px;">'+
         '<div>'+
@@ -3273,8 +3269,8 @@ function openGroupTradeDetail(encoded){
         '</div>'+
         '<div style="text-align:right;">'+
           '<div style="font-size:10px;color:var(--txt3);font-family:JetBrains Mono,monospace;">'+(exit>0?'$'+(exit*bnbP).toFixed(8):'—')+'</div>'+
-          '<div style="font-size:11px;font-weight:800;color:'+(gasAdjPnlB>=0?'var(--em)':'var(--red)')+';">'+(gasAdjPnlB>=0?'+':'-')+'$'+gasAdjPnlUSD+'</div>'+
-          '<div style="font-size:9px;color:'+(gasAdjPnlB>=0?'var(--em)':'var(--red)')+';">'+(gasAdjPnlPct>=0?'+':'')+gasAdjPnlPct.toFixed(1)+'% <span style="color:var(--txt3);font-size:8px;">⛽ -$'+gasUSD+'</span></div>'+
+          '<div style="font-size:11px;font-weight:800;color:'+(pnlB>=0?'var(--em)':'var(--red)')+';">'+(pnlB>=0?'+':'-')+'$'+pnlUSDt+'</div>'+
+          '<div style="font-size:9px;color:'+(pnlB>=0?'var(--em)':'var(--red)')+';">'+(pnlPctT>=0?'+':'')+pnlPctT.toFixed(1)+'%</div>'+
         '</div>'+
       '</div>'+
       _tpRows+
@@ -3333,16 +3329,15 @@ function openGroupTradeDetail(encoded){
 
   document.getElementById('modal-actions').innerHTML=addr?
     '<button class="mbtn dark" onclick="copyAddr(\''+addr+'\');closeModal()" style="flex:1;">📋 Copy</button>'+
-    '<a class="mbtn gold" href="https://gmgn.ai/bsc/token/'+addr+(t.bought_at?'?from='+Math.floor(new Date(_toUTC(t.bought_at)).getTime()/1000)+(t.sold_at?'&to='+Math.floor(new Date(_toUTC(t.sold_at)).getTime()/1000):''):'')+'" target="_blank" style="flex:1;">📈 Chart</a>'
+    '<a class="mbtn gold" href="https://dexscreener.com/bsc/'+addr+'" target="_blank" style="flex:1;">📊 DexScreener</a>'
     :'<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
 
   showModal();
 }
 
 // Trade detail modal for closed trades
-function openTradeDetail(el){
-  let t; try{ t=JSON.parse(decodeURIComponent(el.dataset.t||'')); }catch(e){return;}
-  if(!t) return;
+function openTradeDetail(json){
+  let t; try{ t=JSON.parse(decodeURIComponent(json)); }catch(e){return;}
   const sym    = (t.token && !t.token.startsWith('0x') && t.token.length<20) ? t.token.toUpperCase() : symOf(t.token,t.address);
   const addr   = t.address||'';
   const ic     = iconClr(sym);
@@ -3448,7 +3443,7 @@ function openTradeDetail(el){
 
   document.getElementById('modal-actions').innerHTML = addr?
     '<button class="mbtn dark" onclick="copyAddr(\''+addr+'\');closeModal()" style="flex:1;">📋 Copy</button>'+
-    '<a class="mbtn gold" href="https://gmgn.ai/bsc/token/'+addr+'" target="_blank" style="flex:1;">📈 Chart</a>'
+    '<a class="mbtn gold" href="https://dexscreener.com/bsc/'+addr+'" target="_blank" style="flex:1;">📊 DexScreener</a>'
     :'<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
 
   showModal();
@@ -3756,7 +3751,7 @@ async function scanToken(){
     '</div>';
   document.getElementById('modal-actions').innerHTML=
     '<button class="mbtn dark" onclick="closeModal()" style="flex:1;">✕ Close</button>'+
-    '<button class="mbtn" onclick="window.open(\"https://gmgn.ai/bsc/token/\"+addr,\"_blank\")" style="flex:1;">📈 Chart</button>';
+    '<button class="mbtn" onclick="window.open(\"https://dexscreener.com/bsc/\"+addr,\"_blank\")" style="flex:1;">↗ DexScreener</button>';
   showModal();
 }
 
