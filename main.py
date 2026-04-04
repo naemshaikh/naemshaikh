@@ -4713,8 +4713,8 @@ def _fm_confirm_close(token_addr, sell_pct, reason, tx_hash_hex):
                 "result":       "win" if _total_pnl_pct > 0 else "loss",
                 "exit_reason":  reason,
                 "reason":       reason,
-                # FIX v30: "real" hardcoded tha — TRADE_MODE use karo
-                "mode":         pos.get("mode", TRADE_MODE),
+                # FIX v51c: TRADE_MODE directly — pos["mode"] stale ho sakta hai
+                "mode":         TRADE_MODE,
                 "tx_hash":      tx_hash_hex,
                 "snipe_source": "FM_BC"
 })
