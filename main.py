@@ -4739,7 +4739,33 @@ def _fm_confirm_close(token_addr, sell_pct, reason, tx_hash_hex):
             _orig_sz      = pos.get("orig_size_bnb", size)
             _total_pnl_bnb = round(pos.get("banked_pnl_bnb", 0.0), 6)
             _total_pnl_pct = round((_total_pnl_bnb / _orig_sz * 100), 2) if _orig_sz > 0 else pnl_pct
-            auto_trade_stats["trade_history"].append({
+
+            # FIX v57: Double recording check — _auto_paper_sell ne already record kiya hoga
+            # Same address ka trade last 120s mein already hai? → update karo, add nahi
+            _now_iso = datetime.utcnow().isoformat()
+            _existing_idx = None
+            for _idx, _tr in enumerate(reversed(auto_trade_stats["trade_history"])):
+                if _tr.get("address", "").lower() == token_addr.lower():
+                    try:
+                        _tr_sold = _tr.get("sold_at", "")
+                        if _tr_sold:
+                            _diff = (datetime.utcnow() - datetime.fromisoformat(_tr_sold[:19])).total_seconds()
+                            if abs(_diff) < 120:
+                                _existing_idx = len(auto_trade_stats["trade_history"]) - 1 - _idx
+                    except: pass
+                    break
+
+            if _existing_idx is not None:
+                # Update existing record with confirmed data
+                _existing = auto_trade_stats["trade_history"][_existing_idx]
+                _existing["tx_hash"]   = tx_hash_hex
+                _existing["pnl_pct"]   = _total_pnl_pct
+                _existing["pnl_bnb"]   = _total_pnl_bnb
+                _existing["exit"]      = current
+                _existing["exit_price"] = current
+                print(f"✅ [FM v57] Trade updated (no duplicate): {token_addr[:10]} pnl={_total_pnl_pct:.1f}%")
+            else:
+                auto_trade_stats["trade_history"].append({
                 "token":        token,
                 "address":      token_addr,
                 "entry":        entry,
