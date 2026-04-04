@@ -4028,9 +4028,10 @@ def auto_position_manager():
 
                         if len(_fm_price_hist) >= 3:
                             # Last 3 prices mein se 2 flat/down hain → volume weak
+                            # FIX: 0.1% → 1.5% tolerance — normal fluctuation ignore karo
                             _fm_declining = sum(
                                 1 for i in range(1, len(_fm_price_hist))
-                                if _fm_price_hist[i] <= _fm_price_hist[i-1] * 1.001  # 0.1% tolerance
+                                if _fm_price_hist[i] <= _fm_price_hist[i-1] * 1.015  # 1.5% tolerance
                             )
                             if _fm_declining >= 2:
                                 _vwc[addr] = _vwc.get(addr, 0) + 1
@@ -4045,11 +4046,12 @@ def auto_position_manager():
                         else:
                             _vwc[addr] = 0
 
-                    _vol_dying  = _vwc.get(addr, 0) >= 3
-                    # FM BC: hold_secs guard hataya — ab FM-specific price check hai
-                    # PancakeSwap tokens: hold_secs > 20 guard rakhna zaroori hai (bv5 lag)
+                    # FIX: >= 3 → >= 6 readings — zyada confirmation chahiye
+                    # 3 readings = ~0.6s, 6 readings = ~1.2s — fluctuation survive karega
+                    _vol_dying  = _vwc.get(addr, 0) >= 6
+                    # FM BC: grace period 5s → 20s — early exit avoid
                     if _is_fm_bc:
-                        _mom_dead = _vol_dying and _hold_secs > 5  # 5s grace period only
+                        _mom_dead = _vol_dying and _hold_secs > 20
                     else:
                         _mom_dead = _vol_dying and _hold_secs > 20
 
