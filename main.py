@@ -5586,7 +5586,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         def _parallel_fetch(results_dict):
             def _fetch_price():
                 try:
-                    info = _get_token_info_cached(token_addr, w3, 0.5)
+                    info = _get_token_info_cached(token_addr, w3, 0.08)
                     results_dict["info"] = info
                 except Exception:
                     results_dict["info"] = None
