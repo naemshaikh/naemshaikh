@@ -1917,7 +1917,8 @@ let _autoEnabled = false;
 
 // ─── WALLET + MODE STATE ────────────────────────────────────
 let _walletAddr = localStorage.getItem('mb_wallet') || '';
-let _tradeMode  = localStorage.getItem('mb_mode')   || 'paper'; // 'paper' or 'real'
+window._tradeMode = localStorage.getItem('mb_mode') || 'paper'; // FIX v51e: window. se global — fetchHistory aur PNL card dono access kar sakein
+let _tradeMode = window._tradeMode; // 'paper' or 'real'
 
 // Apply mode on load
 function _applyModeUI(){
@@ -2498,6 +2499,7 @@ function _confirmPaperSwitch(){
 async function _doModeSwitch(){
   const isPaper = _tradeMode === 'paper';
   _tradeMode = isPaper ? 'real' : 'paper';
+  window._tradeMode = _tradeMode; // FIX v51e: global sync
   localStorage.setItem('mb_mode', _tradeMode);
   // Notify backend
   await fetchJSON('/set-trade-mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:_tradeMode, wallet:_walletAddr})},8000);
