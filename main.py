@@ -3955,16 +3955,48 @@ def auto_position_manager():
                     except Exception:
                         _hold_secs = 999
 
+                    # ── FM BC tokens: PancakeSwap pair nahi hota → bv5 hamesha 0 ──
+                    # Isliye FM BC ke liye price momentum check karo instead of bv5
+                    _src_check = _pos_data.get("source", "") or _pos_data.get("buy_reasoning", {}).get("source", "")
+                    _is_fm_bc  = "FM_BC" in _src_check
+
                     _vwc = auto_trade_stats["vol_weak_count"]
-                    if _bv5_live < 0.5:
-                        _vwc[addr] = _vwc.get(addr, 0) + 1
+
+                    if _is_fm_bc:
+                        # FM BC: price flat ya gir raha hai = momentum dead
+                        # monitored_positions ka current price track karo
+                        _fm_price_hist = _pos_data.get("_fm_price_hist", [])
+                        _fm_price_hist.append(current)
+                        if len(_fm_price_hist) > 5:
+                            _fm_price_hist.pop(0)
+                        _pos_data["_fm_price_hist"] = _fm_price_hist
+
+                        if len(_fm_price_hist) >= 3:
+                            # Last 3 prices mein se 2 flat/down hain → volume weak
+                            _fm_declining = sum(
+                                1 for i in range(1, len(_fm_price_hist))
+                                if _fm_price_hist[i] <= _fm_price_hist[i-1] * 1.001  # 0.1% tolerance
+                            )
+                            if _fm_declining >= 2:
+                                _vwc[addr] = _vwc.get(addr, 0) + 1
+                            else:
+                                _vwc[addr] = 0  # price upar ja raha = momentum alive
+                        else:
+                            _vwc[addr] = 0  # data collect ho raha hai
                     else:
-                        _vwc[addr] = 0
+                        # PancakeSwap tokens: original bv5 logic
+                        if _bv5_live < 0.5:
+                            _vwc[addr] = _vwc.get(addr, 0) + 1
+                        else:
+                            _vwc[addr] = 0
+
                     _vol_dying  = _vwc.get(addr, 0) >= 3
-                    # FIX v52 REVERTED: FM BC tokens ka PancakeSwap pair nahi hota
-                    # bv5 hamesha 0 = _vol_dying hamesha True = instant MomDead = wrong
-                    # hold_secs guard zaroori hai — FM price monitor se data aane ka wait
-                    _mom_dead   = _vol_dying and _hold_secs > 20
+                    # FM BC: hold_secs guard hataya — ab FM-specific price check hai
+                    # PancakeSwap tokens: hold_secs > 20 guard rakhna zaroori hai (bv5 lag)
+                    if _is_fm_bc:
+                        _mom_dead = _vol_dying and _hold_secs > 5  # 5s grace period only
+                    else:
+                        _mom_dead = _vol_dying and _hold_secs > 20
 
                     # ── ENTRY GUARD v44: TP1 se pehle only, fake signal protection ──
                     # Case 1: Seedha neeche — 3 consecutive no-buyer readings → min loss exit
