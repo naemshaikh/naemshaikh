@@ -938,7 +938,15 @@ function holdTime(b){
 }
 function holdBetween(a,b){
   if(!a||!b)return '—';
-  try{const ms=new Date(_toUTC(b))-new Date(_toUTC(a)),m=Math.floor(ms/60000);if(m<1)return '<1m';if(m<60)return m+'m';return Math.floor(m/60)+'h '+(m%60?m%60+'m':'');}catch(e){return '—';}
+  try{
+    const ms=new Date(_toUTC(b))-new Date(_toUTC(a));
+    if(ms<0)return '—';
+    const s=Math.floor(ms/1000);
+    if(s<60)return s+'s';
+    const m=Math.floor(s/60);
+    if(m<60)return m+'m'+(s%60?' '+s%60+'s':'');
+    return Math.floor(m/60)+'h '+(m%60?m%60+'m':'');
+  }catch(e){return '—';}
 }
 function bp(){return _bnbReal||0;}
 function symOf(token,addr){return(token&&!token.startsWith('0x')&&token.length<20)?token.slice(0,6).toUpperCase():(addr||'????').slice(2,7).toUpperCase();}
@@ -3097,8 +3105,11 @@ function openHoldDetail(json){
     '<div>'+holdRow+tpRows+buyRow+'</div>'; // Holding latest → TPs → Buy oldest
 
   document.getElementById('modal-actions').innerHTML=addr?
+    '<div style="display:flex;gap:6px;width:100%;">'+
     '<button class="mbtn dark" onclick="copyAddr(\''+addr+'\');closeModal()" style="flex:1;">📋 Copy</button>'+
-    '<a class="mbtn gold" href="https://dexscreener.com/bsc/'+addr+'" target="_blank" style="flex:1;">📊 DexScreener</a>'
+    '<a class="mbtn gold" href="https://gmgn.ai/bsc/token/'+addr+'" target="_blank" style="flex:1;">📊 GMGN</a>'+
+    '<a class="mbtn" href="https://dexscreener.com/bsc/'+addr+'" target="_blank" style="flex:1;background:rgba(30,130,255,0.15);border:1px solid rgba(30,130,255,0.4);color:#4da6ff;">📈 DEX</a>'+
+    '</div>'
     :'<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
 
   showModal();
@@ -3332,8 +3343,11 @@ function openGroupTradeDetail(encoded){
     '<div>'+actRows+'</div>';
 
   document.getElementById('modal-actions').innerHTML=addr?
+    '<div style="display:flex;gap:6px;width:100%;">'+
     '<button class="mbtn dark" onclick="copyAddr(\''+addr+'\');closeModal()" style="flex:1;">📋 Copy</button>'+
-    '<a class="mbtn gold" href="https://gmgn.ai/bsc/token/'+addr+'" target="_blank" style="flex:1;">📊 GMGN</a>'
+    '<a class="mbtn gold" href="https://gmgn.ai/bsc/token/'+addr+'" target="_blank" style="flex:1;">📊 GMGN</a>'+
+    '<a class="mbtn" href="https://dexscreener.com/bsc/'+addr+'" target="_blank" style="flex:1;background:rgba(30,130,255,0.15);border:1px solid rgba(30,130,255,0.4);color:#4da6ff;">📈 DEX</a>'+
+    '</div>'
     :'<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
 
   showModal();
@@ -3613,8 +3627,11 @@ function openTradeDetail(json){
     '</div>';
 
   document.getElementById('modal-actions').innerHTML = addr?
+    '<div style="display:flex;gap:6px;width:100%;">'+
     '<button class="mbtn dark" onclick="copyAddr(\''+addr+'\');closeModal()" style="flex:1;">📋 Copy</button>'+
-    '<a class="mbtn gold" href="https://dexscreener.com/bsc/'+addr+'" target="_blank" style="flex:1;">📊 DexScreener</a>'
+    '<a class="mbtn gold" href="https://gmgn.ai/bsc/token/'+addr+'" target="_blank" style="flex:1;">📊 GMGN</a>'+
+    '<a class="mbtn" href="https://dexscreener.com/bsc/'+addr+'" target="_blank" style="flex:1;background:rgba(30,130,255,0.15);border:1px solid rgba(30,130,255,0.4);color:#4da6ff;">📈 DEX</a>'+
+    '</div>'
     :'<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
 
   showModal();
