@@ -2870,6 +2870,10 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         # Real buy successful → entry price on-chain se lo
         if _real_result.get("entry_price", 0) > 0:
             entry_price = _real_result["entry_price"]
+        # FIX gas: real buy gas save karo
+        _buy_gas_used  = _real_result.get("gas_used", 0)
+        _buy_gas_price = _get_dynamic_gas_price()
+        _buy_gas_bnb   = round((_buy_gas_used * _buy_gas_price) / 1e18, 8) if _buy_gas_used else 0.0
         print(f"✅ REAL BUY executed: tx={_real_result.get('tx_hash','')[:20]}")
     # Paper mode: balance simulate karo (real mode mein skip)
     if TRADE_MODE != "real":
@@ -2907,6 +2911,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         "buy_reasoning":  _buy_reasoning,
         "buy_tax":        _buy_tax,   # FIX2: sell slippage ke liye zaroori
         "sell_tax":       _sell_tax,  # FIX2: sell slippage ke liye zaroori
+        "buy_gas_bnb":    _buy_gas_bnb if TRADE_MODE == "real" else 0.0,  # FIX gas: real buy gas
     }
     auto_trade_stats["total_auto_buys"] += 1
     auto_trade_stats["last_action"] = f"BUY {token_name or address[:10]}"
@@ -3059,8 +3064,18 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
             else:
                 _total_pnl_bnb_trade = round(pos.get("banked_pnl_bnb", 0.0), 6)
             _total_pnl_pct_trade = round((_total_pnl_bnb_trade / _orig_sz * 100), 2) if _orig_sz > 0 else pnl_pct
-            _gas_bnb_sell = DataGuard.get_real_gas_bnb()
-            
+            # FIX gas: real sell gas calculate karo
+            _sell_gas_used  = (real_sell_result or {}).get("gas_used", 0)
+            _sell_gas_price = (real_sell_result or {}).get("gas_price", 0)
+            if TRADE_MODE == "real" and _sell_gas_used and _sell_gas_price:
+                _gas_bnb_sell = round((_sell_gas_used * _sell_gas_price) / 1e18, 8)
+            else:
+                _gas_bnb_sell = DataGuard.get_real_gas_bnb()
+
+            # FIX gas: buy gas bhi lo position se
+            _buy_gas_bnb_saved = pos.get("buy_gas_bnb", 0.0)
+            _total_gas_bnb     = round(_gas_bnb_sell + _buy_gas_bnb_saved, 8)
+
             _buy_rsn = pos.get("buy_reasoning", {}) or {}
             _assumption = _buy_rsn.get("assumption", "N/A")
             _signals_used = _buy_rsn.get("signals", [])
@@ -3075,9 +3090,12 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 "exit":         current,
                 "exit_price":   current,
                 "pnl_pct":      _total_pnl_pct_trade,
-                "pnl_bnb":      _total_pnl_bnb_trade,
+                "pnl_bnb":      round(_total_pnl_bnb_trade - _total_gas_bnb, 6),  # FIX gas: gas deduct
+                "pnl_bnb_before_gas": _total_pnl_bnb_trade,  # debug ke liye
                 "size_bnb":     _orig_sz,
-                "gas_bnb":      _gas_bnb_sell,
+                "gas_bnb":      _total_gas_bnb,   # FIX gas: buy+sell total real gas
+                "buy_gas_bnb":  _buy_gas_bnb_saved,
+                "sell_gas_bnb": _gas_bnb_sell,
                 "bought_usd":   _saved_bought_usd if _saved_bought_usd else round(_orig_sz * _bnb_at_sell, 2),
                 "sold_usd":     round(max(0.0, (_saved_bought_usd / _bnb_at_sell if _bnb_at_sell > 0 else _orig_sz) + _total_pnl_bnb_trade) * _bnb_at_sell, 2) if _bnb_at_sell > 0 else 0,
                 "bought_at":    bought_at_str,
