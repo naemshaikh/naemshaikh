@@ -3294,6 +3294,11 @@ function openGroupTradeDetail(encoded){
   }).join('');
 
   document.getElementById('modal-body').innerHTML=
+    // Chart placeholder — GeckoTerminal se load hoga
+    '<div id="trade-chart-wrap" style="background:var(--ink3);border-radius:12px;overflow:hidden;margin-bottom:14px;height:180px;display:flex;align-items:center;justify-content:center;">'+
+      '<div id="trade-chart-loading" style="color:var(--txt3);font-size:11px;">📊 Chart loading...</div>'+
+      '<canvas id="trade-chart-canvas" style="display:none;width:100%;height:180px;"></canvas>'+
+    '</div>'+
     // Stats grid — GMGN profile style
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">'+
       '<div style="background:var(--ink3);border-radius:10px;padding:11px;border:1px solid '+(g.totalPnlB>=0?'rgba(0,230,118,0.2)':'rgba(255,71,87,0.2)')+';">'+
@@ -3301,7 +3306,6 @@ function openGroupTradeDetail(encoded){
         '<div style="font-size:14px;font-weight:900;color:'+clr+';font-family:JetBrains Mono,monospace;">'+(g.totalPnlB>=0?'+':'-')+'$'+totalPnlUSD.toFixed(2)+'</div>'+
         '<div style="font-size:10px;color:'+clr+';margin-top:1px;">'+(pnlPct>=0?'+':'')+pnlPct.toFixed(1)+'%</div>'+
       '</div>'+
-      // Holding card removed — completed trades mein nahi chahiye
       '<div style="background:var(--ink3);border-radius:10px;padding:11px;">'+
         '<div style="font-size:9px;color:var(--txt3);margin-bottom:3px;">Bought</div>'+
         '<div style="font-size:14px;font-weight:900;color:#64C8FF;font-family:JetBrains Mono,monospace;">$'+totalBoughtUSD.toFixed(2)+'</div>'+
@@ -3329,10 +3333,177 @@ function openGroupTradeDetail(encoded){
 
   document.getElementById('modal-actions').innerHTML=addr?
     '<button class="mbtn dark" onclick="copyAddr(\''+addr+'\');closeModal()" style="flex:1;">📋 Copy</button>'+
-    '<a class="mbtn gold" href="https://dexscreener.com/bsc/'+addr+'" target="_blank" style="flex:1;">📊 DexScreener</a>'
+    '<a class="mbtn gold" href="https://gmgn.ai/bsc/token/'+addr+'" target="_blank" style="flex:1;">📊 GMGN</a>'
     :'<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
 
   showModal();
+
+  // ── Chart load: GeckoTerminal OHLCV → Canvas render with entry/exit markers ──
+  if(addr){
+    _loadTradeChart(addr, trades);
+  }
+}
+
+async function _loadTradeChart(addr, trades){
+  try{
+    // GeckoTerminal free API — BSC token OHLCV 5min candles
+    const url = 'https://api.geckoterminal.com/api/v2/networks/bsc/tokens/'+addr+'/ohlcv/minute?aggregate=5&limit=100&currency=usd';
+    const resp = await fetch(url, {headers:{'Accept':'application/json'}});
+    if(!resp.ok){ _chartFallback(); return; }
+    const json = await resp.json();
+    const ohlcv = (json.data&&json.data.attributes&&json.data.attributes.ohlcv_list)||[];
+    if(!ohlcv.length){ _chartFallback(); return; }
+
+    // ohlcv format: [timestamp_sec, open, high, low, close, volume]
+    const prices = ohlcv.map(function(c){ return {t: c[0]*1000, o:+c[1], h:+c[2], l:+c[3], c:+c[4]}; });
+    prices.sort(function(a,b){return a.t-b.t;});
+
+    // Entry/exit markers from trades
+    const markers = [];
+    trades.forEach(function(t){
+      if(t.bought_at){
+        const bt = new Date(_toUTC(t.bought_at)).getTime();
+        const ep = parseFloat(t.entry||0) * (window._bnbReal||580);
+        markers.push({t:bt, price:ep, type:'buy'});
+      }
+      if(t.sold_at){
+        const st = new Date(_toUTC(t.sold_at)).getTime();
+        const xp = parseFloat(t.exit||0) * (window._bnbReal||580);
+        markers.push({t:st, price:xp, type:'sell'});
+      }
+    });
+
+    _renderTradeChart(prices, markers);
+  }catch(e){ _chartFallback(); }
+}
+
+function _chartFallback(){
+  const wrap = document.getElementById('trade-chart-wrap');
+  if(wrap) wrap.style.display='none';
+}
+
+function _renderTradeChart(prices, markers){
+  const canvas = document.getElementById('trade-chart-canvas');
+  const loading = document.getElementById('trade-chart-loading');
+  if(!canvas) return;
+
+  // Set canvas actual pixel size
+  const wrap = document.getElementById('trade-chart-wrap');
+  const W = wrap ? wrap.clientWidth : 320;
+  const H = 180;
+  canvas.width  = W * window.devicePixelRatio;
+  canvas.height = H * window.devicePixelRatio;
+  canvas.style.width  = W+'px';
+  canvas.style.height = H+'px';
+
+  const ctx = canvas.getContext('2d');
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+  const pad = {t:12, r:10, b:24, l:8};
+  const cW = W - pad.l - pad.r;
+  const cH = H - pad.t - pad.b;
+
+  // Price range
+  const allPrices = prices.map(function(p){return p.c;});
+  const minP = Math.min.apply(null, allPrices);
+  const maxP = Math.max.apply(null, allPrices);
+  const rangeP = maxP - minP || 1;
+  const minT = prices[0].t;
+  const maxT = prices[prices.length-1].t;
+  const rangeT = maxT - minT || 1;
+
+  function xOf(t){ return pad.l + ((t-minT)/rangeT)*cW; }
+  function yOf(p){ return pad.t + (1-(p-minP)/rangeP)*cH; }
+
+  // BG
+  ctx.fillStyle='#161b2e';
+  ctx.fillRect(0,0,W,H);
+
+  // Gradient fill under line
+  const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t+cH);
+  grad.addColorStop(0,'rgba(0,212,170,0.25)');
+  grad.addColorStop(1,'rgba(0,212,170,0.0)');
+  ctx.beginPath();
+  prices.forEach(function(p,i){
+    const x=xOf(p.t), y=yOf(p.c);
+    i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+  });
+  ctx.lineTo(xOf(prices[prices.length-1].t), pad.t+cH);
+  ctx.lineTo(xOf(prices[0].t), pad.t+cH);
+  ctx.closePath();
+  ctx.fillStyle=grad;
+  ctx.fill();
+
+  // Price line
+  ctx.beginPath();
+  ctx.strokeStyle='#00d4aa';
+  ctx.lineWidth=1.5;
+  prices.forEach(function(p,i){
+    const x=xOf(p.t), y=yOf(p.c);
+    i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+
+  // Time axis labels (3 points)
+  ctx.fillStyle='rgba(255,255,255,0.3)';
+  ctx.font='8px JetBrains Mono, monospace';
+  ctx.textAlign='center';
+  [0, Math.floor(prices.length/2), prices.length-1].forEach(function(i){
+    const p = prices[i];
+    if(!p) return;
+    const x = xOf(p.t);
+    const d = new Date(p.t);
+    const lbl = d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false});
+    ctx.fillText(lbl, x, H-6);
+  });
+
+  // Entry/Exit markers
+  markers.forEach(function(m){
+    if(!m.price || m.price<=0) return;
+    // Clamp price within range for display
+    const clampedP = Math.max(minP, Math.min(maxP, m.price));
+    const x = xOf(m.t);
+    const y = yOf(clampedP);
+    const isBuy = m.type==='buy';
+    const col = isBuy ? '#64C8FF' : '#00e676';
+
+    // Vertical dashed line
+    ctx.save();
+    ctx.setLineDash([3,3]);
+    ctx.strokeStyle = col+'88';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, pad.t);
+    ctx.lineTo(x, pad.t+cH);
+    ctx.stroke();
+    ctx.restore();
+
+    // Triangle marker
+    ctx.beginPath();
+    ctx.fillStyle = col;
+    if(isBuy){
+      // Up triangle at bottom
+      ctx.moveTo(x, y-10);
+      ctx.lineTo(x-5, y+2);
+      ctx.lineTo(x+5, y+2);
+    } else {
+      // Down triangle at top
+      ctx.moveTo(x, y+10);
+      ctx.lineTo(x-5, y-2);
+      ctx.lineTo(x+5, y-2);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // Label
+    ctx.fillStyle = col;
+    ctx.font='bold 8px JetBrains Mono,monospace';
+    ctx.textAlign='center';
+    ctx.fillText(isBuy?'B':'S', x, isBuy ? y-13 : y+18);
+  });
+
+  if(loading) loading.style.display='none';
+  canvas.style.display='block';
 }
 
 // Trade detail modal for closed trades
