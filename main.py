@@ -6201,13 +6201,16 @@ def poll_four_meme_v2():
             _seen.add(_al)
             _fm_sniped.add(_al)  # turant add — koi doosra thread aage nahi nikal sakta
             _fm_sniped_ts[_al] = time.time()
-            # FIX v50: 1 hour se purane entries cleanup karo — memory leak fix
-            _now_ts = time.time()
-            _stale = [k for k, t in _fm_sniped_ts.items() if _now_ts - t > 3600]
-            for _sk in _stale:
-                _fm_sniped.discard(_sk)
-                _fm_sniped_ts.pop(_sk, None)
-        if len(_seen) > 1000: _seen.clear()
+            # FIX v55: _seen clear hone pe _fm_sniped bhi sync karo
+            # _seen.clear() ke baad _fm_sniped mein stale entries block karti thi
+            if len(_seen) > 1000:
+                _seen.clear()
+                # _fm_sniped bhi clear karo — 1h se purane hi rakho
+                _now_ts = time.time()
+                _stale = [k for k, t in _fm_sniped_ts.items() if _now_ts - t > 3600]
+                for _sk in _stale:
+                    _fm_sniped.discard(_sk)
+                    _fm_sniped_ts.pop(_sk, None)
 
         if not FM_SNIPER_ENABLED: return
 
