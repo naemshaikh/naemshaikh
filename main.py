@@ -3046,7 +3046,17 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
             _bnb_at_sell = market_cache.get("bnb_price", 0)
             _saved_bought_usd = auto_trade_stats["running_positions"].get(address, {}).get("bought_usd", 0)
             _orig_sz = pos.get("orig_size_bnb", size)
-            _total_pnl_bnb_trade = round(pos.get("banked_pnl_bnb", 0.0), 6)
+            # FIX v51: Real mode mein actual bnb_received use karo (on-chain receipt)
+            # Pehle: estimated price se pnl_bnb calculate hoti thi — galat tha
+            # Ab: real_sell_result["bnb_received"] se actual return lo
+            if TRADE_MODE == "real" and real_sell_result and real_sell_result.get("bnb_received", 0) > 0:
+                _actual_received  = real_sell_result["bnb_received"]
+                _sell_cost        = _orig_sz * (sell_pct / 100.0)
+                _total_pnl_bnb_trade = round(
+                    pos.get("banked_pnl_bnb", 0.0) - (_sell_cost - _actual_received), 6
+                )
+            else:
+                _total_pnl_bnb_trade = round(pos.get("banked_pnl_bnb", 0.0), 6)
             _total_pnl_pct_trade = round((_total_pnl_bnb_trade / _orig_sz * 100), 2) if _orig_sz > 0 else pnl_pct
             _gas_bnb_sell = DataGuard.get_real_gas_bnb()
             
@@ -3074,7 +3084,9 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 "result":       "win" if _total_pnl_pct_trade > 0 else "loss",
                 "exit_reason":  reason,
                 "reason":       reason,
-                "mode":         pos.get("mode", TRADE_MODE),
+                # FIX v51: TRADE_MODE directly — pos["mode"] stale/wrong ho sakta hai
+                "mode":         TRADE_MODE,
+                "tx_hash":      (real_sell_result or {}).get("tx_hash", "") if TRADE_MODE == "real" else "",
                 "tp_events":    pos.get("tp_events", []),
                 "buy_reasoning":_buy_rsn,
                 "post_mortem":  _post_mortem,
@@ -7992,7 +8004,7 @@ def trade_history_route():
     # FIX v30: mode default "paper" tha — real mode trades miss hoti thi
     # Ab: agar mode field hi nahi hai toh TRADE_MODE se match karo (both ways safe)
     hist   = [t for t in auto_trade_stats.get("trade_history", [])
-              if isinstance(t, dict) and (t.get("mode") or TRADE_MODE) == TRADE_MODE]
+              if isinstance(t, dict) and t.get("mode", TRADE_MODE) == TRADE_MODE]
     filt   = request.args.get("filter", "all")
     search = request.args.get("q", "").lower()
     from datetime import datetime as _dt
@@ -8107,19 +8119,15 @@ def auto_stats_route():
     _all_hist = auto_trade_stats.get("trade_history", [])
     # Sirf current mode ki trades
     # FIX v30: mode default "paper" tha — real mode pe count zero aata tha
-    _mode_hist = [t for t in _all_hist if (t.get("mode") or TRADE_MODE) == TRADE_MODE]
-    _pos_pnl  = {}
-    for _t in _mode_hist:
-        _key = _t.get("address", "") + "|" + _t.get("bought_at", "")[:16]
-        _pos_pnl[_key] = _pos_pnl.get(_key, 0) + float(_t.get("pnl_bnb", 0) or 0)
-    if _pos_pnl:
-        wins   = sum(1 for v in _pos_pnl.values() if v > 0)
-        losses = sum(1 for v in _pos_pnl.values() if v <= 0)
-    else:
-        # Real mode mein 0 — paper counter use nahi karna
-        wins   = 0
-        losses = 0
-    trade_count = wins + losses
+    _mode_hist = [t for t in _all_hist if t.get("mode", TRADE_MODE) == TRADE_MODE]
+    # FIX v51: count fix — har closed trade ek trade hai, grouping nahi
+    # Pehle address+bought_at grouping thi — ek token multiple times buy hone pe
+    # count galat aata tha (24 vs 20 mismatch)
+    _wins_list   = [t for t in _mode_hist if t.get("result") == "win"]
+    _losses_list = [t for t in _mode_hist if t.get("result") in ("loss", "sell_failed")]
+    wins         = len(_wins_list)
+    losses       = len(_losses_list)
+    trade_count  = wins + losses
     win_rate    = round(wins / trade_count * 100, 1) if trade_count > 0 else 0.0
 
 
@@ -8173,7 +8181,7 @@ def auto_stats_route():
     _hist_all = auto_trade_stats.get("trade_history", [])
     # Sirf current mode ki trades use karo PNL ke liye
     # FIX v30: mode default bug — real mode PNL zero aata tha
-    _hist = [t for t in _hist_all if (t.get("mode") or TRADE_MODE) == TRADE_MODE]
+    _hist = [t for t in _hist_all if t.get("mode", TRADE_MODE) == TRADE_MODE]
 
     # Realized — closed trades
     _realized_pnl_bnb  = sum(float(t.get("pnl_bnb", 0) or 0) for t in _hist)
@@ -9194,17 +9202,25 @@ def pnl_breakdown():
     """PNL breakdown — today, week, all time — current mode filtered"""
     try:
         hist = auto_trade_stats.get("trade_history", [])
-        # Sirf current mode ke trades
-        hist = [t for t in hist if (t.get("mode") or "paper") == TRADE_MODE]
+        # FIX v51: mode filter — TRADE_MODE default (real mode trades miss nahi hongi)
+        hist = [t for t in hist if t.get("mode", TRADE_MODE) == TRADE_MODE]
         now  = datetime.utcnow()
         def _calc(trades):
-            wins   = sum(1 for t in trades if float(t.get("pnl_bnb", 0) or 0) > 0)
-            losses = sum(1 for t in trades if float(t.get("pnl_bnb", 0) or 0) <= 0)
-            pnl    = round(sum(float(t.get("pnl_bnb", 0) or 0) for t in trades), 6)
+            # FIX v51: sirf win/loss count karo — sell_failed skip
+            _real_trades = [t for t in trades if t.get("result") in ("win", "loss")]
+            wins   = sum(1 for t in _real_trades if t.get("result") == "win")
+            losses = sum(1 for t in _real_trades if t.get("result") == "loss")
+            pnl    = round(sum(float(t.get("pnl_bnb", 0) or 0) for t in _real_trades), 6)
             wr     = round(wins / max(wins+losses, 1) * 100, 1)
-            return {"trades": len(trades), "wins": wins, "losses": losses, "pnl_bnb": pnl, "win_rate": wr}
-        today = [t for t in hist if t.get("sold_at","")[:10] == now.strftime("%Y-%m-%d")]
-        week  = [t for t in hist if t.get("sold_at") and (now - datetime.fromisoformat(t["sold_at"][:19])).days <= 7]
+            return {"trades": len(_real_trades), "wins": wins, "losses": losses, "pnl_bnb": pnl, "win_rate": wr}
+        # FIX v51: today filter robust — sold_at missing hone pe skip, safe parse
+        def _safe_days(t):
+            try:
+                s = (t.get("sold_at") or t.get("bought_at") or "")[:19]
+                return (now - datetime.fromisoformat(s)).days if s else 9999
+            except: return 9999
+        today = [t for t in hist if _safe_days(t) == 0]
+        week  = [t for t in hist if _safe_days(t) <= 7]
         return jsonify({
             "today":    _calc(today),
             "week":     _calc(week),
