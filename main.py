@@ -5562,12 +5562,18 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         if _price_baseline[0] > 0:
             _price1 = _price_baseline[0]
             _funds1 = _funds_baseline[0]
-            # Graduation check still needed
+            # Graduation check still needed — 2 retries
             _info_fresh = _get_token_info_cached(token_addr, w3, ttl=0.5)
+            if not _info_fresh:
+                time.sleep(0.3)
+                _info_fresh = _get_token_info_cached(token_addr, w3, ttl=0.1)
             if not _info_fresh: _pre_stop[0] = True; _skip("Stage2 snapshot failed"); return
             if _info_fresh.get("liquidityAdded"): _pre_stop[0] = True; _skip("graduated before Stage2"); return
         else:
             _info_fresh = _get_token_info_cached(token_addr, w3, ttl=0.5)
+            if not _info_fresh:
+                time.sleep(0.3)
+                _info_fresh = _get_token_info_cached(token_addr, w3, ttl=0.1)
             if not _info_fresh: _pre_stop[0] = True; _skip("Stage2 snapshot failed"); return
             if _info_fresh.get("liquidityAdded"): _pre_stop[0] = True; _skip("graduated before Stage2"); return
             _price1 = _info_fresh.get("lastPrice", 0)
