@@ -2574,7 +2574,7 @@ CHECKLIST_SETTINGS = {
     "min_token_age":     3.0,    # Stage 3: Min token age (min)
     "sniper_wait":       5.0,    # Stage 3: Sniper pump over (min)
     "min_volume_24h":  1000.0,   # Stage 4: Min 24h volume USD
-    "sl_new":           15.0,    # Stage 10: SL % for new tokens
+    "sl_new":           10.0,    # Stage 10: SL % for new tokens — tighter exit
     "sl_hyped":         20.0,    # Stage 10: SL % for hyped tokens
     "sl_mature":        10.0,    # Stage 10: SL % for mature tokens
     "score_safe":       50.0,    # Auto buy: SAFE min score % (raised from 40)
@@ -3975,8 +3975,8 @@ def auto_position_manager():
 
                         # Case 1: No pump at all, buyers absent
                         if _pnl_high < 3.0 and pnl <= -2.0:
-                            # Fast dump — -8% + no pump = turant exit, koi time check nahi
-                            _fast_dump = pnl <= -8
+                            # Fast dump — -5% + no pump = turant exit, koi time check nahi
+                            _fast_dump = pnl <= -5
                             if _fast_dump:
                                 _auto_paper_sell(addr, f"FastDump -{abs(pnl):.1f}% 🔵", 100.0)
                                 _egc.pop(addr, None)
@@ -3989,7 +3989,7 @@ def auto_position_manager():
                             else:
                                 _egc[addr] = 0  # buyer aaya = reset
 
-                            if _egc.get(addr, 0) >= 3:
+                            if _egc.get(addr, 0) >= 2:
                                 _auto_paper_sell(addr, f"EntryGuard NoMom -{abs(pnl):.1f}% 🔵", 100.0)
                                 _egc.pop(addr, None)
                                 _trail_triggered = True
@@ -4011,7 +4011,7 @@ def auto_position_manager():
                                 print(f"🔵 EntryGuard Case2: {addr[:10]} pnl={pnl:.1f}% high={_pnl_high:.1f}% sv5={_sv5_live:.3f}")
                                 continue
 
-                    # ── Hard SL: absolute exit at -12%, no conditions ──
+                    # ── Hard SL: absolute exit at sl_pct%, no conditions ──
                     # MomDead handles early exits (any %)
                     # HardSL = hard floor, fires regardless of momentum
                     if pnl <= -_entry_sl:
@@ -4021,12 +4021,10 @@ def auto_position_manager():
                         print(f"🔴 HardSL: {addr[:10]} pnl={pnl:.1f}%")
                         continue
 
-                    # Emergency SL: FIX v38 E: 45s → 20s — fast dump coins ke liye
-                    # v37 Fix B se MomDead ab RT data nahi pe bhi fire hoga
-                    # Lekin edge case backup — 20s mein -12% = niklo
+                    # Emergency SL: 20s mein -8% + no pump = fast exit
                     _emergency_sl = (
                         _hold_secs > 20
-                        and pnl <= -12
+                        and pnl <= -8
                         and not _mom_dead
                         and _pnl_high < 5.0
                     )
@@ -6068,7 +6066,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             "size_bnb": size_bnb,
             "orig_size_bnb": size_bnb,
             "bought_usd": round(size_bnb * market_cache.get("bnb_price",0), 2),
-            "sl_pct": 15.0,   # FIX v38 D: 20% → 12% (same as checklist — FM coins bhi tight SL)
+            "sl_pct": 10.0,   # tighter SL — max -10% loss hard floor
             "trail_pct": 20.0,        # FIX B: position manager ke liye
             "tp_sold": 0.0,
             "banked_pnl_bnb": 0.0,
