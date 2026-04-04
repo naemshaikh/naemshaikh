@@ -993,7 +993,7 @@ function openTrade(t){
     <div class="mrow"><span class="mlbl">Holding</span><span class="mval">${holdTime(t.bought_at)}</span></div>`;
   document.getElementById('modal-actions').innerHTML=addr?`
     <button class="mbtn dark" onclick="copyAddr('${addr}');closeModal()">📋 Copy</button>
-    <a class="mbtn gold" href="https://dexscreener.com/bsc/${addr}" target="_blank">📊 DexScreener</a>`
+    <a class="mbtn gold" href="https://gmgn.ai/bsc/token/${addr}" target="_blank">📈 Chart</a>`
     :'<button class="mbtn dark" onclick="closeModal()">Close</button>';
   showModal();
 }
@@ -3098,7 +3098,7 @@ function openHoldDetail(json){
 
   document.getElementById('modal-actions').innerHTML=addr?
     '<button class="mbtn dark" onclick="copyAddr(\''+addr+'\');closeModal()" style="flex:1;">📋 Copy</button>'+
-    '<a class="mbtn gold" href="https://dexscreener.com/bsc/'+addr+'" target="_blank" style="flex:1;">📊 DexScreener</a>'
+    '<a class="mbtn gold" href="https://gmgn.ai/bsc/token/'+addr+'" target="_blank" style="flex:1;">📈 Chart</a>'
     :'<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
 
   showModal();
@@ -3333,7 +3333,7 @@ function openGroupTradeDetail(encoded){
 
   document.getElementById('modal-actions').innerHTML=addr?
     '<button class="mbtn dark" onclick="copyAddr(\''+addr+'\');closeModal()" style="flex:1;">📋 Copy</button>'+
-    '<a class="mbtn gold" href="https://dexscreener.com/bsc/'+addr+'" target="_blank" style="flex:1;">📊 DexScreener</a>'
+    '<a class="mbtn gold" href="https://gmgn.ai/bsc/token/'+addr+(t.bought_at?'?from='+Math.floor(new Date(_toUTC(t.bought_at)).getTime()/1000)+(t.sold_at?'&to='+Math.floor(new Date(_toUTC(t.sold_at)).getTime()/1000):''):'')+'" target="_blank" style="flex:1;">📈 Chart</a>'
     :'<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
 
   showModal();
@@ -3447,7 +3447,7 @@ function openTradeDetail(json){
 
   document.getElementById('modal-actions').innerHTML = addr?
     '<button class="mbtn dark" onclick="copyAddr(\''+addr+'\');closeModal()" style="flex:1;">📋 Copy</button>'+
-    '<a class="mbtn gold" href="https://dexscreener.com/bsc/'+addr+'" target="_blank" style="flex:1;">📊 DexScreener</a>'
+    '<a class="mbtn gold" href="https://gmgn.ai/bsc/token/'+addr+'" target="_blank" style="flex:1;">📈 Chart</a>'
     :'<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
 
   showModal();
@@ -3755,7 +3755,7 @@ async function scanToken(){
     '</div>';
   document.getElementById('modal-actions').innerHTML=
     '<button class="mbtn dark" onclick="closeModal()" style="flex:1;">✕ Close</button>'+
-    '<button class="mbtn" onclick="window.open(\"https://dexscreener.com/bsc/\"+addr,\"_blank\")" style="flex:1;">↗ DexScreener</button>';
+    '<button class="mbtn" onclick="window.open(\"https://gmgn.ai/bsc/token/\"+addr,\"_blank\")" style="flex:1;">📈 Chart</button>';
   showModal();
 }
 
