@@ -3085,6 +3085,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 )
             else:
                 _total_pnl_bnb_trade = round(pos.get("banked_pnl_bnb", 0.0), 6)
+            # FIX v58: gas baad mein deduct hoga, pct abhi pre-gas hai
             _total_pnl_pct_trade = round((_total_pnl_bnb_trade / _orig_sz * 100), 2) if _orig_sz > 0 else pnl_pct
             # FIX gas: real sell gas calculate karo
             _sell_gas_used  = (real_sell_result or {}).get("gas_used", 0)
@@ -3111,7 +3112,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 "entry":        entry,
                 "exit":         current,
                 "exit_price":   current,
-                "pnl_pct":      _total_pnl_pct_trade,
+                # FIX v58: pnl_pct bhi gas-adjusted hona chahiye
+                "pnl_pct":      round((((_total_pnl_bnb_trade - _total_gas_bnb) / _orig_sz) * 100), 2) if _orig_sz > 0 else _total_pnl_pct_trade,
                 "pnl_bnb":      round(_total_pnl_bnb_trade - _total_gas_bnb, 6),  # FIX gas: gas deduct
                 "pnl_bnb_before_gas": _total_pnl_bnb_trade,  # debug ke liye
                 "size_bnb":     _orig_sz,
@@ -4738,7 +4740,10 @@ def _fm_confirm_close(token_addr, sell_pct, reason, tx_hash_hex):
             bought_at_str = pos.get("bought_at", "")
             _orig_sz      = pos.get("orig_size_bnb", size)
             _total_pnl_bnb = round(pos.get("banked_pnl_bnb", 0.0), 6)
-            _total_pnl_pct = round((_total_pnl_bnb / _orig_sz * 100), 2) if _orig_sz > 0 else pnl_pct
+            # FIX v58: gas deduct karo pnl se
+            _gas_bnb_confirm = round(pos.get("buy_gas_bnb", 0.0) + DataGuard.get_real_gas_bnb(), 8)
+            _total_pnl_bnb_after_gas = round(_total_pnl_bnb - _gas_bnb_confirm, 6)
+            _total_pnl_pct = round((_total_pnl_bnb_after_gas / _orig_sz * 100), 2) if _orig_sz > 0 else pnl_pct
 
             # FIX v57: Double recording check — _auto_paper_sell ne already record kiya hoga
             # Same address ka trade last 120s mein already hai? → update karo, add nahi
@@ -4772,7 +4777,8 @@ def _fm_confirm_close(token_addr, sell_pct, reason, tx_hash_hex):
                 "exit":         current,
                 "exit_price":   current,
                 "pnl_pct":      _total_pnl_pct,
-                "pnl_bnb":      _total_pnl_bnb,
+                "pnl_bnb":      _total_pnl_bnb_after_gas,
+                "pnl_bnb_before_gas": _total_pnl_bnb,
                 "size_bnb":     _orig_sz,
                 "bought_at":    bought_at_str,
                 "sold_at":      datetime.utcnow().isoformat(),
