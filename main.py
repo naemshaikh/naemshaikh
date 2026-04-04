@@ -2932,8 +2932,23 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     print(f"AUTO BUY: {address[:10]} @ {entry_price:.10f} size={size_bnb:.4f}")
 
 # ========== AUTO PAPER SELL ==========  FIX 3: All variable names fixed
+def _already_won(address: str) -> bool:
+    """Check karo — is address pe already win entry hai trade_history mein?"""
+    hist = auto_trade_stats.get("trade_history", [])
+    return any(
+        t.get("address", "").lower() == address.lower()
+        and t.get("result") == "win"
+        for t in hist
+    )
+
 def _auto_paper_sell(address, reason, sell_pct=100.0):
     if address not in auto_trade_stats["running_positions"]:
+        return
+    # FIX ghost: 100% sell aur already win hai toh duplicate mat karo
+    if sell_pct >= 100.0 and _already_won(address):
+        print(f"⏭️ _auto_paper_sell skip — {address[:10]} already won [{reason}]")
+        auto_trade_stats["running_positions"].pop(address, None)
+        remove_position_from_monitor(address)
         return
     pos = auto_trade_stats["running_positions"][address]
     with monitor_lock:
@@ -3007,6 +3022,10 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                        f"Real sell failed: {_fail_err} — position still open", token, address)
             # FIX v24: Failed sell bhi history mein save karo
             try:
+                # FIX ghost: already win hai toh sell_failed mat save karo
+                if _already_won(address):
+                    print(f"⏭️ sell_failed skip — {address[:10]} already won")
+                    return
                 if not isinstance(auto_trade_stats.get("trade_history"), list):
                     auto_trade_stats["trade_history"] = []
                 _orig_sz_f  = pos.get("orig_size_bnb", size)
@@ -8661,6 +8680,12 @@ def force_close_position():
         bought_at_str = pos.get("bought_at", "")
 
         # Trade history mein save karo
+        # FIX ghost: already win hai toh force_close ghost entry mat save karo
+        if _already_won(target_addr):
+            print(f"⏭️ force_close skip — {target_addr[:10]} already won, removing position only")
+            auto_trade_stats["running_positions"].pop(target_addr, None)
+            remove_position_from_monitor(target_addr)
+            return jsonify({"status": "skipped", "message": "Already won — ghost entry prevented"})
         if not isinstance(auto_trade_stats.get("trade_history"), list):
             auto_trade_stats["trade_history"] = []
         auto_trade_stats["trade_history"].append({
