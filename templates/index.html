@@ -4246,9 +4246,9 @@ setInterval(fetchNotifications, 10000);
       const fullCA = e.token_address || '';
       return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
         <td style="padding:5px 6px;font-size:10px;color:var(--txt3);white-space:nowrap;">${t}</td>
-        <td style="padding:5px 6px;font-family:monospace;font-size:10px;">
+        <td style="padding:5px 6px;font-family:monospace;font-size:10px;white-space:nowrap;">
           <span>${tok}</span>
-          ${fullCA ? `<button onclick="navigator.clipboard.writeText('${fullCA}').then(()=>{this.textContent='✅';setTimeout(()=>this.textContent='📋',1200)})" style="margin-left:4px;background:none;border:none;cursor:pointer;font-size:11px;color:var(--txt3);padding:0;vertical-align:middle;" title="CA Copy">📋</button>` : ''}
+          ${fullCA ? '<button onclick="copyAddr(\'' + fullCA + '\')" style="margin-left:4px;background:none;border:none;cursor:pointer;font-size:11px;color:var(--txt3);padding:0;vertical-align:middle;" title="CA Copy">📋</button>' : ''}
         </td>
         <td style="padding:5px 6px;font-size:10px;">${liq}</td>
         <td style="padding:5px 6px;font-family:monospace;font-size:10px;">${grad}</td>
