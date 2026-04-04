@@ -3129,6 +3129,7 @@ function renderGTrades(){
 
 // ── TRADES TAB pagination renderer ──
 window._renderTPage = function(){
+  window._tdc = [];  // reset cache on every render
   const wrap = document.getElementById('trades-list-wrap');
   if(!wrap) return;
   if(!window._tData||!window._tData.length){
@@ -3153,7 +3154,6 @@ window._renderTPage = function(){
     const ago  = gHoldTime(t.sold_at||t.bought_at);
     const label= t.reason||'SELL';
     const labelBg=pnl>=0?'rgba(0,230,118,0.15)':'rgba(255,71,87,0.15)';
-    if(!window._tdc) window._tdc=[];
     const _ti=window._tdc.length; window._tdc.push(t);
     return '<div onclick="openTradeDetail('+_ti+')" style="display:grid;grid-template-columns:1fr auto auto;align-items:center;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;gap:8px;" onmouseover="this.style.background=\'rgba(255,255,255,0.03)\'" onmouseout="this.style.background=\'\'">'+
       '<div style="display:flex;align-items:center;gap:9px;min-width:0;">'+
