@@ -3253,8 +3253,12 @@ function openGroupTradeDetail(encoded){
     const tokensS=exit>0?(proceedsBNB/exit).toFixed(0):'—';
     const buyIST=t.bought_at?new Date(_toUTC(t.bought_at)).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}):'—';
     const sellIST=t.sold_at?new Date(_toUTC(t.sold_at)).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}):'—';
-    const gasBNB=parseFloat(t.gas_bnb||t.gas_fee||0)||0.0005;
+    const gasBNB=parseFloat(t.gas_bnb||t.gas_fee||0)||0;  // FIX gas: no fake default
     const gasUSD=(gasBNB*bnbP).toFixed(3);
+    // FIX gas: gas-adjusted real PnL
+    const gasAdjPnlB = pnlB - gasBNB;
+    const gasAdjPnlUSD = (Math.abs(gasAdjPnlB)*bnbP).toFixed(2);
+    const gasAdjPnlPct = sz>0?(gasAdjPnlB/sz*100):pnlPctT;
     return (
       '<div style="display:grid;grid-template-columns:90px 1fr auto;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:8px;">'+
         '<div>'+
@@ -3269,8 +3273,8 @@ function openGroupTradeDetail(encoded){
         '</div>'+
         '<div style="text-align:right;">'+
           '<div style="font-size:10px;color:var(--txt3);font-family:JetBrains Mono,monospace;">'+(exit>0?'$'+(exit*bnbP).toFixed(8):'—')+'</div>'+
-          '<div style="font-size:11px;font-weight:800;color:'+(pnlB>=0?'var(--em)':'var(--red)')+';">'+(pnlB>=0?'+':'-')+'$'+pnlUSDt+'</div>'+
-          '<div style="font-size:9px;color:'+(pnlB>=0?'var(--em)':'var(--red)')+';">'+(pnlPctT>=0?'+':'')+pnlPctT.toFixed(1)+'%</div>'+
+          '<div style="font-size:11px;font-weight:800;color:'+(gasAdjPnlB>=0?'var(--em)':'var(--red)')+';">'+(gasAdjPnlB>=0?'+':'-')+'$'+gasAdjPnlUSD+'</div>'+
+          '<div style="font-size:9px;color:'+(gasAdjPnlB>=0?'var(--em)':'var(--red)')+';">'+(gasAdjPnlPct>=0?'+':'')+gasAdjPnlPct.toFixed(1)+'% <span style="color:var(--txt3);font-size:8px;">⛽ -$'+gasUSD+'</span></div>'+
         '</div>'+
       '</div>'+
       _tpRows+
