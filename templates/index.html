@@ -1073,7 +1073,7 @@ async function fetchHistory(){
   const hist=d.history||[],list=document.getElementById('hist-list');
   // Sirf completed trades — win ya loss (holding wale nahi) + current mode
   const curMode = window._tradeMode || 'paper';
-  const closedTrades = hist.filter(function(t){ return (t.result==='win'||t.result==='loss'||t.result==='sell_failed'||(t.sold_at&&t.result!=='holding')) && (t.mode||'paper') === curMode; });
+  const closedTrades = hist.filter(function(t){ return (t.result==='win'||t.result==='loss'||t.result==='sell_failed'||(t.sold_at&&t.result!=='holding')) && (t.mode||curMode) === curMode; });
   if(!closedTrades.length){list.innerHTML='<div class="empty-state">No completed trades yet</div>';return;}
   // Group by address
   const groups = {};
@@ -2101,7 +2101,7 @@ window._renderPnlCard = function(_as){
     // trade_history auto-stats mein nahi hai — /trade-history se fetch karo
     var hist = window._cachedTradeHistory || [];
     var curMode = window._tradeMode || 'paper';
-    var modeFiltered = hist.filter(function(t){ return (t.mode||'paper') === curMode; });
+    var modeFiltered = hist.filter(function(t){ return (t.mode||curMode) === curMode; });
     var filtered = _pnlPeriodFilter(modeFiltered, period);
     var invested = filtered.reduce(function(s,t){ return s+parseFloat(t.size_bnb||0.01); },0);
     var pnlBnb   = filtered.reduce(function(s,t){ return s+parseFloat(t.pnl_bnb||0); },0);
