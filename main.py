@@ -3076,7 +3076,10 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
             # Ab: real_sell_result["bnb_received"] se actual return lo
             if TRADE_MODE == "real" and real_sell_result and real_sell_result.get("bnb_received", 0) > 0:
                 _actual_received  = real_sell_result["bnb_received"]
-                _sell_cost        = _orig_sz * (sell_pct / 100.0)
+                # FIX v56: sell_cost = sirf is sell ka size (remaining position)
+                # Pehle: _orig_sz * 100% = total cost laga raha tha even after TP1
+                # Ab: size = current remaining position size (TP1 ke baad half ho jaata hai)
+                _sell_cost = size * (sell_pct / 100.0)
                 _total_pnl_bnb_trade = round(
                     pos.get("banked_pnl_bnb", 0.0) - (_sell_cost - _actual_received), 6
                 )
@@ -4753,7 +4756,14 @@ def _fm_confirm_close(token_addr, sell_pct, reason, tx_hash_hex):
                 # FIX v51c: TRADE_MODE directly — pos["mode"] stale ho sakta hai
                 "mode":         TRADE_MODE,
                 "tx_hash":      tx_hash_hex,
-                "snipe_source": "FM_BC"
+                "snipe_source": "FM_BC",
+                # FIX v56: gas fees add karo — UI mein dikh sake
+                "gas_bnb":      round(pos.get("buy_gas_bnb", 0.0) + DataGuard.get_real_gas_bnb(), 8),
+                "buy_gas_bnb":  pos.get("buy_gas_bnb", 0.0),
+                "sell_gas_bnb": DataGuard.get_real_gas_bnb(),
+                "ath_price":    pos.get("ath_price") or monitored_positions.get(token_addr, {}).get("high", current),
+                "ath_pct":      round(((pos.get("ath_price") or monitored_positions.get(token_addr, {}).get("high", current)) - entry) / entry * 100, 1) if entry > 0 else 0,
+                "hold_minutes": round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds() / 60, 1) if bought_at_str else 0
 })
             auto_trade_stats["running_positions"].pop(token_addr, None)
             remove_position_from_monitor(token_addr)
