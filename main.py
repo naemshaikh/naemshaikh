@@ -2057,32 +2057,6 @@ def _save_trade_history_to_db():
                 print(f"⚠️ Trade history save error (3 retries failed): {e}")
 
 def _load_trade_history_from_db():
-    # FIX v45: real_trade_history table bhi load karo — pehle sirf memory table tha
-    try:
-        _REAL_TABLE = "real_trade_history"
-        _real_res = supabase.table(_REAL_TABLE).select("*").order("id", desc=True).limit(500).execute()
-        if _real_res.data:
-            _real_rows = []
-            for row in _real_res.data:
-                try:
-                    import json as _rj
-                    _entry = _rj.loads(row.get("data", "{}")) if isinstance(row.get("data"), str) else row
-                    if isinstance(_entry, dict) and _entry.get("token"):
-                        _entry["mode"] = "real"
-                        _real_rows.append(_entry)
-                except Exception:
-                    pass
-            if _real_rows:
-                _existing = auto_trade_stats.get("trade_history", [])
-                _existing_addrs = {(t.get("address","").lower(), t.get("sold_at","")) for t in _existing}
-                _new_real = [t for t in _real_rows
-                             if (t.get("address","").lower(), t.get("sold_at","")) not in _existing_addrs]
-                auto_trade_stats["trade_history"] = _existing + _new_real
-                print(f"✅ [v45] Real trades loaded from DB: {len(_new_real)} new entries")
-    except Exception as _rle:
-        print(f"⚠️ [v45] Real trade history load skip: {str(_rle)[:60]}")
-
-def _load_trade_history_from_db_ORIGINAL():
     """Startup pe Supabase se history load karo"""
     if not supabase: return
     try:
@@ -4472,9 +4446,6 @@ _fm_sniped_ts:  dict = {}  # FIX v50: timestamp per entry — stale cleanup ke l
 
 # FIX v15: Sell dedup — ek token pe ek hi sell ek waqt mein
 _fm_selling_set  = set()
-# FIX v46: In-memory approve cache — sell pe allowance RPC skip karne ke liye
-# Key: "token_addr_lower:spender_addr_lower" → True agar approve confirmed hai
-_fm_approved_cache: dict = {}
 _fm_selling_lock = threading.Lock()
 
 # Dev history cache — on-chain results cache karo
@@ -4735,15 +4706,9 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
             print(f"⏭️ [FM] Sell already in progress for {token_addr[:10]} — skip")
             result["error"] = "sell already in progress"
             return result
-        # FIX v45: add() TX ke baad hoga — pehle add() hoti thi TX se pehle
-        # TP fire → add() → MomDead check → "already in progress" → TP skip → SL hit
-        # Ab: duplicate check pass hone ke baad lock hold karo, TX ke baad add()
+        _fm_selling_set.add(_t_lower)
 
-    _selling_lock_held = False
     try:
-        with _fm_selling_lock:
-            _fm_selling_set.add(_t_lower)
-            _selling_lock_held = True
         pk = os.getenv("WALLET_PRIVATE_KEY", "") or os.getenv("PRIVATE_KEY", "") or os.getenv("REAL_PRIVATE_KEY", "")
         wallet_addr = BSC_WALLET or REAL_WALLET
         if not wallet_addr or not pk:
@@ -4807,18 +4772,11 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         fc = _w3_fast.eth.contract(address=Web3.to_checksum_address(_dynamic_manager), abi=_use_abi)
 
         # FIX v18: Approve dynamic tokenManager (factory nahi)
-        # FIX v46: cache check pehle — allowance RPC call skip karo agar pehle approve ho chuka
         try:
             _tc_approve = _w3_fast.eth.contract(
                 address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
-            _v46_cache_key = f"{token_addr.lower()}:{_dynamic_manager.lower()}"
-            _v46_cache_hit = _fm_approved_cache.get(_v46_cache_key, False)
-            if _v46_cache_hit:
-                print(f"⚡ [FM] Approve cache HIT — allowance RPC skip: {token_addr[:10]}")
-                _allowance = 2**256 - 1  # treat as max approved
-            else:
-                _allowance = _tc_approve.functions.allowance(
-                    wallet_cs, Web3.to_checksum_address(_dynamic_manager)).call()
+            _allowance = _tc_approve.functions.allowance(
+                wallet_cs, Web3.to_checksum_address(_dynamic_manager)).call()
             if _allowance < _amt:
                 print(f"🔑 [FM] Approving Token Manager for sell...")
                 _approve_nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")
@@ -4845,10 +4803,6 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                             if _rx2["status"] == 1:
                                 _approve_confirmed = True
                                 print(f"✅ [FM] Approval confirmed ({_t22a.time()-_ap_start:.1f}s)")
-                                # FIX v46: runtime approve bhi cache karo — next sell instant hogi
-                                _v46_rt_key = f"{token_addr.lower()}:{_dynamic_manager.lower()}"
-                                _fm_approved_cache[_v46_rt_key] = True
-                                print(f"⚡ [FM] Runtime approve cached: {token_addr[:10]}")
                             else:
                                 print(f"❌ [FM] Approval TX failed onchain")
                             break
@@ -5011,9 +4965,6 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                 from eth_account import Account
                 signed  = Account.sign_transaction(tx, pk)
                 tx_hash = _w3_fast.eth.send_raw_transaction(signed.raw_transaction)
-                # FIX v45: TX successfully sent — ab lock add karo
-                with _fm_selling_lock:
-                    _fm_selling_set.add(_t_lower)
                 print(f"🔴 [FM] Sell TX attempt {_attempt}: {tx_hash.hex()[:12]}...")
                 break  # TX sent — loop se niklo
             except Exception as _se:
@@ -5663,15 +5614,12 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         score -= 1
 
             # 6. Pump ke dauran volume drop
-            # FIX v53: -2 → -1 wapas, threshold 6→5
-            # -2 zyada aggressive tha — genuine coins bhi reject ho rahe the
-            # max score=8, -1 se 7 milega agar baaki sab pass — still genuine
             if len(funds_history) >= 3:
                 recent_vol_drop = funds_history[-1] <= funds_history[-2] and funds_history[-2] <= funds_history[-3]
                 recent_price_up = price_history[-1] > price_history[-2]
                 if recent_price_up and recent_vol_drop:
                     reasons.append("pump_with_vol_drop")
-                    score -= 1
+                    score -= 2
 
             genuine = score >= 6
             return genuine, reasons, score
@@ -5783,12 +5731,59 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         print(f"✅ [FM] ALL PASS: mc=${_mc_usd:.0f} momentum=+{_momentum_pct:.1f}%")
         _scanner_stats["fm_discovered"] = _scanner_stats.get("fm_discovered", 0) + 1
 
-        # ========== SMART ENTRY ==========
-        # FIX v54: sell pressure check hataya — genuine momentum already confirm ho chuka
-        # Extra check zyada coins block kar raha tha, fayda nahi tha
-        _entry_price_check = _price2
-        _entry_type = "direct"
-        print(f"✅ [FM] Momentum confirmed — ENTERING NOW")
+        # ========== SMART ENTRY: Buy/Sell pressure check ==========
+        # Momentum confirm ho gaya — ab check karo ki abhi buy pressure hai ya sell
+        _entry_price_check = _price2  # momentum confirm waqt ka price
+        _entry_type = "direct"        # CSV ke liye: direct / waited / skipped
+
+        # FIX: strictly falling price = sell pressure, flat/rising = ok
+        _ph = _price_history
+        _fh = _funds_history
+
+        if len(_ph) >= 2:
+            _price_falling = _ph[-1] < _ph[-2]   # strictly gir raha ho
+        else:
+            _latest_p = _ph[-1] if _ph else _price2
+            _price_falling = _latest_p < _price1  # baseline se neeche = falling
+
+        if len(_fh) >= 2:
+            _vol_falling = _fh[-1] < _fh[-2]
+        else:
+            _vol_falling = _price_falling
+
+        # Sell pressure = price actually gir raha ho (flat = ok, rising = ok)
+        _sell_pressure = _price_falling and _vol_falling
+
+        if _sell_pressure:
+            # Sell pressure hai — reversal ka wait karo max 10s
+            print(f"⏳ [FM] Sell pressure at entry — waiting reversal (max 10s)")
+            _reversal_found = False
+            _price_low = _entry_price_check
+            for _ri in range(50):  # 50 x 0.2s = 10s max
+                time.sleep(0.2)
+                try:
+                    _ri_info = _get_token_info_cached(token_addr, w3, ttl=0.1)
+                    if not _ri_info: break
+                    if _ri_info.get("liquidityAdded"):
+                        _skip("graduated during entry wait"); return
+                    _ri_price = _ri_info.get("lastPrice", 0)
+                    if _ri_price <= 0: continue
+                    if _ri_price < _price_low:
+                        _price_low = _ri_price
+                    elif _ri_price > _price_low * 1.01:
+                        # Low se 1% upar = sellers gone
+                        print(f"✅ [FM] Reversal confirmed: price={_ri_price:.2e} low={_price_low:.2e} — ENTERING")
+                        _entry_price_check = _ri_price
+                        _reversal_found = True
+                        _entry_type = "waited"
+                        break
+                except Exception:
+                    break
+            if not _reversal_found:
+                _entry_type = "skipped"
+                _skip("sell pressure — no reversal in 10s"); return
+        else:
+            print(f"✅ [FM] Buy pressure at entry (price={'falling' if _price_falling else 'rising/flat'} vol={'falling' if _vol_falling else 'rising/flat'}) — ENTERING NOW")
 
         # ========== BUY EXECUTION ==========
         size_bnb = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
@@ -5945,10 +5940,6 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                                             if _rx is not None:
                                                 if _rx["status"] == 1:
                                                     print(f"✅ [FM] Pre-approve confirmed ({_pi*2+2}s): {_addr2[:10]} → spender: {_spender[:10]}")
-                                                    # FIX v46: cache mein daal do — sell pe allowance RPC skip hogi
-                                                    _cache_key = f"{_addr2.lower()}:{_spender.lower()}"
-                                                    _fm_approved_cache[_cache_key] = True
-                                                    print(f"⚡ [FM] Approve cached: {_cache_key[:24]}")
                                                 else:
                                                     print(f"⚠️ [FM] Pre-approve TX failed onchain: {_addr2[:10]}")
                                                 break
@@ -6201,16 +6192,13 @@ def poll_four_meme_v2():
             _seen.add(_al)
             _fm_sniped.add(_al)  # turant add — koi doosra thread aage nahi nikal sakta
             _fm_sniped_ts[_al] = time.time()
-            # FIX v55: _seen clear hone pe _fm_sniped bhi sync karo
-            # _seen.clear() ke baad _fm_sniped mein stale entries block karti thi
-            if len(_seen) > 1000:
-                _seen.clear()
-                # _fm_sniped bhi clear karo — 1h se purane hi rakho
-                _now_ts = time.time()
-                _stale = [k for k, t in _fm_sniped_ts.items() if _now_ts - t > 3600]
-                for _sk in _stale:
-                    _fm_sniped.discard(_sk)
-                    _fm_sniped_ts.pop(_sk, None)
+            # FIX v50: 1 hour se purane entries cleanup karo — memory leak fix
+            _now_ts = time.time()
+            _stale = [k for k, t in _fm_sniped_ts.items() if _now_ts - t > 3600]
+            for _sk in _stale:
+                _fm_sniped.discard(_sk)
+                _fm_sniped_ts.pop(_sk, None)
+        if len(_seen) > 1000: _seen.clear()
 
         if not FM_SNIPER_ENABLED: return
 
