@@ -2094,8 +2094,9 @@ def _load_trade_history_from_db_ORIGINAL():
                 if isinstance(hist, list) and hist:
                     auto_trade_stats["trade_history"] = hist
                     # FIX v30: mode default "paper" tha — real history load pe count galat tha
-                    wins   = sum(1 for t in hist if t.get("result") == "win" and (t.get("mode") or TRADE_MODE) == TRADE_MODE)
-                    losses = sum(1 for t in hist if t.get("result") == "loss" and (t.get("mode") or TRADE_MODE) == TRADE_MODE)
+                    # FIX v51b: mode default fix — real trades miss nahi honge DB load pe
+                    wins   = sum(1 for t in hist if t.get("result") == "win"  and t.get("mode", TRADE_MODE) == TRADE_MODE)
+                    losses = sum(1 for t in hist if t.get("result") == "loss" and t.get("mode", TRADE_MODE) == TRADE_MODE)
                     auto_trade_stats["trade_count"] = len(hist)
                     auto_trade_stats["win_count"]   = wins
                     auto_trade_stats["loss_count"]  = losses
