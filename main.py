@@ -4046,12 +4046,12 @@ def auto_position_manager():
                         else:
                             _vwc[addr] = 0
 
-                    # FIX: >= 3 → >= 6 readings — zyada confirmation chahiye
-                    # 3 readings = ~0.6s, 6 readings = ~1.2s — fluctuation survive karega
+                    # FIX: >= 6 readings — fluctuation survive, genuine downtrend exit
                     _vol_dying  = _vwc.get(addr, 0) >= 6
-                    # FM BC: grace period 5s → 20s — early exit avoid
+                    # FM BC: koi time check nahi — 1.5% tolerance + 6 readings hi kaafi
+                    # Clear downtrend = turant exit, fluctuation = survive
                     if _is_fm_bc:
-                        _mom_dead = _vol_dying and _hold_secs > 20
+                        _mom_dead = _vol_dying
                     else:
                         _mom_dead = _vol_dying and _hold_secs > 20
 
