@@ -5663,12 +5663,15 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         score -= 1
 
             # 6. Pump ke dauran volume drop
+            # FIX v53: -2 → -1 wapas, threshold 6→5
+            # -2 zyada aggressive tha — genuine coins bhi reject ho rahe the
+            # max score=8, -1 se 7 milega agar baaki sab pass — still genuine
             if len(funds_history) >= 3:
                 recent_vol_drop = funds_history[-1] <= funds_history[-2] and funds_history[-2] <= funds_history[-3]
                 recent_price_up = price_history[-1] > price_history[-2]
                 if recent_price_up and recent_vol_drop:
                     reasons.append("pump_with_vol_drop")
-                    score -= 2
+                    score -= 1
 
             genuine = score >= 6
             return genuine, reasons, score
