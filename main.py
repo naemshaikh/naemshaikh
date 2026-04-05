@@ -3963,20 +3963,24 @@ def auto_position_manager():
                     _vwc = auto_trade_stats["vol_weak_count"]
 
                     if _is_fm_bc:
-                        # FIX v60: FM BC actual sell pressure — getTokenInfo funds track karo
-                        # funds (BNB in curve) gir raha hai = actual sells ho rahi hain
+                        # FIX: price actually girni chahiye — sirf slow growth = NOT dead
+                        # pehle 1.5% tolerance tha — consolidation pe bhi fire hota tha
                         _fm_price_hist = _pos_data.get("_fm_price_hist", [])
                         _fm_price_hist.append(current)
-                        if len(_fm_price_hist) > 5: _fm_price_hist.pop(0)
+                        if len(_fm_price_hist) > 6: _fm_price_hist.pop(0)
                         _pos_data["_fm_price_hist"] = _fm_price_hist
 
-                        # Price history based momentum check
-                        if len(_fm_price_hist) >= 3:
+                        if len(_fm_price_hist) >= 4:
+                            # Strictly gir raha ho — flat/slow growth = ok
                             _fm_declining = sum(
                                 1 for i in range(1, len(_fm_price_hist))
-                                if _fm_price_hist[i] <= _fm_price_hist[i-1] * 1.015  # 1.5% tolerance
+                                if _fm_price_hist[i] < _fm_price_hist[i-1] * 0.985  # -1.5% se zyada gire tabhi count
                             )
-                            if _fm_declining >= 2:
+                            # ATH se kitna neeche hai
+                            _fm_peak = max(_fm_price_hist)
+                            _fm_drawdown_pct = (_fm_peak - current) / _fm_peak * 100 if _fm_peak > 0 else 0
+
+                            if _fm_declining >= 3 or (_fm_declining >= 2 and _fm_drawdown_pct > 15):
                                 _vwc[addr] = _vwc.get(addr, 0) + 1
                             else:
                                 _vwc[addr] = 0
@@ -3989,11 +3993,18 @@ def auto_position_manager():
                         else:
                             _vwc[addr] = 0
 
-                    # FM BC: 6 readings — fluctuation survive, genuine downtrend exit
+                    # FM BC: 8 readings — consolidation survive kare, genuine downtrend exit
                     # PC: 3 readings + 20s hold
-                    _vol_dying = _vwc.get(addr, 0) >= (6 if _is_fm_bc else 3)
+                    _vol_dying = _vwc.get(addr, 0) >= (8 if _is_fm_bc else 3)
                     if _is_fm_bc:
-                        _mom_dead = _vol_dying  # koi time check nahi
+                        # Extra guard: agar pnl_high > 50% hai toh MomDead sirf tab fire karo
+                        # jab actually -20% drawdown from high ho — consolidation pe nahi
+                        _fm_peak2 = max(_pos_data.get("_fm_price_hist", [current]), default=current)
+                        _drawdown_from_high = (_fm_peak2 - current) / _fm_peak2 * 100 if _fm_peak2 > 0 else 0
+                        if _pnl_high > 50 and _drawdown_from_high < 20:
+                            _mom_dead = False  # Strong runner — consolidation pe mat nikalo
+                        else:
+                            _mom_dead = _vol_dying
                     else:
                         _mom_dead = _vol_dying and _hold_secs > 20
 
