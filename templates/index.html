@@ -3105,7 +3105,10 @@ function openHoldDetail(json){
     '<div>'+holdRow+tpRows+buyRow+'</div>'; // Holding latest → TPs → Buy oldest
 
   document.getElementById('modal-actions').innerHTML=addr?
-    '<a class="mbtn gold" href="https://gmgn.ai/bsc/address/0xfA9242Ca783134815E79a14833C88E57A48A4b7B" target="_blank" style="width:100%;display:block;text-align:center;">📊 Open on GMGN</a>'
+    '<div style="display:flex;gap:6px;width:100%;">'+
+    '<button class="mbtn dark" onclick="copyAddr(\''+addr+'\');closeModal()" style="flex:1;">📋 Copy CA</button>'+
+    '<a class="mbtn gold" href="https://gmgn.ai/bsc/address/0xfA9242Ca783134815E79a14833C88E57A48A4b7B?chain=bsc" target="_blank" style="flex:1;">📊 GMGN</a>'+
+    '</div>'
     :'<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
 
   showModal();
@@ -3303,8 +3306,10 @@ function openGroupTradeDetail(encoded){
   document.getElementById('modal-body').innerHTML=
     // Chart placeholder — GeckoTerminal se load hoga
     (function(){
-      const bt = g.buyTrades&&g.buyTrades[0]&&g.buyTrades[0].bought_at;
-      const st = g.sellTrades&&g.sellTrades[0]&&g.sellTrades[0].sold_at;
+      const _bt0 = buyTrades&&buyTrades[0];
+      const _st0 = sellTrades&&sellTrades[0];
+      const bt = _bt0&&(_bt0.bought_at||_bt0.time||'');
+      const st = _st0&&(_st0.sold_at||_st0.time||'');
       const buyT = bt?new Date(_toUTC(bt)).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}):'—';
       const sellT = st?new Date(_toUTC(st)).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}):'—';
       const holdD = bt?holdBetween(bt,st||new Date().toISOString()):'—';
@@ -3365,7 +3370,10 @@ function openGroupTradeDetail(encoded){
     '<div>'+actRows+'</div>';
 
   document.getElementById('modal-actions').innerHTML=addr?
-    '<a class="mbtn gold" href="https://gmgn.ai/bsc/address/0xfA9242Ca783134815E79a14833C88E57A48A4b7B" target="_blank" style="width:100%;display:block;text-align:center;">📊 Open on GMGN</a>'
+    '<div style="display:flex;gap:6px;width:100%;">'+
+    '<button class="mbtn dark" onclick="copyAddr(\''+addr+'\');closeModal()" style="flex:1;">📋 Copy CA</button>'+
+    '<a class="mbtn gold" href="https://gmgn.ai/bsc/address/0xfA9242Ca783134815E79a14833C88E57A48A4b7B?chain=bsc" target="_blank" style="flex:1;">📊 GMGN</a>'+
+    '</div>'
     :'<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
 
   showModal();
@@ -3645,7 +3653,10 @@ function openTradeDetail(json){
     '</div>';
 
   document.getElementById('modal-actions').innerHTML = addr?
-    '<a class="mbtn gold" href="https://gmgn.ai/bsc/address/0xfA9242Ca783134815E79a14833C88E57A48A4b7B" target="_blank" style="width:100%;display:block;text-align:center;">📊 Open on GMGN</a>'
+    '<div style="display:flex;gap:6px;width:100%;">'+
+    '<button class="mbtn dark" onclick="copyAddr(\''+addr+'\');closeModal()" style="flex:1;">📋 Copy CA</button>'+
+    '<a class="mbtn gold" href="https://gmgn.ai/bsc/address/0xfA9242Ca783134815E79a14833C88E57A48A4b7B?chain=bsc" target="_blank" style="flex:1;">📊 GMGN</a>'+
+    '</div>'
     :'<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
 
   showModal();
