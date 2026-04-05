@@ -3970,26 +3970,36 @@ def auto_position_manager():
                         if len(_fm_price_hist) > 5: _fm_price_hist.pop(0)
                         _pos_data["_fm_price_hist"] = _fm_price_hist
 
-                        # Funds tracking — actual sell pressure
-                        _w3_fd = _get_w3q()
-                        _funds_now = 0.0
-                        if _w3_fd:
-                            try:
-                                _tinfo_fd = _fm_get_token_info(addr, _w3_fd)
-                                if _tinfo_fd:
-                                    _funds_now = _tinfo_fd.get("funds", 0) / 1e18
-                            except: pass
+                        # FIX v61: Funds tracking background mein — main loop block nahi hoga
+                        # Har 5th iteration pe fetch — RPC rate limit protect karo
+                        _fm_iter = _pos_data.get("_fm_iter", 0) + 1
+                        _pos_data["_fm_iter"] = _fm_iter
 
+                        if _fm_iter % 5 == 0:
+                            def _fetch_funds_bg(_addr, _pdata):
+                                try:
+                                    _w3_fd = _get_w3q()
+                                    if not _w3_fd: return
+                                    _tinfo_fd = _fm_get_token_info(_addr, _w3_fd)
+                                    if _tinfo_fd:
+                                        _fn = _tinfo_fd.get("funds", 0) / 1e18
+                                        if _fn > 0:
+                                            _pdata["_fm_funds_now"] = _fn
+                                except: pass
+                            threading.Thread(target=_fetch_funds_bg, args=(addr, _pos_data), daemon=True).start()
+
+                        _funds_now  = _pos_data.get("_fm_funds_now", 0.0)
                         _funds_prev = _pos_data.get("_fm_funds_prev", 0.0)
-                        if _funds_prev > 0 and _funds_now > 0:
+
+                        if _funds_prev > 0 and _funds_now > 0 and _funds_now != _funds_prev:
                             _funds_drop_pct = (_funds_prev - _funds_now) / _funds_prev * 100
-                            if _funds_drop_pct > 1.5:  # 1.5% drop in BNB = actual sells
+                            if _funds_drop_pct > 1.5:
                                 _vwc[addr] = _vwc.get(addr, 0) + 1
                                 print(f"⚠️ [FM] Funds drop {_funds_drop_pct:.1f}% → sell pressure cnt={_vwc[addr]}")
                             elif _funds_now >= _funds_prev:
-                                _vwc[addr] = 0  # funds bade ya same = buyers aa rahe
+                                _vwc[addr] = 0
+                            _pos_data["_fm_funds_prev"] = _funds_now
                         elif len(_fm_price_hist) >= 3:
-                            # Fallback: price history se infer karo agar funds nahi mila
                             _fm_declining = sum(
                                 1 for i in range(1, len(_fm_price_hist))
                                 if _fm_price_hist[i] <= _fm_price_hist[i-1] * 1.001
@@ -4001,8 +4011,7 @@ def auto_position_manager():
                         else:
                             _vwc[addr] = 0
 
-                        # Save current funds for next iteration
-                        if _funds_now > 0:
+                        if _funds_prev == 0 and _funds_now > 0:
                             _pos_data["_fm_funds_prev"] = _funds_now
                     else:
                         # PancakeSwap tokens: original bv5 logic
@@ -5586,15 +5595,25 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _pre_sampler.start()
 
         # FIX v29: _price_baseline Stage 1 ke saath fetch hua — reuse karo
+        # FIX v61: Stage2 snapshot retry — QuickNode rate limit pe ek baar retry karo
+        def _get_stage2_snapshot():
+            for _attempt in range(3):
+                try:
+                    _snap = _get_token_info_cached(token_addr, w3, ttl=0.5)
+                    if _snap: return _snap
+                    if _attempt < 2: time.sleep(0.3)
+                except: 
+                    if _attempt < 2: time.sleep(0.3)
+            return None
+
         if _price_baseline[0] > 0:
             _price1 = _price_baseline[0]
             _funds1 = _funds_baseline[0]
-            # Graduation check still needed
-            _info_fresh = _get_token_info_cached(token_addr, w3, ttl=0.5)
+            _info_fresh = _get_stage2_snapshot()
             if not _info_fresh: _pre_stop[0] = True; _skip("Stage2 snapshot failed"); return
             if _info_fresh.get("liquidityAdded"): _pre_stop[0] = True; _skip("graduated before Stage2"); return
         else:
-            _info_fresh = _get_token_info_cached(token_addr, w3, ttl=0.5)
+            _info_fresh = _get_stage2_snapshot()
             if not _info_fresh: _pre_stop[0] = True; _skip("Stage2 snapshot failed"); return
             if _info_fresh.get("liquidityAdded"): _pre_stop[0] = True; _skip("graduated before Stage2"); return
             _price1 = _info_fresh.get("lastPrice", 0)
