@@ -3970,36 +3970,8 @@ def auto_position_manager():
                         if len(_fm_price_hist) > 5: _fm_price_hist.pop(0)
                         _pos_data["_fm_price_hist"] = _fm_price_hist
 
-                        # FIX v61: Funds tracking background mein — main loop block nahi hoga
-                        # Har 5th iteration pe fetch — RPC rate limit protect karo
-                        _fm_iter = _pos_data.get("_fm_iter", 0) + 1
-                        _pos_data["_fm_iter"] = _fm_iter
-
-                        if _fm_iter % 5 == 0:
-                            def _fetch_funds_bg(_addr, _pdata):
-                                try:
-                                    _w3_fd = _get_w3q()
-                                    if not _w3_fd: return
-                                    _tinfo_fd = _fm_get_token_info(_addr, _w3_fd)
-                                    if _tinfo_fd:
-                                        _fn = _tinfo_fd.get("funds", 0) / 1e18
-                                        if _fn > 0:
-                                            _pdata["_fm_funds_now"] = _fn
-                                except: pass
-                            threading.Thread(target=_fetch_funds_bg, args=(addr, _pos_data), daemon=True).start()
-
-                        _funds_now  = _pos_data.get("_fm_funds_now", 0.0)
-                        _funds_prev = _pos_data.get("_fm_funds_prev", 0.0)
-
-                        if _funds_prev > 0 and _funds_now > 0 and _funds_now != _funds_prev:
-                            _funds_drop_pct = (_funds_prev - _funds_now) / _funds_prev * 100
-                            if _funds_drop_pct > 1.5:
-                                _vwc[addr] = _vwc.get(addr, 0) + 1
-                                print(f"⚠️ [FM] Funds drop {_funds_drop_pct:.1f}% → sell pressure cnt={_vwc[addr]}")
-                            elif _funds_now >= _funds_prev:
-                                _vwc[addr] = 0
-                            _pos_data["_fm_funds_prev"] = _funds_now
-                        elif len(_fm_price_hist) >= 3:
+                        # Price history based momentum check
+                        if len(_fm_price_hist) >= 3:
                             _fm_declining = sum(
                                 1 for i in range(1, len(_fm_price_hist))
                                 if _fm_price_hist[i] <= _fm_price_hist[i-1] * 1.001
@@ -4010,9 +3982,6 @@ def auto_position_manager():
                                 _vwc[addr] = 0
                         else:
                             _vwc[addr] = 0
-
-                        if _funds_prev == 0 and _funds_now > 0:
-                            _pos_data["_fm_funds_prev"] = _funds_now
                     else:
                         # PancakeSwap tokens: original bv5 logic
                         if _bv5_live < 0.5:
@@ -4040,12 +4009,12 @@ def auto_position_manager():
                             # FIX v59: FastDump = actual sell pressure confirm karo, sirf % nahi
                             # % se noise aur real dump mein fark nahi hota
                             # Real dump signals: sv5 >> bv5 ya FM BC pe price continuously declining
+                            _fm_price_dead = _is_fm_bc and _vwc.get(addr, 0) >= 3
                             _sv5_fd = _get_vol_pressure_rt(addr).get("sell_vol5", 0.0) if not _is_fm_bc else 0.0
-                            _sell_dominant = _sv5_fd > _bv5_live * 2 and _sv5_fd > 0.001  # sell 2x buy
-                            _fm_price_dead = _is_fm_bc and _vwc.get(addr, 0) >= 3  # 3 consecutive price drops
+                            _sell_dominant = _sv5_fd > _bv5_live * 2 and _sv5_fd > 0.001
                             _fast_dump = (_sell_dominant or _fm_price_dead) and pnl <= -5
                             if _fast_dump:
-                                _reason = "FMPriceDead" if _fm_price_dead else f"SellDom sv={_sv5_fd:.3f}bv={_bv5_live:.3f}"
+                                _reason = "FMPriceDead" if _fm_price_dead else f"SellDom sv={_sv5_fd:.3f}"
                                 _auto_paper_sell(addr, f"FastDump -{abs(pnl):.1f}% 🔵", 100.0)
                                 _egc.pop(addr, None)
                                 _trail_triggered = True
