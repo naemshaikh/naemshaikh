@@ -3963,27 +3963,39 @@ def auto_position_manager():
                     _vwc = auto_trade_stats["vol_weak_count"]
 
                     if _is_fm_bc:
-                        # FIX: price actually girni chahiye — sirf slow growth = NOT dead
-                        # pehle 1.5% tolerance tha — consolidation pe bhi fire hota tha
                         _fm_price_hist = _pos_data.get("_fm_price_hist", [])
                         _fm_price_hist.append(current)
                         if len(_fm_price_hist) > 6: _fm_price_hist.pop(0)
                         _pos_data["_fm_price_hist"] = _fm_price_hist
 
+                        _fm_funds_hist = _pos_data.get("_fm_funds_hist", [])
+
                         if len(_fm_price_hist) >= 4:
-                            # Strictly gir raha ho — flat/slow growth = ok
-                            _fm_declining = sum(
-                                1 for i in range(1, len(_fm_price_hist))
-                                if _fm_price_hist[i] < _fm_price_hist[i-1] * 0.985  # -1.5% se zyada gire tabhi count
-                            )
-                            # ATH se kitna neeche hai
                             _fm_peak = max(_fm_price_hist)
                             _fm_drawdown_pct = (_fm_peak - current) / _fm_peak * 100 if _fm_peak > 0 else 0
 
-                            if _fm_declining >= 3 or (_fm_declining >= 2 and _fm_drawdown_pct > 15):
+                            _fm_declining = sum(
+                                1 for i in range(1, len(_fm_price_hist))
+                                if _fm_price_hist[i] < _fm_price_hist[i-1] * 0.985
+                            )
+
+                            # funds bhi gir rahe hain? = real dump, buyers nahi
+                            _funds_also_dying = False
+                            if len(_fm_funds_hist) >= 3:
+                                _funds_declining = sum(
+                                    1 for i in range(1, len(_fm_funds_hist))
+                                    if _fm_funds_hist[i] < _fm_funds_hist[i-1]
+                                )
+                                _funds_also_dying = _funds_declining >= 2
+
+                            # Real dump = price gir rahi hai AND funds bhi gir rahe hain
+                            # Noise = price gir rahi hai BUT funds stable/upar = buyers hain
+                            _real_dump = (_fm_declining >= 3 or (_fm_declining >= 2 and _fm_drawdown_pct > 15)) and _funds_also_dying
+
+                            if _real_dump:
                                 _vwc[addr] = _vwc.get(addr, 0) + 1
                             else:
-                                _vwc[addr] = 0
+                                _vwc[addr] = 0  # buyers hain = noise = reset
                         else:
                             _vwc[addr] = 0
                     else:
@@ -4163,6 +4175,13 @@ def price_monitor_loop():
                                 current = (_fm_info["lastPrice"] / 1e18) / _bnb_p if _bnb_p > 0 else 0
                             else:
                                 current = _fm_info["lastPrice"] / 1e18
+                            # funds track karo — actual buyer pressure
+                            _fn = float(_fm_info.get("funds", 0))
+                            if _fn > 0:
+                                _fh = pos.get("_fm_funds_hist", [])
+                                _fh.append(_fn)
+                                if len(_fh) > 6: _fh.pop(0)
+                                pos["_fm_funds_hist"] = _fh
                         else:
                             current = 0
                     except:
