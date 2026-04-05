@@ -3970,34 +3970,41 @@ def auto_position_manager():
 
                         _fm_funds_hist = _pos_data.get("_fm_funds_hist", [])
 
-                        if len(_fm_price_hist) >= 4:
-                            _fm_peak = max(_fm_price_hist)
-                            _fm_drawdown_pct = (_fm_peak - current) / _fm_peak * 100 if _fm_peak > 0 else 0
-
-                            _fm_declining = sum(
-                                1 for i in range(1, len(_fm_price_hist))
-                                if _fm_price_hist[i] < _fm_price_hist[i-1] * 0.985
-                            )
-
-                            # funds bhi gir rahe hain? = real dump, buyers nahi
-                            _funds_also_dying = False
-                            if len(_fm_funds_hist) >= 3:
-                                _funds_declining = sum(
-                                    1 for i in range(1, len(_fm_funds_hist))
-                                    if _fm_funds_hist[i] < _fm_funds_hist[i-1]
-                                )
-                                _funds_also_dying = _funds_declining >= 2
-
-                            # Real dump = price gir rahi hai AND funds bhi gir rahe hain
-                            # Noise = price gir rahi hai BUT funds stable/upar = buyers hain
-                            _real_dump = (_fm_declining >= 3 or (_fm_declining >= 2 and _fm_drawdown_pct > 15)) and _funds_also_dying
-
-                            if _real_dump:
+                        # ── LEADING: funds sudden drop ──
+                        _instant_dump = False
+                        if len(_fm_funds_hist) >= 2:
+                            _f_prev = _fm_funds_hist[-2]
+                            _f_curr = _fm_funds_hist[-1]
+                            _f_drop = (_f_prev - _f_curr) / _f_prev * 100 if _f_prev > 0 else 0
+                            if _f_drop >= 20:
+                                _instant_dump = True
+                                print(f"🚨 [FM] Funds -{_f_drop:.1f}% instant dump: {addr[:10]}")
+                            elif _f_drop >= 5:
                                 _vwc[addr] = _vwc.get(addr, 0) + 1
+
+                        # ── LAGGING: price + funds both declining ──
+                        if not _instant_dump:
+                            if len(_fm_price_hist) >= 4:
+                                _fm_peak = max(_fm_price_hist)
+                                _fm_drawdown_pct = (_fm_peak - current) / _fm_peak * 100 if _fm_peak > 0 else 0
+                                _fm_declining = sum(
+                                    1 for i in range(1, len(_fm_price_hist))
+                                    if _fm_price_hist[i] < _fm_price_hist[i-1] * 0.985
+                                )
+                                _funds_also_dying = False
+                                if len(_fm_funds_hist) >= 3:
+                                    _funds_declining = sum(
+                                        1 for i in range(1, len(_fm_funds_hist))
+                                        if _fm_funds_hist[i] < _fm_funds_hist[i-1]
+                                    )
+                                    _funds_also_dying = _funds_declining >= 2
+                                _real_dump = (_fm_declining >= 3 or (_fm_declining >= 2 and _fm_drawdown_pct > 15)) and _funds_also_dying
+                                if _real_dump:
+                                    _vwc[addr] = _vwc.get(addr, 0) + 1
+                                else:
+                                    _vwc[addr] = 0
                             else:
-                                _vwc[addr] = 0  # buyers hain = noise = reset
-                        else:
-                            _vwc[addr] = 0
+                                _vwc[addr] = 0
                     else:
                         # PancakeSwap tokens: original bv5 logic
                         if _bv5_live < 0.5:
@@ -4009,14 +4016,12 @@ def auto_position_manager():
                     # PC: 3 readings + 20s hold
                     _vol_dying = _vwc.get(addr, 0) >= (6 if _is_fm_bc else 3)
                     if _is_fm_bc:
-                        # Extra guard: agar pnl_high > 50% hai toh MomDead sirf tab fire karo
-                        # jab actually -20% drawdown from high ho — consolidation pe nahi
                         _fm_peak2 = max(_pos_data.get("_fm_price_hist", [current]), default=current)
                         _drawdown_from_high = (_fm_peak2 - current) / _fm_peak2 * 100 if _fm_peak2 > 0 else 0
                         if _pnl_high > 50 and _drawdown_from_high < 20:
-                            _mom_dead = False  # Strong runner — consolidation pe mat nikalo
+                            _mom_dead = _instant_dump  # strong runner — sirf instant dump pe exit
                         else:
-                            _mom_dead = _vol_dying
+                            _mom_dead = _instant_dump or _vol_dying
                     else:
                         _mom_dead = _vol_dying and _hold_secs > 20
 
