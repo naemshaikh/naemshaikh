@@ -4098,9 +4098,7 @@ def auto_position_manager():
                     # ── Hard SL: absolute exit at sl_pct%, no conditions ──
                     # MomDead handles early exits (any %)
                     # HardSL = hard floor, fires regardless of momentum
-                    # FIX v63: TP2 ke baad (moonbag) HardSL nahi — MomStall/MomDead handle karega
-                    # Already 80% profit book ho chuka — remaining 20% ko dip pe mat kato
-                    if pnl <= -_entry_sl and tp_sold < 80:
+                    if pnl <= -_entry_sl:
                         _auto_paper_sell(addr, f"HardSL -{_entry_sl:.0f}% 🔴", 100.0)
                         blacklist_token(addr, f"HardSL rebuy block")
                         _trail_triggered = True
