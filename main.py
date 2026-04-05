@@ -3940,6 +3940,8 @@ def auto_position_manager():
                     if pnl > _pnl_high:
                         _pos_data["pnl_high"] = pnl
                         _pnl_high = pnl
+                        # FIX v62: New high bana → timestamp reset karo
+                        _pos_data["_last_high_ts"] = time.time()
 
                     _entry_sl = _pos_data.get("sl_pct", 15.0)
 
@@ -4128,14 +4130,38 @@ def auto_position_manager():
                         print(f"🔥 TP2: {addr[:10]} pnl={pnl:.1f}%")
                         tp_sold = auto_trade_stats["running_positions"].get(addr, {}).get("tp_sold", 80.0)
 
+                    # ── FIX v62: Momentum Stall — TP1 ke baad new high nahi bana X seconds mein ──
+                    # Scalper logic: momentum khatam = exit, fixed % nahi
+                    _last_high_ts = _pos_data.get("_last_high_ts", 0)
+                    _stall_secs = time.time() - _last_high_ts if _last_high_ts > 0 else 0
+
+                    # Stall threshold: TP ke baad zyada strict
+                    # Pre-TP: 45s stall → exit (early coin, momentum fast hoti hai)
+                    # Post-TP1: 30s stall → exit (50% book ho chuka, protect karo)
+                    # Post-TP2 (moonbag): 20s stall → exit (max profit capture)
+                    if tp_sold >= 80:
+                        _stall_threshold = 20
+                    elif tp_sold >= 50:
+                        _stall_threshold = 30
+                    else:
+                        _stall_threshold = 45
+
+                    # Sirf tab trigger karo jab meaningful profit ho (noise se bachao)
+                    _mom_stall = (
+                        _stall_secs >= _stall_threshold
+                        and _pnl_high >= 20.0   # min 20% high hona chahiye
+                        and _last_high_ts > 0
+                    )
+
                     # ── MomDead + EmergSL: INDEPENDENT if — TP1/TP2 ke baad bhi check ──
                     if addr in auto_trade_stats["running_positions"] and not _trail_triggered:
-                        if _mom_dead:
+                        if _mom_dead or _mom_stall:
+                            _reason = "MomStall" if _mom_stall and not _mom_dead else "MomDead"
                             _zone = "Moonbag" if tp_sold >= 80 else ("Post-TP1" if tp_sold >= 50 else "Pre-TP")
-                            _auto_paper_sell(addr, f"MomDead {_zone} 📉", 100.0)
+                            _auto_paper_sell(addr, f"{_reason} {_zone} 📉", 100.0)
                             _trail_triggered = True
                             _vwc_cnt = auto_trade_stats["vol_weak_count"].get(addr, 0)
-                            print(f"📉 MomDead [{_zone}]: {addr[:10]} pnl={pnl:.1f}% high={_pnl_high:.1f}% bv5={_bv5_live:.3f} s={_s5_live} b={_b5_live} hold={_hold_secs:.0f}s cnt={_vwc_cnt}")
+                            print(f"📉 {_reason} [{_zone}]: {addr[:10]} pnl={pnl:.1f}% high={_pnl_high:.1f}% stall={_stall_secs:.0f}s hold={_hold_secs:.0f}s")
                             auto_trade_stats["vol_weak_count"].pop(addr, None)  # FIX v43: cleanup
                             auto_trade_stats["entry_guard_count"].pop(addr, None)  # memory fix
 
