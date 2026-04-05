@@ -3105,11 +3105,7 @@ function openHoldDetail(json){
     '<div>'+holdRow+tpRows+buyRow+'</div>'; // Holding latest → TPs → Buy oldest
 
   document.getElementById('modal-actions').innerHTML=addr?
-    '<div style="display:flex;gap:6px;width:100%;">'+
-    '<button class="mbtn dark" onclick="copyAddr(\''+addr+'\');closeModal()" style="flex:1;">📋 Copy</button>'+
-    '<a class="mbtn gold" href="https://gmgn.ai/bsc/token/'+addr+'" target="_blank" style="flex:1;">📊 GMGN</a>'+
-    '<a class="mbtn" href="https://dexscreener.com/bsc/'+addr+'" target="_blank" style="flex:1;background:rgba(30,130,255,0.15);border:1px solid rgba(30,130,255,0.4);color:#4da6ff;">📈 DEX</a>'+
-    '</div>'
+    '<a class="mbtn gold" href="https://gmgn.ai/bsc/token/'+addr+'" target="_blank" style="width:100%;display:block;text-align:center;">📊 Open on GMGN</a>'
     :'<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
 
   showModal();
@@ -3306,10 +3302,36 @@ function openGroupTradeDetail(encoded){
 
   document.getElementById('modal-body').innerHTML=
     // Chart placeholder — GeckoTerminal se load hoga
-    '<div id="trade-chart-wrap" style="background:var(--ink3);border-radius:12px;overflow:hidden;margin-bottom:14px;height:180px;display:flex;align-items:center;justify-content:center;">'+
-      '<div id="trade-chart-loading" style="color:var(--txt3);font-size:11px;">📊 Chart loading...</div>'+
-      '<canvas id="trade-chart-canvas" style="display:none;width:100%;height:180px;"></canvas>'+
-    '</div>'+
+    (function(){
+      const bt = g.buyTrades&&g.buyTrades[0]&&g.buyTrades[0].bought_at;
+      const st = g.sellTrades&&g.sellTrades[0]&&g.sellTrades[0].sold_at;
+      const buyT = bt?new Date(_toUTC(bt)).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}):'—';
+      const sellT = st?new Date(_toUTC(st)).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}):'—';
+      const holdD = bt?holdBetween(bt,st||new Date().toISOString()):'—';
+      return '<div style="background:var(--ink3);border-radius:12px;padding:14px;margin-bottom:14px;">'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'+
+          '<div style="text-align:center;">'+
+            '<div style="font-size:9px;color:var(--txt3);margin-bottom:4px;">Entry</div>'+
+            '<div style="font-size:13px;font-weight:800;color:#64C8FF;">'+buyT+'</div>'+
+            '<div style="font-size:9px;color:var(--txt3);margin-top:2px;">'+fmtBNBPrice(avgBuy)+'</div>'+
+          '</div>'+
+          '<div style="text-align:center;flex:1;padding:0 10px;">'+
+            '<div style="height:2px;background:linear-gradient(90deg,#64C8FF,'+(clr)+');border-radius:2px;margin-bottom:4px;"></div>'+
+            '<div style="font-size:10px;color:var(--txt3);">'+holdD+'</div>'+
+          '</div>'+
+          '<div style="text-align:center;">'+
+            '<div style="font-size:9px;color:var(--txt3);margin-bottom:4px;">Exit</div>'+
+            '<div style="font-size:13px;font-weight:800;color:'+clr+';">'+sellT+'</div>'+
+            '<div style="font-size:9px;color:var(--txt3);margin-top:2px;">'+(avgSell>0?fmtBNBPrice(avgSell):'Holding')+'</div>'+
+          '</div>'+
+        '</div>'+
+        '<div style="display:flex;justify-content:space-between;padding-top:8px;border-top:1px solid var(--line);">'+
+          '<div style="font-size:10px;color:var(--txt3);">Hold Duration</div>'+
+          '<div style="font-size:10px;font-weight:700;color:var(--txt1);">'+holdD+'</div>'+
+        '</div>'+
+      '</div>';
+    })()+
+
     // Stats grid — GMGN profile style
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">'+
       '<div style="background:var(--ink3);border-radius:10px;padding:11px;border:1px solid '+(g.totalPnlB>=0?'rgba(0,230,118,0.2)':'rgba(255,71,87,0.2)')+';">'+
@@ -3343,11 +3365,7 @@ function openGroupTradeDetail(encoded){
     '<div>'+actRows+'</div>';
 
   document.getElementById('modal-actions').innerHTML=addr?
-    '<div style="display:flex;gap:6px;width:100%;">'+
-    '<button class="mbtn dark" onclick="copyAddr(\''+addr+'\');closeModal()" style="flex:1;">📋 Copy</button>'+
-    '<a class="mbtn gold" href="https://gmgn.ai/bsc/token/'+addr+'" target="_blank" style="flex:1;">📊 GMGN</a>'+
-    '<a class="mbtn" href="https://dexscreener.com/bsc/'+addr+'" target="_blank" style="flex:1;background:rgba(30,130,255,0.15);border:1px solid rgba(30,130,255,0.4);color:#4da6ff;">📈 DEX</a>'+
-    '</div>'
+    '<a class="mbtn gold" href="https://gmgn.ai/bsc/token/'+addr+'" target="_blank" style="width:100%;display:block;text-align:center;">📊 Open on GMGN</a>'
     :'<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
 
   showModal();
@@ -3627,11 +3645,7 @@ function openTradeDetail(json){
     '</div>';
 
   document.getElementById('modal-actions').innerHTML = addr?
-    '<div style="display:flex;gap:6px;width:100%;">'+
-    '<button class="mbtn dark" onclick="copyAddr(\''+addr+'\');closeModal()" style="flex:1;">📋 Copy</button>'+
-    '<a class="mbtn gold" href="https://gmgn.ai/bsc/token/'+addr+'" target="_blank" style="flex:1;">📊 GMGN</a>'+
-    '<a class="mbtn" href="https://dexscreener.com/bsc/'+addr+'" target="_blank" style="flex:1;background:rgba(30,130,255,0.15);border:1px solid rgba(30,130,255,0.4);color:#4da6ff;">📈 DEX</a>'+
-    '</div>'
+    '<a class="mbtn gold" href="https://gmgn.ai/bsc/token/'+addr+'" target="_blank" style="width:100%;display:block;text-align:center;">📊 Open on GMGN</a>'
     :'<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
 
   showModal();
