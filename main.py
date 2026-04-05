@@ -4007,13 +4007,19 @@ def auto_position_manager():
 
                         # Case 1: No pump at all, buyers absent
                         if _pnl_high < 3.0 and pnl <= -2.0:
-                            # Fast dump — -5% + no pump = turant exit, koi time check nahi
-                            _fast_dump = pnl <= -5
+                            # FIX v59: FastDump = actual sell pressure confirm karo, sirf % nahi
+                            # % se noise aur real dump mein fark nahi hota
+                            # Real dump signals: sv5 >> bv5 ya FM BC pe price continuously declining
+                            _sv5_fd = _get_vol_pressure_rt(addr).get("sell_vol5", 0.0) if not _is_fm_bc else 0.0
+                            _sell_dominant = _sv5_fd > _bv5_live * 2 and _sv5_fd > 0.001  # sell 2x buy
+                            _fm_price_dead = _is_fm_bc and _vwc.get(addr, 0) >= 3  # 3 consecutive price drops
+                            _fast_dump = (_sell_dominant or _fm_price_dead) and pnl <= -5
                             if _fast_dump:
+                                _reason = "FMPriceDead" if _fm_price_dead else f"SellDom sv={_sv5_fd:.3f}bv={_bv5_live:.3f}"
                                 _auto_paper_sell(addr, f"FastDump -{abs(pnl):.1f}% 🔵", 100.0)
                                 _egc.pop(addr, None)
                                 _trail_triggered = True
-                                print(f"🔵 FastDump: {addr[:10]} pnl={pnl:.1f}% hold={_hold_secs:.0f}s")
+                                print(f"🔵 FastDump [{_reason}]: {addr[:10]} pnl={pnl:.1f}% hold={_hold_secs:.0f}s")
                                 continue
 
                             if _bv5_live < 0.3:
