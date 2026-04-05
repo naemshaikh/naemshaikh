@@ -3974,13 +3974,13 @@ def auto_position_manager():
                             # Strictly gir raha ho — flat/slow growth = ok
                             _fm_declining = sum(
                                 1 for i in range(1, len(_fm_price_hist))
-                                if _fm_price_hist[i] < _fm_price_hist[i-1] * 0.92  # -8% se zyada gire tabhi count
+                                if _fm_price_hist[i] < _fm_price_hist[i-1] * 0.985  # -1.5% se zyada gire tabhi count
                             )
                             # ATH se kitna neeche hai
                             _fm_peak = max(_fm_price_hist)
                             _fm_drawdown_pct = (_fm_peak - current) / _fm_peak * 100 if _fm_peak > 0 else 0
 
-                            if _fm_declining >= 3 or (_fm_declining >= 2 and _fm_drawdown_pct > 40):
+                            if _fm_declining >= 3 or (_fm_declining >= 2 and _fm_drawdown_pct > 15):
                                 _vwc[addr] = _vwc.get(addr, 0) + 1
                             else:
                                 _vwc[addr] = 0
@@ -4001,8 +4001,8 @@ def auto_position_manager():
                         # jab actually -20% drawdown from high ho — consolidation pe nahi
                         _fm_peak2 = max(_pos_data.get("_fm_price_hist", [current]), default=current)
                         _drawdown_from_high = (_fm_peak2 - current) / _fm_peak2 * 100 if _fm_peak2 > 0 else 0
-                        if _pnl_high > 100 and _drawdown_from_high < 40:
-                            _mom_dead = False  # Strong runner — 40% retracement tak hold
+                        if _pnl_high > 50 and _drawdown_from_high < 20:
+                            _mom_dead = False  # Strong runner — consolidation pe mat nikalo
                         else:
                             _mom_dead = _vol_dying
                     else:
