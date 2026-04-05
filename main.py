@@ -4007,7 +4007,7 @@ def auto_position_manager():
 
                     # FM BC: 8 readings — consolidation survive kare, genuine downtrend exit
                     # PC: 3 readings + 20s hold
-                    _vol_dying = _vwc.get(addr, 0) >= (8 if _is_fm_bc else 3)
+                    _vol_dying = _vwc.get(addr, 0) >= (6 if _is_fm_bc else 3)
                     if _is_fm_bc:
                         # Extra guard: agar pnl_high > 50% hai toh MomDead sirf tab fire karo
                         # jab actually -20% drawdown from high ho — consolidation pe nahi
