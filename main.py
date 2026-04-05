@@ -3974,7 +3974,7 @@ def auto_position_manager():
                         if len(_fm_price_hist) >= 3:
                             _fm_declining = sum(
                                 1 for i in range(1, len(_fm_price_hist))
-                                if _fm_price_hist[i] <= _fm_price_hist[i-1] * 1.001
+                                if _fm_price_hist[i] <= _fm_price_hist[i-1] * 1.015  # 1.5% tolerance
                             )
                             if _fm_declining >= 2:
                                 _vwc[addr] = _vwc.get(addr, 0) + 1
@@ -3989,11 +3989,11 @@ def auto_position_manager():
                         else:
                             _vwc[addr] = 0
 
-                    _vol_dying  = _vwc.get(addr, 0) >= 3
-                    # FM BC: hold_secs guard hataya — ab FM-specific price check hai
-                    # PancakeSwap tokens: hold_secs > 20 guard rakhna zaroori hai (bv5 lag)
+                    # FM BC: 6 readings — fluctuation survive, genuine downtrend exit
+                    # PC: 3 readings + 20s hold
+                    _vol_dying = _vwc.get(addr, 0) >= (6 if _is_fm_bc else 3)
                     if _is_fm_bc:
-                        _mom_dead = _vol_dying and _hold_secs > 5  # 5s grace period only
+                        _mom_dead = _vol_dying  # koi time check nahi
                     else:
                         _mom_dead = _vol_dying and _hold_secs > 20
 
@@ -4006,10 +4006,8 @@ def auto_position_manager():
 
                         # Case 1: No pump at all, buyers absent
                         if _pnl_high < 3.0 and pnl <= -2.0:
-                            # FIX v59: FastDump = actual sell pressure confirm karo, sirf % nahi
-                            # % se noise aur real dump mein fark nahi hota
-                            # Real dump signals: sv5 >> bv5 ya FM BC pe price continuously declining
-                            _fm_price_dead = _is_fm_bc and _vwc.get(addr, 0) >= 3
+                            # FastDump: FM BC pe price declining, PC pe sell dominant
+                            _fm_price_dead = _is_fm_bc and _vwc.get(addr, 0) >= 4
                             _sv5_fd = _get_vol_pressure_rt(addr).get("sell_vol5", 0.0) if not _is_fm_bc else 0.0
                             _sell_dominant = _sv5_fd > _bv5_live * 2 and _sv5_fd > 0.001
                             _fast_dump = (_sell_dominant or _fm_price_dead) and pnl <= -5
@@ -4021,31 +4019,50 @@ def auto_position_manager():
                                 print(f"🔵 FastDump [{_reason}]: {addr[:10]} pnl={pnl:.1f}% hold={_hold_secs:.0f}s")
                                 continue
 
-                            if _bv5_live < 0.3:
-                                _egc[addr] = _egc.get(addr, 0) + 1
+                            # FM BC: bv5=0 hamesha — price history use karo
+                            if _is_fm_bc:
+                                _eg_hist = _pos_data.get("_eg_price_hist", [])
+                                _eg_hist.append(current)
+                                if len(_eg_hist) > 5: _eg_hist.pop(0)
+                                _pos_data["_eg_price_hist"] = _eg_hist
+                                if len(_eg_hist) >= 3:
+                                    _eg_down = sum(1 for i in range(1, len(_eg_hist)) if _eg_hist[i] < _eg_hist[i-1] * 0.99)
+                                    if _eg_down >= 2: _egc[addr] = _egc.get(addr, 0) + 1
+                                    else: _egc[addr] = 0
+                                else: _egc[addr] = 0
                             else:
-                                _egc[addr] = 0  # buyer aaya = reset
+                                if _bv5_live < 0.3: _egc[addr] = _egc.get(addr, 0) + 1
+                                else: _egc[addr] = 0
 
-                            if _egc.get(addr, 0) >= 2:
+                            if _egc.get(addr, 0) >= 4:
                                 _auto_paper_sell(addr, f"EntryGuard NoMom -{abs(pnl):.1f}% 🔵", 100.0)
                                 _egc.pop(addr, None)
                                 _trail_triggered = True
-                                print(f"🔵 EntryGuard Case1: {addr[:10]} pnl={pnl:.1f}% bv5={_bv5_live:.3f}")
+                                print(f"🔵 EntryGuard Case1: {addr[:10]} pnl={pnl:.1f}% fm_bc={_is_fm_bc}")
                                 continue
 
-                        # Case 2: Pumped then fading — sell vol confirm karo
+                        # Case 2: Pumped then fading
                         elif _pnl_high >= 3.0 and pnl < (_pnl_high - 8):
-                            _sv5_live = _get_vol_pressure_rt(addr).get("sell_vol5", 0.0)
-                            if _bv5_live < 0.3 and _sv5_live > _bv5_live:
-                                _egc[addr] = _egc.get(addr, 0) + 1
+                            if _is_fm_bc:
+                                _eg_hist2 = _pos_data.get("_eg_price_hist", [])
+                                _eg_hist2.append(current)
+                                if len(_eg_hist2) > 5: _eg_hist2.pop(0)
+                                _pos_data["_eg_price_hist"] = _eg_hist2
+                                if len(_eg_hist2) >= 3:
+                                    _eg_down2 = sum(1 for i in range(1, len(_eg_hist2)) if _eg_hist2[i] < _eg_hist2[i-1] * 0.99)
+                                    if _eg_down2 >= 2: _egc[addr] = _egc.get(addr, 0) + 1
+                                    else: _egc[addr] = 0
+                                else: _egc[addr] = 0
                             else:
-                                _egc[addr] = 0  # buyers active = fake pullback = reset
+                                _sv5_live = _get_vol_pressure_rt(addr).get("sell_vol5", 0.0)
+                                if _bv5_live < 0.3 and _sv5_live > _bv5_live: _egc[addr] = _egc.get(addr, 0) + 1
+                                else: _egc[addr] = 0
 
-                            if _egc.get(addr, 0) >= 2:
+                            if _egc.get(addr, 0) >= 4:
                                 _auto_paper_sell(addr, f"EntryGuard Faded -{abs(pnl):.1f}% 🔵", 100.0)
                                 _egc.pop(addr, None)
                                 _trail_triggered = True
-                                print(f"🔵 EntryGuard Case2: {addr[:10]} pnl={pnl:.1f}% high={_pnl_high:.1f}% sv5={_sv5_live:.3f}")
+                                print(f"🔵 EntryGuard Case2: {addr[:10]} pnl={pnl:.1f}% high={_pnl_high:.1f}% fm_bc={_is_fm_bc}")
                                 continue
 
                     # ── Hard SL: absolute exit at sl_pct%, no conditions ──
