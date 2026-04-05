@@ -3963,26 +3963,47 @@ def auto_position_manager():
                     _vwc = auto_trade_stats["vol_weak_count"]
 
                     if _is_fm_bc:
-                        # FM BC: price flat ya gir raha hai = momentum dead
-                        # monitored_positions ka current price track karo
+                        # FIX v60: FM BC actual sell pressure — getTokenInfo funds track karo
+                        # funds (BNB in curve) gir raha hai = actual sells ho rahi hain
                         _fm_price_hist = _pos_data.get("_fm_price_hist", [])
                         _fm_price_hist.append(current)
-                        if len(_fm_price_hist) > 5:
-                            _fm_price_hist.pop(0)
+                        if len(_fm_price_hist) > 5: _fm_price_hist.pop(0)
                         _pos_data["_fm_price_hist"] = _fm_price_hist
 
-                        if len(_fm_price_hist) >= 3:
-                            # Last 3 prices mein se 2 flat/down hain → volume weak
+                        # Funds tracking — actual sell pressure
+                        _w3_fd = _get_w3q()
+                        _funds_now = 0.0
+                        if _w3_fd:
+                            try:
+                                _tinfo_fd = _fm_get_token_info(addr, _w3_fd)
+                                if _tinfo_fd:
+                                    _funds_now = _tinfo_fd.get("funds", 0) / 1e18
+                            except: pass
+
+                        _funds_prev = _pos_data.get("_fm_funds_prev", 0.0)
+                        if _funds_prev > 0 and _funds_now > 0:
+                            _funds_drop_pct = (_funds_prev - _funds_now) / _funds_prev * 100
+                            if _funds_drop_pct > 1.5:  # 1.5% drop in BNB = actual sells
+                                _vwc[addr] = _vwc.get(addr, 0) + 1
+                                print(f"⚠️ [FM] Funds drop {_funds_drop_pct:.1f}% → sell pressure cnt={_vwc[addr]}")
+                            elif _funds_now >= _funds_prev:
+                                _vwc[addr] = 0  # funds bade ya same = buyers aa rahe
+                        elif len(_fm_price_hist) >= 3:
+                            # Fallback: price history se infer karo agar funds nahi mila
                             _fm_declining = sum(
                                 1 for i in range(1, len(_fm_price_hist))
-                                if _fm_price_hist[i] <= _fm_price_hist[i-1] * 1.001  # 0.1% tolerance
+                                if _fm_price_hist[i] <= _fm_price_hist[i-1] * 1.001
                             )
                             if _fm_declining >= 2:
                                 _vwc[addr] = _vwc.get(addr, 0) + 1
                             else:
-                                _vwc[addr] = 0  # price upar ja raha = momentum alive
+                                _vwc[addr] = 0
                         else:
-                            _vwc[addr] = 0  # data collect ho raha hai
+                            _vwc[addr] = 0
+
+                        # Save current funds for next iteration
+                        if _funds_now > 0:
+                            _pos_data["_fm_funds_prev"] = _funds_now
                     else:
                         # PancakeSwap tokens: original bv5 logic
                         if _bv5_live < 0.5:
