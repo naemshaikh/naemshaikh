@@ -4039,29 +4039,41 @@ def auto_position_manager():
                     # PC: 3 readings + 20s hold
                     _vol_dying = _vwc.get(addr, 0) >= (6 if _is_fm_bc else 3)
                     if _is_fm_bc:
-                        _fm_peak2 = max(_pos_data.get("_fm_price_hist", [current]), default=current)
+                        # FIX ATH: real peak — position level pe store, sirf 6 readings ka max nahi
+                        # _fm_price_hist sirf last 6 readings — fast dump mein peak history se bahar
+                        # ath_price position mein hamesha update hota hai (line ~3852)
+                        _fm_peak2 = _pos_data.get("ath_price", 0)
+                        if _fm_peak2 <= 0:
+                            # fallback: monitored_positions ka high ya price_hist max
+                            _fm_peak2 = max(
+                                mon.get("high", 0),
+                                max(_pos_data.get("_fm_price_hist", [current]), default=current),
+                                current
+                            )
                         _drawdown_from_high = (_fm_peak2 - current) / _fm_peak2 * 100 if _fm_peak2 > 0 else 0
                         if tp_sold >= 85:
                             # TP3 ke baad moonbag — tightest exit
                             # Coin 500%+ chal chuka — profit protect karo
                             if _drawdown_from_high > 20:
-                                _mom_dead = True   # >20% drop — turant exit (was 30%)
+                                _mom_dead = True   # >20% drop from REAL ATH — turant exit
                             elif _drawdown_from_high > 10:
-                                _mom_dead = _instant_dump or _vol_dying  # 10-20% — vol bhi check (was 15%)
+                                _mom_dead = _instant_dump or _vol_dying  # 10-20% — vol bhi check
                             else:
                                 _mom_dead = _instant_dump  # <10% — sirf instant dump
                         elif tp_sold >= 65:
                             # TP2 ke baad (65% sold) — medium tight
-                            # Same structure as TP1 but tighter thresholds
                             if _drawdown_from_high > 25:
-                                _mom_dead = True   # >25% drop — turant exit
+                                _mom_dead = True   # >25% drop from REAL ATH — turant exit
                             elif _drawdown_from_high > 15:
                                 _mom_dead = _instant_dump or _vol_dying  # 15-25% — vol bhi check
                             else:
                                 _mom_dead = _instant_dump  # <15% — sirf instant dump (runner ko room)
-                        elif tp_sold >= 40 and _drawdown_from_high < 20:
-                            # TP1 ke baad runner — sirf instant dump pe exit
-                            _mom_dead = _instant_dump
+                        elif tp_sold >= 40:
+                            # TP1 ke baad runner — real ATH se 30% gire toh exit
+                            if _drawdown_from_high > 30:
+                                _mom_dead = True   # >30% drop from REAL ATH — turant exit
+                            else:
+                                _mom_dead = _instant_dump  # <30% — runner ko room do
                         else:
                             _mom_dead = _instant_dump or _vol_dying
                     else:
