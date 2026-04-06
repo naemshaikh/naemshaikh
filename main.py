@@ -3970,6 +3970,7 @@ def auto_position_manager():
                         if len(_fm_price_hist) > 6: _fm_price_hist.pop(0)
                         _pos_data["_fm_price_hist"] = _fm_price_hist
 
+                        # Funds: FM price monitor thread se parallel update hota hai
                         _fm_funds_hist = _pos_data.get("_fm_funds_hist", [])
 
                         # ── LEADING: funds sudden drop + recovery check ──
@@ -6297,6 +6298,16 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                                     monitored_positions[ta]["current"] = _price
                                     if _price > monitored_positions[ta].get("high", 0):
                                         monitored_positions[ta]["high"] = _price
+
+                            # Funds parallel update — position manager ke liye
+                            _funds_now = _info.get("funds", 0) / 1e18
+                            if _funds_now > 0:
+                                _rp_fm = auto_trade_stats["running_positions"].get(ta)
+                                if _rp_fm is not None:
+                                    _fh = _rp_fm.get("_fm_funds_hist", [])
+                                    _fh.append(_funds_now)
+                                    if len(_fh) > 6: _fh.pop(0)
+                                    _rp_fm["_fm_funds_hist"] = _fh
 
                             # Price change track karo
                             if _last_price[0] > 0:
