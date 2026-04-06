@@ -3981,16 +3981,23 @@ def auto_position_manager():
                             _f_drop = (_f_prev - _f_curr) / _f_prev * 100 if _f_prev > 0 else 0
                             if _f_drop >= 20:
                                 if tp_sold > 0:
-                                    # TP ke baad — recovery check karo
-                                    if len(_fm_funds_hist) >= 3:
-                                        _f_recovering = _fm_funds_hist[-1] > _fm_funds_hist[-2]
-                                    else:
-                                        _f_recovering = False
+                                    # TP ke baad — proper recovery check
+                                    # 2 consecutive ticks upar + min 5% recovery
+                                    _tick_up = (
+                                        len(_fm_funds_hist) >= 3 and
+                                        _fm_funds_hist[-1] > _fm_funds_hist[-2] and
+                                        _fm_funds_hist[-2] > _fm_funds_hist[-3]
+                                    )
+                                    _recovery_pct = (
+                                        (_fm_funds_hist[-1] - min(_fm_funds_hist[-2], _fm_funds_hist[-3]))
+                                        / max(_fm_funds_hist[-3], 0.001) * 100
+                                    ) if len(_fm_funds_hist) >= 3 else 0.0
+                                    _f_recovering = _tick_up and _recovery_pct >= 5.0
                                     if not _f_recovering:
                                         _instant_dump = True
-                                        print(f"🚨 [FM] Funds -{_f_drop:.1f}% dump + no recovery (post-TP): {addr[:10]}")
+                                        print(f"🚨 [FM] Funds -{_f_drop:.1f}% dump + no real recovery (post-TP): {addr[:10]}")
                                     else:
-                                        print(f"⚡ [FM] Funds -{_f_drop:.1f}% recovering (post-TP) — HOLD: {addr[:10]}")
+                                        print(f"⚡ [FM] Funds -{_f_drop:.1f}% real recovery {_recovery_pct:.1f}% (post-TP) — HOLD: {addr[:10]}")
                                 else:
                                     # TP se pehle — seedha exit
                                     _instant_dump = True
