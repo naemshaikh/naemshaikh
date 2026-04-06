@@ -4158,7 +4158,7 @@ def auto_position_manager():
                     elif tp_sold >= 50:
                         _stall_threshold = 90  # Post-TP1: zyada room do
                     else:
-                        _stall_threshold = 45
+                        _stall_threshold = 20  # Pre-TP: 5ca88a1 original
 
                     # Sirf tab trigger karo jab meaningful profit ho (noise se bachao)
                     _mom_stall = (
