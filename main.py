@@ -3972,15 +3972,25 @@ def auto_position_manager():
 
                         _fm_funds_hist = _pos_data.get("_fm_funds_hist", [])
 
-                        # ── LEADING: funds sudden drop ──
+                        # ── LEADING: funds sudden drop + recovery check ──
                         _instant_dump = False
                         if len(_fm_funds_hist) >= 2:
                             _f_prev = _fm_funds_hist[-2]
                             _f_curr = _fm_funds_hist[-1]
                             _f_drop = (_f_prev - _f_curr) / _f_prev * 100 if _f_prev > 0 else 0
                             if _f_drop >= 20:
-                                _instant_dump = True
-                                print(f"🚨 [FM] Funds -{_f_drop:.1f}% instant dump: {addr[:10]}")
+                                # Funds -20% gira — check karo recovery ho rahi hai ya nahi
+                                # _fm_funds_hist ke last 2 readings compare karo
+                                # Agar latest > previous → buyers aa rahe hain → HOLD
+                                if len(_fm_funds_hist) >= 3:
+                                    _f_recovering = _fm_funds_hist[-1] > _fm_funds_hist[-2]
+                                else:
+                                    _f_recovering = False
+                                if not _f_recovering:
+                                    _instant_dump = True
+                                    print(f"🚨 [FM] Funds -{_f_drop:.1f}% dump + no recovery: {addr[:10]}")
+                                else:
+                                    print(f"⚡ [FM] Funds -{_f_drop:.1f}% drop but recovering — HOLD: {addr[:10]}")
                             elif _f_drop >= 5:
                                 _vwc[addr] = _vwc.get(addr, 0) + 1
 
