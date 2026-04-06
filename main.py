@@ -5912,53 +5912,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _entry_type = "direct"        # CSV ke liye: direct / waited / skipped
 
         # FIX: strictly falling price = sell pressure, flat/rising = ok
-        _ph = _price_history
-        _fh = _funds_history
-
-        if len(_ph) >= 2:
-            _price_falling = _ph[-1] < _ph[-2]   # strictly gir raha ho
-        else:
-            _latest_p = _ph[-1] if _ph else _price2
-            _price_falling = _latest_p < _price1  # baseline se neeche = falling
-
-        if len(_fh) >= 2:
-            _vol_falling = _fh[-1] < _fh[-2]
-        else:
-            _vol_falling = _price_falling
-
-        # Sell pressure = price actually gir raha ho (flat = ok, rising = ok)
-        _sell_pressure = _price_falling and _vol_falling
-
-        if _sell_pressure:
-            # Sell pressure hai — reversal ka wait karo max 10s
-            print(f"⏳ [FM] Sell pressure at entry — waiting reversal (max 10s)")
-            _reversal_found = False
-            _price_low = _entry_price_check
-            for _ri in range(50):  # 50 x 0.2s = 10s max
-                time.sleep(0.2)
-                try:
-                    _ri_info = _get_token_info_cached(token_addr, w3, ttl=0.1)
-                    if not _ri_info: break
-                    if _ri_info.get("liquidityAdded"):
-                        _skip("graduated during entry wait"); return
-                    _ri_price = _ri_info.get("lastPrice", 0)
-                    if _ri_price <= 0: continue
-                    if _ri_price < _price_low:
-                        _price_low = _ri_price
-                    elif _ri_price > _price_low * 1.01:
-                        # Low se 1% upar = sellers gone, reversal confirm
-                        print(f"✅ [FM] Reversal confirmed: price={_ri_price:.2e} low={_price_low:.2e} — ENTERING")
-                        _entry_price_check = _ri_price
-                        _reversal_found = True
-                        _entry_type = "waited"
-                        break
-                except Exception:
-                    break
-            if not _reversal_found:
-                _entry_type = "skipped"
-                _skip("sell pressure — no reversal in 10s"); return
-        else:
-            print(f"✅ [FM] Buy pressure confirmed (price={'falling' if _price_falling else 'rising/flat'} vol={'falling' if _vol_falling else 'rising/flat'}) — ENTERING NOW")
+        # FIX v54 restored: sell pressure check hataya — FM BC pe funds hamesha flat
+        # isliye _vol_falling hamesha True = buy kabhi nahi hota
+        print(f"✅ [FM] Momentum confirmed — ENTERING NOW")
 
         # ========== BUY EXECUTION ==========
         size_bnb = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
