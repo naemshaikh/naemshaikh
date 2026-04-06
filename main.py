@@ -4041,15 +4041,15 @@ def auto_position_manager():
                     if _is_fm_bc:
                         _fm_peak2 = max(_pos_data.get("_fm_price_hist", [current]), default=current)
                         _drawdown_from_high = (_fm_peak2 - current) / _fm_peak2 * 100 if _fm_peak2 > 0 else 0
-                        if tp_sold >= 80:
-                            # TP2 ke baad — drawdown based exit
+                        if tp_sold >= 85:
+                            # TP3 ke baad moonbag — drawdown based exit
                             if _drawdown_from_high > 30:
                                 _mom_dead = True   # >30% drop — turant exit
                             elif _drawdown_from_high > 15:
                                 _mom_dead = _instant_dump or _vol_dying  # 15-30% — vol bhi check
                             else:
                                 _mom_dead = _instant_dump  # <15% — sirf instant dump
-                        elif (_pnl_high > 50 or tp_sold >= 50) and _drawdown_from_high < 20:
+                        elif (_pnl_high > 50 or tp_sold >= 40) and _drawdown_from_high < 20:
                             _mom_dead = _instant_dump  # TP1 ke baad runner — sirf instant dump pe exit
                         else:
                             _mom_dead = _instant_dump or _vol_dying
@@ -4146,47 +4146,50 @@ def auto_position_manager():
                     # Pehle: elif chain — TP1 fire kiya toh MomDead skip
                     # Ab: TP1/TP2 alag if, MomDead/EmergSL alag if — dono same iteration
 
-                    # ── TP1: +40% → 50% sell ──
-                    if pnl >= 40 and tp_sold < 50:
-                        _auto_paper_sell(addr, f"TP1 +40% 🔒", 50.0)
+                    # ── TP1: +40% → 40% sell ──
+                    if pnl >= 40 and tp_sold < 40:
+                        _auto_paper_sell(addr, f"TP1 +40% 🔒", 40.0)
                         print(f"🔒 TP1: {addr[:10]} pnl={pnl:.1f}%")
-                        # tp_sold ab 50 ho gaya — turant update karo is iteration ke liye
-                        tp_sold = auto_trade_stats["running_positions"].get(addr, {}).get("tp_sold", 50.0)
+                        tp_sold = auto_trade_stats["running_positions"].get(addr, {}).get("tp_sold", 40.0)
 
-                    # ── TP2: +150% → 30% sell (total 80% sold) ──
-                    elif pnl >= 150 and tp_sold < 80:
-                        _auto_paper_sell(addr, f"TP2 +150% 🔥", 30.0)
+                    # ── TP2: +200% → 25% sell (total 65% sold) ──
+                    elif pnl >= 200 and tp_sold < 65:
+                        _auto_paper_sell(addr, f"TP2 +200% 🔥", 25.0)
                         print(f"🔥 TP2: {addr[:10]} pnl={pnl:.1f}%")
-                        tp_sold = auto_trade_stats["running_positions"].get(addr, {}).get("tp_sold", 80.0)
+                        tp_sold = auto_trade_stats["running_positions"].get(addr, {}).get("tp_sold", 65.0)
 
-                    # ── FIX v62: Momentum Stall — TP1 ke baad new high nahi bana X seconds mein ──
-                    # Scalper logic: momentum khatam = exit, fixed % nahi
+                    # ── TP3: +500% → 20% sell (total 85% sold) ──
+                    elif pnl >= 500 and tp_sold < 85:
+                        _auto_paper_sell(addr, f"TP3 +500% 🚀", 20.0)
+                        print(f"🚀 TP3: {addr[:10]} pnl={pnl:.1f}%")
+                        tp_sold = auto_trade_stats["running_positions"].get(addr, {}).get("tp_sold", 85.0)
+
+                    # ── FIX v62: Momentum Stall — TP ke baad new high nahi bana X seconds mein ──
                     _last_high_ts = _pos_data.get("_last_high_ts", 0)
                     _stall_secs = time.time() - _last_high_ts if _last_high_ts > 0 else 0
 
-                    # Stall threshold: TP ke baad zyada strict
-                    # Pre-TP: 45s stall → exit (early coin, momentum fast hoti hai)
-                    # Post-TP1: 30s stall → exit (50% book ho chuka, protect karo)
-                    # Post-TP2 (moonbag): 20s stall → exit (max profit capture)
-                    if tp_sold >= 80:
-                        _stall_threshold = 45
-                    elif tp_sold >= 50:
-                        _stall_threshold = 90  # Post-TP1: zyada room do
+                    # Stall threshold per TP zone
+                    if tp_sold >= 85:
+                        _stall_threshold = 20   # TP3 ke baad moonbag — tight
+                    elif tp_sold >= 65:
+                        _stall_threshold = 45   # TP2 ke baad — thoda tight
+                    elif tp_sold >= 40:
+                        _stall_threshold = 90   # TP1 ke baad — room do
                     else:
-                        _stall_threshold = 20  # Pre-TP: 5ca88a1 original
+                        _stall_threshold = 20   # Pre-TP — original
 
-                    # Sirf tab trigger karo jab meaningful profit ho (noise se bachao)
+                    # Sirf tab trigger karo jab meaningful profit ho
                     _mom_stall = (
                         _stall_secs >= _stall_threshold
-                        and _pnl_high >= 20.0   # min 20% high hona chahiye
+                        and _pnl_high >= 20.0
                         and _last_high_ts > 0
                     )
 
-                    # ── MomDead + EmergSL: INDEPENDENT if — TP1/TP2 ke baad bhi check ──
+                    # ── MomDead + EmergSL: INDEPENDENT if — TP ke baad bhi check ──
                     if addr in auto_trade_stats["running_positions"] and not _trail_triggered:
                         if _mom_dead or _mom_stall:
                             _reason = "MomStall" if _mom_stall and not _mom_dead else "MomDead"
-                            _zone = "Moonbag" if tp_sold >= 80 else ("Post-TP1" if tp_sold >= 50 else "Pre-TP")
+                            _zone = "Moonbag" if tp_sold >= 85 else ("Post-TP2" if tp_sold >= 65 else ("Post-TP1" if tp_sold >= 40 else "Pre-TP"))
                             _auto_paper_sell(addr, f"{_reason} {_zone} 📉", 100.0)
                             _trail_triggered = True
                             _vwc_cnt = auto_trade_stats["vol_weak_count"].get(addr, 0)
