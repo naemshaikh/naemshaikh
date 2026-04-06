@@ -4042,15 +4042,26 @@ def auto_position_manager():
                         _fm_peak2 = max(_pos_data.get("_fm_price_hist", [current]), default=current)
                         _drawdown_from_high = (_fm_peak2 - current) / _fm_peak2 * 100 if _fm_peak2 > 0 else 0
                         if tp_sold >= 85:
-                            # TP3 ke baad moonbag — drawdown based exit
-                            if _drawdown_from_high > 30:
-                                _mom_dead = True   # >30% drop — turant exit
-                            elif _drawdown_from_high > 15:
-                                _mom_dead = _instant_dump or _vol_dying  # 15-30% — vol bhi check
+                            # TP3 ke baad moonbag — tightest exit
+                            # Coin 500%+ chal chuka — profit protect karo
+                            if _drawdown_from_high > 20:
+                                _mom_dead = True   # >20% drop — turant exit (was 30%)
+                            elif _drawdown_from_high > 10:
+                                _mom_dead = _instant_dump or _vol_dying  # 10-20% — vol bhi check (was 15%)
                             else:
-                                _mom_dead = _instant_dump  # <15% — sirf instant dump
-                        elif (_pnl_high > 50 or tp_sold >= 40) and _drawdown_from_high < 20:
-                            _mom_dead = _instant_dump  # TP1 ke baad runner — sirf instant dump pe exit
+                                _mom_dead = _instant_dump  # <10% — sirf instant dump
+                        elif tp_sold >= 65:
+                            # TP2 ke baad (65% sold) — medium tight
+                            # Same structure as TP1 but tighter thresholds
+                            if _drawdown_from_high > 25:
+                                _mom_dead = True   # >25% drop — turant exit
+                            elif _drawdown_from_high > 15:
+                                _mom_dead = _instant_dump or _vol_dying  # 15-25% — vol bhi check
+                            else:
+                                _mom_dead = _instant_dump  # <15% — sirf instant dump (runner ko room)
+                        elif tp_sold >= 40 and _drawdown_from_high < 20:
+                            # TP1 ke baad runner — sirf instant dump pe exit
+                            _mom_dead = _instant_dump
                         else:
                             _mom_dead = _instant_dump or _vol_dying
                     else:
