@@ -4021,7 +4021,7 @@ def auto_position_manager():
                     if _is_fm_bc:
                         _fm_peak2 = max(_pos_data.get("_fm_price_hist", [current]), default=current)
                         _drawdown_from_high = (_fm_peak2 - current) / _fm_peak2 * 100 if _fm_peak2 > 0 else 0
-                        if (_pnl_high > 35 or tp_sold >= 50) and _drawdown_from_high < 25:
+                        if (_pnl_high > 50 or tp_sold >= 50) and _drawdown_from_high < 20:
                             _mom_dead = _instant_dump  # TP1 ke baad runner — sirf instant dump pe exit
                         else:
                             _mom_dead = _instant_dump or _vol_dying
