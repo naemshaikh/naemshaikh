@@ -4140,9 +4140,9 @@ def auto_position_manager():
                     # Post-TP1: 30s stall → exit (50% book ho chuka, protect karo)
                     # Post-TP2 (moonbag): 20s stall → exit (max profit capture)
                     if tp_sold >= 80:
-                        _stall_threshold = 20
+                        _stall_threshold = 45
                     elif tp_sold >= 50:
-                        _stall_threshold = 30
+                        _stall_threshold = 90  # Post-TP1: zyada room do
                     else:
                         _stall_threshold = 45
 
