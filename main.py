@@ -5403,6 +5403,15 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
             daemon=True
         ).start()
 
+        # FIX v47: Partial sell (sell_pct < 100) ke baad lock turant release karo
+        # Bug: TP1 40% sell TX send hota hai → _fm_selling_set mein lock rehta hai 20-60s
+        #      Is dauraan SL fire ho → "sell already in progress" → SL SKIP → price crash
+        # Fix: partial sell ke baad lock release → SL/TP2 ab block nahi hoga
+        if sell_pct < 100.0:
+            with _fm_selling_lock:
+                _fm_selling_set.discard(_t_lower)
+            print(f"🔓 [FM v47] Partial sell lock released: {token_addr[:10]} ({sell_pct:.0f}%) — SL ab trigger ho sakta hai")
+
         print(f"✅ [FM] Sell TX sent — background tracker active: {tx_hash.hex()[:12]}")
         return result
 
