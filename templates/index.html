@@ -3427,27 +3427,30 @@ function _renderTradeChart(prices, markers){
   const loading = document.getElementById('trade-chart-loading');
   if(!canvas) return;
 
-  // Set canvas actual pixel size
   const wrap = document.getElementById('trade-chart-wrap');
   const W = wrap ? wrap.clientWidth : 320;
-  const H = 180;
-  canvas.width  = W * window.devicePixelRatio;
-  canvas.height = H * window.devicePixelRatio;
+  const H = 200;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
   canvas.style.width  = W+'px';
   canvas.style.height = H+'px';
 
   const ctx = canvas.getContext('2d');
-  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  ctx.scale(dpr, dpr);
 
-  const pad = {t:12, r:10, b:24, l:8};
+  const pad = {t:16, r:52, b:28, l:10};
   const cW = W - pad.l - pad.r;
   const cH = H - pad.t - pad.b;
 
-  // Price range
+  // Price range with 10% padding
   const allPrices = prices.map(function(p){return p.c;});
-  const minP = Math.min.apply(null, allPrices);
-  const maxP = Math.max.apply(null, allPrices);
-  const rangeP = maxP - minP || 1;
+  const rawMin = Math.min.apply(null, allPrices);
+  const rawMax = Math.max.apply(null, allPrices);
+  const rawRange = rawMax - rawMin || rawMax * 0.1 || 1;
+  const minP = rawMin - rawRange * 0.1;
+  const maxP = rawMax + rawRange * 0.1;
+  const rangeP = maxP - minP;
   const minT = prices[0].t;
   const maxT = prices[prices.length-1].t;
   const rangeT = maxT - minT || 1;
@@ -3455,14 +3458,45 @@ function _renderTradeChart(prices, markers){
   function xOf(t){ return pad.l + ((t-minT)/rangeT)*cW; }
   function yOf(p){ return pad.t + (1-(p-minP)/rangeP)*cH; }
 
-  // BG
-  ctx.fillStyle='#161b2e';
+  // Dark BG
+  ctx.fillStyle='#0d1117';
   ctx.fillRect(0,0,W,H);
 
-  // Gradient fill under line
+  // Horizontal grid lines + price labels (4 lines)
+  const gridSteps = 4;
+  ctx.font = '9px JetBrains Mono, monospace';
+  ctx.textAlign = 'left';
+  for(let i=0; i<=gridSteps; i++){
+    const frac = i/gridSteps;
+    const priceAtLine = minP + (1-frac)*rangeP;
+    const y = pad.t + frac*cH;
+    // Grid line
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([]);
+    ctx.moveTo(pad.l, y);
+    ctx.lineTo(pad.l+cW, y);
+    ctx.stroke();
+    // Price label on right
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
+    const lbl = priceAtLine < 0.000001 ? priceAtLine.toExponential(2) :
+                priceAtLine < 0.001    ? priceAtLine.toFixed(8) :
+                priceAtLine < 1        ? priceAtLine.toFixed(6) :
+                priceAtLine.toFixed(4);
+    ctx.fillText(lbl, pad.l+cW+4, y+3);
+  }
+
+  // Determine chart color based on first vs last price
+  const chartUp = prices[prices.length-1].c >= prices[0].c;
+  const lineCol  = chartUp ? '#00d4aa' : '#ff4757';
+  const gradTop  = chartUp ? 'rgba(0,212,170,0.3)' : 'rgba(255,71,87,0.3)';
+  const gradBot  = 'rgba(0,0,0,0)';
+
+  // Gradient fill
   const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t+cH);
-  grad.addColorStop(0,'rgba(0,212,170,0.25)');
-  grad.addColorStop(1,'rgba(0,212,170,0.0)');
+  grad.addColorStop(0, gradTop);
+  grad.addColorStop(1, gradBot);
   ctx.beginPath();
   prices.forEach(function(p,i){
     const x=xOf(p.t), y=yOf(p.c);
@@ -3476,41 +3510,39 @@ function _renderTradeChart(prices, markers){
 
   // Price line
   ctx.beginPath();
-  ctx.strokeStyle='#00d4aa';
-  ctx.lineWidth=1.5;
+  ctx.strokeStyle=lineCol;
+  ctx.lineWidth=1.8;
+  ctx.setLineDash([]);
   prices.forEach(function(p,i){
     const x=xOf(p.t), y=yOf(p.c);
     i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
   });
   ctx.stroke();
 
-  // Time axis labels (3 points)
-  ctx.fillStyle='rgba(255,255,255,0.3)';
+  // Time axis (3 labels)
+  ctx.fillStyle='rgba(255,255,255,0.25)';
   ctx.font='8px JetBrains Mono, monospace';
   ctx.textAlign='center';
   [0, Math.floor(prices.length/2), prices.length-1].forEach(function(i){
-    const p = prices[i];
-    if(!p) return;
+    const p = prices[i]; if(!p) return;
     const x = xOf(p.t);
-    const d = new Date(p.t);
-    const lbl = d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false});
-    ctx.fillText(lbl, x, H-6);
+    const lbl = new Date(p.t).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:false});
+    ctx.fillText(lbl, x, H-7);
   });
 
-  // Entry/Exit markers
+  // Entry / Exit markers
   markers.forEach(function(m){
     if(!m.price || m.price<=0) return;
-    // Clamp price within range for display
     const clampedP = Math.max(minP, Math.min(maxP, m.price));
     const x = xOf(m.t);
     const y = yOf(clampedP);
     const isBuy = m.type==='buy';
-    const col = isBuy ? '#64C8FF' : '#00e676';
+    const col   = isBuy ? '#64C8FF' : (m.price >= markers.find(function(mm){return mm.type==='buy';})?.price ? '#00e676' : '#ff4757');
 
     // Vertical dashed line
     ctx.save();
-    ctx.setLineDash([3,3]);
-    ctx.strokeStyle = col+'88';
+    ctx.setLineDash([3,4]);
+    ctx.strokeStyle = col+'55';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(x, pad.t);
@@ -3518,28 +3550,49 @@ function _renderTradeChart(prices, markers){
     ctx.stroke();
     ctx.restore();
 
-    // Triangle marker
+    // Glow circle
+    ctx.save();
+    ctx.shadowColor = col;
+    ctx.shadowBlur  = 12;
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI*2);
+    ctx.fillStyle = col;
+    ctx.fill();
+    ctx.restore();
+
+    // Inner dot
+    ctx.beginPath();
+    ctx.arc(x, y, 2.5, 0, Math.PI*2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+
+    // Triangle pointer
     ctx.beginPath();
     ctx.fillStyle = col;
     if(isBuy){
-      // Up triangle at bottom
-      ctx.moveTo(x, y-10);
-      ctx.lineTo(x-5, y+2);
-      ctx.lineTo(x+5, y+2);
+      ctx.moveTo(x, y-9);
+      ctx.lineTo(x-5, y-19);
+      ctx.lineTo(x+5, y-19);
     } else {
-      // Down triangle at top
-      ctx.moveTo(x, y+10);
-      ctx.lineTo(x-5, y-2);
-      ctx.lineTo(x+5, y-2);
+      ctx.moveTo(x, y+9);
+      ctx.lineTo(x-5, y+19);
+      ctx.lineTo(x+5, y+19);
     }
     ctx.closePath();
     ctx.fill();
 
-    // Label
+    // Label badge
+    const lbl = isBuy ? 'BUY' : 'SELL';
+    const lblY = isBuy ? y-22 : y+28;
+    ctx.font = 'bold 8px JetBrains Mono, monospace';
+    ctx.textAlign = 'center';
+    const tw = ctx.measureText(lbl).width + 8;
+    ctx.fillStyle = col+'33';
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(x-tw/2, lblY-8, tw, 12, 3) : ctx.rect(x-tw/2, lblY-8, tw, 12);
+    ctx.fill();
     ctx.fillStyle = col;
-    ctx.font='bold 8px JetBrains Mono,monospace';
-    ctx.textAlign='center';
-    ctx.fillText(isBuy?'B':'S', x, isBuy ? y-13 : y+18);
+    ctx.fillText(lbl, x, lblY+1);
   });
 
   if(loading) loading.style.display='none';
@@ -3587,6 +3640,13 @@ function openTradeDetail(json){
       '<div style="flex:1;font-family:JetBrains Mono,monospace;font-size:10px;color:var(--txt2);word-break:break-all;">'+addr+'</div>'+
       '<button onclick="copyAddr(\''+addr+'\')" style="flex-shrink:0;padding:5px 10px;border-radius:20px;background:var(--em-dim);border:1px solid rgba(0,230,118,0.3);color:var(--em);font-size:11px;font-weight:700;cursor:pointer;">📋 Copy</button>'+
     '</div>':'')+
+    '<div id="trade-chart-wrap" style="position:relative;width:100%;height:200px;background:#0d1117;border-radius:12px;overflow:hidden;margin-bottom:12px;border:1px solid rgba(255,255,255,0.07);">'+
+      '<div id="trade-chart-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;">'+
+        '<div style="width:18px;height:18px;border:2px solid rgba(0,212,170,0.25);border-top-color:#00d4aa;border-radius:50%;animation:spin 0.8s linear infinite;"></div>'+
+        '<div style="font-size:10px;color:rgba(255,255,255,0.25);">Loading chart...</div>'+
+      '</div>'+
+      '<canvas id="trade-chart-canvas" style="display:none;"></canvas>'+
+    '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">'+
       '<div style="background:var(--ink3);border-radius:10px;padding:11px;border:1px solid '+(isWin?'rgba(0,230,118,0.2)':'rgba(255,71,87,0.2)')+';">'+
         '<div style="font-size:9px;color:var(--txt3);margin-bottom:3px;">PnL</div>'+
@@ -3660,6 +3720,7 @@ function openTradeDetail(json){
     :'<button class="mbtn dark" onclick="closeModal()" style="width:100%;">✕ Close</button>';
 
   showModal();
+  if(addr){ _loadTradeChart(addr, [t]); }
 }
 
 
