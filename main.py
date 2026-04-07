@@ -2057,7 +2057,28 @@ def _save_trade_history_to_db():
                 print(f"⚠️ Trade history save error (3 retries failed): {e}")
 
 def _load_trade_history_from_db():
-    # FIX v45: real_trade_history table bhi load karo — pehle sirf memory table tha
+    """FIX v46: memory table (main store) + real_trade_history — dono load karo"""
+    if not supabase: return
+
+    # Step 1: memory table se sab trades load karo (ye primary store hai)
+    try:
+        _mem_res = supabase.table("memory").select("trade_history").eq("session_id", _TRADES_SESSION_ID).execute()
+        if _mem_res.data:
+            _raw = _mem_res.data[0].get("trade_history")
+            if _raw:
+                _hist = json.loads(_raw) if isinstance(_raw, str) else _raw
+                if isinstance(_hist, list) and _hist:
+                    auto_trade_stats["trade_history"] = _hist
+                    wins   = sum(1 for t in _hist if t.get("result") == "win")
+                    losses = sum(1 for t in _hist if t.get("result") == "loss")
+                    auto_trade_stats["trade_count"] = len(_hist)
+                    auto_trade_stats["win_count"]   = wins
+                    auto_trade_stats["loss_count"]  = losses
+                    print(f"✅ [v46] memory table loaded: {len(_hist)} trades (W={wins} L={losses})")
+    except Exception as _me:
+        print(f"⚠️ [v46] memory table load skip: {str(_me)[:80]}")
+
+    # Step 2: real_trade_history se extra real trades merge karo
     try:
         _REAL_TABLE = "real_trade_history"
         _real_res = supabase.table(_REAL_TABLE).select("*").order("id", desc=True).limit(500).execute()
@@ -2065,8 +2086,7 @@ def _load_trade_history_from_db():
             _real_rows = []
             for row in _real_res.data:
                 try:
-                    import json as _rj
-                    _entry = _rj.loads(row.get("data", "{}")) if isinstance(row.get("data"), str) else row
+                    _entry = json.loads(row.get("data", "{}")) if isinstance(row.get("data"), str) else row
                     if isinstance(_entry, dict) and _entry.get("token"):
                         _entry["mode"] = "real"
                         _real_rows.append(_entry)
@@ -2074,13 +2094,14 @@ def _load_trade_history_from_db():
                     pass
             if _real_rows:
                 _existing = auto_trade_stats.get("trade_history", [])
-                _existing_addrs = {(t.get("address","").lower(), t.get("sold_at","")) for t in _existing}
+                _existing_keys = {(t.get("address","").lower(), t.get("sold_at","")) for t in _existing}
                 _new_real = [t for t in _real_rows
-                             if (t.get("address","").lower(), t.get("sold_at","")) not in _existing_addrs]
-                auto_trade_stats["trade_history"] = _existing + _new_real
-                print(f"✅ [v45] Real trades loaded from DB: {len(_new_real)} new entries")
+                             if (t.get("address","").lower(), t.get("sold_at","")) not in _existing_keys]
+                if _new_real:
+                    auto_trade_stats["trade_history"] = _existing + _new_real
+                    print(f"✅ [v46] real_trade_history merged: {len(_new_real)} extra entries")
     except Exception as _rle:
-        print(f"⚠️ [v45] Real trade history load skip: {str(_rle)[:60]}")
+        print(f"⚠️ [v46] real_trade_history load skip: {str(_rle)[:80]}")
 
 def _load_trade_history_from_db_ORIGINAL():
     """Startup pe Supabase se history load karo"""
