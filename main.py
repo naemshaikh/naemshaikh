@@ -4169,7 +4169,9 @@ def auto_position_manager():
                             _fm_price_dead = _is_fm_bc and _vwc.get(addr, 0) >= 2
                             _sv5_fd = _get_vol_pressure_rt(addr).get("sell_vol5", 0.0) if not _is_fm_bc else 0.0
                             _sell_dominant = _sv5_fd > _bv5_live * 2 and _sv5_fd > 0.001
-                            _fast_dump = (_sell_dominant or _fm_price_dead) and pnl <= -5
+                            # FIX: FM BC pehle 45s mein -3% pe hi exit (fast dump catcher)
+                            _fd_threshold = -3.0 if (_is_fm_bc and _hold_secs < 45) else -5.0
+                            _fast_dump = (_sell_dominant or _fm_price_dead) and pnl <= _fd_threshold
                             if _fast_dump:
                                 _reason = "FMPriceDead" if _fm_price_dead else f"SellDom sv={_sv5_fd:.3f}"
                                 _auto_paper_sell(addr, f"FastDump -{abs(pnl):.1f}% 🔵", 100.0)
@@ -5376,6 +5378,16 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                                         _pos_upd = auto_trade_stats["running_positions"].get(_t_addr, {})
                                         if _pos_upd:
                                             _pos_upd["_actual_bnb_received"] = _bnb
+                                            # FIX Bug3: gas_bnb/gas_usd from receipt
+                                            try:
+                                                _gas_used_bc  = _rx.get("gasUsed", 0)
+                                                _gas_price_bc = _rx.get("effectiveGasPrice", 0) or _rx.get("gasPrice", 0)
+                                                if _gas_used_bc and _gas_price_bc:
+                                                    _gas_bnb_bc = round((_gas_used_bc * _gas_price_bc) / 1e18, 8)
+                                                    _gas_usd_bc = round(_gas_bnb_bc * market_cache.get("bnb_price", 0), 4)
+                                                    _pos_upd["_actual_gas_bnb"] = _gas_bnb_bc
+                                                    _pos_upd["_actual_gas_usd"] = _gas_usd_bc
+                                            except Exception: pass
                                             # Tokens sold — tx logs se parse karo
                                             for _lg in _rx["logs"]:
                                                 _tp = _lg.get("topics", [])
@@ -5391,7 +5403,8 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                                                         pass
                                     except Exception as _upd_e:
                                         print(f"⚠️ [FM v26] Position update error: {str(_upd_e)[:40]}")
-                                    _fm_confirm_close(_t_addr, 100.0, "BC sell confirmed", _cur_hash)
+                                    # FIX Bug2: 100.0 hardcoded tha — sell_pct use karo (partial TP support)
+                                    _fm_confirm_close(_t_addr, sell_pct, "BC sell confirmed", _cur_hash)
                                     with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower())
                                     return
                                 else:
@@ -6358,7 +6371,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             "size_bnb": size_bnb,
             "orig_size_bnb": size_bnb,
             "bought_usd": round(size_bnb * market_cache.get("bnb_price",0), 2),
-            "sl_pct": 10.0,   # tighter SL — max -10% loss hard floor
+            "sl_pct": 5.0,    # FIX: FM BC -5% hard floor (dumps in <30s)
             "trail_pct": 20.0,        # FIX B: position manager ke liye
             "tp_sold": 0.0,
             "banked_pnl_bnb": 0.0,
