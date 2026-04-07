@@ -8136,7 +8136,7 @@ def trade_history_route():
     # FIX v30: mode default "paper" tha — real mode trades miss hoti thi
     # Ab: agar mode field hi nahi hai toh TRADE_MODE se match karo (both ways safe)
     hist   = [t for t in auto_trade_stats.get("trade_history", [])
-              if isinstance(t, dict) and (t.get("mode") or TRADE_MODE) == TRADE_MODE]
+              if isinstance(t, dict) and (t.get("mode") or "paper") == TRADE_MODE]
     filt   = request.args.get("filter", "all")
     search = request.args.get("q", "").lower()
     from datetime import datetime as _dt
