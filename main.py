@@ -927,7 +927,7 @@ def _pre_approve_after_buy(token_addr):
             approve_tx = token_c.functions.approve(PANCAKE_ROUTER, 2**256 - 1).build_transaction({
                 "from": wallet, "gas": 100000,
                 "gasPrice": _get_dynamic_gas_price(),
-                "nonce": w3.eth.get_transaction_count(wallet, "pending")
+                "nonce": get_next_nonce(w3, wallet)
             })
             signed = w3.eth.account.sign_transaction(approve_tx, REAL_PRIVATE_KEY)
             w3.eth.send_raw_transaction(signed.rawTransaction)
@@ -5088,7 +5088,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                     wallet_cs, Web3.to_checksum_address(_dynamic_manager)).call()
             if _allowance < _amt:
                 print(f"🔑 [FM] Approving Token Manager for sell...")
-                _approve_nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")
+                _approve_nonce = get_next_nonce(_w3_fast, wallet_cs)
                 _approve_tx = _tc_approve.functions.approve(
                     Web3.to_checksum_address(_dynamic_manager), 2**256 - 1
                 ).build_transaction({
@@ -5126,7 +5126,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                     # FIX v22 Bug4: re-approve turant — higher gas
                     print(f"⚠️ [FM] Approve not confirmed — re-approving higher gas...")
                     try:
-                        _ra_nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")
+                        _ra_nonce = _approve_nonce  # FIX: same nonce = replacement TX (higher gas)
                         _ra_tx = _tc_approve.functions.approve(
                             Web3.to_checksum_address(_dynamic_manager), 2**256 - 1
                         ).build_transaction({
@@ -5210,11 +5210,12 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
             try:
                 # FIX v22: attempt 1 = approve_nonce+1, retry = fresh from chain
                 if _attempt > 1:
-                    _nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")
+                    reset_nonce(_w3_fast, wallet_cs)
+                    _nonce = get_next_nonce(_w3_fast, wallet_cs)
                 elif _sell_nonce_base is not None:
                     _nonce = _sell_nonce_base
                 else:
-                    _nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")
+                    _nonce = get_next_nonce(_w3_fast, wallet_cs)
                 if is_grad:
                     # Pancake sell
                     pr = _w3_fast.eth.contract(address=_FM_PANCAKE_ROUTER, abi=[{"name":"swapExactTokensForETH","type":"function","stateMutability":"nonpayable","inputs":[{"name":"amountIn","type":"uint256"},{"name":"amountOutMin","type":"uint256"},{"name":"path","type":"address[]"},{"name":"to","type":"address"},{"name":"deadline","type":"uint256"}],"outputs":[{"name":"amounts","type":"uint256[]"}]}])
@@ -5336,7 +5337,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                     _fc_r = _w3r.eth.contract(
                         address=Web3.to_checksum_address(_mgr_r),
                         abi=_FM_BC_ABI_V1 if _tv_r == 1 else _FM_BC_ABI)
-                    _nn_r = _w3r.eth.get_transaction_count(_wc_r, "pending")
+                    _nn_r = get_next_nonce(_w3r, _wc_r)
                     _gp_r = int(_fm_get_cached_gas(_w3r) * (1.2 + _attempt_num * 0.3))  # FIX v23: was 5.5+2.0x
                     _zero = "0x0000000000000000000000000000000000000000"
                     if _tv_r == 1:
@@ -6261,7 +6262,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                                         "from": _wa2,
                                         "gas": 100000,
                                         "gasPrice": int(_fm_get_cached_gas(_w3p) * 1.5),  # FIX v23: was 3.0x
-                                        "nonce": _w3p.eth.get_transaction_count(_wa2, "pending")
+                                        "nonce": get_next_nonce(_w3p, _wa2)
 })
                                     _sa = _Acc.sign_transaction(_atx, _pk2)
                                     _ah = _w3p.eth.send_raw_transaction(_sa.raw_transaction)
