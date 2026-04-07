@@ -377,6 +377,33 @@ if not w3.is_connected():
     w3 = Web3(Web3.HTTPProvider("https://bsc-rpc.publicnode.com", request_kwargs={"timeout": 5}))
 threading.Thread(target=lambda: print(f"✅ BSC: {w3.is_connected()}"), daemon=True).start()
 
+# ══════════════════════════════════════════════════════
+# GLOBAL NONCE MANAGER — race condition + stale nonce fix
+# Har TX pe fresh chain nonce se sync, lock se thread-safe
+# ══════════════════════════════════════════════════════
+_nonce_lock = threading.Lock()
+_nonce_state = {"val": -1, "wallet": ""}
+
+def get_next_nonce(w3_instance, wallet_addr: str) -> int:
+    """Thread-safe nonce — chain se sync, increment karo"""
+    with _nonce_lock:
+        chain_n = w3_instance.eth.get_transaction_count(wallet_addr, "pending")
+        if chain_n > _nonce_state["val"] or _nonce_state["wallet"] != wallet_addr.lower():
+            _nonce_state["val"]    = chain_n
+            _nonce_state["wallet"] = wallet_addr.lower()
+        result = _nonce_state["val"]
+        _nonce_state["val"] += 1
+        return result
+
+def reset_nonce(w3_instance, wallet_addr: str):
+    """Nonce error aane pe hard reset — chain se fresh sync"""
+    with _nonce_lock:
+        _nonce_state["val"]    = w3_instance.eth.get_transaction_count(wallet_addr, "pending")
+        _nonce_state["wallet"] = wallet_addr.lower()
+        print(f"🔄 Nonce reset: {_nonce_state['val']} (chain sync)")
+
+
+
 # ========== SUPABASE ==========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -995,7 +1022,7 @@ def real_buy_token(token_address: str, bnb_amount: float,
 
         # Deadline: 60 sec
         deadline  = int(time.time()) + 60
-        nonce     = w3.eth.get_transaction_count(wallet, "pending")
+        nonce     = get_next_nonce(w3, wallet)
         gas_price = _get_dynamic_gas_price()
 
         txn = router.functions.swapExactETHForTokensSupportingFeeOnTransferTokens(
@@ -1037,7 +1064,11 @@ def real_buy_token(token_address: str, bnb_amount: float,
         if "timeout" in _err_str.lower() or "timed out" in _err_str.lower():
             _push_notif("critical", "🔴 Buy Timeout", f"Transaction stuck — not confirmed in 30s | {_err_str}", token_address[:10], token_address)
         elif "nonce" in _err_str.lower():
-            _push_notif("critical", "🔴 Nonce Error", f"Nonce conflict — pending transaction stuck | {_err_str}", token_address[:10], token_address)
+            try:
+                _w_addr = w3.eth.account.from_key(REAL_PRIVATE_KEY).address
+                reset_nonce(w3, _w_addr)
+            except Exception: pass
+            _push_notif("critical", "🔴 Nonce Error", f"Nonce conflict — auto reset kiya | {_err_str}", token_address[:10], token_address)
         elif "gas" in _err_str.lower() or "fee" in _err_str.lower():
             _push_notif("warning", "🟡 Gas Error", f"Gas fee issue on buy | {_err_str}", token_address[:10], token_address)
         elif "slippage" in _err_str.lower() or "INSUFFICIENT_OUTPUT" in _err_str:
@@ -1085,7 +1116,7 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
 
         allowance = token_c.functions.allowance(wallet, Web3.to_checksum_address(PANCAKE_ROUTER)).call()
         if allowance < sell_amt:
-            nonce_a = w3.eth.get_transaction_count(wallet, "pending")
+            nonce_a = get_next_nonce(w3, wallet)
             # GAS FIX: Approve bhi 3x — approve slow toh sell delay hogi
             approve_txn = token_c.functions.approve(
                 Web3.to_checksum_address(PANCAKE_ROUTER),
@@ -1104,7 +1135,7 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
         expected_bnb = router.functions.getAmountsOut(sell_amt, [token_cs, wbnb_cs]).call()
         min_bnb      = int(expected_bnb[1] * (1 - slippage_pct / 100))
         deadline     = int(time.time()) + 60
-        nonce        = w3.eth.get_transaction_count(wallet, "pending")
+        nonce        = get_next_nonce(w3, wallet)
 
         # GAS FIX: Sell pe 3x gas — rug se pehle fast niklo
         _sell_gas_price = int(_get_dynamic_gas_price() * 1.2)  # FIX v23: was 3.0x
@@ -3083,6 +3114,18 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 _post_mortem = (f"WIN +{_total_pnl_pct_trade:.1f}% | Exit: {reason} | "f"Entry: {entry:.2e} BNB | ExitPrice: {current:.2e} BNB | "f"HoldTime: {round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds()/60, 1) if bought_at_str else 0:.0f}min | "f"Signals used: {', '.join(_signals_used[:3]) if _signals_used else 'checklist only'} | "f"BNB at sell: {market_cache.get('bnb_price', 0):.2f} | Mode: {TRADE_MODE}")
             else:
                 _post_mortem = (f"LOSS {_total_pnl_pct_trade:.1f}% | Exit: {reason} | "f"Entry: {entry:.2e} BNB | ExitPrice: {current:.2e} BNB | "f"HoldTime: {round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds()/60, 1) if bought_at_str else 0:.0f}min | "f"Assumption: {_assumption[:80]} | "f"Signals used: {', '.join(_signals_used[:3]) if _signals_used else 'none'} | "f"BNB at sell: {market_cache.get('bnb_price', 0):.2f} | Mode: {TRADE_MODE}")
+            # FIX: Real mode mein actual gas calculate karo, paper mein estimated
+            _final_gas_bnb = _gas_bnb_sell  # estimated fallback
+            _final_gas_usd = 0.0
+            if TRADE_MODE == "real" and real_sell_result:
+                _rg_used  = real_sell_result.get("gas_used", 0)
+                _rg_price = real_sell_result.get("gas_price", 0)
+                if _rg_used and _rg_price:
+                    _final_gas_bnb = round((_rg_used * _rg_price) / 1e18, 8)
+            _final_gas_usd = round(_final_gas_bnb * (_bnb_at_sell or market_cache.get("bnb_price", 0)), 4)
+            # FIX 3: PnL mein gas deduct karo (real cost reflect karo)
+            _pnl_after_gas = round(_total_pnl_bnb_trade - _final_gas_bnb, 6) if TRADE_MODE == "real" else _total_pnl_bnb_trade
+
             auto_trade_stats["trade_history"].append({
                 "token":        token,
                 "address":      address,
@@ -3090,9 +3133,11 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 "exit":         current,
                 "exit_price":   current,
                 "pnl_pct":      _total_pnl_pct_trade,
-                "pnl_bnb":      _total_pnl_bnb_trade,
+                "pnl_bnb":      _pnl_after_gas,
+                "pnl_before_gas": _total_pnl_bnb_trade,
                 "size_bnb":     _orig_sz,
-                "gas_bnb":      _gas_bnb_sell,
+                "gas_bnb":      _final_gas_bnb,
+                "gas_usd":      _final_gas_usd,
                 "bought_usd":   _saved_bought_usd if _saved_bought_usd else round(_orig_sz * _bnb_at_sell, 2),
                 "sold_usd":     round(max(0.0, (_saved_bought_usd / _bnb_at_sell if _bnb_at_sell > 0 else _orig_sz) + _total_pnl_bnb_trade) * _bnb_at_sell, 2) if _bnb_at_sell > 0 else 0,
                 "bought_at":    bought_at_str,
@@ -3213,6 +3258,12 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
             pos["banked_pnl_bnb"] = round(pos.get("banked_pnl_bnb", 0.0) + pnl_bnb, 6)
             _bnb_at_tp = market_cache.get("bnb_price", 0) or market_cache.get("last_bnb_price", 660)
             _gas_bnb   = DataGuard.get_real_gas_bnb()
+            # FIX: Real mode mein actual gas use karo partial sell pe bhi
+            if TRADE_MODE == "real" and real_sell_result:
+                _tp_g_used  = real_sell_result.get("gas_used", 0)
+                _tp_g_price = real_sell_result.get("gas_price", 0)
+                if _tp_g_used and _tp_g_price:
+                    _gas_bnb = round((_tp_g_used * _tp_g_price) / 1e18, 8)
             if not isinstance(pos.get("tp_events"), list):
                 pos["tp_events"] = []
             if len(pos.get("tp_events", [])) >= 4:
@@ -3224,7 +3275,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 "exit_usd":    round(current * _bnb_at_tp, 10),
                 "sell_bnb":    round(sell_size, 6),
                 "sell_usd":    round(max(0, return_bnb) * _bnb_at_tp, 2),
-                "pnl_bnb":     round(pnl_bnb, 6),
+                "pnl_bnb":     round(pnl_bnb - _gas_bnb, 6) if TRADE_MODE == "real" else round(pnl_bnb, 6),
                 "pnl_pct":     round(pnl_pct, 2),
                 "gas_bnb":     _gas_bnb,
                 "gas_usd":     round(_gas_bnb * _bnb_at_tp, 3),
@@ -6074,14 +6125,13 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     _skip(f"insufficient wallet balance {_bal_check:.4f} BNB"); return
                 _min_tokens = 0
                 # Nonce: Stage1 prefetch reuse, sirf stale hone pe fresh fetch
-                if _pre_nonce[0] > 0:
-                    _fresh_nonce = _pre_nonce[0]
-                    print(f"⚡ [FM v48] Prefetched nonce reused: {_fresh_nonce}")
-                else:
-                    try:
-                        _fresh_nonce = _w3_buy.eth.get_transaction_count(Web3.to_checksum_address(wallet_addr), "pending")
-                    except: pass
-                    print(f"⚡ [FM v48] Fresh nonce fetched: {_fresh_nonce}")
+                # FIX: Buy time pe hamesha fresh nonce lo — prefetch stale ho jaata hai
+                try:
+                    _fresh_nonce = get_next_nonce(_w3_buy, Web3.to_checksum_address(wallet_addr))
+                    print(f"⚡ [FM] Fresh nonce at buy time: {_fresh_nonce}")
+                except Exception as _ne:
+                    _fresh_nonce = _pre_nonce[0] if _pre_nonce[0] > 0 else 0
+                    print(f"⚠️ [FM] Nonce fallback to prefetch: {_fresh_nonce}")
 
                 fc = _w3_buy.eth.contract(address=Web3.to_checksum_address(_FM_FACTORY_ADDR), abi=_FM_BC_ABI)
                 tx = fc.functions.buyTokenAMAP(
@@ -6221,7 +6271,11 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 if "insufficient funds" in _err.lower():
                     _push_notif("critical", "🔴 FM Buy Failed", f"Insufficient balance: {_err}", token_name, token_addr)
                 elif "nonce" in _err.lower():
-                    _push_notif("critical", "🔴 FM Nonce Error", f"Nonce conflict: {_err}", token_name, token_addr)
+                    try:
+                        _w_addr_r = BSC_WALLET or REAL_WALLET
+                        if _w_addr_r: reset_nonce(_w3_buy, Web3.to_checksum_address(_w_addr_r))
+                    except Exception: pass
+                    _push_notif("critical", "🔴 FM Nonce Error", f"Nonce conflict — auto reset kiya | {_err}", token_name, token_addr)
                 elif "slippage" in _err.lower() or "minAmount" in _err.lower():
                     _push_notif("warning", "🟡 FM Slippage", f"Price moved too fast: {_err}", token_name, token_addr)
                 else:
