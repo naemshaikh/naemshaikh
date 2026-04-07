@@ -4903,6 +4903,22 @@ def _fm_confirm_close(token_addr, sell_pct, reason, tx_hash_hex):
             _total_pnl_pct = round((_total_pnl_bnb / _orig_sz * 100), 2) if _orig_sz > 0 else pnl_pct
             _fm_sold_bnb = _actual_bnb_received if _actual_bnb_received > 0 else max(0.0, _orig_sz + _total_pnl_bnb)
             _fm_sold_usd = round(_fm_sold_bnb * _bnb_at_sell, 2) if _bnb_at_sell > 0 else 0
+            # FIX gas: receipt se actual gasUsed * gasPrice fetch karo
+            _fm_gas_bnb = DataGuard.get_real_gas_bnb()  # estimated fallback
+            _fm_gas_usd = 0.0
+            try:
+                if tx_hash_hex:
+                    _fm_rx = w3.eth.get_transaction_receipt(tx_hash_hex)
+                    if _fm_rx:
+                        _fm_g_used  = _fm_rx.get("gasUsed", 0)
+                        _fm_tx_data = w3.eth.get_transaction(tx_hash_hex)
+                        _fm_g_price = _fm_tx_data.get("gasPrice", 0)
+                        if _fm_g_used and _fm_g_price:
+                            _fm_gas_bnb = round((_fm_g_used * _fm_g_price) / 1e18, 8)
+            except Exception as _fge:
+                print(f"⚠️ [FM gas] receipt fetch error: {str(_fge)[:60]}")
+            _fm_gas_usd = round(_fm_gas_bnb * (_bnb_at_sell or market_cache.get("bnb_price", 0)), 4)
+            _fm_pnl_after_gas = round(_total_pnl_bnb - _fm_gas_bnb, 6)
             auto_trade_stats["trade_history"].append({
                 "token":        token,
                 "address":      token_addr,
@@ -4910,8 +4926,11 @@ def _fm_confirm_close(token_addr, sell_pct, reason, tx_hash_hex):
                 "exit":         current,
                 "exit_price":   current,
                 "pnl_pct":      _total_pnl_pct,
-                "pnl_bnb":      _total_pnl_bnb,
+                "pnl_bnb":      _fm_pnl_after_gas,
+                "pnl_before_gas": _total_pnl_bnb,
                 "size_bnb":     _orig_sz,
+                "gas_bnb":      _fm_gas_bnb,
+                "gas_usd":      _fm_gas_usd,
                 "sold_usd":     _fm_sold_usd,  # FIX v_bug2: actual bnb_received * bnb_price
                 "bought_at":    bought_at_str,
                 "sold_at":      datetime.utcnow().isoformat(),
