@@ -509,7 +509,7 @@ class DataGuard:
                 gwei_hex = r.json().get("result", "0x0")
                 gwei     = int(gwei_hex, 16) / 1e9
                 if 0.5 < gwei < 100:
-                    gas_bnb = (gwei * 1e9 * 150000) / 1e18
+                    gas_bnb = (gwei * 1e9 * 200000) / 1e18  # FIX v_bug2: FourMeme ~200k gas (was 150k)
                     DataGuard._gas_cache = {"val": gas_bnb, "ts": now}
                     return gas_bnb
         except Exception as e:
@@ -519,13 +519,13 @@ class DataGuard:
             _gp = w3.eth.gas_price  # wei mein
             _gwei = _gp / 1e9
             if 0.05 < _gwei < 100:
-                _gas_bnb = (_gp * 150000) / 1e18
+                _gas_bnb = (_gp * 200000) / 1e18  # FIX v_bug2: FourMeme ~200k gas (was 150k)
                 DataGuard._gas_cache = {"val": _gas_bnb, "ts": now}
                 return _gas_bnb
         except Exception:
             pass
         # Last resort fallback — 1 gwei x 150k gas
-        return round((1e9 * 150000) / 1e18, 6)  # ~0.00015 BNB
+        return round((1e9 * 200000) / 1e18, 6)  # FIX v_bug2: ~0.0002 BNB fallback (was 0.00015)
 
     @staticmethod
     def trade_allowed(address, token_price_bnb):
@@ -3139,7 +3139,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 "gas_bnb":      _final_gas_bnb,
                 "gas_usd":      _final_gas_usd,
                 "bought_usd":   _saved_bought_usd if _saved_bought_usd else round(_orig_sz * _bnb_at_sell, 2),
-                "sold_usd":     round(max(0.0, (_saved_bought_usd / _bnb_at_sell if _bnb_at_sell > 0 else _orig_sz) + _total_pnl_bnb_trade) * _bnb_at_sell, 2) if _bnb_at_sell > 0 else 0,
+                "sold_usd":     round(max(0.0, _orig_sz + _total_pnl_bnb_trade) * _bnb_at_sell, 2) if _bnb_at_sell > 0 else 0,  # FIX v_bug1: sold_bnb * bnb_price (was double-converting)
                 "bought_at":    bought_at_str,
                 "sold_at":      datetime.utcnow().isoformat(),
                 "result":       "win" if _total_pnl_pct_trade > 0 else "loss",
