@@ -2093,14 +2093,21 @@ window._renderPnlCard = function(_as){
   function _col(v){ return v>0?'var(--em)':v<0?'var(--red)':'var(--txt3)'; }
 
   if(period==='ALL'){
-    var pnl  = parseFloat((_as&&_as.total_pnl_pct)||0);
-    var rBnb = parseFloat((_as&&_as.realized_pnl_bnb)||0);
-    var uBnb = parseFloat((_as&&_as.unrealized_pnl_bnb)||0);
-    var wins = parseInt((_as&&_as.wins)||0);
-    var losses = parseInt((_as&&_as.losses)||0);
-    var total = wins+losses;
-    var wr   = total>0?Math.round(wins/total*100):0;
-    var tBnb = rBnb+uBnb;
+    var _allHist = window._cachedTradeHistory || [];
+    var _curMode = window._tradeMode || 'paper';
+    var _allClosed = _allHist.filter(function(t){
+      return (t.mode||'paper') === _curMode &&
+             (t.result==='win'||t.result==='loss'||t.result==='sell_failed'||(t.sold_at&&t.result!=='holding'));
+    });
+    var wins   = _allClosed.filter(function(t){ return parseFloat(t.pnl_pct||0)>0; }).length;
+    var losses = _allClosed.length - wins;
+    var total  = _allClosed.length;
+    var pnlBnbAll = _allClosed.reduce(function(s,t){ return s+parseFloat(t.pnl_bnb||0); },0);
+    var uBnb   = parseFloat((_as&&_as.unrealized_pnl_bnb)||0);
+    var pnl    = total>0?(pnlBnbAll/Math.max(_allClosed.reduce(function(s,t){return s+parseFloat(t.size_bnb||0.01);},0),0.0001)*100):0;
+    var wr     = total>0?Math.round(wins/total*100):0;
+    var rBnb   = pnlBnbAll;
+    var tBnb   = rBnb + uBnb;
 
     pEl.textContent=_fmt(pnl); pEl.style.color=_col(pnl);
     if(pUsdEl){ pUsdEl.textContent=_bnbNow>0?(_usd(tBnb)+' total'):''; }
@@ -2116,7 +2123,10 @@ window._renderPnlCard = function(_as){
     // trade_history auto-stats mein nahi hai — /trade-history se fetch karo
     var hist = window._cachedTradeHistory || [];
     var curMode = window._tradeMode || 'paper';
-    var modeFiltered = hist.filter(function(t){ return (t.mode||'paper') === curMode; });
+    var modeFiltered = hist.filter(function(t){
+      return (t.mode||'paper') === curMode &&
+             (t.result==='win'||t.result==='loss'||t.result==='sell_failed'||(t.sold_at&&t.result!=='holding'));
+    });
     var filtered = _pnlPeriodFilter(modeFiltered, period);
     var invested = filtered.reduce(function(s,t){ return s+parseFloat(t.size_bnb||0.01); },0);
     var pnlBnb   = filtered.reduce(function(s,t){ return s+parseFloat(t.pnl_bnb||0); },0);
@@ -3380,18 +3390,19 @@ async function _loadTradeChart(addr, trades){
     const prices = ohlcv.map(function(c){ return {t: c[0]*1000, o:+c[1], h:+c[2], l:+c[3], c:+c[4]}; });
     prices.sort(function(a,b){return a.t-b.t;});
 
+    const bnpPrice = window._bnbReal || window._lastBnbPrice || 600;
     // Entry/exit markers from trades
     const markers = [];
     trades.forEach(function(t){
       if(t.bought_at){
         const bt = new Date(_toUTC(t.bought_at)).getTime();
-        const ep = parseFloat(t.entry||0) * (window._bnbReal||580);
-        markers.push({t:bt, price:ep, type:'buy'});
+        const ep = parseFloat(t.entry||0) * bnpPrice;
+        if(ep > 0) markers.push({t:bt, price:ep, type:'buy'});
       }
       if(t.sold_at){
         const st = new Date(_toUTC(t.sold_at)).getTime();
-        const xp = parseFloat(t.exit||0) * (window._bnbReal||580);
-        markers.push({t:st, price:xp, type:'sell'});
+        const xp = parseFloat(t.exit||0) * bnpPrice;
+        if(xp > 0) markers.push({t:st, price:xp, type:'sell'});
       }
     });
 
@@ -3409,11 +3420,12 @@ function _chartFallback(markers){
   const buyM  = markers && markers.find(function(m){ return m.type==='buy'; });
   const sellM = markers && markers.find(function(m){ return m.type==='sell'; });
 
-  if(buyM && buyM.price > 0){
+  const entryP = buyM && buyM.price > 0 ? buyM.price : null;
+  const exitP  = sellM && sellM.price > 0 ? sellM.price : entryP;
+
+  if(entryP){
     // Simulate a price path: entry → noise → exit
-    const entryP = buyM.price;
-    const exitP  = sellM && sellM.price > 0 ? sellM.price : entryP;
-    const entryT = buyM.t;
+    const entryT = buyM ? buyM.t : Date.now() - 5*60*1000;
     const exitT  = sellM ? sellM.t : entryT + 5*60*1000;
     const steps  = 40;
     const simPrices = [];
@@ -3427,9 +3439,9 @@ function _chartFallback(markers){
     }
     _renderTradeChart(simPrices, markers || []);
   } else {
-    // No data — show message
+    // No data — show message, hide spinner
     if(loading){
-      loading.innerHTML = '<div style="font-size:11px;color:rgba(255,255,255,0.2);">Chart data unavailable</div>';
+      loading.innerHTML = '<div style="font-size:11px;color:rgba(255,255,255,0.3);">📊 Chart data unavailable</div>';
     }
   }
 }
