@@ -2338,7 +2338,12 @@ def _load_session_from_db(session_id: str):
                     auto_trade_stats["total_auto_sells"] = raw.get("total_sells", 0)
                     auto_trade_stats["auto_pnl_total"]   = raw.get("pnl_total", 0.0)
                     auto_trade_stats["last_action"]      = raw.get("last_action", "")
-                    auto_trade_stats["trade_history"]    = raw.get("trade_history", [])
+                    _raw_hist = raw.get("trade_history", [])
+                    # Force mode=paper on all trades from memory table
+                    for _t in _raw_hist:
+                        if isinstance(_t, dict) and not _t.get("mode"):
+                            _t["mode"] = "paper"
+                    auto_trade_stats["trade_history"]    = _raw_hist
                     # total_scanned restore
                     _sc = raw.get("total_scanned", 0)
                     if _sc > 0 and _sc > len(discovered_addresses):
