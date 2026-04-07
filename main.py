@@ -4166,7 +4166,7 @@ def auto_position_manager():
                         # Case 1: No pump at all, buyers absent
                         if _pnl_high < 3.0 and pnl <= -2.0:
                             # FastDump: FM BC pe price declining, PC pe sell dominant
-                            _fm_price_dead = _is_fm_bc and _vwc.get(addr, 0) >= 4
+                            _fm_price_dead = _is_fm_bc and _vwc.get(addr, 0) >= 2
                             _sv5_fd = _get_vol_pressure_rt(addr).get("sell_vol5", 0.0) if not _is_fm_bc else 0.0
                             _sell_dominant = _sv5_fd > _bv5_live * 2 and _sv5_fd > 0.001
                             _fast_dump = (_sell_dominant or _fm_price_dead) and pnl <= -5
@@ -4193,7 +4193,7 @@ def auto_position_manager():
                                 if _bv5_live < 0.3: _egc[addr] = _egc.get(addr, 0) + 1
                                 else: _egc[addr] = 0
 
-                            if _egc.get(addr, 0) >= 4:
+                            if _egc.get(addr, 0) >= 2:
                                 _auto_paper_sell(addr, f"EntryGuard NoMom -{abs(pnl):.1f}% 🔵", 100.0)
                                 _egc.pop(addr, None)
                                 _trail_triggered = True
@@ -4217,7 +4217,7 @@ def auto_position_manager():
                                 if _bv5_live < 0.3 and _sv5_live > _bv5_live: _egc[addr] = _egc.get(addr, 0) + 1
                                 else: _egc[addr] = 0
 
-                            if _egc.get(addr, 0) >= 4:
+                            if _egc.get(addr, 0) >= 2:
                                 _auto_paper_sell(addr, f"EntryGuard Faded -{abs(pnl):.1f}% 🔵", 100.0)
                                 _egc.pop(addr, None)
                                 _trail_triggered = True
