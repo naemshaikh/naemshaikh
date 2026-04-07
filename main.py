@@ -3139,7 +3139,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 "gas_bnb":      _final_gas_bnb,
                 "gas_usd":      _final_gas_usd,
                 "bought_usd":   _saved_bought_usd if _saved_bought_usd else round(_orig_sz * _bnb_at_sell, 2),
-                "sold_usd":     round(max(0.0, _orig_sz + _total_pnl_bnb_trade) * _bnb_at_sell, 2) if _bnb_at_sell > 0 else 0,  # FIX v_bug1: sold_bnb * bnb_price (was double-converting)
+                "sold_usd":     round((real_sell_result.get("bnb_received", 0) * _bnb_at_sell) if (TRADE_MODE == "real" and real_sell_result and real_sell_result.get("bnb_received", 0) > 0) else max(0.0, _orig_sz + _total_pnl_bnb_trade) * _bnb_at_sell, 2) if _bnb_at_sell > 0 else 0,  # FIX v_bug2: actual bnb_received * bnb_price
                 "bought_at":    bought_at_str,
                 "sold_at":      datetime.utcnow().isoformat(),
                 "result":       "win" if _total_pnl_pct_trade > 0 else "loss",
@@ -4901,6 +4901,8 @@ def _fm_confirm_close(token_addr, sell_pct, reason, tx_hash_hex):
             _orig_sz      = pos.get("orig_size_bnb", size)
             _total_pnl_bnb = round(pos.get("banked_pnl_bnb", 0.0), 6)
             _total_pnl_pct = round((_total_pnl_bnb / _orig_sz * 100), 2) if _orig_sz > 0 else pnl_pct
+            _fm_sold_bnb = _actual_bnb_received if _actual_bnb_received > 0 else max(0.0, _orig_sz + _total_pnl_bnb)
+            _fm_sold_usd = round(_fm_sold_bnb * _bnb_at_sell, 2) if _bnb_at_sell > 0 else 0
             auto_trade_stats["trade_history"].append({
                 "token":        token,
                 "address":      token_addr,
@@ -4910,6 +4912,7 @@ def _fm_confirm_close(token_addr, sell_pct, reason, tx_hash_hex):
                 "pnl_pct":      _total_pnl_pct,
                 "pnl_bnb":      _total_pnl_bnb,
                 "size_bnb":     _orig_sz,
+                "sold_usd":     _fm_sold_usd,  # FIX v_bug2: actual bnb_received * bnb_price
                 "bought_at":    bought_at_str,
                 "sold_at":      datetime.utcnow().isoformat(),
                 "result":       "win" if _total_pnl_pct > 0 else "loss",
