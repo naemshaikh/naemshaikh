@@ -1072,16 +1072,22 @@ async function fetchHistory(){
   const d=await fetchJSON('/trade-history?filter='+histFilter,{},20000);if(!d)return;
   // Cache for PNL card 1D/7D/1M tabs
   if(d.history) window._cachedTradeHistory = d.history;
-  const wr=d.win_rate||0;
-  document.getElementById('hs-total').textContent=d.total||0;
-  const wrEl=document.getElementById('hs-wr');wrEl.textContent=wr+'%';wrEl.style.color=wr>=50?'var(--em)':'var(--red)';
-  const pnl=d.total_pnl_bnb||0;const pEl=document.getElementById('hs-pnl');
-  pEl.textContent=(pnl>=0?'+':'')+pnl.toFixed(4);pEl.style.color=pnl>=0?'var(--em)':'var(--red)';
-  const best=d.best_trade||{};document.getElementById('hs-best').textContent=best.pnl_pct!=null?(best.pnl_pct>=0?'+':'')+best.pnl_pct.toFixed(1)+'%':'—';
   const hist=d.history||[],list=document.getElementById('hist-list');
   // Sirf completed trades — win ya loss (holding wale nahi) + current mode
   const curMode = window._tradeMode || 'paper';
   const closedTrades = hist.filter(function(t){ return (t.result==='win'||t.result==='loss'||t.result==='sell_failed'||(t.sold_at&&t.result!=='holding')) && (t.mode||'paper') === curMode; });
+
+  // Stats from closedTrades (not backend d.total which may include holding/other mode)
+  const _wins   = closedTrades.filter(function(t){ return parseFloat(t.pnl_pct||t.pnl||0) > 0; }).length;
+  const _losses = closedTrades.length - _wins;
+  const _wr     = closedTrades.length ? Math.round(_wins/closedTrades.length*100) : 0;
+  const _pnl    = closedTrades.reduce(function(s,t){ return s + parseFloat(t.pnl_bnb||0); }, 0);
+  const _best   = closedTrades.reduce(function(best,t){ return parseFloat(t.pnl_pct||0) > parseFloat(best.pnl_pct||0) ? t : best; }, {});
+
+  document.getElementById('hs-total').textContent = closedTrades.length;
+  const wrEl=document.getElementById('hs-wr'); wrEl.textContent=_wr+'%'; wrEl.style.color=_wr>=50?'var(--em)':'var(--red)';
+  const pEl=document.getElementById('hs-pnl'); pEl.textContent=(_pnl>=0?'+':'')+_pnl.toFixed(4); pEl.style.color=_pnl>=0?'var(--em)':'var(--red)';
+  document.getElementById('hs-best').textContent=_best.pnl_pct!=null?(_best.pnl_pct>=0?'+':'')+parseFloat(_best.pnl_pct).toFixed(1)+'%':'—';
   if(!closedTrades.length){list.innerHTML='<div class="empty-state">No completed trades yet</div>';return;}
   // Group by address
   const groups = {};
