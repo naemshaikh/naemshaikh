@@ -251,6 +251,7 @@ body.day .hdr{background:rgba(240,237,230,0.96);}
 .trd-price{text-align:right;font-size:11px;font-family:'JetBrains Mono',monospace;}
 .load-more{text-align:center;padding:12px;font-size:12px;color:var(--txt3);cursor:pointer;font-family:'JetBrains Mono',monospace;border-top:1px solid var(--line);transition:color .15s;}
 .load-more:active{color:var(--txt1);}
+@keyframes spin{to{transform:rotate(360deg);}}
 
 </style>
 {% endraw %}
@@ -3377,6 +3378,22 @@ function openGroupTradeDetail(encoded){
 }
 
 async function _loadTradeChart(addr, trades){
+  // Build markers first — needed by fallback too
+  const bnpPrice = window._bnbReal || window._lastBnbPrice || 600;
+  const markers = [];
+  trades.forEach(function(t){
+    if(t.bought_at){
+      const bt = new Date(_toUTC(t.bought_at)).getTime();
+      const ep = parseFloat(t.entry||0) * bnpPrice;
+      if(ep > 0) markers.push({t:bt, price:ep, type:'buy'});
+    }
+    if(t.sold_at){
+      const st = new Date(_toUTC(t.sold_at)).getTime();
+      const xp = parseFloat(t.exit||0) * bnpPrice;
+      if(xp > 0) markers.push({t:st, price:xp, type:'sell'});
+    }
+  });
+
   try{
     // GeckoTerminal free API — BSC token OHLCV 5min candles
     const url = 'https://api.geckoterminal.com/api/v2/networks/bsc/tokens/'+addr+'/ohlcv/minute?aggregate=5&limit=100&currency=usd';
@@ -3389,22 +3406,6 @@ async function _loadTradeChart(addr, trades){
     // ohlcv format: [timestamp_sec, open, high, low, close, volume]
     const prices = ohlcv.map(function(c){ return {t: c[0]*1000, o:+c[1], h:+c[2], l:+c[3], c:+c[4]}; });
     prices.sort(function(a,b){return a.t-b.t;});
-
-    const bnpPrice = window._bnbReal || window._lastBnbPrice || 600;
-    // Entry/exit markers from trades
-    const markers = [];
-    trades.forEach(function(t){
-      if(t.bought_at){
-        const bt = new Date(_toUTC(t.bought_at)).getTime();
-        const ep = parseFloat(t.entry||0) * bnpPrice;
-        if(ep > 0) markers.push({t:bt, price:ep, type:'buy'});
-      }
-      if(t.sold_at){
-        const st = new Date(_toUTC(t.sold_at)).getTime();
-        const xp = parseFloat(t.exit||0) * bnpPrice;
-        if(xp > 0) markers.push({t:st, price:xp, type:'sell'});
-      }
-    });
 
     _renderTradeChart(prices, markers);
   }catch(e){ _chartFallback(markers); }
@@ -3561,7 +3562,8 @@ function _renderTradeChart(prices, markers){
     const x = xOf(m.t);
     const y = yOf(clampedP);
     const isBuy = m.type==='buy';
-    const col   = isBuy ? '#64C8FF' : (m.price >= markers.find(function(mm){return mm.type==='buy';})?.price ? '#00e676' : '#ff4757');
+    const buyMarker = markers.find(function(mm){return mm.type==='buy';});
+    const col   = isBuy ? '#64C8FF' : (m.price >= (buyMarker ? buyMarker.price : 0) ? '#00e676' : '#ff4757');
 
     // Vertical dashed line
     ctx.save();
