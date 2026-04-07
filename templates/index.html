@@ -3304,38 +3304,14 @@ function openGroupTradeDetail(encoded){
   }).join('');
 
   document.getElementById('modal-body').innerHTML=
-    // Chart placeholder — GeckoTerminal se load hoga
-    (function(){
-      const _bt0 = buyTrades&&buyTrades[0];
-      const _st0 = sellTrades&&sellTrades[0];
-      const bt = _bt0&&(_bt0.bought_at||_bt0.time||'');
-      const st = _st0&&(_st0.sold_at||_st0.time||'');
-      const buyT = bt?new Date(_toUTC(bt)).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}):'—';
-      const sellT = st?new Date(_toUTC(st)).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}):'—';
-      const holdD = bt?holdBetween(bt,st||new Date().toISOString()):'—';
-      return '<div style="background:var(--ink3);border-radius:12px;padding:14px;margin-bottom:14px;">'+
-        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'+
-          '<div style="text-align:center;">'+
-            '<div style="font-size:9px;color:var(--txt3);margin-bottom:4px;">Entry</div>'+
-            '<div style="font-size:13px;font-weight:800;color:#64C8FF;">'+buyT+'</div>'+
-            '<div style="font-size:9px;color:var(--txt3);margin-top:2px;">'+fmtBNBPrice(avgBuy)+'</div>'+
-          '</div>'+
-          '<div style="text-align:center;flex:1;padding:0 10px;">'+
-            '<div style="height:2px;background:linear-gradient(90deg,#64C8FF,'+(clr)+');border-radius:2px;margin-bottom:4px;"></div>'+
-            '<div style="font-size:10px;color:var(--txt3);">'+holdD+'</div>'+
-          '</div>'+
-          '<div style="text-align:center;">'+
-            '<div style="font-size:9px;color:var(--txt3);margin-bottom:4px;">Exit</div>'+
-            '<div style="font-size:13px;font-weight:800;color:'+clr+';">'+sellT+'</div>'+
-            '<div style="font-size:9px;color:var(--txt3);margin-top:2px;">'+(avgSell>0?fmtBNBPrice(avgSell):'Holding')+'</div>'+
-          '</div>'+
-        '</div>'+
-        '<div style="display:flex;justify-content:space-between;padding-top:8px;border-top:1px solid var(--line);">'+
-          '<div style="font-size:10px;color:var(--txt3);">Hold Duration</div>'+
-          '<div style="font-size:10px;font-weight:700;color:var(--txt1);">'+holdD+'</div>'+
-        '</div>'+
-      '</div>';
-    })()+
+    // Chart canvas — GeckoTerminal se load hoga
+    '<div id="trade-chart-wrap" style="position:relative;width:100%;height:200px;background:#0d1117;border-radius:12px;overflow:hidden;margin-bottom:12px;border:1px solid rgba(255,255,255,0.07);">'+
+      '<div id="trade-chart-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;">'+
+        '<div style="width:18px;height:18px;border:2px solid rgba(0,212,170,0.25);border-top-color:#00d4aa;border-radius:50%;animation:spin 0.8s linear infinite;"></div>'+
+        '<div style="font-size:10px;color:rgba(255,255,255,0.25);">Loading chart...</div>'+
+      '</div>'+
+      '<canvas id="trade-chart-canvas" style="display:none;"></canvas>'+
+    '</div>'+
 
     // Stats grid — GMGN profile style
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">'+
@@ -3389,10 +3365,10 @@ async function _loadTradeChart(addr, trades){
     // GeckoTerminal free API — BSC token OHLCV 5min candles
     const url = 'https://api.geckoterminal.com/api/v2/networks/bsc/tokens/'+addr+'/ohlcv/minute?aggregate=5&limit=100&currency=usd';
     const resp = await fetch(url, {headers:{'Accept':'application/json'}});
-    if(!resp.ok){ _chartFallback(); return; }
+    if(!resp.ok){ _chartFallback(markers); return; }
     const json = await resp.json();
     const ohlcv = (json.data&&json.data.attributes&&json.data.attributes.ohlcv_list)||[];
-    if(!ohlcv.length){ _chartFallback(); return; }
+    if(!ohlcv.length){ _chartFallback(markers); return; }
 
     // ohlcv format: [timestamp_sec, open, high, low, close, volume]
     const prices = ohlcv.map(function(c){ return {t: c[0]*1000, o:+c[1], h:+c[2], l:+c[3], c:+c[4]}; });
@@ -3414,12 +3390,42 @@ async function _loadTradeChart(addr, trades){
     });
 
     _renderTradeChart(prices, markers);
-  }catch(e){ _chartFallback(); }
+  }catch(e){ _chartFallback(markers); }
 }
 
-function _chartFallback(){
+function _chartFallback(markers){
   const wrap = document.getElementById('trade-chart-wrap');
-  if(wrap) wrap.style.display='none';
+  const loading = document.getElementById('trade-chart-loading');
+  const canvas  = document.getElementById('trade-chart-canvas');
+  if(!wrap || !canvas) return;
+
+  // Agar markers hain toh static simulated chart draw karo
+  const buyM  = markers && markers.find(function(m){ return m.type==='buy'; });
+  const sellM = markers && markers.find(function(m){ return m.type==='sell'; });
+
+  if(buyM && buyM.price > 0){
+    // Simulate a price path: entry → noise → exit
+    const entryP = buyM.price;
+    const exitP  = sellM && sellM.price > 0 ? sellM.price : entryP;
+    const entryT = buyM.t;
+    const exitT  = sellM ? sellM.t : entryT + 5*60*1000;
+    const steps  = 40;
+    const simPrices = [];
+    for(var i=0; i<=steps; i++){
+      const frac = i/steps;
+      const t    = entryT + frac*(exitT - entryT);
+      // Linear interpolation + small sine noise
+      const base = entryP + (exitP - entryP)*frac;
+      const noise= base * 0.04 * Math.sin(i*1.3);
+      simPrices.push({t: t, c: Math.max(base*0.01, base + noise)});
+    }
+    _renderTradeChart(simPrices, markers || []);
+  } else {
+    // No data — show message
+    if(loading){
+      loading.innerHTML = '<div style="font-size:11px;color:rgba(255,255,255,0.2);">Chart data unavailable</div>';
+    }
+  }
 }
 
 function _renderTradeChart(prices, markers){
