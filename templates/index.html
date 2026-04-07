@@ -3407,48 +3407,59 @@ async function _loadTradeChart(addr, trades){
     const prices = ohlcv.map(function(c){ return {t: c[0]*1000, o:+c[1], h:+c[2], l:+c[3], c:+c[4]}; });
     prices.sort(function(a,b){return a.t-b.t;});
 
-    _renderTradeChart(prices, markers);
+    _renderTradeChart(prices, markers, false);
   }catch(e){ _chartFallback(markers); }
 }
 
 function _chartFallback(markers){
-  const wrap = document.getElementById('trade-chart-wrap');
+  const wrap    = document.getElementById('trade-chart-wrap');
   const loading = document.getElementById('trade-chart-loading');
   const canvas  = document.getElementById('trade-chart-canvas');
   if(!wrap || !canvas) return;
 
-  // Agar markers hain toh static simulated chart draw karo
   const buyM  = markers && markers.find(function(m){ return m.type==='buy'; });
   const sellM = markers && markers.find(function(m){ return m.type==='sell'; });
-
-  const entryP = buyM && buyM.price > 0 ? buyM.price : null;
+  const entryP = buyM  && buyM.price  > 0 ? buyM.price  : null;
   const exitP  = sellM && sellM.price > 0 ? sellM.price : entryP;
 
-  if(entryP){
-    // Simulate a price path: entry → noise → exit
-    const entryT = buyM ? buyM.t : Date.now() - 5*60*1000;
-    const exitT  = sellM ? sellM.t : entryT + 5*60*1000;
-    const steps  = 40;
-    const simPrices = [];
-    for(var i=0; i<=steps; i++){
-      const frac = i/steps;
-      const t    = entryT + frac*(exitT - entryT);
-      // Linear interpolation + small sine noise
-      const base = entryP + (exitP - entryP)*frac;
-      const noise= base * 0.04 * Math.sin(i*1.3);
-      simPrices.push({t: t, c: Math.max(base*0.01, base + noise)});
+  if(!entryP){ if(loading) loading.innerHTML='<div style="font-size:11px;color:rgba(255,255,255,0.25);">Chart data unavailable</div>'; return; }
+
+  // Simulated path: wider window (30 min around trade), smooth bezier noise
+  const entryT = buyM  ? buyM.t  : Date.now() - 15*60*1000;
+  const exitT  = sellM ? sellM.t : entryT + 15*60*1000;
+  const padMs  = Math.max((exitT - entryT) * 0.3, 5*60*1000);
+  const winStart = entryT - padMs;
+  const winEnd   = exitT  + padMs;
+  const steps = 60;
+  const simPrices = [];
+  // Simple smooth noise using seeded pseudo-random (deterministic per token)
+  var seed = Math.round(entryP * 1e8) % 9999 || 1;
+  function rng(){ seed = (seed * 1664525 + 1013904223) & 0xffffffff; return (seed >>> 0) / 0xffffffff; }
+  for(var i=0; i<=steps; i++){
+    const frac = i/steps;
+    const t    = winStart + frac*(winEnd - winStart);
+    var base;
+    if(t < entryT){
+      // Pre-entry: slight drift up toward entry
+      const pf = (t - winStart)/(entryT - winStart);
+      base = entryP * (0.97 + 0.03*pf);
+    } else if(t <= exitT){
+      // Trade window: linear interp entry→exit
+      const pf = (t - entryT)/(exitT - entryT || 1);
+      base = entryP + (exitP - entryP)*pf;
+    } else {
+      // Post-exit: drift from exit
+      const pf = (t - exitT)/(winEnd - exitT);
+      base = exitP * (1 + (rng()-0.5)*0.02*pf);
     }
-    _renderTradeChart(simPrices, markers || []);
-  } else {
-    // No data — show message, hide spinner
-    if(loading){
-      loading.innerHTML = '<div style="font-size:11px;color:rgba(255,255,255,0.3);">📊 Chart data unavailable</div>';
-    }
+    const noise = base * 0.008 * (rng()-0.5);
+    simPrices.push({t:t, o:base, h:base+Math.abs(noise)*1.5, l:base-Math.abs(noise)*1.5, c:base+noise, sim:true});
   }
+  _renderTradeChart(simPrices, markers || [], true);
 }
 
-function _renderTradeChart(prices, markers){
-  const canvas = document.getElementById('trade-chart-canvas');
+function _renderTradeChart(prices, markers, isSimulated){
+  const canvas  = document.getElementById('trade-chart-canvas');
   const loading = document.getElementById('trade-chart-loading');
   if(!canvas) return;
 
@@ -3464,162 +3475,200 @@ function _renderTradeChart(prices, markers){
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
 
-  const pad = {t:16, r:52, b:28, l:10};
+  const hasCandleData = prices[0] && prices[0].o != null && prices[0].h != null;
+  const hasVol = hasCandleData && prices.some(function(p){ return p.v > 0; });
+
+  // Layout
+  const volSec = hasVol ? 28 : 0;
+  const pad = {t:14, r:60, b:22+volSec, l:6};
   const cW = W - pad.l - pad.r;
   const cH = H - pad.t - pad.b;
 
-  // Price range with 10% padding
-  const allPrices = prices.map(function(p){return p.c;});
-  const rawMin = Math.min.apply(null, allPrices);
-  const rawMax = Math.max.apply(null, allPrices);
-  const rawRange = rawMax - rawMin || rawMax * 0.1 || 1;
-  const minP = rawMin - rawRange * 0.1;
-  const maxP = rawMax + rawRange * 0.1;
+  // Price range (use h/l for candles, c for line)
+  var rawMax = -Infinity, rawMin = Infinity;
+  prices.forEach(function(p){
+    const hi = hasCandleData ? p.h : p.c;
+    const lo = hasCandleData ? p.l : p.c;
+    if(hi > rawMax) rawMax = hi;
+    if(lo < rawMin) rawMin = lo;
+  });
+  markers.forEach(function(m){ if(m.price>0){ if(m.price>rawMax) rawMax=m.price; if(m.price<rawMin) rawMin=m.price; }});
+  const rawRange = rawMax - rawMin || rawMax * 0.05 || 1e-9;
+  const minP = rawMin - rawRange * 0.12;
+  const maxP = rawMax + rawRange * 0.08;
   const rangeP = maxP - minP;
+
   const minT = prices[0].t;
   const maxT = prices[prices.length-1].t;
   const rangeT = maxT - minT || 1;
 
-  function xOf(t){ return pad.l + ((t-minT)/rangeT)*cW; }
+  function xOf(t){ return pad.l + Math.max(0,Math.min(cW,((t-minT)/rangeT)*cW)); }
   function yOf(p){ return pad.t + (1-(p-minP)/rangeP)*cH; }
 
-  // Dark BG
+  // Max volume for scaling
+  var maxVol = 0;
+  if(hasVol) prices.forEach(function(p){ if((p.v||0)>maxVol) maxVol=p.v; });
+
+  // ── Background ──
   ctx.fillStyle='#0d1117';
   ctx.fillRect(0,0,W,H);
 
-  // Horizontal grid lines + price labels (4 lines)
-  const gridSteps = 4;
+  // ── Grid lines (4 horizontal) ──
+  const gridN = 4;
   ctx.font = '9px JetBrains Mono, monospace';
-  ctx.textAlign = 'left';
-  for(let i=0; i<=gridSteps; i++){
-    const frac = i/gridSteps;
+  for(var gi=0; gi<=gridN; gi++){
+    const frac = gi/gridN;
     const priceAtLine = minP + (1-frac)*rangeP;
-    const y = pad.t + frac*cH;
-    // Grid line
+    const gy = pad.t + frac*cH;
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.strokeStyle = gi===0||gi===gridN ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.04)';
     ctx.lineWidth = 1;
     ctx.setLineDash([]);
-    ctx.moveTo(pad.l, y);
-    ctx.lineTo(pad.l+cW, y);
+    ctx.moveTo(pad.l, gy);
+    ctx.lineTo(pad.l+cW, gy);
     ctx.stroke();
-    // Price label on right
-    ctx.fillStyle = 'rgba(255,255,255,0.28)';
-    const lbl = priceAtLine < 0.000001 ? priceAtLine.toExponential(2) :
-                priceAtLine < 0.001    ? priceAtLine.toFixed(8) :
-                priceAtLine < 1        ? priceAtLine.toFixed(6) :
-                priceAtLine.toFixed(4);
-    ctx.fillText(lbl, pad.l+cW+4, y+3);
+    // Price label right
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.textAlign = 'left';
+    const lbl = priceAtLine<=0 ? '' :
+                priceAtLine < 1e-7 ? priceAtLine.toExponential(2) :
+                priceAtLine < 1e-4 ? priceAtLine.toFixed(8) :
+                priceAtLine < 0.1  ? priceAtLine.toFixed(6) :
+                priceAtLine < 10   ? priceAtLine.toFixed(4) :
+                priceAtLine.toFixed(2);
+    ctx.fillText(lbl, pad.l+cW+4, gy+3);
   }
 
-  // Determine chart color based on first vs last price
-  const chartUp = prices[prices.length-1].c >= prices[0].c;
-  const lineCol  = chartUp ? '#00d4aa' : '#ff4757';
-  const gradTop  = chartUp ? 'rgba(0,212,170,0.3)' : 'rgba(255,71,87,0.3)';
-  const gradBot  = 'rgba(0,0,0,0)';
+  // ── Candlesticks or line chart ──
+  if(hasCandleData && prices.length > 1){
+    const candleW = Math.max(1.5, Math.min(8, cW/prices.length * 0.65));
+    prices.forEach(function(p){
+      const x  = xOf(p.t);
+      const yO = yOf(p.o), yC = yOf(p.c), yH = yOf(p.h), yL = yOf(p.l);
+      const isGreen = p.c >= p.o;
+      const col = isSimulated ? 'rgba(100,150,200,0.6)' : (isGreen ? '#089981' : '#f23645');
+      const bodyTop = Math.min(yO,yC), bodyH = Math.max(1.5, Math.abs(yC-yO));
+      // Wick
+      ctx.beginPath();
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([]);
+      ctx.moveTo(x, yH); ctx.lineTo(x, yL);
+      ctx.stroke();
+      // Body
+      ctx.fillStyle = col;
+      ctx.fillRect(x - candleW/2, bodyTop, candleW, bodyH);
+    });
+  } else {
+    // Line chart fallback (no OHLCV)
+    const chartUp = prices[prices.length-1].c >= prices[0].c;
+    const lineCol = isSimulated ? 'rgba(100,150,200,0.7)' : (chartUp ? '#00d4aa' : '#f23645');
+    // Gradient fill
+    const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t+cH);
+    grad.addColorStop(0, isSimulated ? 'rgba(100,150,200,0.15)' : (chartUp ? 'rgba(0,212,170,0.18)' : 'rgba(242,54,69,0.18)'));
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.beginPath();
+    prices.forEach(function(p,i){ i===0 ? ctx.moveTo(xOf(p.t),yOf(p.c)) : ctx.lineTo(xOf(p.t),yOf(p.c)); });
+    ctx.lineTo(xOf(prices[prices.length-1].t), pad.t+cH);
+    ctx.lineTo(xOf(prices[0].t), pad.t+cH);
+    ctx.closePath();
+    ctx.fillStyle=grad; ctx.fill();
+    // Line
+    ctx.beginPath();
+    ctx.strokeStyle=lineCol; ctx.lineWidth=1.5; ctx.setLineDash([]);
+    prices.forEach(function(p,i){ i===0 ? ctx.moveTo(xOf(p.t),yOf(p.c)) : ctx.lineTo(xOf(p.t),yOf(p.c)); });
+    ctx.stroke();
+  }
 
-  // Gradient fill
-  const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t+cH);
-  grad.addColorStop(0, gradTop);
-  grad.addColorStop(1, gradBot);
-  ctx.beginPath();
-  prices.forEach(function(p,i){
-    const x=xOf(p.t), y=yOf(p.c);
-    i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
-  });
-  ctx.lineTo(xOf(prices[prices.length-1].t), pad.t+cH);
-  ctx.lineTo(xOf(prices[0].t), pad.t+cH);
-  ctx.closePath();
-  ctx.fillStyle=grad;
-  ctx.fill();
+  // ── Volume bars ──
+  if(hasVol && maxVol>0){
+    const vTop = H - pad.b + 4;
+    const vH   = volSec - 6;
+    prices.forEach(function(p){
+      const x   = xOf(p.t);
+      const vol = (p.v||0)/maxVol;
+      const bH  = Math.max(1, vol*vH);
+      const isGreen = p.c >= p.o;
+      ctx.fillStyle = isGreen ? 'rgba(8,153,129,0.45)' : 'rgba(242,54,69,0.45)';
+      ctx.fillRect(x-1.5, vTop + vH - bH, 3, bH);
+    });
+    // Vol label
+    ctx.fillStyle='rgba(255,255,255,0.15)';
+    ctx.font='8px JetBrains Mono,monospace';
+    ctx.textAlign='left';
+    ctx.fillText('VOL', pad.l+2, vTop+9);
+  }
 
-  // Price line
-  ctx.beginPath();
-  ctx.strokeStyle=lineCol;
-  ctx.lineWidth=1.8;
-  ctx.setLineDash([]);
-  prices.forEach(function(p,i){
-    const x=xOf(p.t), y=yOf(p.c);
-    i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
-  });
-  ctx.stroke();
-
-  // Time axis (3 labels)
-  ctx.fillStyle='rgba(255,255,255,0.25)';
-  ctx.font='8px JetBrains Mono, monospace';
+  // ── Time axis (3 labels) ──
+  ctx.fillStyle='rgba(255,255,255,0.22)';
+  ctx.font='8px JetBrains Mono,monospace';
   ctx.textAlign='center';
-  [0, Math.floor(prices.length/2), prices.length-1].forEach(function(i){
-    const p = prices[i]; if(!p) return;
-    const x = xOf(p.t);
-    const lbl = new Date(p.t).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:false});
-    ctx.fillText(lbl, x, H-7);
+  const timePts = [0, Math.floor(prices.length/2), prices.length-1];
+  timePts.forEach(function(i){
+    const p=prices[i]; if(!p) return;
+    const x=xOf(p.t);
+    var lbl;
+    if(rangeT < 120000){
+      // < 2min — show HH:MM:SS
+      lbl = new Date(p.t).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+    } else {
+      lbl = new Date(p.t).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:false});
+    }
+    ctx.fillText(lbl, Math.max(24,Math.min(W-pad.r-10,x)), H-8);
   });
 
-  // Entry / Exit markers
+  // ── Entry / Exit markers ──
   markers.forEach(function(m){
-    if(!m.price || m.price<=0) return;
-    const clampedP = Math.max(minP, Math.min(maxP, m.price));
+    if(!m.price||m.price<=0) return;
+    const clampedP = Math.max(minP+rawRange*0.02, Math.min(maxP-rawRange*0.02, m.price));
     const x = xOf(m.t);
     const y = yOf(clampedP);
     const isBuy = m.type==='buy';
-    const buyMarker = markers.find(function(mm){return mm.type==='buy';});
-    const col   = isBuy ? '#64C8FF' : (m.price >= (buyMarker ? buyMarker.price : 0) ? '#00e676' : '#ff4757');
+    const buyM2 = markers.find(function(mm){return mm.type==='buy';});
+    const col = isBuy ? '#3b82f6' : (m.price >= (buyM2?buyM2.price:0) ? '#089981' : '#f23645');
 
-    // Vertical dashed line
+    // Vertical line
     ctx.save();
-    ctx.setLineDash([3,4]);
-    ctx.strokeStyle = col+'55';
+    ctx.setLineDash([2,3]);
+    ctx.strokeStyle = col+'66';
     ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x, pad.t);
-    ctx.lineTo(x, pad.t+cH);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x,pad.t); ctx.lineTo(x,pad.t+cH); ctx.stroke();
     ctx.restore();
 
-    // Glow circle
-    ctx.save();
-    ctx.shadowColor = col;
-    ctx.shadowBlur  = 12;
-    ctx.beginPath();
-    ctx.arc(x, y, 5, 0, Math.PI*2);
-    ctx.fillStyle = col;
-    ctx.fill();
-    ctx.restore();
-
-    // Inner dot
-    ctx.beginPath();
-    ctx.arc(x, y, 2.5, 0, Math.PI*2);
-    ctx.fillStyle = '#fff';
-    ctx.fill();
-
-    // Triangle pointer
+    // Triangle
     ctx.beginPath();
     ctx.fillStyle = col;
     if(isBuy){
-      ctx.moveTo(x, y-9);
-      ctx.lineTo(x-5, y-19);
-      ctx.lineTo(x+5, y-19);
+      ctx.moveTo(x, y+2); ctx.lineTo(x-5, y+12); ctx.lineTo(x+5, y+12);
     } else {
-      ctx.moveTo(x, y+9);
-      ctx.lineTo(x-5, y+19);
-      ctx.lineTo(x+5, y+19);
+      ctx.moveTo(x, y-2); ctx.lineTo(x-5, y-12); ctx.lineTo(x+5, y-12);
     }
     ctx.closePath();
     ctx.fill();
 
-    // Label badge
-    const lbl = isBuy ? 'BUY' : 'SELL';
-    const lblY = isBuy ? y-22 : y+28;
-    ctx.font = 'bold 8px JetBrains Mono, monospace';
+    // Label badge (pill style)
+    const lbl = isBuy ? 'B' : 'S';
+    const bY = isBuy ? y+16 : y-18;
+    ctx.font = 'bold 9px JetBrains Mono,monospace';
     ctx.textAlign = 'center';
-    const tw = ctx.measureText(lbl).width + 8;
-    ctx.fillStyle = col+'33';
-    ctx.beginPath();
-    ctx.roundRect ? ctx.roundRect(x-tw/2, lblY-8, tw, 12, 3) : ctx.rect(x-tw/2, lblY-8, tw, 12);
-    ctx.fill();
     ctx.fillStyle = col;
-    ctx.fillText(lbl, x, lblY+1);
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(x-7,bY-7,14,13,3) : ctx.rect(x-7,bY-7,14,13);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.fillText(lbl, x, bY+3);
   });
+
+  // ── Simulated watermark ──
+  if(isSimulated){
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.font = 'bold 11px JetBrains Mono,monospace';
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.fillText('EST. PRICE', W/2, pad.t + cH/2 + 4);
+    ctx.restore();
+  }
 
   if(loading) loading.style.display='none';
   canvas.style.display='block';
