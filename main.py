@@ -2631,9 +2631,9 @@ CHECKLIST_SETTINGS = {
     "min_token_age":     3.0,    # Stage 3: Min token age (min)
     "sniper_wait":       5.0,    # Stage 3: Sniper pump over (min)
     "min_volume_24h":  1000.0,   # Stage 4: Min 24h volume USD
-    "sl_new":           10.0,    # Stage 10: SL % for new tokens — tighter exit
-    "sl_hyped":         20.0,    # Stage 10: SL % for hyped tokens
-    "sl_mature":        10.0,    # Stage 10: SL % for mature tokens
+    "sl_new":            8.0,    # Stage 10: SL % for new tokens — FIX v63 tighter (was 10)
+    "sl_hyped":         12.0,    # Stage 10: SL % for hyped tokens — FIX v63 (was 20)
+    "sl_mature":         8.0,    # Stage 10: SL % for mature tokens — FIX v63 (was 10)
     "score_safe":       50.0,    # Auto buy: SAFE min score % (raised from 40)
     "score_caution":    50.0,    # Auto buy: CAUTION min score % (CAUTION buys disabled)
     "daily_loss_pct":   50.0,    # Max daily loss % of balance
@@ -2930,7 +2930,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
     # Paper mode: balance simulate karo (real mode mein skip)
     if TRADE_MODE != "real":
         sess["paper_balance"] = round(paper_balance - size_bnb, 6)
-    _sl = CHECKLIST_SETTINGS.get("sl_new", 15.0)
+    _sl = CHECKLIST_SETTINGS.get("sl_new", 8.0)
     add_position_to_monitor(AUTO_SESSION_ID, address, token_name or address[:10], entry_price, size_bnb, stop_loss_pct=_sl)
     _bnb_at_buy = market_cache.get("bnb_price", 0)  # real only — DataGuard already verified
     # ── Buy Reasoning — kyu buy kiya ──
@@ -2954,7 +2954,7 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
         "size_bnb":       size_bnb,
         "orig_size_bnb":  size_bnb,
         "bought_usd":     round(size_bnb * _bnb_at_buy, 2),
-        "sl_pct":         CHECKLIST_SETTINGS.get("sl_new", 15.0),
+        "sl_pct":         CHECKLIST_SETTINGS.get("sl_new", 8.0),
         "trail_pct":      20.0,
         "tp_sold":        0.0,
         "banked_pnl_bnb": 0.0,
@@ -4236,12 +4236,13 @@ def auto_position_manager():
                         print(f"🔴 HardSL: {addr[:10]} pnl={pnl:.1f}%")
                         continue
 
-                    # Emergency SL: 20s mein -8% + no pump = fast exit
+                    # Emergency SL: entry ke baad price drop → fast exit
+                    # FIX v63: removed `not _mom_dead`, hold 10s, pnl -5%, pnl_high 10%
                     _emergency_sl = (
-                        _hold_secs > 20
-                        and pnl <= -8
-                        and not _mom_dead
-                        and _pnl_high < 5.0
+                        _hold_secs > 10
+                        and pnl <= -5
+                        and tp_sold == 0
+                        and _pnl_high < 10.0
                     )
 
                     # ── FIX v37 A: TP1/TP2 independent — MomDead same iteration check ──
