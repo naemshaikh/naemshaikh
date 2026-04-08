@@ -3727,6 +3727,47 @@ def _learn_from_new_pairs():
     except Exception as e:
         print(f"_learn_from_new_pairs error: {e}")
 
+def _fm_bc_fast_price_loop():
+    """FM BC tokens ke liye dedicated 0.5s price update loop — fast dump detection"""
+    import time as _t
+    print("⚡ FM BC Fast Price Loop started (0.5s)")
+    while True:
+        try:
+            with monitor_lock:
+                _snap = list(monitored_positions.items())
+            for _addr, _mon in _snap:
+                try:
+                    _pos = auto_trade_stats.get("running_positions", {}).get(_addr, {})
+                    _src = _pos.get("source", "") or _pos.get("buy_reasoning", {}).get("source", "")
+                    if "FM_BC" not in _src:
+                        continue
+                    _w3f = _fm_get_w3()
+                    if not _w3f:
+                        continue
+                    _info = _fm_get_token_info(_addr, _w3f)
+                    if _info and _info.get("lastPrice", 0) > 0:
+                        _bnb_p = market_cache.get("bnb_price", 0)
+                        _quote = str(_info.get("quote", "")).lower()
+                        if "usdt" in _quote or "busd" in _quote or "usd" in _quote:
+                            _price = (_info["lastPrice"] / 1e18) / _bnb_p if _bnb_p > 0 else 0
+                        else:
+                            _price = _info["lastPrice"] / 1e18
+                        if _price > 0:
+                            with monitor_lock:
+                                if _addr in monitored_positions:
+                                    monitored_positions[_addr]["current"] = _price
+                                    if _price > monitored_positions[_addr].get("high", 0):
+                                        monitored_positions[_addr]["high"] = _price
+                                        _rp = auto_trade_stats["running_positions"].get(_addr)
+                                        if _rp:
+                                            _rp["ath_price"] = _price
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        _t.sleep(0.5)
+
+
 def continuous_learning():
     print("🧠 Learning Engine started!")
     _load_brain_from_db()
@@ -3745,7 +3786,7 @@ def continuous_learning():
             # ══ FIX4: monitored_positions price update — har 3s ══
             # Root cause: WSS swap events se price update nahi hota
             # Yahan har 3s pe get_token_price_bnb se fresh price lo
-            if now - _last_price_update >= 3:
+            if now - _last_price_update >= 1:
                 _last_price_update = now
                 try:
                     with monitor_lock:
@@ -7785,6 +7826,7 @@ def _startup_once():
         # ── Queue Workers Start ──────────────────────────────────
 
         threading.Thread(target=_delayed(price_monitor_loop,    15),  daemon=True).start()
+        threading.Thread(target=_delayed(_fm_bc_fast_price_loop, 10), daemon=True).start()  # FM BC 0.5s price
         threading.Thread(target=_delayed(continuous_learning,   25),  daemon=True).start()
         threading.Thread(target=_delayed(auto_position_manager, 30),  daemon=True).start()
         threading.Thread(target=_delayed(_memory_cleanup_loop,  60),  daemon=True).start()  # MEM FIX
