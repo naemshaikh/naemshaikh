@@ -3155,7 +3155,15 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 "ath_price":    pos.get("ath_price") or monitored_positions.get(address, {}).get("high", current),
                 "ath_pct":      round(((pos.get("ath_price") or monitored_positions.get(address, {}).get("high", current)) - entry) / entry * 100, 1) if entry > 0 else 0,
                 "pnl_high":     pos.get("pnl_high", 0.0),
-                "hold_minutes": round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds() / 60, 1) if bought_at_str else 0
+                "hold_minutes": round((datetime.utcnow() - datetime.fromisoformat(bought_at_str[:19])).total_seconds() / 60, 1) if bought_at_str else 0,
+                # FIX v65: entry analytics for pattern analysis
+                "buyers_at_entry":     pos.get("buyers_at_entry", 0),
+                "total_buys_at_entry": pos.get("total_buys_at_entry", 0),
+                "momentum_pct":        pos.get("momentum_pct", 0.0),
+                "pump_at_entry":       pos.get("pump_at_entry", 0.0),
+                "dev_wallet_pct":      pos.get("dev_wallet_pct", 0.0),
+                "mc_usd_entry":        pos.get("mc_usd_entry", 0.0),
+                "liquidity_bnb_entry": pos.get("liquidity_bnb_entry", 0.0),
 })
         if len(auto_trade_stats["trade_history"]) > 500:
             # FIX v50: in-memory 500 kaafi — Supabase mein full history hai
@@ -6398,7 +6406,15 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 "source": "FM_BC_v2",
                 "mc_usd": f"${_mc_usd:.0f}",
                 "momentum": f"+{_momentum_pct:.1f}%"
-}
+            },
+            # FIX v65: entry analytics — trade_history CSV export mein aayenge
+            "buyers_at_entry":     int(_buyers_at_entry or 0),
+            "total_buys_at_entry": int(_total_buys_at_entry or 0),
+            "momentum_pct":        round(float(_momentum_pct or 0), 2),
+            "pump_at_entry":       round(float(_pump_at_entry or 0), 2),
+            "dev_wallet_pct":      round(float(_dev_wallet_pct or 0), 2),
+            "mc_usd_entry":        round(float(_mc_usd or 0), 0),
+            "liquidity_bnb_entry": round(float(_funds2 / 1e18 if _funds2 else 0), 4),
 }
         auto_trade_stats["total_auto_buys"] += 1
         _scanner_stats["fm_bought"] = _scanner_stats.get("fm_bought", 0) + 1
