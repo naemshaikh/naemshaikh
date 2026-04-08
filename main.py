@@ -4169,8 +4169,8 @@ def auto_position_manager():
                             _fm_price_dead = _is_fm_bc and _vwc.get(addr, 0) >= 2
                             _sv5_fd = _get_vol_pressure_rt(addr).get("sell_vol5", 0.0) if not _is_fm_bc else 0.0
                             _sell_dominant = _sv5_fd > _bv5_live * 2 and _sv5_fd > 0.001
-                            # FIX: FM BC pehle 45s mein -3% pe hi exit (fast dump catcher)
-                            _fd_threshold = -3.0 if (_is_fm_bc and _hold_secs < 45) else -5.0
+                            # FIX: FM BC pehle 5s mein -3% pe hi exit (fast dump catcher)
+                            _fd_threshold = -3.0 if (_is_fm_bc and _hold_secs < 5) else -5.0
                             _fast_dump = (_sell_dominant or _fm_price_dead) and pnl <= _fd_threshold
                             if _fast_dump:
                                 _reason = "FMPriceDead" if _fm_price_dead else f"SellDom sv={_sv5_fd:.3f}"
