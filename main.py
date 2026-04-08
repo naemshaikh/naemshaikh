@@ -4163,6 +4163,15 @@ def auto_position_manager():
                     if tp_sold == 0:
                         _egc = auto_trade_stats["entry_guard_count"]
 
+                        # ── FIX v64: Pure price exit — no volume, no hold time ──
+                        # Entry ke turant baad price -5% gaya aur kabhi pump nahi hua → exit
+                        if _pnl_high < 3.0 and pnl <= -5.0:
+                            _auto_paper_sell(addr, f"PriceDrop -{abs(pnl):.1f}% 🔴", 100.0)
+                            _egc.pop(addr, None)
+                            _trail_triggered = True
+                            print(f"🔴 PriceDrop: {addr[:10]} pnl={pnl:.1f}% high={_pnl_high:.1f}% hold={_hold_secs:.0f}s")
+                            continue
+
                         # Case 1: No pump at all, buyers absent
                         if _pnl_high < 3.0 and pnl <= -2.0:
                             # FastDump: FM BC pe price declining, PC pe sell dominant
