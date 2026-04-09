@@ -6035,6 +6035,13 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     reasons.append("pump_with_vol_drop")
                     score -= 1
 
+            # 7. FIX vB: Wallet diversity check — creator pump catcher
+            # Agar momentum sirf 1-2 unique wallets ne drive kiya = creator dump
+            _total_momentum_wallets = sum(len(v) for v in _block_wallets_curr.values())
+            if _block_wallets_curr and _total_momentum_wallets < 3:
+                reasons.append(f"creator_pump({_total_momentum_wallets}_wallets)")
+                score -= 4  # Hard reject — yeh almost certainly dump hai
+
             genuine = score >= 6
             return genuine, reasons, score
         while time.time() < _t_end_loop and not _BOT_SHUTDOWN:
