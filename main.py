@@ -3164,6 +3164,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 "dev_wallet_pct":      pos.get("dev_wallet_pct", 0.0),
                 "mc_usd_entry":        pos.get("mc_usd_entry", 0.0),
                 "liquidity_bnb_entry": pos.get("liquidity_bnb_entry", 0.0),
+                "entry_type":          pos.get("entry_type", ""),  # FIX v68: direct/waited
 })
         if len(auto_trade_stats["trade_history"]) > 500:
             # FIX v50: in-memory 500 kaafi — Supabase mein full history hai
@@ -6537,6 +6538,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             "dev_wallet_pct":      round(float(_dev_wallet_pct or 0), 2),
             "mc_usd_entry":        round(float(_mc_usd or 0), 0),
             "liquidity_bnb_entry": round(float(_funds2 / 1e18 if _funds2 else 0), 4),
+            "entry_type":          _entry_type,  # FIX v68: "direct" / "waited" / "skipped"
 }
         auto_trade_stats["total_auto_buys"] += 1
         _scanner_stats["fm_bought"] = _scanner_stats.get("fm_bought", 0) + 1

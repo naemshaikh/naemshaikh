@@ -3707,6 +3707,11 @@ function openTradeDetail(json){
     '</div>';
 
   document.getElementById('modal-sub').textContent = (t.reason||'Auto')+' · Held '+holdDur;
+  // FIX v68: entry type badge
+  const _etRaw = (t.entry_type||'').toLowerCase();
+  const _etLabel = _etRaw === 'waited' ? '⏳ Reversal Wait' : _etRaw === 'direct' ? '⚡ Direct Buy' : '';
+  const _etClr   = _etRaw === 'waited' ? '#a064ff' : _etRaw === 'direct' ? '#00d4aa' : '';
+  if(_etLabel) document.getElementById('modal-sub').textContent += ' · ' + _etLabel;
   document.getElementById('modal-pnl').className   = 'pnl-big '+(pnl>=0?'p':'n');
   document.getElementById('modal-pnl').textContent = (pnlB>=0?'+':'-')+'$'+pnlUSD+' ('+(pnl>=0?'+':'')+pnl.toFixed(1)+'%)';
 
