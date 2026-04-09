@@ -6015,11 +6015,13 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             if len(ub_history) >= 2:
                 deltas = [ub_history[i] - ub_history[i-1] for i in range(1, len(ub_history))]
                 max_delta = max(deltas) if deltas else 0
-                if max_delta > 8:
+                # FIX v65: 8→4 threshold (FM BC 3s block, 4+ same-block = bundle bot)
+                # penalty -1→-2 taaki genuine score (6+) pe zyada impact pade
+                if max_delta > 4:
                     avg_delta = sum(deltas) / len(deltas)
                     if max_delta > avg_delta * 2.5:
                         reasons.append("heavy_block_buy(" + str(max_delta) + ")")
-                        score -= 1
+                        score -= 2
 
             # 6. Pump ke dauran volume drop
             # FIX v53: -2 → -1 wapas, threshold 6→5
