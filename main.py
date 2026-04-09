@@ -6156,10 +6156,25 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         # FIX v67: Peak already pass check — 2 consecutive drops = dump shuru ho gaya
         # No extra wait/RPC needed — momentum loop ka already fetched data use ho raha hai
+        _already_dumping = False
         if len(_ph) >= 3:
             _already_dumping = (_ph[-1] < _ph[-2]) and (_ph[-2] < _ph[-3])
             if _already_dumping:
                 print(f"⚠️ [FM] Peak already passed — 2 consecutive drops detected ({_ph[-3]:.2e}→{_ph[-2]:.2e}→{_ph[-1]:.2e}) — forcing reversal wait")
+
+        # FIX v69: Velocity check — agar price bahut tezi se aayi toh creator pump hai
+        # Normal organic pump: 20-40% over multiple ticks
+        # Creator dump setup: 50%+ spike in 1-2 ticks phir flatline
+        _velocity_spike = False
+        if len(_ph) >= 3:
+            _p_start = _ph[-3]
+            _p_end   = _ph[-1]
+            _total_move = (_p_end - _p_start) / max(_p_start, 1e-18) * 100
+            # Last tick ka move vs total move — agar last tick mein 60%+ hua toh spike
+            _last_tick_move = (_ph[-1] - _ph[-2]) / max(_ph[-2], 1e-18) * 100
+            if _last_tick_move > 15.0:  # last 0.1s mein 15%+ = unnatural
+                _velocity_spike = True
+                print(f"⚠️ [FM] Velocity spike detected: last tick +{_last_tick_move:.1f}% — likely creator pump — forcing reversal wait")
 
         if len(_ph) >= 2:
             _price_falling = _ph[-1] < _ph[-2]   # strictly gir raha ho
@@ -6174,8 +6189,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
         # FIX v65: Sell pressure = price OR vol gir raha ho (pehle AND tha — half signal miss hota tha)
         # FIX v67: already_dumping bhi force karo sell pressure mein
+        # FIX v69: velocity_spike bhi — unnatural last tick = creator pump
         _already_dumping = _already_dumping if len(_ph) >= 3 else False
-        _sell_pressure = _price_falling or _vol_falling or _already_dumping
+        _sell_pressure = _price_falling or _vol_falling or _already_dumping or _velocity_spike
 
         if _sell_pressure:
             # Sell pressure hai — reversal ka wait karo max 10s

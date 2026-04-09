@@ -3180,11 +3180,13 @@ window._renderTPage = function(){
     const label= t.reason||'SELL';
     const labelBg=pnl>=0?'rgba(0,230,118,0.15)':'rgba(255,71,87,0.15)';
     const encoded=encodeURIComponent(JSON.stringify(t));
+    const _et=(t.entry_type||'').toLowerCase();
+    const _etBadge=_et==='waited'?'<span style="font-size:7px;background:rgba(160,100,255,0.2);color:#a064ff;border-radius:3px;padding:1px 4px;margin-left:4px;vertical-align:middle;">⏳ Rev</span>':_et==='direct'?'<span style="font-size:7px;background:rgba(0,212,170,0.15);color:#00d4aa;border-radius:3px;padding:1px 4px;margin-left:4px;vertical-align:middle;">⚡ Dir</span>':'';
     return '<div onclick="openTradeDetail(\''+encoded+'\')" style="display:grid;grid-template-columns:1fr auto auto;align-items:center;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;gap:8px;" onmouseover="this.style.background=\'rgba(255,255,255,0.03)\'" onmouseout="this.style.background=\'\'">'+
       '<div style="display:flex;align-items:center;gap:9px;min-width:0;">'+
         '<div style="width:36px;height:36px;border-radius:50%;background:'+ic+'22;border:2px solid '+ic+'55;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:'+ic+';flex-shrink:0;">'+sym.slice(0,2)+'</div>'+
         '<div style="min-width:0;">'+
-          '<div style="font-size:12px;font-weight:800;color:var(--txt1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;">'+sym+'</div>'+
+          '<div style="font-size:12px;font-weight:800;color:var(--txt1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;">'+sym+_etBadge+'</div>'+
           '<div style="font-size:9px;color:var(--txt3);margin-top:1px;">'+ago+'</div>'+
         '</div>'+
       '</div>'+
