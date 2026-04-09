@@ -6035,13 +6035,6 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     reasons.append("pump_with_vol_drop")
                     score -= 1
 
-            # 7. FIX vB: Wallet diversity check — creator pump catcher
-            # Agar momentum sirf 1-2 unique wallets ne drive kiya = creator dump
-            _total_momentum_wallets = sum(len(v) for v in _block_wallets_curr.values())
-            if _block_wallets_curr and _total_momentum_wallets < 3:
-                reasons.append(f"creator_pump({_total_momentum_wallets}_wallets)")
-                score -= 4  # Hard reject — yeh almost certainly dump hai
-
             genuine = score >= 6
             return genuine, reasons, score
         while time.time() < _t_end_loop and not _BOT_SHUTDOWN:
@@ -6303,6 +6296,13 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _entry_type = "waited"
             else:
                 print(f"✅ [FM] Buy pressure confirmed — ENTERING NOW")
+
+        # ========== SMART ENTRY: Wallet Diversity Check (Option B) ==========
+        # Creator pump catcher — agar momentum sirf 1-2 wallets ne drive kiya = dump setup
+        _diversity_wallets = sum(len(v) for v in _block_wallets_curr.values())
+        if _block_wallets_curr and _diversity_wallets < 3:
+            print(f"\U0001f6ab [FM] Creator pump detected — only {_diversity_wallets} wallet(s) drove momentum — SKIP")
+            _skip(f"creator_pump ({_diversity_wallets} wallets)"); return
 
         # ========== BUY EXECUTION ==========
         size_bnb = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
