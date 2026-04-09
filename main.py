@@ -4791,7 +4791,16 @@ _fm_dev_cache_lock = threading.Lock()
 # Global FM w3 — PC wala hi reuse karo
 def _fm_get_w3():
     """Free RPC — polling aur filters ke liye"""
-    for rpc in ["https://bsc-rpc.publicnode.com", "https://bsc.drpc.org", "https://1rpc.io/bnb"]:
+    for rpc in [
+        "https://bsc-rpc.publicnode.com",
+        "https://bsc.drpc.org",
+        "https://1rpc.io/bnb",
+        "https://bsc-dataseed1.binance.org",
+        "https://bsc-dataseed2.binance.org",
+        "https://bsc-dataseed1.defibit.io",
+        "https://bsc-dataseed1.ninicoin.io",
+        "https://binance.llamarpc.com",
+    ]:
         try:
             return Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 5}))
         except: continue
