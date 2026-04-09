@@ -6182,6 +6182,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             _reversal_found = False
             _price_low = _entry_price_check
             _funds_low = _fh[-1] if _fh else 0
+            _ri_funds_prev = _funds_low  # FIX v68: acceleration track ke liye
             for _ri in range(50):  # 50 x 0.2s = 10s max
                 time.sleep(0.2)
                 try:
@@ -6195,9 +6196,12 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     if _ri_price < _price_low:
                         _price_low = _ri_price
                         _funds_low = _ri_funds  # new low pe funds bhi track karo
-                    # FIX v65: 1% → 3% reversal threshold + funds bhi badhni chahiye
-                    elif _ri_price > _price_low * 1.03:
-                        _funds_rising = _ri_funds > _funds_low * 1.01  # real buyer aaya
+                        _ri_funds_prev = _ri_funds
+                    # FIX v68: 1.03→1.02 threshold + funds acceleration (2 consecutive ticks rising)
+                    elif _ri_price > _price_low * 1.02:
+                        _funds_tick1 = _ri_funds > _funds_low * 1.005       # current tick rising
+                        _funds_tick2 = _ri_funds_prev > _funds_low           # prev tick bhi rising tha
+                        _funds_rising = _funds_tick1 and _funds_tick2        # dono chahiye = acceleration
                         if _funds_rising:
                             # FIX v65: bundle bot reversal check — same block 4+ wallets = fake
                             _bundle_reversal = False
@@ -6213,7 +6217,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                                 _entry_type = "waited"
                                 break
                         else:
-                            print(f"⏳ [FM] Price +3% but funds flat — waiting real buyer: {_ri_price:.2e}")
+                            print(f"⏳ [FM] Price +2% but funds not accelerating — waiting real buyer: {_ri_price:.2e}")
+                    _ri_funds_prev = _ri_funds  # FIX v68: prev update karo har tick
                 except Exception:
                     break
             if not _reversal_found:
@@ -6227,6 +6232,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _sell_pressure = True
                 _price_low = _entry_price_check
                 _funds_low = _fh[-1] if _fh else 0
+                _ri_funds_prev = _funds_low  # FIX v68: acceleration track
                 _reversal_found = False
                 for _ri in range(50):
                     time.sleep(0.2)
@@ -6241,8 +6247,12 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         if _ri_price < _price_low:
                             _price_low = _ri_price
                             _funds_low = _ri_funds
-                        elif _ri_price > _price_low * 1.03:
-                            _funds_rising = _ri_funds > _funds_low * 1.01
+                            _ri_funds_prev = _ri_funds
+                        # FIX v68: 1.03→1.02 + funds acceleration
+                        elif _ri_price > _price_low * 1.02:
+                            _funds_tick1 = _ri_funds > _funds_low * 1.005
+                            _funds_tick2 = _ri_funds_prev > _funds_low
+                            _funds_rising = _funds_tick1 and _funds_tick2
                             if _funds_rising:
                                 _bundle_reversal = False
                                 if _block_wallets_curr:
@@ -6251,13 +6261,14 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                                         _bundle_reversal = True
                                         print(f"🚫 [FM] Bundle bot reversal detected in direct-redirect: {len(_block_wallets_curr[_latest_blk])} wallets")
                                 if not _bundle_reversal:
-                                    print(f"✅ [FM] Reversal confirmed (direct-redirect): price={_ri_price:.2e} funds rising — ENTERING")
+                                    print(f"✅ [FM] Reversal confirmed (direct-redirect): price={_ri_price:.2e} funds accelerating — ENTERING")
                                     _entry_price_check = _ri_price
                                     _reversal_found = True
                                     _entry_type = "waited"
                                     break
                             else:
-                                print(f"⏳ [FM] Price +3% but funds flat (direct-redirect): {_ri_price:.2e}")
+                                print(f"⏳ [FM] Price +2% but funds not accelerating (direct-redirect): {_ri_price:.2e}")
+                        _ri_funds_prev = _ri_funds  # prev update har tick
                     except Exception:
                         break
                 if not _reversal_found:
