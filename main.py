@@ -6190,11 +6190,19 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     elif _ri_price > _price_low * 1.03:
                         _funds_rising = _ri_funds > _funds_low * 1.01  # real buyer aaya
                         if _funds_rising:
-                            print(f"✅ [FM] Reversal confirmed: price={_ri_price:.2e} low={_price_low:.2e} funds rising — ENTERING")
-                            _entry_price_check = _ri_price
-                            _reversal_found = True
-                            _entry_type = "waited"
-                            break
+                            # FIX v65: bundle bot reversal check — same block 4+ wallets = fake
+                            _bundle_reversal = False
+                            if _block_wallets_curr:
+                                _latest_blk = max(_block_wallets_curr.keys())
+                                if len(_block_wallets_curr[_latest_blk]) >= 4:
+                                    _bundle_reversal = True
+                                    print(f"🚫 [FM] Bundle bot reversal detected: {len(_block_wallets_curr[_latest_blk])} wallets same block — skipping")
+                            if not _bundle_reversal:
+                                print(f"✅ [FM] Reversal confirmed: price={_ri_price:.2e} low={_price_low:.2e} funds rising — ENTERING")
+                                _entry_price_check = _ri_price
+                                _reversal_found = True
+                                _entry_type = "waited"
+                                break
                         else:
                             print(f"⏳ [FM] Price +3% but funds flat — waiting real buyer: {_ri_price:.2e}")
                 except Exception:
