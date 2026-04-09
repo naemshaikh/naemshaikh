@@ -6153,6 +6153,13 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _ph = _price_history
         _fh = _funds_history
 
+        # FIX v67: Peak already pass check — 2 consecutive drops = dump shuru ho gaya
+        # No extra wait/RPC needed — momentum loop ka already fetched data use ho raha hai
+        if len(_ph) >= 3:
+            _already_dumping = (_ph[-1] < _ph[-2]) and (_ph[-2] < _ph[-3])
+            if _already_dumping:
+                print(f"⚠️ [FM] Peak already passed — 2 consecutive drops detected ({_ph[-3]:.2e}→{_ph[-2]:.2e}→{_ph[-1]:.2e}) — forcing reversal wait")
+
         if len(_ph) >= 2:
             _price_falling = _ph[-1] < _ph[-2]   # strictly gir raha ho
         else:
@@ -6165,7 +6172,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             _vol_falling = _price_falling
 
         # FIX v65: Sell pressure = price OR vol gir raha ho (pehle AND tha — half signal miss hota tha)
-        _sell_pressure = _price_falling or _vol_falling
+        # FIX v67: already_dumping bhi force karo sell pressure mein
+        _already_dumping = _already_dumping if len(_ph) >= 3 else False
+        _sell_pressure = _price_falling or _vol_falling or _already_dumping
 
         if _sell_pressure:
             # Sell pressure hai — reversal ka wait karo max 10s
