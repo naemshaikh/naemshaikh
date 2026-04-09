@@ -6162,14 +6162,15 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         else:
             _vol_falling = _price_falling
 
-        # Sell pressure = price actually gir raha ho (flat = ok, rising = ok)
-        _sell_pressure = _price_falling and _vol_falling
+        # FIX v65: Sell pressure = price OR vol gir raha ho (pehle AND tha — half signal miss hota tha)
+        _sell_pressure = _price_falling or _vol_falling
 
         if _sell_pressure:
             # Sell pressure hai — reversal ka wait karo max 10s
             print(f"⏳ [FM] Sell pressure at entry — waiting reversal (max 10s)")
             _reversal_found = False
             _price_low = _entry_price_check
+            _funds_low = _fh[-1] if _fh else 0
             for _ri in range(50):  # 50 x 0.2s = 10s max
                 time.sleep(0.2)
                 try:
@@ -6178,16 +6179,22 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     if _ri_info.get("liquidityAdded"):
                         _skip("graduated during entry wait"); return
                     _ri_price = _ri_info.get("lastPrice", 0)
+                    _ri_funds = _ri_info.get("funds", 0)
                     if _ri_price <= 0: continue
                     if _ri_price < _price_low:
                         _price_low = _ri_price
-                    elif _ri_price > _price_low * 1.01:
-                        # Low se 1% upar = sellers gone, reversal confirm
-                        print(f"✅ [FM] Reversal confirmed: price={_ri_price:.2e} low={_price_low:.2e} — ENTERING")
-                        _entry_price_check = _ri_price
-                        _reversal_found = True
-                        _entry_type = "waited"
-                        break
+                        _funds_low = _ri_funds  # new low pe funds bhi track karo
+                    # FIX v65: 1% → 3% reversal threshold + funds bhi badhni chahiye
+                    elif _ri_price > _price_low * 1.03:
+                        _funds_rising = _ri_funds > _funds_low * 1.01  # real buyer aaya
+                        if _funds_rising:
+                            print(f"✅ [FM] Reversal confirmed: price={_ri_price:.2e} low={_price_low:.2e} funds rising — ENTERING")
+                            _entry_price_check = _ri_price
+                            _reversal_found = True
+                            _entry_type = "waited"
+                            break
+                        else:
+                            print(f"⏳ [FM] Price +3% but funds flat — waiting real buyer: {_ri_price:.2e}")
                 except Exception:
                     break
             if not _reversal_found:
