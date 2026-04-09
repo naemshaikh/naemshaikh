@@ -4790,8 +4790,16 @@ _fm_dev_cache_lock = threading.Lock()
 
 # Global FM w3 — PC wala hi reuse karo
 def _fm_get_w3():
-    """Free RPC — polling aur filters ke liye"""
-    for rpc in ["https://bsc-rpc.publicnode.com", "https://bsc.drpc.org", "https://1rpc.io/bnb"]:
+    """Free RPC — polling aur filters ke liye (v72: expanded pool)"""
+    for rpc in [
+        "https://bsc-rpc.publicnode.com",
+        "https://bsc-dataseed.binance.org/",
+        "https://bsc-dataseed1.defibit.io/",
+        "https://bsc-dataseed1.ninicoin.io/",
+        "https://bsc.drpc.org",
+        "https://binance.llamarpc.com",
+        "https://1rpc.io/bnb",
+    ]:
         try:
             return Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 5}))
         except: continue
@@ -5957,8 +5965,11 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     results_dict["tb"] = _total_buys
                     results_dict["bw"] = _block_wallets_curr
                     return
+                # FIX v72: buyers free RPC pe — QuickNode sirf price ke liye
                 try:
-                    ub, tb, bw = _fm_get_unique_buyers(token_addr, w3)
+                    _w3_free = _fm_get_w3()
+                    _w3_buyers = _w3_free if _w3_free else w3
+                    ub, tb, bw = _fm_get_unique_buyers(token_addr, _w3_buyers)
                     results_dict["ub"] = ub
                     results_dict["tb"] = tb
                     results_dict["bw"] = bw
@@ -6034,6 +6045,18 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 if recent_price_up and recent_vol_drop:
                     reasons.append("pump_with_vol_drop")
                     score -= 1
+
+            # FIX v72: Option 2 — Volume flow deceleration (dev pump detector)
+            # Dev pump: early ticks mein heavy BNB flow, late ticks mein near-zero
+            # Genuine: BNB flow consistent throughout
+            if len(funds_history) >= 4:
+                _fd = [funds_history[i] - funds_history[i-1] for i in range(1, len(funds_history))]
+                _n  = len(_fd)
+                _early_vol = sum(_fd[:_n//2]) / max(_n//2, 1) / 1e18
+                _late_vol  = sum(_fd[_n//2:]) / max(_n - _n//2, 1) / 1e18
+                if _early_vol > 0.003 and _late_vol < _early_vol * 0.25:
+                    reasons.append(f"vol_flow_dead(e={_early_vol:.4f} l={_late_vol:.4f}BNB)")
+                    score -= 2
 
             genuine = score >= 6
             return genuine, reasons, score
