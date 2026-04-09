@@ -6211,7 +6211,51 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _entry_type = "skipped"
                 _skip("sell pressure — no reversal in 10s"); return
         else:
-            print(f"✅ [FM] Buy pressure confirmed (price={'falling' if _price_falling else 'rising/flat'} vol={'falling' if _vol_falling else 'rising/flat'}) — ENTERING NOW")
+            # FIX v66: Direct entry pe funds bhi confirm karo — price upar but funds flat/gir raha = fake pump
+            _direct_funds_ok = len(_fh) < 2 or _fh[-1] >= _fh[-2]
+            if not _direct_funds_ok:
+                print(f"⏳ [FM] Price rising but funds falling — redirecting to reversal wait")
+                _sell_pressure = True
+                _price_low = _entry_price_check
+                _funds_low = _fh[-1] if _fh else 0
+                _reversal_found = False
+                for _ri in range(50):
+                    time.sleep(0.2)
+                    try:
+                        _ri_info = _get_token_info_cached(token_addr, w3, ttl=0.1)
+                        if not _ri_info: break
+                        if _ri_info.get("liquidityAdded"):
+                            _skip("graduated during entry wait"); return
+                        _ri_price = _ri_info.get("lastPrice", 0)
+                        _ri_funds = _ri_info.get("funds", 0)
+                        if _ri_price <= 0: continue
+                        if _ri_price < _price_low:
+                            _price_low = _ri_price
+                            _funds_low = _ri_funds
+                        elif _ri_price > _price_low * 1.03:
+                            _funds_rising = _ri_funds > _funds_low * 1.01
+                            if _funds_rising:
+                                _bundle_reversal = False
+                                if _block_wallets_curr:
+                                    _latest_blk = max(_block_wallets_curr.keys())
+                                    if len(_block_wallets_curr[_latest_blk]) >= 4:
+                                        _bundle_reversal = True
+                                        print(f"🚫 [FM] Bundle bot reversal detected in direct-redirect: {len(_block_wallets_curr[_latest_blk])} wallets")
+                                if not _bundle_reversal:
+                                    print(f"✅ [FM] Reversal confirmed (direct-redirect): price={_ri_price:.2e} funds rising — ENTERING")
+                                    _entry_price_check = _ri_price
+                                    _reversal_found = True
+                                    _entry_type = "waited"
+                                    break
+                            else:
+                                print(f"⏳ [FM] Price +3% but funds flat (direct-redirect): {_ri_price:.2e}")
+                    except Exception:
+                        break
+                if not _reversal_found:
+                    _entry_type = "skipped"
+                    _skip("direct funds fake — no reversal in 10s"); return
+            else:
+                print(f"✅ [FM] Buy pressure confirmed (price={'falling' if _price_falling else 'rising/flat'} vol={'falling' if _vol_falling else 'rising/flat'}) — ENTERING NOW")
 
         # ========== BUY EXECUTION ==========
         size_bnb = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
