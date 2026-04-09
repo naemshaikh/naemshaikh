@@ -1036,7 +1036,7 @@ async function downloadTrades(count){
   window._lastHistData = hist;  // global mein save karo confirmDownload ke liye
   if(!hist.length){ alert('Koi trade nahi mila!'); return; }
   var rows = (!count || count==='all') ? hist : hist.slice(0, parseInt(count));
-  var cols = ['token','address','result','pnl_pct','pnl_bnb','size_bnb','entry','sold_at','bought_at','reason'];
+  var cols = ['token','address','result','pnl_pct','pnl_bnb','size_bnb','entry','sold_at','bought_at','reason','entry_type','momentum_pct','buyers_at_entry','pump_at_entry','hold_minutes'];
   var csv  = cols.join(',') + '\n';
   rows.forEach(function(t){
     var line = cols.map(function(c){
