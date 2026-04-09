@@ -6193,106 +6193,109 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _already_dumping = _already_dumping if len(_ph) >= 3 else False
         _sell_pressure = _price_falling or _vol_falling or _already_dumping or _velocity_spike
 
-        if _sell_pressure:
-            # Sell pressure hai — reversal ka wait karo max 10s
-            print(f"⏳ [FM] Sell pressure at entry — waiting reversal (max 10s)")
-            _reversal_found = False
-            _price_low = _entry_price_check
-            _funds_low = _fh[-1] if _fh else 0
-            _ri_funds_prev = _funds_low  # FIX v68: acceleration track ke liye
+        # FIX v70: Reversal wait — parallel prefetch function (dono loops same the, ek mein merge)
+        def _reversal_wait_parallel(label=""):
+            """Reversal wait — prefetch next tick during sleep for faster response"""
+            _rv_found   = False
+            _p_low      = _entry_price_check
+            _f_low      = _fh[-1] if _fh else 0
+            _f_prev     = _f_low
+
+            # Pre-fetch nonce parallel mein — buy ke liye ready rehna
+            _nonce_ready = [None]
+            def _prefetch_nonce():
+                try:
+                    _w3n = _get_w3q() or _fm_get_w3()
+                    if _w3n and (BSC_WALLET or REAL_WALLET):
+                        _nonce_ready[0] = _w3n.eth.get_transaction_count(
+                            Web3.to_checksum_address(BSC_WALLET or REAL_WALLET), "pending")
+                except: pass
+
+            # Start: next tick fetch preflight
+            _next_fut = [None]
+            def _submit_next():
+                try:
+                    _next_fut[0] = _mom_executor.submit(
+                        _get_token_info_cached, token_addr, w3, 0.1)
+                except: _next_fut[0] = None
+
+            _submit_next()  # first fetch shuru karo
+
             for _ri in range(50):  # 50 x 0.2s = 10s max
                 time.sleep(0.2)
+                # Current result lo (already fetching tha sleep ke dauran)
+                _ri_info = None
                 try:
-                    _ri_info = _get_token_info_cached(token_addr, w3, ttl=0.1)
-                    if not _ri_info: break
-                    if _ri_info.get("liquidityAdded"):
-                        _skip("graduated during entry wait"); return
-                    _ri_price = _ri_info.get("lastPrice", 0)
-                    _ri_funds = _ri_info.get("funds", 0)
-                    if _ri_price <= 0: continue
-                    if _ri_price < _price_low:
-                        _price_low = _ri_price
-                        _funds_low = _ri_funds  # new low pe funds bhi track karo
-                        _ri_funds_prev = _ri_funds
-                    # FIX v68: 1.03→1.02 threshold + funds acceleration (2 consecutive ticks rising)
-                    elif _ri_price > _price_low * 1.02:
-                        _funds_tick1 = _ri_funds > _funds_low * 1.005       # current tick rising
-                        _funds_tick2 = _ri_funds_prev > _funds_low           # prev tick bhi rising tha
-                        _funds_rising = _funds_tick1 and _funds_tick2        # dono chahiye = acceleration
-                        if _funds_rising:
-                            # FIX v65: bundle bot reversal check — same block 4+ wallets = fake
-                            _bundle_reversal = False
-                            if _block_wallets_curr:
-                                _latest_blk = max(_block_wallets_curr.keys())
-                                if len(_block_wallets_curr[_latest_blk]) >= 4:
-                                    _bundle_reversal = True
-                                    print(f"🚫 [FM] Bundle bot reversal detected: {len(_block_wallets_curr[_latest_blk])} wallets same block — skipping")
-                            if not _bundle_reversal:
-                                print(f"✅ [FM] Reversal confirmed: price={_ri_price:.2e} low={_price_low:.2e} funds rising — ENTERING")
-                                _entry_price_check = _ri_price
-                                _reversal_found = True
-                                _entry_type = "waited"
-                                break
-                        else:
-                            print(f"⏳ [FM] Price +2% but funds not accelerating — waiting real buyer: {_ri_price:.2e}")
-                    _ri_funds_prev = _ri_funds  # FIX v68: prev update karo har tick
-                except Exception:
-                    break
-            if not _reversal_found:
+                    if _next_fut[0]:
+                        _ri_info = _next_fut[0].result(timeout=0.15)
+                except: pass
+                # Fallback agar future fail hua
+                if not _ri_info:
+                    try: _ri_info = _get_token_info_cached(token_addr, w3, ttl=0.1)
+                    except: pass
+                # Agla tick prefetch shuru karo immediately
+                _submit_next()
+
+                if not _ri_info: break
+                if _ri_info.get("liquidityAdded"):
+                    _skip("graduated during entry wait"); return False, _p_low
+
+                _ri_price = _ri_info.get("lastPrice", 0)
+                _ri_funds = _ri_info.get("funds",     0)
+                if _ri_price <= 0: continue
+
+                if _ri_price < _p_low:
+                    _p_low  = _ri_price
+                    _f_low  = _ri_funds
+                    _f_prev = _ri_funds
+                    # Nonce prefetch start karo jab price low ho — entry ho sakti hai
+                    if _nonce_ready[0] is None:
+                        _mom_executor.submit(_prefetch_nonce)
+
+                elif _ri_price > _p_low * 1.02:
+                    _f_tick1 = _ri_funds > _f_low  * 1.005
+                    _f_tick2 = _f_prev   > _f_low
+                    _f_rising = _f_tick1 and _f_tick2
+
+                    if _f_rising:
+                        _bundle = False
+                        if _block_wallets_curr:
+                            _lb = max(_block_wallets_curr.keys())
+                            if len(_block_wallets_curr[_lb]) >= 4:
+                                _bundle = True
+                                print(f"🚫 [FM] Bundle bot reversal{' ('+label+')' if label else ''}: {len(_block_wallets_curr[_lb])} wallets same block")
+                        if not _bundle:
+                            print(f"✅ [FM] Reversal confirmed{' ('+label+')' if label else ''}: price={_ri_price:.2e} low={_p_low:.2e} funds accelerating — ENTERING")
+                            _rv_found = True
+                            break
+                    else:
+                        print(f"⏳ [FM] Price +2% but funds flat{' ('+label+')' if label else ''}: {_ri_price:.2e}")
+
+                _f_prev = _ri_funds
+
+            return _rv_found, _p_low
+
+        if _sell_pressure:
+            print(f"⏳ [FM] Sell pressure at entry — waiting reversal (max 10s)")
+            _rv_ok, _rv_low = _reversal_wait_parallel("sell-pressure")
+            if not _rv_ok:
                 _entry_type = "skipped"
                 _skip("sell pressure — no reversal in 10s"); return
+            _entry_price_check = _rv_low
+            _entry_type = "waited"
         else:
-            # FIX v66: Direct entry pe funds bhi confirm karo — price upar but funds flat/gir raha = fake pump
+            # FIX v66: Direct entry pe funds confirm karo
             _direct_funds_ok = len(_fh) < 2 or _fh[-1] >= _fh[-2]
             if not _direct_funds_ok:
                 print(f"⏳ [FM] Price rising but funds falling — redirecting to reversal wait")
-                _sell_pressure = True
-                _price_low = _entry_price_check
-                _funds_low = _fh[-1] if _fh else 0
-                _ri_funds_prev = _funds_low  # FIX v68: acceleration track
-                _reversal_found = False
-                for _ri in range(50):
-                    time.sleep(0.2)
-                    try:
-                        _ri_info = _get_token_info_cached(token_addr, w3, ttl=0.1)
-                        if not _ri_info: break
-                        if _ri_info.get("liquidityAdded"):
-                            _skip("graduated during entry wait"); return
-                        _ri_price = _ri_info.get("lastPrice", 0)
-                        _ri_funds = _ri_info.get("funds", 0)
-                        if _ri_price <= 0: continue
-                        if _ri_price < _price_low:
-                            _price_low = _ri_price
-                            _funds_low = _ri_funds
-                            _ri_funds_prev = _ri_funds
-                        # FIX v68: 1.03→1.02 + funds acceleration
-                        elif _ri_price > _price_low * 1.02:
-                            _funds_tick1 = _ri_funds > _funds_low * 1.005
-                            _funds_tick2 = _ri_funds_prev > _funds_low
-                            _funds_rising = _funds_tick1 and _funds_tick2
-                            if _funds_rising:
-                                _bundle_reversal = False
-                                if _block_wallets_curr:
-                                    _latest_blk = max(_block_wallets_curr.keys())
-                                    if len(_block_wallets_curr[_latest_blk]) >= 4:
-                                        _bundle_reversal = True
-                                        print(f"🚫 [FM] Bundle bot reversal detected in direct-redirect: {len(_block_wallets_curr[_latest_blk])} wallets")
-                                if not _bundle_reversal:
-                                    print(f"✅ [FM] Reversal confirmed (direct-redirect): price={_ri_price:.2e} funds accelerating — ENTERING")
-                                    _entry_price_check = _ri_price
-                                    _reversal_found = True
-                                    _entry_type = "waited"
-                                    break
-                            else:
-                                print(f"⏳ [FM] Price +2% but funds not accelerating (direct-redirect): {_ri_price:.2e}")
-                        _ri_funds_prev = _ri_funds  # prev update har tick
-                    except Exception:
-                        break
-                if not _reversal_found:
+                _rv_ok, _rv_low = _reversal_wait_parallel("direct-redirect")
+                if not _rv_ok:
                     _entry_type = "skipped"
                     _skip("direct funds fake — no reversal in 10s"); return
+                _entry_price_check = _rv_low
+                _entry_type = "waited"
             else:
-                print(f"✅ [FM] Buy pressure confirmed (price={'falling' if _price_falling else 'rising/flat'} vol={'falling' if _vol_falling else 'rising/flat'}) — ENTERING NOW")
+                print(f"✅ [FM] Buy pressure confirmed — ENTERING NOW")
 
         # ========== BUY EXECUTION ==========
         size_bnb = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
