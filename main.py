@@ -5982,7 +5982,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             try: f2.result(timeout=0.8)
             except: pass
 
-        def _check_genuine(price_history, funds_history, ub_history, price_samples):
+        def _check_genuine(price_history, funds_history, ub_history, price_samples, total_buys=0, block_wallets=None):
             score = 0
             reasons = []
 
@@ -6004,14 +6004,14 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 reasons.append("vol_flat_or_dying(" + str(green_vol) + "/6)")
 
             # 3. Holders strictly increasing (only if enough data)
+            # FIX v74: free +2 remove — fast dev pumps ko undeserved score nahi milega
             if len(ub_history) >= 6:
                 green_holders = sum(1 for i in range(1, len(ub_history)) if ub_history[i] > ub_history[i-1])
                 if green_holders >= 5:
                     score += 2
                 else:
                     reasons.append("holders_stagnant(" + str(green_holders) + "/6)")
-            else:
-                score += 2  # data nahi hai — penalize mat karo
+            # else: insufficient data — no points, no penalty (was giving free +2 before)
 
             # 4. No big spike (bot wash trade)
             steady = True
@@ -6059,6 +6059,38 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     reasons.append(f"vol_flow_dead(ratio={_late_avg/max(_early_avg,1):.2f})")
                     score -= 2
 
+            # 7. FIX v74: Buys-per-wallet ratio — dev cycling wallets detect karo
+            # No new RPC call — total_buys already fetched in _parallel_fetch
+            if total_buys > 0 and len(ub_history) >= 2:
+                _ub_curr = ub_history[-1]
+                if _ub_curr > 0:
+                    _bpw = total_buys / _ub_curr
+                    # >4 buys per wallet = same wallets repeat buying = dev pump signal
+                    if _bpw > 4.0:
+                        reasons.append(f"wallet_cycling(bpw={_bpw:.1f})")
+                        score -= 2
+
+            # 8. FIX v74: Cross-block repeat wallet analysis — dev ke wallets same hote hain
+            # No new RPC call — block_wallets already in _block_wallets_curr
+            if block_wallets and len(block_wallets) >= 3:
+                _blocks = sorted(block_wallets.keys())
+                _seen_wallets = set()
+                _total_appearances = 0
+                _repeat_appearances = 0
+                for _blk in _blocks:
+                    for _w in block_wallets[_blk]:
+                        _total_appearances += 1
+                        if _w in _seen_wallets:
+                            _repeat_appearances += 1
+                        else:
+                            _seen_wallets.add(_w)
+                if _total_appearances > 0:
+                    _repeat_rate = _repeat_appearances / _total_appearances
+                    # >40% repeat wallet appearances across blocks = dev cycling
+                    if _repeat_rate > 0.40:
+                        reasons.append(f"repeat_wallets({_repeat_rate:.0%})")
+                        score -= 2
+
             genuine = score >= 6
             return genuine, reasons, score
         while time.time() < _t_end_loop and not _BOT_SHUTDOWN:
@@ -6101,7 +6133,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _basic_ok = _momentum_current >= _target_momentum and _ub >= _fm_filters['buyers_min'] and _vol_ok
                 if _basic_ok:
                     _is_genuine, _fail_reasons, _gm_score = _check_genuine(
-                        _price_history, _funds_history, _ub_history, _price_samples
+                        _price_history, _funds_history, _ub_history, _price_samples,
+                        total_buys=_total_buys, block_wallets=_block_wallets_curr
                     )
                     _funds_prev = _funds2; _bc_prev = _bc_curr
                     if _is_genuine:
