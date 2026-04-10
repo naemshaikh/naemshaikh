@@ -6046,16 +6046,17 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     reasons.append("pump_with_vol_drop")
                     score -= 1
 
-            # FIX v72: Option 2 — Volume flow deceleration (dev pump detector)
-            # Dev pump: early ticks mein heavy BNB flow, late ticks mein near-zero
-            # Genuine: BNB flow consistent throughout
+            # FIX v73: Vol flow deceleration — relative ratio (absolute BNB threshold kaam nahi karta)
+            # Dev pump: early ticks mein heavy flow, late ticks mein near-zero — BC level se independent
+            # Genuine pump: flow consistent throughout ya late mein bhi active
             if len(funds_history) >= 4:
                 _fd = [funds_history[i] - funds_history[i-1] for i in range(1, len(funds_history))]
                 _n  = len(_fd)
-                _early_vol = sum(_fd[:_n//2]) / max(_n//2, 1) / 1e18
-                _late_vol  = sum(_fd[_n//2:]) / max(_n - _n//2, 1) / 1e18
-                if _early_vol > 0.003 and _late_vol < _early_vol * 0.25:
-                    reasons.append(f"vol_flow_dead(e={_early_vol:.4f} l={_late_vol:.4f}BNB)")
+                _early_avg = sum(_fd[:_n//2]) / max(_n//2, 1)
+                _late_avg  = sum(_fd[_n//2:]) / max(_n - _n//2, 1)
+                # Early mein kuch bhi flow hua ho — agar late mein 80%+ drop = dev ruk gaya
+                if _early_avg > 0 and _late_avg < _early_avg * 0.20:
+                    reasons.append(f"vol_flow_dead(ratio={_late_avg/max(_early_avg,1):.2f})")
                     score -= 2
 
             genuine = score >= 6
