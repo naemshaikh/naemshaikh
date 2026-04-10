@@ -6044,7 +6044,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 recent_price_up = price_history[-1] > price_history[-2]
                 if recent_price_up and recent_vol_drop:
                     reasons.append("pump_with_vol_drop")
-                    score -= 1
+                    score -= 2  # FIX v75: -1→-2, price up + vol drop = classic dev bag dump signal
 
             # FIX v73: Vol flow deceleration — relative ratio (absolute BNB threshold kaam nahi karta)
             # Dev pump: early ticks mein heavy flow, late ticks mein near-zero — BC level se independent
@@ -6054,8 +6054,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _n  = len(_fd)
                 _early_avg = sum(_fd[:_n//2]) / max(_n//2, 1)
                 _late_avg  = sum(_fd[_n//2:]) / max(_n - _n//2, 1)
-                # Early mein kuch bhi flow hua ho — agar late mein 80%+ drop = dev ruk gaya
-                if _early_avg > 0 and _late_avg < _early_avg * 0.20:
+                # FIX v75: 20%→35% — dev pump mein late flow moderate bhi dev ka hota hai, 35% zyada catches karega
+                if _early_avg > 0 and _late_avg < _early_avg * 0.35:
                     reasons.append(f"vol_flow_dead(ratio={_late_avg/max(_early_avg,1):.2f})")
                     score -= 2
 
@@ -6091,7 +6091,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         reasons.append(f"repeat_wallets({_repeat_rate:.0%})")
                         score -= 2
 
-            genuine = score >= 6
+            genuine = score >= 7  # FIX v75: 6→7, max score=8, dev pump ko ab ek bhi penalty nahi chalegi
             return genuine, reasons, score
         while time.time() < _t_end_loop and not _BOT_SHUTDOWN:
             try:
