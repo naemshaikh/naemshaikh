@@ -6066,7 +6066,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 if _ub_curr > 0:
                     _bpw = total_buys / _ub_curr
                     # >4 buys per wallet = same wallets repeat buying = dev pump signal
-                    if _bpw > 4.0:
+                    if _bpw > 6.0:  # FIX v78: 4.0→6.0, FM BC pe natural early repeat buying allow
                         reasons.append(f"wallet_cycling(bpw={_bpw:.1f})")
                         score -= 2
 
