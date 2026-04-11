@@ -6044,7 +6044,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 recent_price_up = price_history[-1] > price_history[-2]
                 if recent_price_up and recent_vol_drop:
                     reasons.append("pump_with_vol_drop")
-                    score -= 1  # FIX v76: -2→-1, soft signal — consolidation bhi possible, vol_flow_dead handles hard cases
+                    score -= 2  # FIX v80: -1→-2 wapas, strong dev dump signal
 
             # FIX v73: Vol flow deceleration — relative ratio (absolute BNB threshold kaam nahi karta)
             # Dev pump: early ticks mein heavy flow, late ticks mein near-zero — BC level se independent
@@ -6055,7 +6055,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _early_avg = sum(_fd[:_n//2]) / max(_n//2, 1)
                 _late_avg  = sum(_fd[_n//2:]) / max(_n - _n//2, 1)
                 # FIX v75: 20%→35% — dev pump mein late flow moderate bhi dev ka hota hai, 35% zyada catches karega
-                if _early_avg > 0 and _late_avg < _early_avg * 0.25:  # FIX v77: 35%→25%, less aggressive catch
+                if _early_avg > 0 and _late_avg < _early_avg * 0.35:  # FIX v80: 25%→35% wapas
                     reasons.append(f"vol_flow_dead(ratio={_late_avg/max(_early_avg,1):.2f})")
                     score -= 2
 
