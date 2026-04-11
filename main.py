@@ -6091,6 +6091,23 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         reasons.append(f"repeat_wallets({_repeat_rate:.0%})")
                         score -= 2
 
+            # FIX v82: Early price peak — pump already peaked, last 2 ticks mein nahi hai
+            if len(price_history) >= 6:
+                max_idx = price_history.index(max(price_history))
+                if max_idx <= len(price_history) - 3:
+                    reasons.append("early_price_peak(idx=" + str(max_idx) + ")")
+                    score -= 2
+
+            # FIX v82: Momentum jerk — early strong, late 75% se kam
+            if len(price_history) >= 5:
+                _pd = [price_history[i] - price_history[i-1] for i in range(1, len(price_history))]
+                if len(_pd) >= 4:
+                    _early_mom = sum(_pd[:2]) / 2
+                    _late_mom = sum(_pd[-2:]) / 2
+                    if _early_mom > 0 and _late_mom < _early_mom * 0.25:
+                        reasons.append(f"momentum_jerk(ratio={_late_mom/max(_early_mom,1e-18):.2f})")
+                        score -= 2
+
             genuine = score >= 6  # FIX v79: 7→6, ek penalty allow
             return genuine, reasons, score
         while time.time() < _t_end_loop and not _BOT_SHUTDOWN:
