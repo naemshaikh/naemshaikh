@@ -6127,6 +6127,17 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     reasons.append("buyers_stopped_coming")
                     score -= 2
 
+            # FIX v84: Dev pump detection — price bahut move kiya lekin naye buyers nahi aaye
+            # No RPC — price_history + ub_history already in memory
+            # Dev pump: dev khud buy karta hai — price upar, unique buyers same rehte hain
+            # Genuine pump: price up + naye log aa rahe hain window mein
+            if len(price_history) >= 4 and len(ub_history) >= 4:
+                _price_mult = price_history[-1] / max(price_history[0], 1e-18)
+                _new_ub_in_window = ub_history[-1] - ub_history[0]
+                if _price_mult > 1.3 and _new_ub_in_window < 3:
+                    reasons.append(f"dev_pump_no_organic_buyers(x{_price_mult:.1f},new_ub={_new_ub_in_window})")
+                    score -= 3
+
             genuine = score >= 6  # FIX v79: 7→6, ek penalty allow
             return genuine, reasons, score
         while time.time() < _t_end_loop and not _BOT_SHUTDOWN:
