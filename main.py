@@ -4755,11 +4755,11 @@ def _fm_get_unique_buyers(token_addr, w3=None):
         buyers = set()
         recent_buys = 0
         block_wallets = {}
+        wallet_amounts = {}  # v85: wallet → total token amount, parsed from logs (no extra RPC)
         for log in logs:
             if len(log["topics"]) < 3: continue
             from_addr = "0x" + log["topics"][1].hex()[-40:].lower()
             to_addr   = "0x" + log["topics"][2].hex()[-40:].lower()
-            # Sirf factory se receive karne wale = actual buyers
             if from_addr == _FM_FACTORY_L and to_addr not in [_ZERO, _DEAD]:
                 buyers.add(to_addr)
                 if log["blockNumber"] >= current - 20:
@@ -4768,10 +4768,16 @@ def _fm_get_unique_buyers(token_addr, w3=None):
                 if blk not in block_wallets:
                     block_wallets[blk] = set()
                 block_wallets[blk].add(to_addr)
-        return len(buyers), recent_buys, block_wallets
+                try:
+                    _raw = log["data"]
+                    _amt = int(_raw.hex(), 16) if hasattr(_raw, "hex") else int(_raw, 16)
+                    wallet_amounts[to_addr] = wallet_amounts.get(to_addr, 0) + _amt
+                except Exception:
+                    pass
+        return len(buyers), recent_buys, block_wallets, wallet_amounts
     except Exception as e:
         print(f"⚠️ [FM] buyers fetch error: {str(e)[:50]}")
-        return 0, 0, {}
+        return 0, 0, {}, {}
 
 _fm_sniped      = set()
 _fm_sniped_lock = threading.Lock()
@@ -5935,6 +5941,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _total_buys = 0
         _block_wallets_prev = {}
         _block_wallets_curr = {}
+        _wallet_amounts_curr = {}  # v85: wallet → token amount for concentration checks
         _funds_prev = _funds1
         _bc_prev = 0.0
         _fake_count = 0
@@ -5964,17 +5971,19 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     results_dict["ub"] = _ub          # cached value reuse
                     results_dict["tb"] = _total_buys
                     results_dict["bw"] = _block_wallets_curr
+                    results_dict["wa"] = _wallet_amounts_curr  # v85: cached wallet amounts
                     return
                 # FIX v72: buyers free RPC pe — QuickNode sirf price ke liye
                 try:
                     _w3_free = _fm_get_w3()
                     _w3_buyers = _w3_free if _w3_free else w3
-                    ub, tb, bw = _fm_get_unique_buyers(token_addr, _w3_buyers)
+                    ub, tb, bw, wa = _fm_get_unique_buyers(token_addr, _w3_buyers)
                     results_dict["ub"] = ub
                     results_dict["tb"] = tb
                     results_dict["bw"] = bw
+                    results_dict["wa"] = wa  # v85: wallet amounts
                 except Exception:
-                    results_dict["ub"] = _ub; results_dict["tb"] = _total_buys; results_dict["bw"] = _block_wallets_curr
+                    results_dict["ub"] = _ub; results_dict["tb"] = _total_buys; results_dict["bw"] = _block_wallets_curr; results_dict["wa"] = {}
             f1 = _mom_executor.submit(_fetch_price)
             f2 = _mom_executor.submit(_fetch_buyers)
             try: f1.result(timeout=0.8)
@@ -5982,7 +5991,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             try: f2.result(timeout=0.8)
             except: pass
 
-        def _check_genuine(price_history, funds_history, ub_history, price_samples, total_buys=0, block_wallets=None):
+        def _check_genuine(price_history, funds_history, ub_history, price_samples, total_buys=0, block_wallets=None, wallet_amounts=None):
             score = 0
             reasons = []
 
@@ -6138,6 +6147,39 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     reasons.append(f"dev_pump_no_organic_buyers(x{_price_mult:.1f},new_ub={_new_ub_in_window})")
                     score -= 3
 
+            # v85: PRO BUNDLE DETECTION — same block mein zyada wallets = coordinated bundle
+            # No extra RPC — block_wallets already fetched in _parallel_fetch (free RPC)
+            # Signal: ek hi block mein 40%+ of all unique buyers = dev/bot bundle
+            if block_wallets and ub_history and ub_history[-1] > 0:
+                _max_blk_wallets = max(len(v) for v in block_wallets.values())
+                _bundle_ratio = _max_blk_wallets / ub_history[-1]
+                if _bundle_ratio > 0.40:
+                    reasons.append(f"bundle_concentration({_bundle_ratio:.0%})")
+                    score -= 3
+
+            # v85: TOP WALLET SUPPLY CONCENTRATION — wallet_amounts from log.data (no extra RPC)
+            # Signal: top 3 wallets held 60%+ of all bought tokens = whale/dev domination
+            if wallet_amounts and len(wallet_amounts) >= 3:
+                _total_amt = sum(wallet_amounts.values())
+                if _total_amt > 0:
+                    _top3 = sum(sorted(wallet_amounts.values(), reverse=True)[:3])
+                    _top3_pct = _top3 / _total_amt
+                    if _top3_pct > 0.60:
+                        reasons.append(f"top3_wallet_concentration({_top3_pct:.0%})")
+                        score -= 2
+
+            # v85: NET BUNDLE VOLUME — max single block ka buy volume vs total
+            # Signal: ek block ke wallets ne 50%+ tokens khareed liye = bundler dump incoming
+            if block_wallets and wallet_amounts:
+                _max_blk = max(block_wallets.values(), key=len)
+                _bundle_vol = sum(wallet_amounts.get(w, 0) for w in _max_blk)
+                _total_vol = sum(wallet_amounts.values())
+                if _total_vol > 0:
+                    _net_bundle_pct = _bundle_vol / _total_vol
+                    if _net_bundle_pct > 0.50:
+                        reasons.append(f"net_bundle_volume({_net_bundle_pct:.0%})")
+                        score -= 2
+
             genuine = score >= 6  # FIX v79: 7→6, ek penalty allow
             return genuine, reasons, score
         while time.time() < _t_end_loop and not _BOT_SHUTDOWN:
@@ -6158,6 +6200,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _total_buys = _res.get("tb", _total_buys)
                 _block_wallets_prev = _block_wallets_curr.copy() if _block_wallets_curr else {}
                 _block_wallets_curr = _res.get("bw", {})
+                _wallet_amounts_curr = _res.get("wa", _wallet_amounts_curr)  # v85: update wallet amounts
                 _iter_count += 1
                 _price_samples.append(float(_price2))
                 if len(_price_samples) > 6: _price_samples.pop(0)
@@ -6181,7 +6224,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 if _basic_ok:
                     _is_genuine, _fail_reasons, _gm_score = _check_genuine(
                         _price_history, _funds_history, _ub_history, _price_samples,
-                        total_buys=_total_buys, block_wallets=_block_wallets_curr
+                        total_buys=_total_buys, block_wallets=_block_wallets_curr,
+                        wallet_amounts=_wallet_amounts_curr
                     )
                     _funds_prev = _funds2; _bc_prev = _bc_curr
                     if _is_genuine:
