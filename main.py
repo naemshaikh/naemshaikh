@@ -6054,8 +6054,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _n  = len(_fd)
                 _early_avg = sum(_fd[:_n//2]) / max(_n//2, 1)
                 _late_avg  = sum(_fd[_n//2:]) / max(_n - _n//2, 1)
-                # FIX v75: 20%→35% — dev pump mein late flow moderate bhi dev ka hota hai, 35% zyada catches karega
-                if _early_avg > 0 and _late_avg < _early_avg * 0.45:  # FIX v81: 35%→45%, more aggressive catch
+                # FIX v83: 45%→55% — late vol must be at least 55% of early, stricter dev pump catch
+                if _early_avg > 0 and _late_avg < _early_avg * 0.55:
                     reasons.append(f"vol_flow_dead(ratio={_late_avg/max(_early_avg,1):.2f})")
                     score -= 2
 
@@ -6091,12 +6091,12 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         reasons.append(f"repeat_wallets({_repeat_rate:.0%})")
                         score -= 2
 
-            # FIX v82: Early price peak — pump already peaked, last 2 ticks mein nahi hai
+            # FIX v83: Early price peak penalty -2→-3, peaked token = strong dump signal
             if len(price_history) >= 6:
                 max_idx = price_history.index(max(price_history))
                 if max_idx <= len(price_history) - 3:
                     reasons.append("early_price_peak(idx=" + str(max_idx) + ")")
-                    score -= 2
+                    score -= 3
 
             # FIX v82: Momentum jerk — early strong, late 75% se kam
             if len(price_history) >= 5:
@@ -6107,6 +6107,25 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     if _early_mom > 0 and _late_mom < _early_mom * 0.25:
                         reasons.append(f"momentum_jerk(ratio={_late_mom/max(_early_mom,1e-18):.2f})")
                         score -= 2
+
+            # FIX v83: Recent price cooling — last 2 ticks BOTH must be green
+            # No RPC call — price_history already in memory
+            # Ensures momentum is ACTIVE at entry moment, not just historically ok
+            if len(price_history) >= 3:
+                _last2_green = (price_history[-1] > price_history[-2]) and (price_history[-2] > price_history[-3])
+                if not _last2_green:
+                    reasons.append("recent_price_cooling")
+                    score -= 2
+
+            # FIX v83: Buyers stopped coming — recent 2 ticks ub gain must be > 0
+            # No RPC call — ub_history already in memory
+            # Dev pump: early mein buyers aye, ab koi nahi aa raha
+            if len(ub_history) >= 4:
+                _late_ub_gain = (ub_history[-1] - ub_history[-2]) + (ub_history[-2] - ub_history[-3])
+                _early_ub_gain = (ub_history[1] - ub_history[0]) + (ub_history[2] - ub_history[1])
+                if _early_ub_gain > 0 and _late_ub_gain <= 0:
+                    reasons.append("buyers_stopped_coming")
+                    score -= 2
 
             genuine = score >= 6  # FIX v79: 7→6, ek penalty allow
             return genuine, reasons, score
