@@ -6055,7 +6055,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _early_avg = sum(_fd[:_n//2]) / max(_n//2, 1)
                 _late_avg  = sum(_fd[_n//2:]) / max(_n - _n//2, 1)
                 # FIX v75: 20%→35% — dev pump mein late flow moderate bhi dev ka hota hai, 35% zyada catches karega
-                if _early_avg > 0 and _late_avg < _early_avg * 0.35:
+                if _early_avg > 0 and _late_avg < _early_avg * 0.25:  # FIX v77: 35%→25%, less aggressive catch
                     reasons.append(f"vol_flow_dead(ratio={_late_avg/max(_early_avg,1):.2f})")
                     score -= 2
 
