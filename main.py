@@ -5779,7 +5779,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         def _fetch_dev_balance():
             if not dev_addr: return
             try:
-                _tc = _w3a.eth.contract(address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
+                _w3b = _get_stage1_w3()  # v86: alag RPC — _w3a se truly parallel
+                if not _w3b: return
+                _tc = _w3b.eth.contract(address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
                 _total = _tc.functions.totalSupply().call()
                 _dev_b = _tc.functions.balanceOf(Web3.to_checksum_address(dev_addr)).call()
                 if _total > 0:
