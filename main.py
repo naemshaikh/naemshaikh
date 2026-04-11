@@ -4498,26 +4498,31 @@ _w3q_lock   = threading.Lock()
 # FIX v29: Stage 1 RPC pool — har snipe pe naya Web3 nahi
 _stage1_w3_pool = {}
 _stage1_pool_lock = threading.Lock()
+_stage1_rpc_idx = 0  # v86: round-robin index — load spread karo
 
 def _get_stage1_w3():
-    """Stage 1 ke liye RPC pool — connection reuse karo"""
+    """Stage 1 ke liye RPC pool — v86: 6 RPCs + round-robin rotation"""
+    global _stage1_rpc_idx
     _rpcs = [
         "https://bsc-rpc.publicnode.com",
+        "https://bsc-dataseed.bnbchain.org",
+        "https://bsc-dataseed1.defibit.io",
+        "https://binance.llamarpc.com",
         "https://bsc.drpc.org",
         "https://1rpc.io/bnb",
     ]
     with _stage1_pool_lock:
-        for rpc in _rpcs:
-            if rpc in _stage1_w3_pool:
-                try:
-                    # Quick check — block_number ping nahi, sirf object check
-                    if _stage1_w3_pool[rpc] is not None:
-                        return _stage1_w3_pool[rpc]
-                except: pass
-        # Pool mein nahi — naya banao aur save karo
-        for rpc in _rpcs:
+        # v86: round-robin — har call pe next RPC use karo, rate limit spread hoga
+        _start = _stage1_rpc_idx % len(_rpcs)
+        _stage1_rpc_idx += 1
+        _ordered = _rpcs[_start:] + _rpcs[:_start]
+        for rpc in _ordered:
+            # Pool mein cached object hai to reuse karo
+            if rpc in _stage1_w3_pool and _stage1_w3_pool[rpc] is not None:
+                return _stage1_w3_pool[rpc]
+            # Nahi hai — banao aur cache karo
             try:
-                _w = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 5}))
+                _w = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 4}))
                 _stage1_w3_pool[rpc] = _w
                 return _w
             except: continue
