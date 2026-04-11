@@ -6066,7 +6066,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 if _ub_curr > 0:
                     _bpw = total_buys / _ub_curr
                     # >4 buys per wallet = same wallets repeat buying = dev pump signal
-                    if _bpw > 6.0:  # FIX v78: 4.0→6.0, FM BC pe natural early repeat buying allow
+                    if _bpw > 6.0:  # FIX v78: 4.0→6.0, FM BC natural buying allow
                         reasons.append(f"wallet_cycling(bpw={_bpw:.1f})")
                         score -= 2
 
@@ -6091,7 +6091,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         reasons.append(f"repeat_wallets({_repeat_rate:.0%})")
                         score -= 2
 
-            genuine = score >= 7  # FIX v75: 6→7, max score=8, dev pump ko ab ek bhi penalty nahi chalegi
+            genuine = score >= 6  # FIX v79: 7→6, ek penalty allow
             return genuine, reasons, score
         while time.time() < _t_end_loop and not _BOT_SHUTDOWN:
             try:
