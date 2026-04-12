@@ -6161,13 +6161,6 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     reasons.append(f"dev_pump_no_organic_buyers(x{_price_mult:.1f},new_ub={_new_ub_in_window})")
                     score -= 3
 
-            # v85: PRO BUNDLE DETECTION — same block mein zyada wallets = coordinated bundle
-            if block_wallets and ub_history and ub_history[-1] > 0:
-                _max_blk_wallets = max(len(v) for v in block_wallets.values())
-                _bundle_ratio = _max_blk_wallets / ub_history[-1]
-                if _bundle_ratio > 0.70:
-                    reasons.append(f"bundle_concentration({_bundle_ratio:.0%})")
-                    score -= 4  # FIX v94: -3→-4, score 5 threshold pe bhi block karo
 
             # v85: TOP WALLET SUPPLY CONCENTRATION
             # v88h: top3 fixed → top 50% dynamic — koi min wallet nahi, pure ratio
