@@ -6175,17 +6175,6 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     reasons.append(f"funds_spike_no_buyers(spike={_funds_spike:.0%},new_ub={_ub_last2})")
                     score -= 2
 
-            # v99: Price vs Buyer Growth Divergence — smooth dev pump ka core signal
-            # Dev pump: price 2x lekin buyers sirf 1.2x — price bahut fast, organic growth nahi
-            # Genuine pump: buyers grow proportionally with price
-            if len(price_history) >= 4 and len(ub_history) >= 4:
-                _px_mult  = price_history[-1] / max(price_history[0], 1e-18)
-                _ub_start = max(ub_history[0], 1)
-                _ub_mult  = ub_history[-1] / _ub_start
-                if _px_mult > 1.5 and _ub_mult < _px_mult * 0.35:
-                    reasons.append(f"price_buyer_divergence(px={_px_mult:.1f}x,ub={_ub_mult:.1f}x)")
-                    score -= 3
-
             genuine = score >= 6  # v97: bundle signals hate, threshold wapas 6
             return genuine, reasons, score
         while time.time() < _t_end_loop and not _BOT_SHUTDOWN:
