@@ -5774,7 +5774,14 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         _funds_baseline = [0]
 
         def _fetch_token_info():
+            # v88: retry logic — pehle _w3a try karo, fail pe 2 aur fresh RPCs
             _info_res[0] = _fm_get_token_info(token_addr, _w3a)
+            if not _info_res[0]:
+                _w3r1 = _get_stage1_w3()  # round-robin se fresh RPC
+                _info_res[0] = _fm_get_token_info(token_addr, _w3r1)
+            if not _info_res[0]:
+                _w3r2 = _get_stage1_w3()  # ek aur fresh RPC
+                _info_res[0] = _fm_get_token_info(token_addr, _w3r2)
 
         def _fetch_dev_balance():
             if not dev_addr: return
@@ -5811,8 +5818,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             f1 = _ex.submit(_fetch_token_info)
             f2 = _ex.submit(_fetch_dev_balance)
             f3 = _ex.submit(_prefetch_gas_nonce_parallel)
-            # Wait for token info first, then extract baseline (no extra RPC call)
-            try: f1.result(timeout=2)
+            # Wait for token info first — v88: timeout 2→5s (2 retries accommodate karo)
+            try: f1.result(timeout=5)
             except: pass
             _fetch_price_baseline()
 
