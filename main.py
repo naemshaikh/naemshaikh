@@ -6171,8 +6171,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     score -= 3
 
             # v85: TOP WALLET SUPPLY CONCENTRATION — wallet_amounts from log.data (no extra RPC)
-            # v88e: min 5 wallets — 3 se 5 kiya, 75% threshold genuine catch karega
-            if wallet_amounts and len(wallet_amounts) >= 5:
+            # v88f: min 4 wallets — 3 wallets mein top3 = 100% hamesha hota
+            if wallet_amounts and len(wallet_amounts) >= 4:
                 _total_amt = sum(wallet_amounts.values())
                 if _total_amt > 0:
                     _top3 = sum(sorted(wallet_amounts.values(), reverse=True)[:3])
@@ -6182,8 +6182,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         score -= 2
 
             # v85: NET BUNDLE VOLUME — max single block ka buy volume vs total
-            # v88e: min 5 wallets — 65% threshold genuine bundle kaafi clearly detect karega
-            if block_wallets and wallet_amounts and len(wallet_amounts) >= 5:
+            # v88f: min guard hataya — 65% threshold genuine bundle clearly detect karega
+            if block_wallets and wallet_amounts:
                 _max_blk = max(block_wallets.values(), key=len)
                 _bundle_vol = sum(wallet_amounts.get(w, 0) for w in _max_blk)
                 _total_vol = sum(wallet_amounts.values())
