@@ -6117,7 +6117,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             # FIX v83: Early price peak penalty -2→-3, peaked token = strong dump signal
             if len(price_history) >= 6:
                 max_idx = price_history.index(max(price_history))
-                if max_idx <= len(price_history) - 3:
+                if max_idx <= 1:  # FIX v90: len-3→1, sirf pehle 2 ticks peak ho toh penalize
                     reasons.append("early_price_peak(idx=" + str(max_idx) + ")")
                     score -= 3
 
@@ -6157,7 +6157,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             if len(price_history) >= 4 and len(ub_history) >= 4:
                 _price_mult = price_history[-1] / max(price_history[0], 1e-18)
                 _new_ub_in_window = ub_history[-1] - ub_history[0]
-                if _price_mult > 1.3 and _new_ub_in_window < 3:
+                if _price_mult > 1.3 and _new_ub_in_window < 2:  # FIX v90: <3→<2
                     reasons.append(f"dev_pump_no_organic_buyers(x{_price_mult:.1f},new_ub={_new_ub_in_window})")
                     score -= 3
 
@@ -6177,7 +6177,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     _sorted_amts = sorted(wallet_amounts.values(), reverse=True)
                     _top_n = max(1, len(_sorted_amts) // 2)  # top 50%
                     _top_pct = sum(_sorted_amts[:_top_n]) / _total_amt
-                    if _top_pct > 0.75:
+                    if _top_pct > 0.85:  # FIX v90: 0.75→0.85, early stage kam wallets hote hain
                         reasons.append(f"top_wallet_concentration({_top_pct:.0%})")
                         score -= 2
 
