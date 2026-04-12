@@ -6192,7 +6192,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         reasons.append(f"net_bundle_volume({_net_bundle_pct:.0%})")
                         score -= 2
 
-            genuine = score >= 6  # FIX v79: 7→6, ek penalty allow
+            genuine = score >= 5  # FIX v92: 6→5, do penalties allow — frequency badhaane ke liye
             return genuine, reasons, score
         while time.time() < _t_end_loop and not _BOT_SHUTDOWN:
             try:
