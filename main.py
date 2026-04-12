@@ -6162,8 +6162,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     score -= 3
 
             # v85: PRO BUNDLE DETECTION — same block mein zyada wallets = coordinated bundle
-            # v87: 40%→70% — FM BC factory distribution se false trigger avoid karo
-            if block_wallets and ub_history and ub_history[-1] > 0:
+            # v88d: min 8 buyers required — 5-6 buyers pe ek block naturally 70%+ hota tha
+            if block_wallets and ub_history and ub_history[-1] >= 8:
                 _max_blk_wallets = max(len(v) for v in block_wallets.values())
                 _bundle_ratio = _max_blk_wallets / ub_history[-1]
                 if _bundle_ratio > 0.70:
@@ -6182,8 +6182,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         score -= 2
 
             # v85: NET BUNDLE VOLUME — max single block ka buy volume vs total
-            # v88c: min 5 wallets required — few wallets pe ek block = naturally high %
-            if block_wallets and wallet_amounts and len(wallet_amounts) >= 5:
+            # v88d: min 8 wallets required — 5 wallets pe bhi false trigger hota tha
+            if block_wallets and wallet_amounts and len(wallet_amounts) >= 8:
                 _max_blk = max(block_wallets.values(), key=len)
                 _bundle_vol = sum(wallet_amounts.get(w, 0) for w in _max_blk)
                 _total_vol = sum(wallet_amounts.values())
