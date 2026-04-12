@@ -6157,13 +6157,23 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             if len(price_history) >= 4 and len(ub_history) >= 4:
                 _price_mult = price_history[-1] / max(price_history[0], 1e-18)
                 _new_ub_in_window = ub_history[-1] - ub_history[0]
-                if _price_mult > 1.3 and _new_ub_in_window < 2:  # FIX v90: <3→<2
+                if _price_mult > 1.3 and _new_ub_in_window < 3:  # v98: <2→<3, dev 2 wallets use kare toh bhi catch
                     reasons.append(f"dev_pump_no_organic_buyers(x{_price_mult:.1f},new_ub={_new_ub_in_window})")
                     score -= 3
 
             # v97: top_wallet_concentration + net_bundle_volume removed — token amounts BC pe always concentrated hote hain
             # early buyers = cheap price = zyada tokens = mathematically always >80% top50% — false signal tha
             # heavy_block_buy (UB based) already bundle catch karta hai correctly
+
+            # v98: FUNDS SPIKE WITHOUT BUYERS — last 2 ticks mein funds fast upar lekin naye buyers nahi
+            # Dev pump pattern: dev akela buy karta hai — funds/price upar, unique buyers same
+            # Genuine pump: funds upar + naye buyers bhi aa rahe hain
+            if len(funds_history) >= 4 and len(ub_history) >= 4:
+                _funds_spike = (funds_history[-1] - funds_history[-3]) / max(funds_history[-3], 1e-18)
+                _ub_last2 = ub_history[-1] - ub_history[-3]
+                if _funds_spike > 0.20 and _ub_last2 <= 1:
+                    reasons.append(f"funds_spike_no_buyers(spike={_funds_spike:.0%},new_ub={_ub_last2})")
+                    score -= 2
 
             genuine = score >= 6  # v97: bundle signals hate, threshold wapas 6
             return genuine, reasons, score
