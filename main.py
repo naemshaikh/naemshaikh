@@ -6155,35 +6155,34 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     score -= 3
 
             # v85: PRO BUNDLE DETECTION — same block mein zyada wallets = coordinated bundle
-            # No extra RPC — block_wallets already fetched in _parallel_fetch (free RPC)
-            # Signal: ek hi block mein 40%+ of all unique buyers = dev/bot bundle
+            # v87: 40%→70% — FM BC factory distribution se false trigger avoid karo
             if block_wallets and ub_history and ub_history[-1] > 0:
                 _max_blk_wallets = max(len(v) for v in block_wallets.values())
                 _bundle_ratio = _max_blk_wallets / ub_history[-1]
-                if _bundle_ratio > 0.40:
+                if _bundle_ratio > 0.70:
                     reasons.append(f"bundle_concentration({_bundle_ratio:.0%})")
                     score -= 3
 
             # v85: TOP WALLET SUPPLY CONCENTRATION — wallet_amounts from log.data (no extra RPC)
-            # Signal: top 3 wallets held 60%+ of all bought tokens = whale/dev domination
+            # v87: 60%→80% — early stage mein top 3 naturally dominant hote hain
             if wallet_amounts and len(wallet_amounts) >= 3:
                 _total_amt = sum(wallet_amounts.values())
                 if _total_amt > 0:
                     _top3 = sum(sorted(wallet_amounts.values(), reverse=True)[:3])
                     _top3_pct = _top3 / _total_amt
-                    if _top3_pct > 0.60:
+                    if _top3_pct > 0.80:
                         reasons.append(f"top3_wallet_concentration({_top3_pct:.0%})")
                         score -= 2
 
             # v85: NET BUNDLE VOLUME — max single block ka buy volume vs total
-            # Signal: ek block ke wallets ne 50%+ tokens khareed liye = bundler dump incoming
+            # v87: 50%→75% — FM BC early mein single block heavy naturally hota hai
             if block_wallets and wallet_amounts:
                 _max_blk = max(block_wallets.values(), key=len)
                 _bundle_vol = sum(wallet_amounts.get(w, 0) for w in _max_blk)
                 _total_vol = sum(wallet_amounts.values())
                 if _total_vol > 0:
                     _net_bundle_pct = _bundle_vol / _total_vol
-                    if _net_bundle_pct > 0.50:
+                    if _net_bundle_pct > 0.75:
                         reasons.append(f"net_bundle_volume({_net_bundle_pct:.0%})")
                         score -= 2
 
