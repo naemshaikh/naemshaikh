@@ -6162,7 +6162,6 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     score -= 3
 
             # v85: PRO BUNDLE DETECTION — same block mein zyada wallets = coordinated bundle
-            # v88e: min guard hataya — 70% ratio khud kaafi strict hai
             if block_wallets and ub_history and ub_history[-1] > 0:
                 _max_blk_wallets = max(len(v) for v in block_wallets.values())
                 _bundle_ratio = _max_blk_wallets / ub_history[-1]
@@ -6170,8 +6169,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     reasons.append(f"bundle_concentration({_bundle_ratio:.0%})")
                     score -= 3
 
-            # v85: TOP WALLET SUPPLY CONCENTRATION — wallet_amounts from log.data (no extra RPC)
-            # v88f: min 4 wallets — 3 wallets mein top3 = 100% hamesha hota
+            # v85: TOP WALLET SUPPLY CONCENTRATION
+            # min 4 — 3 wallets mein top3 mathematically 100% hota, check useless hota
             if wallet_amounts and len(wallet_amounts) >= 4:
                 _total_amt = sum(wallet_amounts.values())
                 if _total_amt > 0:
@@ -6182,7 +6181,6 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         score -= 2
 
             # v85: NET BUNDLE VOLUME — max single block ka buy volume vs total
-            # v88f: min guard hataya — 65% threshold genuine bundle clearly detect karega
             if block_wallets and wallet_amounts:
                 _max_blk = max(block_wallets.values(), key=len)
                 _bundle_vol = sum(wallet_amounts.get(w, 0) for w in _max_blk)
