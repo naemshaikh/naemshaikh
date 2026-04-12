@@ -6077,8 +6077,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _n  = len(_fd)
                 _early_avg = sum(_fd[:_n//2]) / max(_n//2, 1)
                 _late_avg  = sum(_fd[_n//2:]) / max(_n - _n//2, 1)
-                # FIX v89: 55%→45% — genuine coins ko thoda consolidation allow karo
-                if _early_avg > 0 and _late_avg < _early_avg * 0.45:
+                # v99: 45%→55% — dev pumps mein vol consistently die hoti hai, genuine ko 55% late vol chahiye
+                if _early_avg > 0 and _late_avg < _early_avg * 0.55:
                     reasons.append(f"vol_flow_dead(ratio={_late_avg/max(_early_avg,1):.2f})")
                     score -= 2
 
@@ -6127,7 +6127,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 if len(_pd) >= 4:
                     _early_mom = sum(_pd[:2]) / 2
                     _late_mom = sum(_pd[-2:]) / 2
-                    if _early_mom > 0 and _late_mom < _early_mom * 0.15:  # FIX v93: 0.25→0.15
+                    if _early_mom > 0 and _late_mom < _early_mom * 0.25:  # v99: 0.15→0.25 — dev pumps mein late momentum hamesha weak
                         reasons.append(f"momentum_jerk(ratio={_late_mom/max(_early_mom,1e-18):.2f})")
                         score -= 2
 
@@ -6171,9 +6171,20 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             if len(funds_history) >= 4 and len(ub_history) >= 4:
                 _funds_spike = (funds_history[-1] - funds_history[-3]) / max(funds_history[-3], 1e-18)
                 _ub_last2 = ub_history[-1] - ub_history[-3]
-                if _funds_spike > 0.20 and _ub_last2 <= 1:
+                if _funds_spike > 0.20 and _ub_last2 <= 2:  # v99: <=1→<=2, dev 2 wallets use kare toh bhi catch
                     reasons.append(f"funds_spike_no_buyers(spike={_funds_spike:.0%},new_ub={_ub_last2})")
                     score -= 2
+
+            # v99: Price vs Buyer Growth Divergence — smooth dev pump ka core signal
+            # Dev pump: price 2x lekin buyers sirf 1.2x — price bahut fast, organic growth nahi
+            # Genuine pump: buyers grow proportionally with price
+            if len(price_history) >= 4 and len(ub_history) >= 4:
+                _px_mult  = price_history[-1] / max(price_history[0], 1e-18)
+                _ub_start = max(ub_history[0], 1)
+                _ub_mult  = ub_history[-1] / _ub_start
+                if _px_mult > 1.5 and _ub_mult < _px_mult * 0.35:
+                    reasons.append(f"price_buyer_divergence(px={_px_mult:.1f}x,ub={_ub_mult:.1f}x)")
+                    score -= 3
 
             genuine = score >= 6  # v97: bundle signals hate, threshold wapas 6
             return genuine, reasons, score
