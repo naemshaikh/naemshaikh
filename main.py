@@ -6165,7 +6165,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             # early buyers = cheap price = zyada tokens = mathematically always >80% top50% — false signal tha
             # heavy_block_buy (UB based) already bundle catch karta hai correctly
 
-            genuine = score >= 5  # FIX v92: 6→5, do penalties allow — frequency badhaane ke liye
+            genuine = score >= 6  # v97: bundle signals hate, threshold wapas 6
             return genuine, reasons, score
         while time.time() < _t_end_loop and not _BOT_SHUTDOWN:
             try:
