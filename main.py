@@ -6127,7 +6127,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 if len(_pd) >= 4:
                     _early_mom = sum(_pd[:2]) / 2
                     _late_mom = sum(_pd[-2:]) / 2
-                    if _early_mom > 0 and _late_mom < _early_mom * 0.25:  # v99: 0.15→0.25 — dev pumps mein late momentum hamesha weak
+                    if _early_mom > 0 and _late_mom < _early_mom * 0.15:  # v99b revert: 0.25→0.15, vol_flow_dead 0.55 already covers this overlap
                         reasons.append(f"momentum_jerk(ratio={_late_mom/max(_early_mom,1e-18):.2f})")
                         score -= 2
 
