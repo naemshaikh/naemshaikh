@@ -6177,19 +6177,19 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 if _total_amt > 0:
                     _top3 = sum(sorted(wallet_amounts.values(), reverse=True)[:3])
                     _top3_pct = _top3 / _total_amt
-                    if _top3_pct > 0.80:
+                    if _top3_pct > 0.75:  # v88b: 80%→75% — genuine bundler bhi catch ho
                         reasons.append(f"top3_wallet_concentration({_top3_pct:.0%})")
                         score -= 2
 
             # v85: NET BUNDLE VOLUME — max single block ka buy volume vs total
-            # v87: 50%→75% — FM BC early mein single block heavy naturally hota hai
+            # v88b: 75%→65% — ek block ka 65%+ volume = clear bundle signal
             if block_wallets and wallet_amounts:
                 _max_blk = max(block_wallets.values(), key=len)
                 _bundle_vol = sum(wallet_amounts.get(w, 0) for w in _max_blk)
                 _total_vol = sum(wallet_amounts.values())
                 if _total_vol > 0:
                     _net_bundle_pct = _bundle_vol / _total_vol
-                    if _net_bundle_pct > 0.75:
+                    if _net_bundle_pct > 0.65:  # v88b: 75%→65%
                         reasons.append(f"net_bundle_volume({_net_bundle_pct:.0%})")
                         score -= 2
 
