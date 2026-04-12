@@ -6170,14 +6170,15 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     score -= 3
 
             # v85: TOP WALLET SUPPLY CONCENTRATION
-            # min 4 — 3 wallets mein top3 mathematically 100% hota, check useless hota
-            if wallet_amounts and len(wallet_amounts) >= 4:
+            # v88h: top3 fixed → top 50% dynamic — koi min wallet nahi, pure ratio
+            if wallet_amounts:
                 _total_amt = sum(wallet_amounts.values())
                 if _total_amt > 0:
-                    _top3 = sum(sorted(wallet_amounts.values(), reverse=True)[:3])
-                    _top3_pct = _top3 / _total_amt
-                    if _top3_pct > 0.75:
-                        reasons.append(f"top3_wallet_concentration({_top3_pct:.0%})")
+                    _sorted_amts = sorted(wallet_amounts.values(), reverse=True)
+                    _top_n = max(1, len(_sorted_amts) // 2)  # top 50%
+                    _top_pct = sum(_sorted_amts[:_top_n]) / _total_amt
+                    if _top_pct > 0.75:
+                        reasons.append(f"top_wallet_concentration({_top_pct:.0%})")
                         score -= 2
 
             # v85: NET BUNDLE VOLUME — max single block ka buy volume vs total
