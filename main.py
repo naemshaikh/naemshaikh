@@ -6167,7 +6167,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _bundle_ratio = _max_blk_wallets / ub_history[-1]
                 if _bundle_ratio > 0.70:
                     reasons.append(f"bundle_concentration({_bundle_ratio:.0%})")
-                    score -= 3
+                    score -= 4  # FIX v94: -3→-4, score 5 threshold pe bhi block karo
 
             # v85: TOP WALLET SUPPLY CONCENTRATION
             # v88h: top3 fixed → top 50% dynamic — koi min wallet nahi, pure ratio
