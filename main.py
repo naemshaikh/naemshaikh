@@ -6171,25 +6171,25 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     score -= 3
 
             # v85: TOP WALLET SUPPLY CONCENTRATION — wallet_amounts from log.data (no extra RPC)
-            # v87: 60%→80% — early stage mein top 3 naturally dominant hote hain
-            if wallet_amounts and len(wallet_amounts) >= 3:
+            # v88c: min 10 wallets required — early stage mein top3 mathematically 100% hota tha
+            if wallet_amounts and len(wallet_amounts) >= 10:
                 _total_amt = sum(wallet_amounts.values())
                 if _total_amt > 0:
                     _top3 = sum(sorted(wallet_amounts.values(), reverse=True)[:3])
                     _top3_pct = _top3 / _total_amt
-                    if _top3_pct > 0.75:  # v88b: 80%→75% — genuine bundler bhi catch ho
+                    if _top3_pct > 0.75:
                         reasons.append(f"top3_wallet_concentration({_top3_pct:.0%})")
                         score -= 2
 
             # v85: NET BUNDLE VOLUME — max single block ka buy volume vs total
-            # v88b: 75%→65% — ek block ka 65%+ volume = clear bundle signal
-            if block_wallets and wallet_amounts:
+            # v88c: min 5 wallets required — few wallets pe ek block = naturally high %
+            if block_wallets and wallet_amounts and len(wallet_amounts) >= 5:
                 _max_blk = max(block_wallets.values(), key=len)
                 _bundle_vol = sum(wallet_amounts.get(w, 0) for w in _max_blk)
                 _total_vol = sum(wallet_amounts.values())
                 if _total_vol > 0:
                     _net_bundle_pct = _bundle_vol / _total_vol
-                    if _net_bundle_pct > 0.65:  # v88b: 75%→65%
+                    if _net_bundle_pct > 0.65:
                         reasons.append(f"net_bundle_volume({_net_bundle_pct:.0%})")
                         score -= 2
 
