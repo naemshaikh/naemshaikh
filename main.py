@@ -6161,29 +6161,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     reasons.append(f"dev_pump_no_organic_buyers(x{_price_mult:.1f},new_ub={_new_ub_in_window})")
                     score -= 3
 
-
-            # v85: TOP WALLET SUPPLY CONCENTRATION
-            # v88h: top3 fixed → top 50% dynamic — koi min wallet nahi, pure ratio
-            if wallet_amounts:
-                _total_amt = sum(wallet_amounts.values())
-                if _total_amt > 0:
-                    _sorted_amts = sorted(wallet_amounts.values(), reverse=True)
-                    _top_n = max(1, len(_sorted_amts) // 2)  # top 50%
-                    _top_pct = sum(_sorted_amts[:_top_n]) / _total_amt
-                    if _top_pct > 0.80:  # FIX v91: 0.75→0.80 middle ground
-                        reasons.append(f"top_wallet_concentration({_top_pct:.0%})")
-                        score -= 2
-
-            # v85: NET BUNDLE VOLUME — max single block ka buy volume vs total
-            if block_wallets and wallet_amounts:
-                _max_blk = max(block_wallets.values(), key=len)
-                _bundle_vol = sum(wallet_amounts.get(w, 0) for w in _max_blk)
-                _total_vol = sum(wallet_amounts.values())
-                if _total_vol > 0:
-                    _net_bundle_pct = _bundle_vol / _total_vol
-                    if _net_bundle_pct > 0.65:
-                        reasons.append(f"net_bundle_volume({_net_bundle_pct:.0%})")
-                        score -= 2
+            # v97: top_wallet_concentration + net_bundle_volume removed — token amounts BC pe always concentrated hote hain
+            # early buyers = cheap price = zyada tokens = mathematically always >80% top50% — false signal tha
+            # heavy_block_buy (UB based) already bundle catch karta hai correctly
 
             genuine = score >= 5  # FIX v92: 6→5, do penalties allow — frequency badhaane ke liye
             return genuine, reasons, score
