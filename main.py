@@ -6067,7 +6067,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 recent_price_up = price_history[-1] > price_history[-2]
                 if recent_price_up and recent_vol_drop:
                     reasons.append("pump_with_vol_drop")
-                    score -= 2  # FIX v80: -1→-2 wapas, strong dev dump signal
+                    score -= 1  # FIX v96: -2→-1, vol_flow_dead already same overlap cover karta hai
 
             # FIX v73: Vol flow deceleration — relative ratio (absolute BNB threshold kaam nahi karta)
             # Dev pump: early ticks mein heavy flow, late ticks mein near-zero — BC level se independent
