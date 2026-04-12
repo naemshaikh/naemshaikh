@@ -6077,8 +6077,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _n  = len(_fd)
                 _early_avg = sum(_fd[:_n//2]) / max(_n//2, 1)
                 _late_avg  = sum(_fd[_n//2:]) / max(_n - _n//2, 1)
-                # FIX v83: 45%→55% — late vol must be at least 55% of early, stricter dev pump catch
-                if _early_avg > 0 and _late_avg < _early_avg * 0.55:
+                # FIX v89: 55%→45% — genuine coins ko thoda consolidation allow karo
+                if _early_avg > 0 and _late_avg < _early_avg * 0.45:
                     reasons.append(f"vol_flow_dead(ratio={_late_avg/max(_early_avg,1):.2f})")
                     score -= 2
 
@@ -6135,7 +6135,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             # No RPC call — price_history already in memory
             # Ensures momentum is ACTIVE at entry moment, not just historically ok
             if len(price_history) >= 3:
-                _last2_green = (price_history[-1] > price_history[-2]) and (price_history[-2] > price_history[-3])
+                _last2_green = (price_history[-1] > price_history[-2])  # FIX v89: dono green → sirf last tick green
                 if not _last2_green:
                     reasons.append("recent_price_cooling")
                     score -= 2
