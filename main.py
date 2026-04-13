@@ -6162,6 +6162,15 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     reasons.append(f"dev_pump_ratio(mom={_mom_pct:.0f}%,ub={_ub_curr},ratio={_ratio:.1f})")
                     score -= 3
 
+            # v102: Buyer velocity dying — early mein buyers tez aa rahe the, ab slow ho gaye
+            # Dev pump peak sign: dev already sold, naye buyers band ho gaye
+            if len(ub_history) >= 6:
+                _ub_vel_early = ub_history[2] - ub_history[0]
+                _ub_vel_late  = ub_history[-1] - ub_history[-3]
+                if _ub_vel_early > 0 and _ub_vel_late < _ub_vel_early:
+                    reasons.append(f"buyer_velocity_dying(early={_ub_vel_early},late={_ub_vel_late})")
+                    score -= 1
+
             # v97: top_wallet_concentration + net_bundle_volume removed — token amounts BC pe always concentrated hote hain
             # early buyers = cheap price = zyada tokens = mathematically always >80% top50% — false signal tha
             # heavy_block_buy (UB based) already bundle catch karta hai correctly
