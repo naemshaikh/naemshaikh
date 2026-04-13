@@ -6077,8 +6077,8 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 _n  = len(_fd)
                 _early_avg = sum(_fd[:_n//2]) / max(_n//2, 1)
                 _late_avg  = sum(_fd[_n//2:]) / max(_n - _n//2, 1)
-                # v99: 45%→55% — dev pumps mein vol consistently die hoti hai, genuine ko 55% late vol chahiye
-                if _early_avg > 0 and _late_avg < _early_avg * 0.55:
+                # FIX v89: 55%→45% — genuine coins ko thoda consolidation allow karo
+                if _early_avg > 0 and _late_avg < _early_avg * 0.45:
                     reasons.append(f"vol_flow_dead(ratio={_late_avg/max(_early_avg,1):.2f})")
                     score -= 2
 
@@ -6171,7 +6171,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             if len(funds_history) >= 4 and len(ub_history) >= 4:
                 _funds_spike = (funds_history[-1] - funds_history[-3]) / max(funds_history[-3], 1e-18)
                 _ub_last2 = ub_history[-1] - ub_history[-3]
-                if _funds_spike > 0.20 and _ub_last2 <= 2:  # v99: <=1→<=2, dev 2 wallets use kare toh bhi catch
+                if _funds_spike > 0.20 and _ub_last2 <= 1:
                     reasons.append(f"funds_spike_no_buyers(spike={_funds_spike:.0%},new_ub={_ub_last2})")
                     score -= 2
 
