@@ -6150,18 +6150,16 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     reasons.append("buyers_stopped_coming")
                     score -= 2
 
-            # FIX v84: Dev pump detection — price bahut move kiya lekin naye buyers nahi aaye
-            # No RPC — price_history + ub_history already in memory
-            # Dev pump: dev khud buy karta hai — price upar, unique buyers same rehte hain
-            # Genuine pump: price up + naye log aa rahe hain window mein
+            # v101: Mom/Buyers ratio — dev pump: high momentum, low buyers
+            # Data validated: ratio=21.3 LOSS, ratio=19.1 LOSS | ratio=8.4 WIN, ratio=8.2 WIN
+            # Threshold 15: genuine < 12, dev pump > 15
             if len(price_history) >= 4 and len(ub_history) >= 4:
                 _price_mult = price_history[-1] / max(price_history[0], 1e-18)
-                _new_ub_in_window = ub_history[-1] - ub_history[0]
-                # v100: tiered threshold — 2x+ price gain ke liye 4 organic buyers chahiye
-                # 1.3-2x: <3 buyers = dev pump | 2x+: <4 buyers = dev pump
-                _ub_thresh = 4 if _price_mult >= 2.0 else 3
-                if _price_mult > 1.3 and _new_ub_in_window < _ub_thresh:
-                    reasons.append(f"dev_pump_no_organic_buyers(x{_price_mult:.1f},new_ub={_new_ub_in_window})")
+                _mom_pct    = (_price_mult - 1) * 100
+                _ub_curr    = max(ub_history[-1], 1)
+                _ratio      = _mom_pct / _ub_curr
+                if _mom_pct > 20 and _ratio > 15:
+                    reasons.append(f"dev_pump_ratio(mom={_mom_pct:.0f}%,ub={_ub_curr},ratio={_ratio:.1f})")
                     score -= 3
 
             # v97: top_wallet_concentration + net_bundle_volume removed — token amounts BC pe always concentrated hote hain
