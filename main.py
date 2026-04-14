@@ -6150,26 +6150,16 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                     reasons.append("buyers_stopped_coming")
                     score -= 2
 
-            # v101: Mom/Buyers ratio — dev pump: high momentum, low buyers
-            # Data validated: ratio=21.3 LOSS, ratio=19.1 LOSS | ratio=8.4 WIN, ratio=8.2 WIN
-            # Threshold 15: genuine < 12, dev pump > 15
+            # FIX v84: Dev pump detection — price bahut move kiya lekin naye buyers nahi aaye
+            # No RPC — price_history + ub_history already in memory
+            # Dev pump: dev khud buy karta hai — price upar, unique buyers same rehte hain
+            # Genuine pump: price up + naye log aa rahe hain window mein
             if len(price_history) >= 4 and len(ub_history) >= 4:
                 _price_mult = price_history[-1] / max(price_history[0], 1e-18)
-                _mom_pct    = (_price_mult - 1) * 100
-                _ub_curr    = max(ub_history[-1], 1)
-                _ratio      = _mom_pct / _ub_curr
-                if _mom_pct > 20 and _ratio > 15:
-                    reasons.append(f"dev_pump_ratio(mom={_mom_pct:.0f}%,ub={_ub_curr},ratio={_ratio:.1f})")
+                _new_ub_in_window = ub_history[-1] - ub_history[0]
+                if _price_mult > 1.3 and _new_ub_in_window < 3:  # v98: <2→<3, dev 2 wallets use kare toh bhi catch
+                    reasons.append(f"dev_pump_no_organic_buyers(x{_price_mult:.1f},new_ub={_new_ub_in_window})")
                     score -= 3
-
-            # v102: Buyer velocity dying — early mein buyers tez aa rahe the, ab slow ho gaye
-            # Dev pump peak sign: dev already sold, naye buyers band ho gaye
-            if len(ub_history) >= 6:
-                _ub_vel_early = ub_history[2] - ub_history[0]
-                _ub_vel_late  = ub_history[-1] - ub_history[-3]
-                if _ub_vel_early > 0 and _ub_vel_late < _ub_vel_early:
-                    reasons.append(f"buyer_velocity_dying(early={_ub_vel_early},late={_ub_vel_late})")
-                    score -= 1
 
             # v97: top_wallet_concentration + net_bundle_volume removed — token amounts BC pe always concentrated hote hain
             # early buyers = cheap price = zyada tokens = mathematically always >80% top50% — false signal tha
