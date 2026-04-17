@@ -5113,6 +5113,19 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         _amt = int(_bal * sell_pct / 100)
         if _amt <= 0:
             result["error"] = "zero balance"
+            # FIX v70: Zero balance = token already sold on-chain — stuck position force-close karo
+            try:
+                _rp_zb = auto_trade_stats.get("running_positions", {})
+                _zb_key = None
+                for _k in _rp_zb:
+                    if _k.lower() == _t_lower:
+                        _zb_key = _k; break
+                if _zb_key:
+                    print(f"🧹 [FM v70] Zero balance — force closing stuck position: {token_addr[:10]}")
+                    _fm_confirm_close(_zb_key, 100.0, "ZeroBalanceDetected", "")
+            except Exception as _zb_e:
+                print(f"⚠️ [FM v70] Force close error: {str(_zb_e)[:40]}")
+            with _fm_selling_lock: _fm_selling_set.discard(_t_lower)
             return result
 
         # FIX: minFunds = 0 — BC pe slippage nahi chahiye
@@ -6834,7 +6847,10 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
 
     except Exception as e:
         print(f"⚠️ [FM] snipe error: {e}")
-        with _fm_sniped_lock: _fm_sniped.discard(addr_lower)
+        # FIX v70: Position register ho chuki hai toh discard MAT karo — duplicate buy hoga
+        _pos_registered_check = addr_lower in [k.lower() for k in auto_trade_stats.get("running_positions", {})]
+        if not _pos_registered_check:
+            with _fm_sniped_lock: _fm_sniped.discard(addr_lower)
 
 def poll_four_meme_v2():
     """
