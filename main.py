@@ -6638,6 +6638,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         else:
                             print(f"⚠️ [FM] Buy failed onchain: {_th.hex()[:12]}")
                             print(f"🗑️ [FM v83] Buy TX failed — position cleanup: {_addr[:10]}")
+                            _push_notif("critical", "🔴 FM Buy TX Failed",
+                                f"Onchain fail: {_th.hex()[:12]} | {token_name}",
+                                token_name, _addr)
                             auto_trade_stats["running_positions"].pop(_addr, None)
                             remove_position_from_monitor(_addr)
                     except Exception as _re:
