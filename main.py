@@ -2986,6 +2986,15 @@ def _auto_paper_buy(address, token_name, score, total, checklist_result):
 def _auto_paper_sell(address, reason, sell_pct=100.0):
     if address not in auto_trade_stats["running_positions"]:
         return
+
+    # FIX v83: Buy TX failed on-chain = koi tokens mile hi nahi
+    # Real sell try karna useless hai → wallet mein "Transfer Failed" + double history entry
+    # Seedha position force-close karo, koi sell TX nahi
+    if "buy tx failed" in reason.lower():
+        print(f"⚠️ [FIX] Buy TX failed onchain — skipping real sell, force-closing position: {address[:10]}")
+        _fm_confirm_close(address, 100.0, "BuyTxFailed", "")
+        return
+
     pos = auto_trade_stats["running_positions"][address]
     with monitor_lock:
         mon = monitored_positions.get(address, {})
