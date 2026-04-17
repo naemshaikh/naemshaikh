@@ -6637,7 +6637,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                             threading.Thread(target=_pre_approve, args=(_addr,), daemon=True).start()
                         else:
                             print(f"⚠️ [FM] Buy failed onchain: {_th.hex()[:12]}")
-                            _auto_paper_sell(_addr, "buy tx failed onchain", 100.0)
+                            print(f"🗑️ [FM v83] Buy TX failed — position cleanup: {_addr[:10]}")
+                            auto_trade_stats["running_positions"].pop(_addr, None)
+                            remove_position_from_monitor(_addr)
                     except Exception as _re:
                         print(f"⚠️ [FM] Receipt timeout: {str(_re)[:40]}")
                 threading.Thread(target=_wait_receipt, args=(tx_hash, _w3_buy, token_addr), daemon=True).start()
