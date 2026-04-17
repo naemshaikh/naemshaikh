@@ -6667,38 +6667,13 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             _buyers_at_entry = 0
             _total_buys_at_entry = 0
 
-        # FIX v26: entry price actual TX se calculate karo
-        # lastPrice stale hoti hai — actual BNB sent / tokens received = sahi price
-        try:
-            _w3_entry = _get_w3q() or _fm_get_w3()
-            if _w3_entry:
-                _tc_entry = _w3_entry.eth.contract(
-                    address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
-                _token_bal = _tc_entry.functions.balanceOf(
-                    Web3.to_checksum_address(BSC_WALLET or REAL_WALLET)).call()
-                if _token_bal > 0:
-                    _dec_entry = _get_dec(token_addr)
-                    _tokens_received = _token_bal / (10 ** _dec_entry)
-                    if _tokens_received > 0:
-                        entry = size_bnb / _tokens_received
-                        print(f"✅ [FM v26] Entry price from TX: {entry:.4e} BNB "
-                              f"({_tokens_received:.0f} tokens for {size_bnb} BNB)")
-        except Exception as _ep:
-            print(f"⚠️ [FM v26] Entry price calc error: {str(_ep)[:50]} — lastPrice fallback")
-        add_position_to_monitor(AUTO_SESSION_ID, token_addr, token_name, entry, size_bnb, stop_loss_pct=float(_fm_filters['stop_loss']))
-        # FIX B: FM tradingFeeRate fetch karo — sell slippage ke liye
-        _fm_fee_rate = 0.0
-        try:
-            _fm_info_fee = _fm_get_token_info(token_addr, _w3a) if _w3a else None
-            if _fm_info_fee and _fm_info_fee.get("tradingFeeRate", 0) > 0:
-                _fm_fee_rate = round(_fm_info_fee["tradingFeeRate"] / 1e18 * 100, 2)
-        except Exception:
-            pass
-
-        # FIX v71: Race condition guard — position already register ho chuki ho toh overwrite mat karo
+        # FIX v76: Position TURANT register karo — blocking RPC calls background mein
+        # Race condition guard
         if token_addr in auto_trade_stats.get("running_positions", {}):
-            print(f"⏭️ [FM v71] Position already registered — overwrite blocked: {token_addr[:10]}")
+            print(f"⏭️ [FM v76] Position already registered — overwrite blocked: {token_addr[:10]}")
             return
+
+        add_position_to_monitor(AUTO_SESSION_ID, token_addr, token_name, entry, size_bnb, stop_loss_pct=float(_fm_filters['stop_loss']))
         auto_trade_stats["running_positions"][token_addr] = {
             "token": token_name,
             "entry": entry,
@@ -6706,7 +6681,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             "orig_size_bnb": size_bnb,
             "bought_usd": round(size_bnb * market_cache.get("bnb_price",0), 2),
             "sl_pct": 5.0,    # FIX: FM BC -5% hard floor (dumps in <30s)
-            "trail_pct": 20.0,        # FIX B: position manager ke liye
+            "trail_pct": 20.0,
             "tp_sold": 0.0,
             "banked_pnl_bnb": 0.0,
             "bought_at": datetime.utcnow().isoformat(),
@@ -6716,14 +6691,14 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             "fm_mc_usd": round(_mc_usd, 0),
             "fm_momentum": _momentum_pct,
             "fm_dev": dev_addr[:10] if dev_addr else "",
-            "buy_tax":  _fm_fee_rate,  # FIX B: FM fee = "tax" sell ke liye
-            "sell_tax": _fm_fee_rate,  # FIX B: same fee buy aur sell dono pe
+            "buy_tax":  0.0,  # background mein update hoga
+            "sell_tax": 0.0,  # background mein update hoga
             "buy_reasoning": {
                 "source": "FM_BC_v2",
                 "mc_usd": f"${_mc_usd:.0f}",
                 "momentum": f"+{_momentum_pct:.1f}%"
             },
-            # FIX v65: entry analytics — trade_history CSV export mein aayenge
+            # FIX v65: entry analytics
             "buyers_at_entry":     int(_buyers_at_entry or 0),
             "total_buys_at_entry": int(_total_buys_at_entry or 0),
             "momentum_pct":        round(float(_momentum_pct or 0), 2),
@@ -6731,8 +6706,47 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             "dev_wallet_pct":      round(float(_dev_wallet_pct or 0), 2),
             "mc_usd_entry":        round(float(_mc_usd or 0), 0),
             "liquidity_bnb_entry": round(float(_funds2 / 1e18 if _funds2 else 0), 4),
-            "entry_type":          _entry_type,  # FIX v68: "direct" / "waited" / "skipped"
-}
+            "entry_type":          _entry_type,
+        }
+        print(f"✅ [FM v76] Position registered instantly after TX | {ms}ms")
+
+        # FIX v76: balanceOf + fee fetch — background thread mein (non-blocking)
+        def _bg_entry_update(_taddr, _sz_bnb, _entry_price, _w3a_ref):
+            # 1) balanceOf — entry price refine karo
+            try:
+                _w3_entry = _get_w3q() or _fm_get_w3()
+                if _w3_entry:
+                    _tc_entry = _w3_entry.eth.contract(
+                        address=Web3.to_checksum_address(_taddr), abi=_FM_ERC20_ABI)
+                    _token_bal = _tc_entry.functions.balanceOf(
+                        Web3.to_checksum_address(BSC_WALLET or REAL_WALLET)).call()
+                    if _token_bal > 0:
+                        _dec_entry = _get_dec(_taddr)
+                        _tokens_received = _token_bal / (10 ** _dec_entry)
+                        if _tokens_received > 0:
+                            _real_entry = _sz_bnb / _tokens_received
+                            print(f"✅ [FM v76] Entry price updated: {_real_entry:.4e} BNB "
+                                  f"({_tokens_received:.0f} tokens for {_sz_bnb} BNB)")
+                            # Position update karo agar abhi bhi alive hai
+                            if _taddr in auto_trade_stats.get("running_positions", {}):
+                                auto_trade_stats["running_positions"][_taddr]["entry"] = _real_entry
+                            with monitor_lock:
+                                if _taddr in monitored_positions:
+                                    monitored_positions[_taddr]["entry"] = _real_entry
+            except Exception as _ep:
+                print(f"⚠️ [FM v76] Entry price bg update error: {str(_ep)[:50]}")
+            # 2) fee rate fetch
+            try:
+                _fm_info_fee = _fm_get_token_info(_taddr, _w3a_ref) if _w3a_ref else None
+                if _fm_info_fee and _fm_info_fee.get("tradingFeeRate", 0) > 0:
+                    _fm_fee_rate = round(_fm_info_fee["tradingFeeRate"] / 1e18 * 100, 2)
+                    if _taddr in auto_trade_stats.get("running_positions", {}):
+                        auto_trade_stats["running_positions"][_taddr]["buy_tax"]  = _fm_fee_rate
+                        auto_trade_stats["running_positions"][_taddr]["sell_tax"] = _fm_fee_rate
+                    print(f"✅ [FM v76] Fee rate updated: {_fm_fee_rate}%")
+            except Exception:
+                pass
+        threading.Thread(target=_bg_entry_update, args=(token_addr, size_bnb, entry, _w3a), daemon=True).start()
         auto_trade_stats["total_auto_buys"] += 1
         _scanner_stats["fm_bought"] = _scanner_stats.get("fm_bought", 0) + 1
         threading.Thread(target=_persist_positions, daemon=True).start()
