@@ -4302,6 +4302,11 @@ def auto_position_manager():
                         blacklist_token(addr, f"HardSL rebuy block")
                         _trail_triggered = True
                         print(f"🔴 HardSL: {addr[:10]} pnl={pnl:.1f}%")
+                        _pos_data = auto_trade_stats.get("running_positions", {}).get(addr, {})
+                        if not _pos_data.get("entry_price_confirmed", True):
+                            _push_notif("warning", "⚠️ HardSL on Unconfirmed Entry",
+                                f"{_pos_data.get('token','?')} | SL={pnl:.1f}% | Entry price confirmed nahi thi",
+                                _pos_data.get("token", ""), addr)
                         continue
 
                     # Emergency SL: entry ke baad price drop → fast exit
@@ -6712,6 +6717,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
             "mc_usd_entry":        round(float(_mc_usd or 0), 0),
             "liquidity_bnb_entry": round(float(_funds2 / 1e18 if _funds2 else 0), 4),
             "entry_type":          _entry_type,
+            "entry_price_confirmed": False,  # background thread True karega
         }
         print(f"✅ [FM v76] Position registered instantly after TX | {ms}ms")
 
@@ -6735,6 +6741,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                             # Position update karo agar abhi bhi alive hai
                             if _taddr in auto_trade_stats.get("running_positions", {}):
                                 auto_trade_stats["running_positions"][_taddr]["entry"] = _real_entry
+                                auto_trade_stats["running_positions"][_taddr]["entry_price_confirmed"] = True
                             with monitor_lock:
                                 if _taddr in monitored_positions:
                                     monitored_positions[_taddr]["entry"] = _real_entry
