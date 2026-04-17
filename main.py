@@ -6454,6 +6454,11 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                 print(f"✅ [FM] Buy pressure confirmed — ENTERING NOW")
 
         # ========== BUY EXECUTION ==========
+        # FIX v71: Position already open hai toh DOBARA BUY MAT KARO — duplicate buy hard stop
+        _existing_pos_keys = [k.lower() for k in auto_trade_stats.get("running_positions", {})]
+        if token_addr.lower() in _existing_pos_keys:
+            print(f"⏭️ [FM v71] Position already open — duplicate buy blocked: {token_addr[:10]}")
+            return
         size_bnb = _anti_mev_amount(AUTO_BUY_SIZE_BNB)
         token_name = token_addr[:8]
         try:
@@ -6681,6 +6686,10 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         except Exception:
             pass
 
+        # FIX v71: Race condition guard — position already register ho chuki ho toh overwrite mat karo
+        if token_addr in auto_trade_stats.get("running_positions", {}):
+            print(f"⏭️ [FM v71] Position already registered — overwrite blocked: {token_addr[:10]}")
+            return
         auto_trade_stats["running_positions"][token_addr] = {
             "token": token_name,
             "entry": entry,
