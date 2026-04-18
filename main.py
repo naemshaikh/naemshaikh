@@ -4420,7 +4420,9 @@ def price_monitor_loop():
             try:
                 if pos.get("buy_reasoning", {}).get("source") == "FM_BC_v2":
                     try:
-                        _fm_info = _fm_get_token_info(addr, _fm_get_w3())
+                        # FIX v69: Chainstack use karo — free RPC stale price deta tha
+                        # jisse pos["current"] galat hota tha → fake SL/TP trigger
+                        _fm_info = _fm_get_token_info(addr, _get_w3q() or _fm_get_w3())
                         if _fm_info and _fm_info.get("lastPrice", 0) > 0:
                             _bnb_p = market_cache.get("bnb_price", 640)
                             _quote = _fm_info.get("quote", "").lower()
