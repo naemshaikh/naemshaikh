@@ -4344,7 +4344,8 @@ def auto_position_manager():
                     # ── TP1/TP2/TP3: sirf tab fire karo jab price monitor ne current update kiya ho ──
                     # FIX v91: initial current=entry hota hai (stale) — TP us pe fire hota tha
                     # _price_refreshed = True sirf tab jab price_monitor/continuous_learning ne lastPrice fetch kiya
-                    _price_fresh = mon.get("_price_refreshed", False)
+                    _price_fresh  = mon.get("_price_refreshed", False)
+                    _tp_fired_now = False  # FIX v92: TP fire hua is iteration — MomDead skip karo
 
                     # ── TP1: +40% → 40% sell ──
                     if pnl >= 40 and tp_sold < 40:
@@ -4352,6 +4353,7 @@ def auto_position_manager():
                             _auto_paper_sell(addr, f"TP1 +40% 🔒", 40.0)
                             print(f"🔒 TP1: {addr[:10]} pnl={pnl:.1f}%")
                             tp_sold = auto_trade_stats["running_positions"].get(addr, {}).get("tp_sold", 40.0)
+                            _tp_fired_now = True
                         else:
                             print(f"⏳ [v91] TP1 skip — price not yet refreshed by monitor: {addr[:10]} pnl={pnl:.1f}%")
 
@@ -4361,6 +4363,7 @@ def auto_position_manager():
                             _auto_paper_sell(addr, f"TP2 +200% 🔥", 25.0)
                             print(f"🔥 TP2: {addr[:10]} pnl={pnl:.1f}%")
                             tp_sold = auto_trade_stats["running_positions"].get(addr, {}).get("tp_sold", 65.0)
+                            _tp_fired_now = True
                         else:
                             print(f"⏳ [v91] TP2 skip — price not yet refreshed: {addr[:10]} pnl={pnl:.1f}%")
 
@@ -4370,6 +4373,7 @@ def auto_position_manager():
                             _auto_paper_sell(addr, f"TP3 +500% 🚀", 20.0)
                             print(f"🚀 TP3: {addr[:10]} pnl={pnl:.1f}%")
                             tp_sold = auto_trade_stats["running_positions"].get(addr, {}).get("tp_sold", 85.0)
+                            _tp_fired_now = True
                         else:
                             print(f"⏳ [v91] TP3 skip — price not yet refreshed: {addr[:10]} pnl={pnl:.1f}%")
 
@@ -4395,7 +4399,8 @@ def auto_position_manager():
                     )
 
                     # ── MomDead + EmergSL: INDEPENDENT if — TP ke baad bhi check ──
-                    if addr in auto_trade_stats["running_positions"] and not _trail_triggered:
+                    # FIX v92: TP same iteration mein fire hua toh MomDead skip — double sell block
+                    if addr in auto_trade_stats["running_positions"] and not _trail_triggered and not _tp_fired_now:
                         if _mom_dead or _mom_stall:
                             _reason = "MomStall" if _mom_stall and not _mom_dead else "MomDead"
                             _zone = "Moonbag" if tp_sold >= 85 else ("Post-TP2" if tp_sold >= 65 else ("Post-TP1" if tp_sold >= 40 else "Pre-TP"))
