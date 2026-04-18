@@ -5279,8 +5279,17 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                 print(f"⚡ [FM] Approve cache HIT — allowance RPC skip: {token_addr[:10]}")
                 _allowance = 2**256 - 1  # treat as max approved
             else:
-                _allowance = _tc_approve.functions.allowance(
-                    wallet_cs, Web3.to_checksum_address(_dynamic_manager)).call()
+                # FIX v98: "pending" block pe check karo — pre-approve TX pending ho toh
+                # latest block pe 0 dikhta hai → duplicate approve bhejta tha → nonce chain stuck
+                # pending block pe max dikhega → approve skip → sell seedha N+1 pe
+                try:
+                    _allowance = _tc_approve.functions.allowance(
+                        wallet_cs, Web3.to_checksum_address(_dynamic_manager)
+                    ).call(block_identifier="pending")
+                    print(f"[FM v98] Allowance (pending block): {_allowance > 0}")
+                except Exception:
+                    _allowance = _tc_approve.functions.allowance(
+                        wallet_cs, Web3.to_checksum_address(_dynamic_manager)).call()
             if _allowance < _amt:
                 print(f"🔑 [FM] Approving Token Manager for sell...")
                 _approve_nonce = get_next_nonce(_w3_fast, wallet_cs)
