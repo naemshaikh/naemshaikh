@@ -6592,6 +6592,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                                         if _addr in monitored_positions:
                                             monitored_positions[_addr]["entry"] = _real_entry
                                             monitored_positions[_addr]["current"] = _real_entry
+                                            monitored_positions[_addr]["high"] = _real_entry
                                     with monitor_lock:
                                         if _addr in auto_trade_stats.get("running_positions", {}):
                                             auto_trade_stats["running_positions"][_addr]["entry"] = _real_entry
@@ -6788,32 +6789,37 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         }
         print(f"✅ [FM v76] Position registered instantly after TX | {ms}ms")
 
-        # FIX v76: balanceOf + fee fetch — background thread mein (non-blocking)
+        # FIX v76: lastPrice + fee fetch — background thread mein (non-blocking)
         def _bg_entry_update(_taddr, _sz_bnb, _entry_price, _w3a_ref):
-            # 1) balanceOf — entry price refine karo
+            # 1) lastPrice from FM contract — same source jo price_monitor use karta hai
+            # FIX v90: balanceOf/tokens_received se entry calculate karna galat tha
+            # size_bnb/tokens = average cost per token (wrong scale vs lastPrice)
+            # lastPrice = actual bonding curve price — price_monitor bhi yahi use karta hai
+            # Dono same source = consistent PnL calculation
             try:
                 _w3_entry = _get_w3q() or _fm_get_w3()
                 if _w3_entry:
-                    _tc_entry = _w3_entry.eth.contract(
-                        address=Web3.to_checksum_address(_taddr), abi=_FM_ERC20_ABI)
-                    _token_bal = _tc_entry.functions.balanceOf(
-                        Web3.to_checksum_address(BSC_WALLET or REAL_WALLET)).call()
-                    if _token_bal > 0:
-                        _dec_entry = _get_dec(_taddr)
-                        _tokens_received = _token_bal / (10 ** _dec_entry)
-                        if _tokens_received > 0:
-                            _real_entry = _sz_bnb / _tokens_received
-                            print(f"✅ [FM v76] Entry price updated: {_real_entry:.4e} BNB "
-                                  f"({_tokens_received:.0f} tokens for {_sz_bnb} BNB)")
-                            # Position update karo agar abhi bhi alive hai
+                    _fm_info_entry = _fm_get_token_info(_taddr, _w3_entry)
+                    if _fm_info_entry and _fm_info_entry.get("lastPrice", 0) > 0:
+                        _bnb_p_e = market_cache.get("bnb_price", 640)
+                        _quote_e = _fm_info_entry.get("quote", "").lower()
+                        _USDT_Le = "0x55d398326f99059ff775485246999027b3197955"
+                        _BUSD_Le = "0xe9e7cea3dedca5984780bafc599bd69add087d56"
+                        if _quote_e in [_USDT_Le, _BUSD_Le]:
+                            _real_entry = (_fm_info_entry["lastPrice"] / 1e18) / _bnb_p_e if _bnb_p_e > 0 else 0
+                        else:
+                            _real_entry = _fm_info_entry["lastPrice"] / 1e18
+                        if _real_entry > 0:
+                            print(f"✅ [FM v90] Entry price (lastPrice): {_real_entry:.6e} BNB")
                             if _taddr in auto_trade_stats.get("running_positions", {}):
                                 auto_trade_stats["running_positions"][_taddr]["entry"] = _real_entry
                                 auto_trade_stats["running_positions"][_taddr]["entry_price_confirmed"] = True
                             with monitor_lock:
                                 if _taddr in monitored_positions:
                                     monitored_positions[_taddr]["entry"] = _real_entry
+                                    monitored_positions[_taddr]["high"]  = _real_entry
             except Exception as _ep:
-                print(f"⚠️ [FM v76] Entry price bg update error: {str(_ep)[:50]}")
+                print(f"⚠️ [FM v90] Entry price bg update error: {str(_ep)[:50]}")
             # 2) fee rate fetch
             try:
                 _fm_info_fee = _fm_get_token_info(_taddr, _w3a_ref) if _w3a_ref else None
