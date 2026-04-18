@@ -3780,6 +3780,7 @@ def _fm_bc_fast_price_loop():
                             with monitor_lock:
                                 if _addr in monitored_positions:
                                     monitored_positions[_addr]["current"] = _price
+                                    monitored_positions[_addr]["_price_refreshed"] = True
                                     if _price > monitored_positions[_addr].get("high", 0):
                                         monitored_positions[_addr]["high"] = _price
                                         _rp = auto_trade_stats["running_positions"].get(_addr)
@@ -3838,6 +3839,7 @@ def continuous_learning():
                                                 with monitor_lock:
                                                     if _addr in monitored_positions:
                                                         monitored_positions[_addr]["current"] = _price
+                                                        monitored_positions[_addr]["_price_refreshed"] = True
                                                         if _price > monitored_positions[_addr].get("high", 0):
                                                             monitored_positions[_addr]["high"] = _price
                                                             _rp = auto_trade_stats["running_positions"].get(_addr)
@@ -3852,6 +3854,7 @@ def continuous_learning():
                                     with monitor_lock:
                                         if _addr in monitored_positions:
                                             monitored_positions[_addr]["current"] = _price
+                                            monitored_positions[_addr]["_price_refreshed"] = True
                                             if _price > monitored_positions[_addr].get("high", 0):
                                                 monitored_positions[_addr]["high"] = _price
                                                 _rp2 = auto_trade_stats["running_positions"].get(_addr)
@@ -4338,38 +4341,37 @@ def auto_position_manager():
                     # Pehle: elif chain — TP1 fire kiya toh MomDead skip
                     # Ab: TP1/TP2 alag if, MomDead/EmergSL alag if — dono same iteration
 
-                    # ── TP1/TP2/TP3: entry confirmed hone ke baad hi fire karo ──
-                    # FIX v91: entry_price_confirmed=False = TX logs abhi parse nahi hue
-                    # Unconfirmed entry pe fake PnL se TP fire hoga — block karo
-                    _entry_confirmed = _pos_data.get("entry_price_confirmed", False)
-                    _hold_ok_for_tp  = _hold_secs >= 5  # minimum 5s hold
+                    # ── TP1/TP2/TP3: sirf tab fire karo jab price monitor ne current update kiya ho ──
+                    # FIX v91: initial current=entry hota hai (stale) — TP us pe fire hota tha
+                    # _price_refreshed = True sirf tab jab price_monitor/continuous_learning ne lastPrice fetch kiya
+                    _price_fresh = mon.get("_price_refreshed", False)
 
                     # ── TP1: +40% → 40% sell ──
                     if pnl >= 40 and tp_sold < 40:
-                        if _entry_confirmed and _hold_ok_for_tp:
+                        if _price_fresh:
                             _auto_paper_sell(addr, f"TP1 +40% 🔒", 40.0)
                             print(f"🔒 TP1: {addr[:10]} pnl={pnl:.1f}%")
                             tp_sold = auto_trade_stats["running_positions"].get(addr, {}).get("tp_sold", 40.0)
                         else:
-                            print(f"⏳ [v91] TP1 blocked — entry not confirmed: {addr[:10]} pnl={pnl:.1f}% confirmed={_entry_confirmed} hold={_hold_secs:.1f}s")
+                            print(f"⏳ [v91] TP1 skip — price not yet refreshed by monitor: {addr[:10]} pnl={pnl:.1f}%")
 
                     # ── TP2: +200% → 25% sell (total 65% sold) ──
                     elif pnl >= 200 and tp_sold < 65:
-                        if _entry_confirmed and _hold_ok_for_tp:
+                        if _price_fresh:
                             _auto_paper_sell(addr, f"TP2 +200% 🔥", 25.0)
                             print(f"🔥 TP2: {addr[:10]} pnl={pnl:.1f}%")
                             tp_sold = auto_trade_stats["running_positions"].get(addr, {}).get("tp_sold", 65.0)
                         else:
-                            print(f"⏳ [v91] TP2 blocked — entry not confirmed: {addr[:10]} pnl={pnl:.1f}%")
+                            print(f"⏳ [v91] TP2 skip — price not yet refreshed: {addr[:10]} pnl={pnl:.1f}%")
 
                     # ── TP3: +500% → 20% sell (total 85% sold) ──
                     elif pnl >= 500 and tp_sold < 85:
-                        if _entry_confirmed and _hold_ok_for_tp:
+                        if _price_fresh:
                             _auto_paper_sell(addr, f"TP3 +500% 🚀", 20.0)
                             print(f"🚀 TP3: {addr[:10]} pnl={pnl:.1f}%")
                             tp_sold = auto_trade_stats["running_positions"].get(addr, {}).get("tp_sold", 85.0)
                         else:
-                            print(f"⏳ [v91] TP3 blocked — entry not confirmed: {addr[:10]} pnl={pnl:.1f}%")
+                            print(f"⏳ [v91] TP3 skip — price not yet refreshed: {addr[:10]} pnl={pnl:.1f}%")
 
                     # ── FIX v62: Momentum Stall — TP ke baad new high nahi bana X seconds mein ──
                     _last_high_ts = _pos_data.get("_last_high_ts", 0)
