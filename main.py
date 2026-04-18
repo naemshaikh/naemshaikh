@@ -3066,6 +3066,23 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
 
             if not _graduated:
                 _real_sell = _fm_real_sell_bc(address, sell_pct, _fm_factory, _w3_sell)
+                # FIX v97: FM BC — background tracker (_bc_track_and_parse) handles
+                # paper state via _fm_confirm_close on TX confirm.
+                # TX send hote hi paper state mat close karo — tokens wallet mein stuck ho jaate the
+                # agar TX revert hoti thi (approve pending, slippage, etc.)
+                if _real_sell.get("success"):
+                    # Store exit reason so _fm_confirm_close can use it
+                    _rp_v97 = auto_trade_stats.get("running_positions", {})
+                    if address in _rp_v97:
+                        _rp_v97[address]["_pending_exit_reason"] = reason
+                    print(f"🔁 [FM v97] BC sell TX sent ({address[:10]}) — tracker se confirm hone pe state close hogi, position active")
+                    return  # position stays open; _bc_track_and_parse closes on confirm
+                else:
+                    _fail_err_v97 = _real_sell.get("error", "?")
+                    print(f"❌ [FM v97] BC sell failed — position still open: {_fail_err_v97}")
+                    _push_notif("critical", "🔴 FM Sell Failed",
+                        f"{token} sell failed: {_fail_err_v97} — position still open", token, address)
+                    return
             else:
                 _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
         else:
@@ -5009,6 +5026,8 @@ def _fm_confirm_close(token_addr, sell_pct, reason, tx_hash_hex):
             return
         token_addr = _matched_key  # sahi key use karo
         pos  = _rp[token_addr]
+        # FIX v97: original SL/TP reason use karo (e.g. "PriceDrop -23.8%") instead of "BC sell confirmed"
+        reason = pos.pop("_pending_exit_reason", reason)
         with monitor_lock:
             mon = monitored_positions.get(token_addr, {})
             if not mon:
