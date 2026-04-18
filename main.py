@@ -4829,10 +4829,20 @@ _fm_selling_lock = threading.Lock()
 _fm_dev_cache      = {}
 _fm_dev_cache_lock = threading.Lock()
 
-# Global FM w3 — PC wala hi reuse karo
+# FIX v68: _fm_get_w3 cache — har call pe naya Web3 object banana wasteful tha
+# Data galat nahi hoga — object cache hai, har .call() fresh RPC request karta hai
+# TTL=300s + health check — agar cached RPC down ho to auto-refresh hoga
+_fm_w3_cache      = None
+_fm_w3_cache_rpc  = ""
+_fm_w3_cache_time = 0.0
+_FM_W3_TTL        = 300  # 5 min — baad mein fresh connection lo
+
 def _fm_get_w3():
-    """Free RPC — polling aur filters ke liye (v72: expanded pool)"""
-    for rpc in [
+    """Free RPC — polling aur filters ke liye (v72: expanded pool)
+    FIX v68: Cached — har call pe naya object nahi, same connection reuse hoga.
+    TTL 5min + health check — RPC down hone pe auto-refresh."""
+    global _fm_w3_cache, _fm_w3_cache_rpc, _fm_w3_cache_time
+    _rpcs = [
         "https://bsc-rpc.publicnode.com",
         "https://bsc-dataseed.binance.org/",
         "https://bsc-dataseed1.defibit.io/",
@@ -4840,10 +4850,25 @@ def _fm_get_w3():
         "https://bsc.drpc.org",
         "https://binance.llamarpc.com",
         "https://1rpc.io/bnb",
-    ]:
+    ]
+    now = time.time()
+    # Cache valid hai aur TTL ke andar hai — reuse karo
+    if _fm_w3_cache is not None and (now - _fm_w3_cache_time) < _FM_W3_TTL:
+        return _fm_w3_cache
+    # TTL expire ya first call — fresh connection banao
+    for rpc in _rpcs:
         try:
-            return Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 5}))
+            _w = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 5}))
+            # Quick health check — block number fetch karo
+            _ = _w.eth.block_number
+            _fm_w3_cache      = _w
+            _fm_w3_cache_rpc  = rpc
+            _fm_w3_cache_time = now
+            return _fm_w3_cache
         except: continue
+    # Sab fail — purana cache return karo (better than None)
+    if _fm_w3_cache is not None:
+        return _fm_w3_cache
     return None
 
 def _fm_get_token_info(token_addr, w3=None):
