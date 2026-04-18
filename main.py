@@ -285,7 +285,9 @@ def get_token_price_bnb(token_address: str) -> float:
 
     _USDT = "0x55d398326f99059ff775485246999027b3197955"
     _BUSD = "0xe9e7cea3dedca5984780bafc599bd69add087d56"
-    router   = w3.eth.contract(address=Web3.to_checksum_address(PANCAKE_ROUTER), abi=ROUTER_ABI_PRICE)
+    # FIX v65: QuickNode (fast) prefer karo slow RPC ke upar — stale price = fake PriceDrop
+    _w3_price = _w3q_global if (_w3q_global is not None) else w3
+    router   = _w3_price.eth.contract(address=Web3.to_checksum_address(PANCAKE_ROUTER), abi=ROUTER_ABI_PRICE)
     dec      = _get_dec(token_address)
     token_cs = Web3.to_checksum_address(token_address)
     wbnb_cs  = Web3.to_checksum_address(WBNB)
