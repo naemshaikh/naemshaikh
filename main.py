@@ -196,9 +196,14 @@ def _get_honeypot(token_address: str) -> dict:
         print(f"⚠️ Honeypot.is error: {e}")
     return {}
 
+def _qw3():
+    """QuickNode w3 — fastest paid RPC. Fallback to w3 if QN not configured.
+    FIX v65: Sab price/TX calls yahi use karein — stale slow RPC se bacho."""
+    return _w3q_global if (_w3q_global is not None) else w3
+
 def _get_dec(addr):
     if addr.lower() in _dec_cache: return _dec_cache[addr.lower()]
-    try: d = w3.eth.contract(address=Web3.to_checksum_address(addr), abi=TOKEN_DEC_ABI).functions.decimals().call()
+    try: d = _qw3().eth.contract(address=Web3.to_checksum_address(addr), abi=TOKEN_DEC_ABI).functions.decimals().call()
     except: d = 18
     if len(_dec_cache) > 200:  # Cache size limit
         for k in list(_dec_cache.keys())[:100]:
@@ -208,7 +213,7 @@ def _get_dec(addr):
 
 def _get_v2_pair(token_address):
     try:
-        p = w3.eth.contract(address=Web3.to_checksum_address(PANCAKE_FACTORY), abi=FACTORY_ABI_PRICE).functions.getPair(
+        p = _qw3().eth.contract(address=Web3.to_checksum_address(PANCAKE_FACTORY), abi=FACTORY_ABI_PRICE).functions.getPair(
             Web3.to_checksum_address(token_address), Web3.to_checksum_address(WBNB)).call()
         return "" if p == "0x0000000000000000000000000000000000000000" else p
     except: return ""
@@ -233,7 +238,7 @@ V3_POOL_ABI = [
 
 def _get_v3_pool(token_address):
     try:
-        v3f     = w3.eth.contract(address=Web3.to_checksum_address(PANCAKE_V3_FACTORY), abi=V3_FACTORY_ABI)
+        v3f     = _qw3().eth.contract(address=Web3.to_checksum_address(PANCAKE_V3_FACTORY), abi=V3_FACTORY_ABI)
         tok_cs  = Web3.to_checksum_address(token_address)
         wbnb_cs = Web3.to_checksum_address(WBNB)
         zero    = "0x0000000000000000000000000000000000000000"
@@ -248,7 +253,7 @@ def _get_v3_pool(token_address):
 
 def _get_v3_price_bnb(pool_address, token_address):
     try:
-        pc      = w3.eth.contract(address=Web3.to_checksum_address(pool_address), abi=V3_POOL_ABI)
+        pc      = _qw3().eth.contract(address=Web3.to_checksum_address(pool_address), abi=V3_POOL_ABI)
         slot0   = pc.functions.slot0().call()
         sqrtP   = slot0[0]
         if sqrtP == 0: return 0.0
@@ -341,7 +346,7 @@ def get_token_price_bnb_full(token_address: str) -> float:
     try:
         pair = _get_v2_pair(token_address)
         if pair:
-            pc = w3.eth.contract(address=Web3.to_checksum_address(pair), abi=PAIR_ABI_PRICE)
+            pc = _qw3().eth.contract(address=Web3.to_checksum_address(pair), abi=PAIR_ABI_PRICE)
             t0 = pc.functions.token0().call()
             r  = pc.functions.getReserves().call()
             dec = _get_dec(token_address)
@@ -922,17 +927,18 @@ def _pre_approve_after_buy(token_addr):
     """Fix #10: Pre-approve after successful buy"""
     try:
         time.sleep(2)
-        token_c = w3.eth.contract(address=Web3.to_checksum_address(token_addr), abi=ERC20_ABI_APPROVE)
-        wallet = w3.eth.account.from_key(REAL_PRIVATE_KEY).address
+        _w3x = _qw3()  # FIX v65: QuickNode
+        token_c = _w3x.eth.contract(address=Web3.to_checksum_address(token_addr), abi=ERC20_ABI_APPROVE)
+        wallet = _w3x.eth.account.from_key(REAL_PRIVATE_KEY).address
         allowance = token_c.functions.allowance(wallet, PANCAKE_ROUTER).call()
         if allowance < 2**256 - 1:
             approve_tx = token_c.functions.approve(PANCAKE_ROUTER, 2**256 - 1).build_transaction({
                 "from": wallet, "gas": 100000,
                 "gasPrice": _get_dynamic_gas_price(),
-                "nonce": get_next_nonce(w3, wallet)
+                "nonce": get_next_nonce(_w3x, wallet)
             })
-            signed = w3.eth.account.sign_transaction(approve_tx, REAL_PRIVATE_KEY)
-            w3.eth.send_raw_transaction(signed.rawTransaction)
+            signed = _w3x.eth.account.sign_transaction(approve_tx, REAL_PRIVATE_KEY)
+            _w3x.eth.send_raw_transaction(signed.rawTransaction)
             print(f"✅ Pre-approved {token_addr[:10]}")
     except Exception as e:
         print(f"⚠️ Pre-approve error: {e}")
@@ -951,9 +957,10 @@ def real_buy_token(token_address: str, bnb_amount: float,
         return result
 
     # Real wallet balance check — buy se pehle
+    _w3x = _qw3()  # FIX v65: QuickNode — fastest RPC for all buy TX calls
     try:
-        _wallet_addr = w3.eth.account.from_key(REAL_PRIVATE_KEY).address
-        _wallet_bal  = float(w3.eth.get_balance(_wallet_addr)) / 1e18
+        _wallet_addr = _w3x.eth.account.from_key(REAL_PRIVATE_KEY).address
+        _wallet_bal  = float(_w3x.eth.get_balance(_wallet_addr)) / 1e18
         _gas_est     = 0.002  # ~0.002 BNB gas reserve
         if _wallet_bal < bnb_amount + _gas_est:
             result["error"] = f"Insufficient balance: {_wallet_bal:.4f} BNB < {bnb_amount + _gas_est:.4f} BNB needed"
@@ -964,14 +971,14 @@ def real_buy_token(token_address: str, bnb_amount: float,
         print(f"⚠️ Balance check error: {_be}")
 
     try:
-        account  = w3.eth.account.from_key(REAL_PRIVATE_KEY)
+        account  = _w3x.eth.account.from_key(REAL_PRIVATE_KEY)
         wallet   = account.address
-        router   = w3.eth.contract(address=Web3.to_checksum_address(PANCAKE_ROUTER), abi=ROUTER_SWAP_ABI)
+        router   = _w3x.eth.contract(address=Web3.to_checksum_address(PANCAKE_ROUTER), abi=ROUTER_SWAP_ABI)
         token_cs = Web3.to_checksum_address(token_address)
         wbnb_cs  = Web3.to_checksum_address(WBNB)
 
         # Anti-MEV: amount noise
-        bnb_wei  = w3.to_wei(_anti_mev_amount(bnb_amount), "ether")
+        bnb_wei  = _w3x.to_wei(_anti_mev_amount(bnb_amount), "ether")
 
         # Slippage: tax-aware + random
         slippage_pct = _anti_mev_slippage(buy_tax, sell_tax)
@@ -1024,7 +1031,7 @@ def real_buy_token(token_address: str, bnb_amount: float,
 
         # Deadline: 60 sec
         deadline  = int(time.time()) + 60
-        nonce     = get_next_nonce(w3, wallet)
+        nonce     = get_next_nonce(_w3x, wallet)
         gas_price = _get_dynamic_gas_price()
 
         txn = router.functions.swapExactETHForTokensSupportingFeeOnTransferTokens(
@@ -1041,12 +1048,12 @@ def real_buy_token(token_address: str, bnb_amount: float,
             "chainId":  56
         })
 
-        signed  = w3.eth.account.sign_transaction(txn, REAL_PRIVATE_KEY)
-        tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
+        signed  = _w3x.eth.account.sign_transaction(txn, REAL_PRIVATE_KEY)
+        tx_hash = _w3x.eth.send_raw_transaction(signed.rawTransaction)
         print(f"🔴 REAL BUY TX: {tx_hash.hex()[:20]}... slippage={slippage_pct}%")
 
         # Wait for receipt (30 sec max)
-        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+        receipt = _w3x.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
         if receipt["status"] == 1:
             result["success"]      = True
             result["tx_hash"]      = tx_hash.hex()
@@ -1067,8 +1074,8 @@ def real_buy_token(token_address: str, bnb_amount: float,
             _push_notif("critical", "🔴 Buy Timeout", f"Transaction stuck — not confirmed in 30s | {_err_str}", token_address[:10], token_address)
         elif "nonce" in _err_str.lower():
             try:
-                _w_addr = w3.eth.account.from_key(REAL_PRIVATE_KEY).address
-                reset_nonce(w3, _w_addr)
+                _w_addr = _w3x.eth.account.from_key(REAL_PRIVATE_KEY).address
+                reset_nonce(_w3x, _w_addr)
             except Exception: pass
             _push_notif("critical", "🔴 Nonce Error", f"Nonce conflict — auto reset kiya | {_err_str}", token_address[:10], token_address)
         elif "gas" in _err_str.lower() or "fee" in _err_str.lower():
@@ -1091,16 +1098,17 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
         return result
 
     try:
-        account  = w3.eth.account.from_key(REAL_PRIVATE_KEY)
+        _w3x = _qw3()  # FIX v65: QuickNode — fastest RPC for all sell TX calls
+        account  = _w3x.eth.account.from_key(REAL_PRIVATE_KEY)
         wallet   = account.address
-        router   = w3.eth.contract(address=Web3.to_checksum_address(PANCAKE_ROUTER), abi=ROUTER_SWAP_ABI)
+        router   = _w3x.eth.contract(address=Web3.to_checksum_address(PANCAKE_ROUTER), abi=ROUTER_SWAP_ABI)
         token_cs = Web3.to_checksum_address(token_address)
         wbnb_cs  = Web3.to_checksum_address(WBNB)
-        token_c  = w3.eth.contract(address=token_cs, abi=ERC20_ABI_APPROVE)
+        token_c  = _w3x.eth.contract(address=token_cs, abi=ERC20_ABI_APPROVE)
 
         # FIX 4: Gas balance check before sell
         try:
-            _gas_bal = w3.eth.get_balance(wallet) / 1e18
+            _gas_bal = _w3x.eth.get_balance(wallet) / 1e18
             if _gas_bal < 0.0015:  # minimum ~0.0015 BNB for sell gas
                 result["error"] = f"insufficient wallet balance {_gas_bal:.4f} BNB"
                 _push_notif("critical", "🔴 Low Balance",
@@ -1118,7 +1126,7 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
 
         allowance = token_c.functions.allowance(wallet, Web3.to_checksum_address(PANCAKE_ROUTER)).call()
         if allowance < sell_amt:
-            nonce_a = get_next_nonce(w3, wallet)
+            nonce_a = get_next_nonce(_w3x, wallet)
             # GAS FIX: Approve bhi 3x — approve slow toh sell delay hogi
             approve_txn = token_c.functions.approve(
                 Web3.to_checksum_address(PANCAKE_ROUTER),
@@ -1128,16 +1136,16 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
                 "gasPrice": int(_get_dynamic_gas_price() * 1.5),  # FIX v23: was 3.0x
                 "nonce": nonce_a, "chainId": 56
             })
-            signed_a = w3.eth.account.sign_transaction(approve_txn, REAL_PRIVATE_KEY)
-            tx_hash_a = w3.eth.send_raw_transaction(signed_a.rawTransaction)
-            w3.eth.wait_for_transaction_receipt(tx_hash_a, timeout=30)
+            signed_a = _w3x.eth.account.sign_transaction(approve_txn, REAL_PRIVATE_KEY)
+            tx_hash_a = _w3x.eth.send_raw_transaction(signed_a.rawTransaction)
+            _w3x.eth.wait_for_transaction_receipt(tx_hash_a, timeout=30)
             print(f"✅ Approved token for sell")
 
         slippage_pct = _anti_mev_slippage_sell(buy_tax, sell_tax)
         expected_bnb = router.functions.getAmountsOut(sell_amt, [token_cs, wbnb_cs]).call()
         min_bnb      = int(expected_bnb[1] * (1 - slippage_pct / 100))
         deadline     = int(time.time()) + 60
-        nonce        = get_next_nonce(w3, wallet)
+        nonce        = get_next_nonce(_w3x, wallet)
 
         # GAS FIX: Sell pe 3x gas — rug se pehle fast niklo
         _sell_gas_price = int(_get_dynamic_gas_price() * 1.2)  # FIX v23: was 3.0x
@@ -1151,11 +1159,11 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
             "nonce": nonce, "chainId": 56
         })
 
-        signed  = w3.eth.account.sign_transaction(txn, REAL_PRIVATE_KEY)
-        tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
+        signed  = _w3x.eth.account.sign_transaction(txn, REAL_PRIVATE_KEY)
+        tx_hash = _w3x.eth.send_raw_transaction(signed.rawTransaction)
         print(f"🔴 REAL SELL TX: {tx_hash.hex()[:20]}... slippage={slippage_pct}%")
 
-        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+        receipt = _w3x.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
         if receipt["status"] == 1:
             result["success"]      = True
             result["tx_hash"]      = tx_hash.hex()
@@ -1550,7 +1558,7 @@ def start_swap_monitor():
                         _tok_is_t0 = _pair_addr_cache.get("_t0_" + token_addr, None)
                         if _tok_is_t0 is None:
                             try:
-                                pc = w3.eth.contract(
+                                pc = _qw3().eth.contract(
                                     address=Web3.to_checksum_address(pair_addr),
                                     abi=PAIR_ABI_PRICE
                                 )
@@ -4035,7 +4043,7 @@ def auto_position_manager():
                     try:
                         _pair_addr = _get_pair_for_token(addr)
                         if _pair_addr:
-                            _pc = w3.eth.contract(
+                            _pc = _qw3().eth.contract(
                                 address=Web3.to_checksum_address(_pair_addr),
                                 abi=PAIR_ABI_PRICE
                             )
@@ -9641,7 +9649,7 @@ def analyze_wallet(wallet_address):
             try:
                 _pair = _get_v2_pair(Web3.to_checksum_address(addr))
                 if _pair:
-                    _pc = w3.eth.contract(
+                    _pc = _qw3().eth.contract(
                         address=Web3.to_checksum_address(_pair),
                         abi=PAIR_ABI_PRICE
                     )
