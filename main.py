@@ -198,8 +198,12 @@ def _get_honeypot(token_address: str) -> dict:
 
 def _qw3():
     """QuickNode w3 — fastest paid RPC. Fallback to w3 if QN not configured.
-    FIX v65: Sab price/TX calls yahi use karein — stale slow RPC se bacho."""
-    return _w3q_global if (_w3q_global is not None) else w3
+    FIX v65: Sab price/TX calls yahi use karein — stale slow RPC se bacho.
+    FIX v66: _get_w3q() call karo — _w3q_global sirf tab set hoti hai jab
+    _get_w3q() explicitly call ho. Direct check karne se hamesha None milta
+    tha aur sab calls Chainstack pe jaate the (429 ka root cause)."""
+    _qn = _get_w3q()
+    return _qn if _qn is not None else w3
 
 def _get_dec(addr):
     if addr.lower() in _dec_cache: return _dec_cache[addr.lower()]
@@ -6659,7 +6663,31 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                             auto_trade_stats["running_positions"].pop(_addr, None)
                             remove_position_from_monitor(_addr)
                     except Exception as _re:
-                        print(f"⚠️ [FM] Receipt timeout: {str(_re)[:40]}")
+                        # FIX v66: Receipt check fail (429/timeout) — public RPC pe ek baar retry karo
+                        # Agar woh bhi fail to position cleanup karo — ghost nahi chahiye
+                        _receipt_confirmed = False
+                        try:
+                            _pub_w3 = Web3(Web3.HTTPProvider("https://bsc-rpc.publicnode.com", request_kwargs={"timeout": 10}))
+                            _r2 = _pub_w3.eth.get_transaction_receipt(_th)
+                            if _r2 is not None:
+                                if _r2["status"] == 1:
+                                    _receipt_confirmed = True
+                                    print(f"✅ [FM] Receipt confirmed via fallback RPC: {_th.hex()[:12]}")
+                                else:
+                                    print(f"❌ [FM] TX reverted (fallback): {_th.hex()[:12]}")
+                            else:
+                                print(f"⚠️ [FM] TX not mined yet (fallback): {_th.hex()[:12]}")
+                        except Exception as _re2:
+                            print(f"⚠️ [FM] Fallback receipt also failed: {str(_re2)[:40]}")
+                        if not _receipt_confirmed:
+                            print(f"⚠️ [FM] Receipt check fail: {str(_re)[:40]}")
+                            print(f"🗑️ [FM v66] Ghost position cleanup — TX unconfirmed: {_addr[:10]}")
+                            auto_trade_stats["running_positions"].pop(_addr, None)
+                            remove_position_from_monitor(_addr)
+                            threading.Thread(target=_persist_positions, daemon=True).start()
+                            _push_notif("critical", "🔴 FM TX Unconfirmed",
+                                f"Receipt nahi mila — position hataya | {str(_re)[:40]}",
+                                token_name, _addr)
                 threading.Thread(target=_wait_receipt, args=(tx_hash, _w3_buy, token_addr), daemon=True).start()
             except Exception as e:
                 _err = str(e)[:60]
