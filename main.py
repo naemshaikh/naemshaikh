@@ -5043,15 +5043,18 @@ def _fm_confirm_close(token_addr, sell_pct, reason, tx_hash_hex):
         return_bnb = _actual_bnb_received if _actual_bnb_received > 0 else sell_size * (1 + pnl_pct / 100.0)
 
         sess = get_or_create_session(AUTO_SESSION_ID)
-        sess["paper_balance"] = round(sess.get("paper_balance", 5.0) + return_bnb, 6)
 
         if sell_pct >= 100.0:
+            # Full close — paper_balance aur banked update karo
+            sess["paper_balance"] = round(sess.get("paper_balance", 5.0) + return_bnb, 6)
             auto_trade_stats["auto_pnl_total"] += pnl_pct
-            # FIX: sirf final 100% close pe count karo
             auto_trade_stats["total_auto_sells"] += 1
-
-        _banked = pos.get("banked_pnl_bnb", 0.0)
-        pos["banked_pnl_bnb"] = round(_banked + pnl_bnb, 6)
+            _banked = pos.get("banked_pnl_bnb", 0.0)
+            pos["banked_pnl_bnb"] = round(_banked + pnl_bnb, 6)
+        # FIX v93b: Partial sell (TP1/TP2/TP3) — _auto_paper_sell ne pehle hi
+        # sahi size se banked_pnl_bnb + paper_balance update kar diya hai.
+        # _fm_confirm_close pe size already reduced hoti hai (60%) — dobara add karne se
+        # galat (24% = 60%*40%) amount add hota — skip karo.
 
         if sell_pct >= 100.0:
             if not isinstance(auto_trade_stats.get("trade_history"), list):
@@ -5503,6 +5506,13 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                     _bal_r = _tc_r.functions.balanceOf(_wc_r).call()
                     if _bal_r <= 0:
                         print(f"✅ [FM BC] Balance 0 — already sold"); return None
+                    # FIX v93: sell_pct respect karo — pehle _bal_r (100%) sell hota tha
+                    # TP1 (40%) TX revert → retry mein poora balance sell ho jaata tha
+                    # sell_pct closure se milta hai — partial TP pe partial retry
+                    _amt_r = int(_bal_r * sell_pct / 100)
+                    if _amt_r <= 0:
+                        print(f"✅ [FM BC] Calc amt 0 — skip retry"); return None
+                    print(f"🔁 [FM v93] Retry sell_pct={sell_pct:.0f}% | bal={_bal_r} | amt={_amt_r}")
                     _ti_r = _w3r.eth.contract(
                         address=Web3.to_checksum_address(_FM_HELPER_ADDR), abi=_FM_HELPER_ABI
                     ).functions.getTokenInfo(Web3.to_checksum_address(_t_addr2)).call()
@@ -5514,10 +5524,10 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                     _gp_r = int(_fm_get_cached_gas(_w3r) * (1.2 + _attempt_num * 0.3))  # FIX v23: was 5.5+2.0x
                     _zero = "0x0000000000000000000000000000000000000000"
                     if _tv_r == 1:
-                        _txr = _fc_r.functions.sellToken(0,Web3.to_checksum_address(_t_addr2),_bal_r,0,0,_zero
+                        _txr = _fc_r.functions.sellToken(0,Web3.to_checksum_address(_t_addr2),_amt_r,0,0,_zero
                             ).build_transaction({"from":_wc_r,"gas":400000,"gasPrice":_gp_r,"nonce":_nn_r,"chainId":56})
                     else:
-                        _txr = _fc_r.functions.sellToken(0,Web3.to_checksum_address(_t_addr2),_wc_r,_bal_r,0,0,_zero
+                        _txr = _fc_r.functions.sellToken(0,Web3.to_checksum_address(_t_addr2),_wc_r,_amt_r,0,0,_zero
                             ).build_transaction({"from":_wc_r,"gas":400000,"gasPrice":_gp_r,"nonce":_nn_r,"chainId":56})
                     from eth_account import Account as _AccR
                     _hr = _w3r.eth.send_raw_transaction(_AccR.sign_transaction(_txr, _pk_r).raw_transaction)
@@ -5526,81 +5536,131 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                 except Exception as _re:
                     print(f"⚠️ [FM BC] Retry #{_attempt_num} send error: {str(_re)[:60]}"); return None
 
-            try:
-                _cur_hash  = _th_hex
-                _max_retry = 3
-                _retries   = 0
-                while _retries <= _max_retry:
-                    _t_start = _ttr.time()
-                    _got_rx  = False
-                    while _ttr.time() - _t_start < 20:  # 20s per attempt
+            # FIX v95: Dual parallel verification — assumption zero, sab onchain verify
+            # Thread 1 (receipt_poller): TX hash se receipt poll karo — status+logs+gas
+            # Thread 2 (balance_watcher): balanceOf poll karo — balance ghata = TX confirmed
+            # Jo pehle confirm kare, _on_confirmed fire karo — dusra thread Event se stop
+            import threading as _thr95
+            _w3_qn       = _get_w3q() or _w3t
+            _confirmed    = _thr95.Event()
+            _wc95         = Web3.to_checksum_address(BSC_WALLET or REAL_WALLET)
+            _tc95         = _w3_qn.eth.contract(address=Web3.to_checksum_address(_t_addr), abi=_FM_ERC20_ABI)
+            _bal_before   = _bal  # closure se — TX send se pehle ka balance
+
+            def _on_confirmed(_rx_data, _source):
+                if _confirmed.is_set():
+                    return
+                _confirmed.set()
+                try:
+                    _pos_upd = auto_trade_stats["running_positions"].get(_t_addr, {})
+                    if _rx_data and _pos_upd:
+                        _bnb_got = _parse_bnb(_rx_data)
+                        _pos_upd["_actual_bnb_received"] = _bnb_got
                         try:
-                            _rx = _w3t.eth.get_transaction_receipt(_cur_hash)
-                            if _rx:
-                                _got_rx = True
-                                if _rx["status"] == 1:
-                                    _bnb = _parse_bnb(_rx)
-                                    print(f"✅ [FM BC] Sell confirmed: {_cur_hash[:12]} | BNB: {_bnb:.6f}")
-                                    _push_notif("success","✅ BC Sell Confirmed",
-                                        f"{_t_name} confirmed | BNB:{_bnb:.6f} | TX:{_cur_hash[:12]}",_t_name,_t_addr)
-                                    # FIX v26: actual BNB + tokens position mein save karo
-                                    # _fm_confirm_close sahi exit price calculate karega
-                                    try:
-                                        _pos_upd = auto_trade_stats["running_positions"].get(_t_addr, {})
-                                        if _pos_upd:
-                                            _pos_upd["_actual_bnb_received"] = _bnb
-                                            # FIX Bug3: gas_bnb/gas_usd from receipt
-                                            try:
-                                                _gas_used_bc  = _rx.get("gasUsed", 0)
-                                                _gas_price_bc = _rx.get("effectiveGasPrice", 0) or _rx.get("gasPrice", 0)
-                                                if _gas_used_bc and _gas_price_bc:
-                                                    _gas_bnb_bc = round((_gas_used_bc * _gas_price_bc) / 1e18, 8)
-                                                    _gas_usd_bc = round(_gas_bnb_bc * market_cache.get("bnb_price", 0), 4)
-                                                    _pos_upd["_actual_gas_bnb"] = _gas_bnb_bc
-                                                    _pos_upd["_actual_gas_usd"] = _gas_usd_bc
-                                            except Exception: pass
-                                            # Tokens sold — tx logs se parse karo
-                                            for _lg in _rx["logs"]:
-                                                _tp = _lg.get("topics", [])
-                                                if len(_tp) >= 3:
-                                                    _d = _lg.get("data", "")
-                                                    _d = _d.hex() if isinstance(_d, bytes) else _d
-                                                    try:
-                                                        _tok_amt = int(_d, 16) / 1e18
-                                                        if _tok_amt > 1000:  # reasonable token amount
-                                                            _pos_upd["_actual_tokens_sold"] = _tok_amt
-                                                            break
-                                                    except Exception:
-                                                        pass
-                                    except Exception as _upd_e:
-                                        print(f"⚠️ [FM v26] Position update error: {str(_upd_e)[:40]}")
-                                    # FIX Bug2: 100.0 hardcoded tha — sell_pct use karo (partial TP support)
-                                    _fm_confirm_close(_t_addr, sell_pct, "BC sell confirmed", _cur_hash)
-                                    with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower())
-                                    return
-                                else:
-                                    _retries += 1
-                                    print(f"❌ [FM BC] Reverted: {_cur_hash[:12]} — turant retry #{_retries}")
-                                    if _retries > _max_retry: break
-                                    _nh = _retry_sell(_t_addr, _w3t, _retries)
-                                    if _nh: _cur_hash = _nh.hex()
-                                    else: _retries = _max_retry + 1
-                                break
+                            _gu = _rx_data.get("gasUsed", 0)
+                            _gp = _rx_data.get("effectiveGasPrice", 0) or _rx_data.get("gasPrice", 0)
+                            if _gu and _gp:
+                                _pos_upd["_actual_gas_bnb"] = round((_gu * _gp) / 1e18, 8)
+                                _pos_upd["_actual_gas_usd"] = round(_pos_upd["_actual_gas_bnb"] * market_cache.get("bnb_price", 0), 4)
                         except Exception: pass
-                        _ttr.sleep(0.3)
-                    if not _got_rx:
-                        _retries += 1
-                        print(f"⏳ [FM BC] No receipt 20s — retry #{_retries} higher gas")
-                        if _retries > _max_retry: break
-                        _nh = _retry_sell(_t_addr, _w3t, _retries)
-                        if _nh: _cur_hash = _nh.hex()
-                        else: break
-                print(f"🚨 [FM BC] Sell {_max_retry} retry fail — MANUALLY SELL!")
-                _push_notif("critical","🚨 MANUAL SELL REQUIRED",
-                    f"{_t_name} sell {_max_retry}x fail! MANUALLY SELL! TX:{_cur_hash[:12]}",_t_name,_t_addr)
-                with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower())
+                        for _lg in _rx_data.get("logs", []):
+                            _tp = _lg.get("topics", [])
+                            if len(_tp) >= 3:
+                                _d = _lg.get("data", "")
+                                _d = _d.hex() if isinstance(_d, bytes) else _d
+                                try:
+                                    _tok_amt = int(_d, 16) / 1e18
+                                    if _tok_amt > 1000:
+                                        _pos_upd["_actual_tokens_sold"] = _tok_amt
+                                        break
+                                except Exception: pass
+                        _bnb_log = _bnb_got
+                    else:
+                        _bnb_log = 0.0
+                    print(f"✅ [FM v95] Sell confirmed via {_source} | BNB={_bnb_log:.6f} | {_t_addr[:10]}")
+                    _push_notif("success", "✅ BC Sell Confirmed",
+                        f"{_t_name} | BNB:{_bnb_log:.6f} | src:{_source}", _t_name, _t_addr)
+                    _fm_confirm_close(_t_addr, sell_pct, f"BC confirmed ({_source})", _th_hex)
+                    with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower())
+                except Exception as _ce:
+                    print(f"⚠️ [FM v95] on_confirmed error: {str(_ce)[:60]}")
+
+            def _receipt_poller():
+                try:
+                    _cur  = _th_hex
+                    _retries = 0
+                    _max_r   = 3
+                    while _retries <= _max_r and not _confirmed.is_set():
+                        _t0  = _ttr.time()
+                        _got = False
+                        while _ttr.time() - _t0 < 60 and not _confirmed.is_set():
+                            try:
+                                _rx = _w3_qn.eth.get_transaction_receipt(_cur)
+                                if _rx:
+                                    _got = True
+                                    if _rx["status"] == 1:
+                                        _on_confirmed(_rx, "receipt")
+                                        return
+                                    else:
+                                        # Reverted — balance check karo
+                                        try:
+                                            _cb = _tc95.functions.balanceOf(_wc95).call()
+                                            if _cb < int(_bal_before * 0.95):
+                                                print(f"✅ [FM v95] Revert but bal reduced — already sold")
+                                                _on_confirmed(None, "bal_on_revert")
+                                                return
+                                        except Exception: pass
+                                        _retries += 1
+                                        print(f"❌ [FM v95] TX reverted {_cur[:12]} retry#{_retries}")
+                                        if _retries > _max_r: return
+                                        _nh = _retry_sell(_t_addr, _w3_qn, _retries)
+                                        if _nh: _cur = _nh.hex()
+                                        else: return
+                                    break
+                            except Exception: pass
+                            _ttr.sleep(0.1)
+                        if not _got and not _confirmed.is_set():
+                            try:
+                                _cb = _tc95.functions.balanceOf(_wc95).call()
+                                if _cb < int(_bal_before * 0.95):
+                                    print(f"✅ [FM v95] No receipt 60s but bal reduced — TX landed")
+                                    _on_confirmed(None, "bal_on_timeout")
+                                    return
+                            except Exception: pass
+                            _retries += 1
+                            if _retries > _max_r: break
+                            _nh = _retry_sell(_t_addr, _w3_qn, _retries)
+                            if _nh: _cur = _nh.hex()
+                            else: break
+                    if not _confirmed.is_set():
+                        print(f"🚨 [FM v95] All retries fail — MANUALLY SELL: {_t_addr[:10]}")
+                        _push_notif("critical", "🚨 MANUAL SELL REQUIRED",
+                            f"{_t_name} {_max_r}x fail! MANUALLY SELL!", _t_name, _t_addr)
+                        with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower())
+                except Exception as _pe:
+                    print(f"⚠️ [FM v95] receipt_poller err: {str(_pe)[:60]}")
+                    with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower())
+
+            def _balance_watcher():
+                try:
+                    _t0 = _ttr.time()
+                    while _ttr.time() - _t0 < 90 and not _confirmed.is_set():
+                        try:
+                            _cb = _tc95.functions.balanceOf(_wc95).call()
+                            if _cb < int(_bal_before * 0.95):
+                                print(f"✅ [FM v95] Bal watcher: {_bal_before}→{_cb} TX confirmed")
+                                _on_confirmed(None, "balance_watcher")
+                                return
+                        except Exception: pass
+                        _ttr.sleep(0.15)
+                except Exception as _be:
+                    print(f"⚠️ [FM v95] bal_watcher err: {str(_be)[:60]}")
+
+            try:
+                _thr95.Thread(target=_receipt_poller, daemon=True).start()
+                _thr95.Thread(target=_balance_watcher, daemon=True).start()
             except Exception as _te:
-                print(f"⚠️ [FM BC] tracker error: {_te}")
+                print(f"⚠️ [FM v95] tracker start err: {_te}")
                 with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower())
 
         import threading as _th
