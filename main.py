@@ -4338,23 +4338,38 @@ def auto_position_manager():
                     # Pehle: elif chain — TP1 fire kiya toh MomDead skip
                     # Ab: TP1/TP2 alag if, MomDead/EmergSL alag if — dono same iteration
 
+                    # ── TP1/TP2/TP3: entry confirmed hone ke baad hi fire karo ──
+                    # FIX v91: entry_price_confirmed=False = TX logs abhi parse nahi hue
+                    # Unconfirmed entry pe fake PnL se TP fire hoga — block karo
+                    _entry_confirmed = _pos_data.get("entry_price_confirmed", False)
+                    _hold_ok_for_tp  = _hold_secs >= 5  # minimum 5s hold
+
                     # ── TP1: +40% → 40% sell ──
                     if pnl >= 40 and tp_sold < 40:
-                        _auto_paper_sell(addr, f"TP1 +40% 🔒", 40.0)
-                        print(f"🔒 TP1: {addr[:10]} pnl={pnl:.1f}%")
-                        tp_sold = auto_trade_stats["running_positions"].get(addr, {}).get("tp_sold", 40.0)
+                        if _entry_confirmed and _hold_ok_for_tp:
+                            _auto_paper_sell(addr, f"TP1 +40% 🔒", 40.0)
+                            print(f"🔒 TP1: {addr[:10]} pnl={pnl:.1f}%")
+                            tp_sold = auto_trade_stats["running_positions"].get(addr, {}).get("tp_sold", 40.0)
+                        else:
+                            print(f"⏳ [v91] TP1 blocked — entry not confirmed: {addr[:10]} pnl={pnl:.1f}% confirmed={_entry_confirmed} hold={_hold_secs:.1f}s")
 
                     # ── TP2: +200% → 25% sell (total 65% sold) ──
                     elif pnl >= 200 and tp_sold < 65:
-                        _auto_paper_sell(addr, f"TP2 +200% 🔥", 25.0)
-                        print(f"🔥 TP2: {addr[:10]} pnl={pnl:.1f}%")
-                        tp_sold = auto_trade_stats["running_positions"].get(addr, {}).get("tp_sold", 65.0)
+                        if _entry_confirmed and _hold_ok_for_tp:
+                            _auto_paper_sell(addr, f"TP2 +200% 🔥", 25.0)
+                            print(f"🔥 TP2: {addr[:10]} pnl={pnl:.1f}%")
+                            tp_sold = auto_trade_stats["running_positions"].get(addr, {}).get("tp_sold", 65.0)
+                        else:
+                            print(f"⏳ [v91] TP2 blocked — entry not confirmed: {addr[:10]} pnl={pnl:.1f}%")
 
                     # ── TP3: +500% → 20% sell (total 85% sold) ──
                     elif pnl >= 500 and tp_sold < 85:
-                        _auto_paper_sell(addr, f"TP3 +500% 🚀", 20.0)
-                        print(f"🚀 TP3: {addr[:10]} pnl={pnl:.1f}%")
-                        tp_sold = auto_trade_stats["running_positions"].get(addr, {}).get("tp_sold", 85.0)
+                        if _entry_confirmed and _hold_ok_for_tp:
+                            _auto_paper_sell(addr, f"TP3 +500% 🚀", 20.0)
+                            print(f"🚀 TP3: {addr[:10]} pnl={pnl:.1f}%")
+                            tp_sold = auto_trade_stats["running_positions"].get(addr, {}).get("tp_sold", 85.0)
+                        else:
+                            print(f"⏳ [v91] TP3 blocked — entry not confirmed: {addr[:10]} pnl={pnl:.1f}%")
 
                     # ── FIX v62: Momentum Stall — TP ke baad new high nahi bana X seconds mein ──
                     _last_high_ts = _pos_data.get("_last_high_ts", 0)
@@ -6583,11 +6598,38 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                         _r = _w3b.eth.wait_for_transaction_receipt(_th, timeout=60)
                         if _r["status"] == 1:
                             print(f"✅ [FM] Buy confirmed: {_th.hex()[:12]}")
-                            # FIX: Actual fill price fetch karo — entry update karo
+                            # FIX v91: TX logs se actual tokens received parse karo
+                            # lastPrice TX ke baad stale ho jaata hai — logs = ground truth
                             try:
-                                _real_info = _fm_get_token_info(_addr, _w3b)
-                                if _real_info and _real_info.get("lastPrice", 0) > 0:
-                                    _real_entry = _real_info["lastPrice"] / 1e18
+                                _TRANSFER_T = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+                                _wallet_cs  = Web3.to_checksum_address(BSC_WALLET or REAL_WALLET)
+                                _wallet_low = _wallet_cs.lower()
+                                _tokens_got = 0
+                                for _lg in _r.get("logs", []):
+                                    _tp = _lg.get("topics", [])
+                                    if len(_tp) < 3: continue
+                                    _t0 = _tp[0].hex() if isinstance(_tp[0], bytes) else _tp[0]
+                                    _to = "0x" + ((_tp[2].hex() if isinstance(_tp[2], bytes) else _tp[2])[-40:]).lower()
+                                    if _t0.lower() == _TRANSFER_T and _to == _wallet_low:
+                                        _d = _lg.get("data", "")
+                                        _d = _d.hex() if isinstance(_d, bytes) else _d
+                                        _d = _d[2:] if _d.startswith("0x") else _d
+                                        if len(_d) >= 64:
+                                            _v = int(_d[:64], 16)
+                                            if _v > 0:
+                                                _tokens_got = _v / 1e18
+                                                break
+                                _real_entry = None
+                                if _tokens_got > 0 and size_bnb > 0:
+                                    _real_entry = size_bnb / _tokens_got
+                                    print(f"✅ [FM v91] Entry from logs: {_real_entry:.6e} BNB ({_tokens_got:.0f} tokens)")
+                                else:
+                                    # Fallback: lastPrice
+                                    _real_info = _fm_get_token_info(_addr, _w3b)
+                                    if _real_info and _real_info.get("lastPrice", 0) > 0:
+                                        _real_entry = _real_info["lastPrice"] / 1e18
+                                        print(f"✅ [FM v91] Entry fallback lastPrice: {_real_entry:.6e} BNB")
+                                if _real_entry and _real_entry > 0:
                                     with monitor_lock:
                                         if _addr in monitored_positions:
                                             monitored_positions[_addr]["entry"] = _real_entry
@@ -6596,6 +6638,7 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                                     with monitor_lock:
                                         if _addr in auto_trade_stats.get("running_positions", {}):
                                             auto_trade_stats["running_positions"][_addr]["entry"] = _real_entry
+                                            auto_trade_stats["running_positions"][_addr]["entry_price_confirmed"] = True
                                     # FIX v31: DEBUG — actual fill vs intended — slippage track karo
                                     _slip = round((_real_entry - entry) / max(entry, 1e-18) * 100, 2)
                                     print(f"✅ [FM] Entry updated: {_real_entry:.10f} (was {entry:.10f})")
@@ -6789,37 +6832,42 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
         }
         print(f"✅ [FM v76] Position registered instantly after TX | {ms}ms")
 
-        # FIX v76: lastPrice + fee fetch — background thread mein (non-blocking)
+        # FIX v91: lastPrice + fee fetch — background thread mein (non-blocking)
         def _bg_entry_update(_taddr, _sz_bnb, _entry_price, _w3a_ref):
-            # 1) lastPrice from FM contract — same source jo price_monitor use karta hai
-            # FIX v90: balanceOf/tokens_received se entry calculate karna galat tha
-            # size_bnb/tokens = average cost per token (wrong scale vs lastPrice)
-            # lastPrice = actual bonding curve price — price_monitor bhi yahi use karta hai
-            # Dono same source = consistent PnL calculation
+            # 1) balanceOf = actual tokens wallet mein hain — size_bnb/tokens = real fill price
+            # FIX v91: _wait_receipt already TX logs se sahi entry set kar deta hai
+            # _bg_entry_update sirf tab overwrite kare jab entry_price_confirmed=False ho
+            # (matlab _wait_receipt abhi confirm nahi hua)
+            import time as _t91
+            _t91.sleep(3)  # _wait_receipt ko pehle mauka do
             try:
-                _w3_entry = _get_w3q() or _fm_get_w3()
-                if _w3_entry:
-                    _fm_info_entry = _fm_get_token_info(_taddr, _w3_entry)
-                    if _fm_info_entry and _fm_info_entry.get("lastPrice", 0) > 0:
-                        _bnb_p_e = market_cache.get("bnb_price", 640)
-                        _quote_e = _fm_info_entry.get("quote", "").lower()
-                        _USDT_Le = "0x55d398326f99059ff775485246999027b3197955"
-                        _BUSD_Le = "0xe9e7cea3dedca5984780bafc599bd69add087d56"
-                        if _quote_e in [_USDT_Le, _BUSD_Le]:
-                            _real_entry = (_fm_info_entry["lastPrice"] / 1e18) / _bnb_p_e if _bnb_p_e > 0 else 0
-                        else:
-                            _real_entry = _fm_info_entry["lastPrice"] / 1e18
-                        if _real_entry > 0:
-                            print(f"✅ [FM v90] Entry price (lastPrice): {_real_entry:.6e} BNB")
-                            if _taddr in auto_trade_stats.get("running_positions", {}):
-                                auto_trade_stats["running_positions"][_taddr]["entry"] = _real_entry
-                                auto_trade_stats["running_positions"][_taddr]["entry_price_confirmed"] = True
-                            with monitor_lock:
-                                if _taddr in monitored_positions:
-                                    monitored_positions[_taddr]["entry"] = _real_entry
-                                    monitored_positions[_taddr]["high"]  = _real_entry
+                _pos_check = auto_trade_stats.get("running_positions", {}).get(_taddr, {})
+                if _pos_check.get("entry_price_confirmed"):
+                    print(f"⚡ [FM v91] Entry already confirmed by receipt — bg skip: {_taddr[:10]}")
+                    # Fee fetch karo phir bhi
+                else:
+                    # receipt nahi aaya abhi — balanceOf se calculate karo
+                    _w3_entry = _get_w3q() or _fm_get_w3()
+                    if _w3_entry:
+                        _tc_entry = _w3_entry.eth.contract(
+                            address=Web3.to_checksum_address(_taddr), abi=_FM_ERC20_ABI)
+                        _token_bal = _tc_entry.functions.balanceOf(
+                            Web3.to_checksum_address(BSC_WALLET or REAL_WALLET)).call()
+                        if _token_bal > 0 and _sz_bnb > 0:
+                            _dec_entry = _get_dec(_taddr)
+                            _tokens_received = _token_bal / (10 ** _dec_entry)
+                            if _tokens_received > 0:
+                                _real_entry = _sz_bnb / _tokens_received
+                                print(f"✅ [FM v91] Entry (balanceOf fallback): {_real_entry:.6e} BNB ({_tokens_received:.0f} tokens)")
+                                if _taddr in auto_trade_stats.get("running_positions", {}):
+                                    auto_trade_stats["running_positions"][_taddr]["entry"] = _real_entry
+                                    auto_trade_stats["running_positions"][_taddr]["entry_price_confirmed"] = True
+                                with monitor_lock:
+                                    if _taddr in monitored_positions:
+                                        monitored_positions[_taddr]["entry"] = _real_entry
+                                        monitored_positions[_taddr]["high"]  = _real_entry
             except Exception as _ep:
-                print(f"⚠️ [FM v90] Entry price bg update error: {str(_ep)[:50]}")
+                print(f"⚠️ [FM v91] Entry price bg update error: {str(_ep)[:50]}")
             # 2) fee rate fetch
             try:
                 _fm_info_fee = _fm_get_token_info(_taddr, _w3a_ref) if _w3a_ref else None
