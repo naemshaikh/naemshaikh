@@ -3822,7 +3822,9 @@ def continuous_learning():
                             _src = _pos_data.get("source", "") or _pos_data.get("buy_reasoning", {}).get("source", "")
                             if "FM_BC" in _src:
                                 try:
-                                    _w3f = _fm_get_w3()
+                                    # FIX v67: Chainstack (paid) use karo monitor pe — free RPC stale
+                                    # data deta tha jisse bot fake loss soch ke premature sell karta tha
+                                    _w3f = _get_w3q() or _fm_get_w3()
                                     if _w3f:
                                         _info = _fm_get_token_info(_addr, _w3f)
                                         if _info and _info.get("lastPrice", 0) > 0:
