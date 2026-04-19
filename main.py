@@ -3055,72 +3055,41 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     if TRADE_MODE == "real":
         _buy_tax_s  = float(pos.get("buy_tax",  0) or 0)
         _sell_tax_s = float(pos.get("sell_tax", 0) or 0)
-        _source     = pos.get("source", "") or pos.get("buy_reasoning", {}).get("source", "")
 
-        if "FM_BC" in _source:
-            _w3_sell   = _get_w3q() or _fm_get_w3()
-            _graduated = False
-            _fm_factory = pos.get("fm_factory", _FM_FACTORY_ADDR)
-            if _w3_sell:
-                try:
-                    _info_sell = _fm_get_token_info(address, _w3_sell)
-                    if _info_sell:
-                        _graduated = _info_sell.get("liquidityAdded", False)
-                        # FIX: har token ka alag tokenManager hota hai
-                        # tokenManager = actual sell contract, factory nahi
-                        _tm = _info_sell.get("tokenManager", "")
-                        if _tm and _tm != "0x0000000000000000000000000000000000000000":
-                            _fm_factory = _tm
-                            print(f"✅ [FM] tokenManager: {_tm[:10]} for {address[:10]}")
-                except Exception as _te:
-                    print(f"⚠️ [FM] tokenInfo sell error: {str(_te)[:40]}")
+        # FIX v106: Pehle FM BC try karo, graduated ho toh PC — source field pe depend mat karo
+        _w3_sell    = _get_w3q() or _fm_get_w3()
+        _graduated  = False
+        _fm_factory = pos.get("fm_factory", _FM_FACTORY_ADDR)
+        if _w3_sell:
+            try:
+                _info_sell = _fm_get_token_info(address, _w3_sell)
+                if _info_sell:
+                    _graduated = _info_sell.get("liquidityAdded", False)
+                    _tm = _info_sell.get("tokenManager", "")
+                    if _tm and _tm != "0x0000000000000000000000000000000000000000":
+                        _fm_factory = _tm
+                        print(f"✅ [FM] tokenManager: {_tm[:10]} for {address[:10]}")
+            except Exception as _te:
+                print(f"⚠️ [FM] tokenInfo sell error: {str(_te)[:40]}")
 
-            if not _graduated:
-                _real_sell = _fm_real_sell_bc(address, sell_pct, _fm_factory, _w3_sell)
-                # FIX v97: FM BC — background tracker (_bc_track_and_parse) handles
-                # paper state via _fm_confirm_close on TX confirm.
-                # TX send hote hi paper state mat close karo — tokens wallet mein stuck ho jaate the
-                # agar TX revert hoti thi (approve pending, slippage, etc.)
-                if _real_sell.get("success"):
-                    # Store exit reason so _fm_confirm_close can use it
-                    _rp_v97 = auto_trade_stats.get("running_positions", {})
-                    if address in _rp_v97:
-                        _rp_v97[address]["_pending_exit_reason"] = reason
-                    print(f"🔁 [FM v97] BC sell TX sent ({address[:10]}) — tracker se confirm hone pe state close hogi, position active")
-                    return  # position stays open; _bc_track_and_parse closes on confirm
-                else:
-                    _fail_err_v97 = _real_sell.get("error", "?")
-                    print(f"❌ [FM v97] BC sell failed — position still open: {_fail_err_v97}")
-                    _push_notif("critical", "🔴 FM Sell Failed",
-                        f"{token} sell failed: {_fail_err_v97} — position still open", token, address)
-                    return
+        if not _graduated:
+            # FM Bonding Curve sell
+            _real_sell = _fm_real_sell_bc(address, sell_pct, _fm_factory, _w3_sell)
+            if _real_sell.get("success"):
+                _rp_v97 = auto_trade_stats.get("running_positions", {})
+                if address in _rp_v97:
+                    _rp_v97[address]["_pending_exit_reason"] = reason
+                print(f"🔁 [FM v106] BC sell TX sent ({address[:10]}) — tracker se confirm hone pe state close hogi")
+                return
             else:
+                _fail_err_v97 = _real_sell.get("error", "?")
+                print(f"❌ [FM v106] BC sell failed — PC fallback try karo: {_fail_err_v97}")
+                # BC fail → PC try karo
                 _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
         else:
+            # Graduated → PC sell
+            print(f"🎓 [FM v106] Token graduated — PC sell: {address[:10]}")
             _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
-            # FIX v105: Pancake sell "execution reverted" → FM BC fallback
-            # Source mein FM_BC nahi tha lekin token abhi bhi BC pe hai → Pancake pair nahi → revert
-            if not _real_sell.get("success") and "execution reverted" in str(_real_sell.get("error", "")):
-                print(f"⚠️ [v105] Pancake sell reverted — FM BC fallback try karo: {address[:10]}")
-                _w3_fb = _get_w3q() or _fm_get_w3()
-                _fb_factory = pos.get("fm_factory", _FM_FACTORY_ADDR)
-                if _w3_fb:
-                    try:
-                        _info_fb = _fm_get_token_info(address, _w3_fb)
-                        if _info_fb:
-                            _tm_fb = _info_fb.get("tokenManager", "")
-                            if _tm_fb and _tm_fb != "0x0000000000000000000000000000000000000000":
-                                _fb_factory = _tm_fb
-                            if not _info_fb.get("liquidityAdded", False):
-                                _real_sell = _fm_real_sell_bc(address, sell_pct, _fb_factory, _w3_fb)
-                                if _real_sell.get("success"):
-                                    print(f"✅ [v105] FM BC fallback sell TX sent: {address[:10]}")
-                                    _rp_v105 = auto_trade_stats.get("running_positions", {})
-                                    if address in _rp_v105:
-                                        _rp_v105[address]["_pending_exit_reason"] = reason
-                                    return
-                    except Exception as _fb_e:
-                        print(f"⚠️ [v105] FM BC fallback error: {str(_fb_e)[:50]}")
 
         if _real_sell.get("success"):
             real_sell_success = True
