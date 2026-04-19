@@ -3107,16 +3107,6 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
             print(f"❌ REAL SELL FAILED — paper state NOT updated: {_fail_err}")
             _push_notif("critical", "🔴 Sell Failed",
                        f"Real sell failed: {_fail_err} — position still open", token, address)
-
-            # FIX v104: Zombie force-close — agar 5+ baar sell fail ho toh paper position close karo
-            pos["_sell_fail_count"] = pos.get("_sell_fail_count", 0) + 1
-            if pos.get("_sell_fail_count", 0) >= 5:
-                print(f"🧹 [FM v104] {pos['_sell_fail_count']}x sell fail — zombie position force-closing: {address[:10]}")
-                _push_notif("critical", "🧹 Zombie Force-Close",
-                    f"{token} — {pos['_sell_fail_count']}x sell fail! Position force-closed. MANUALLY SELL KARO!",
-                    token, address)
-                _fm_confirm_close(address, sell_pct, f"ZombieForceClosed_{_fail_err[:20]}", "")
-                return
             # FIX v24: Failed sell bhi history mein save karo
             try:
                 if not isinstance(auto_trade_stats.get("trade_history"), list):
