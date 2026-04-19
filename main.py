@@ -1163,7 +1163,7 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
         nonce        = get_next_nonce(_w3x, wallet)
 
         # GAS FIX: Sell pe 3x gas — rug se pehle fast niklo
-        _sell_gas_price = int(_get_dynamic_gas_price() * 1.2)  # FIX v23: was 3.0x
+        _sell_gas_price = int(_get_dynamic_gas_price() * 3.0)  # FIX speed: 1.2x → 3.0x
         txn = router.functions.swapExactTokensForETHSupportingFeeOnTransferTokens(
             sell_amt, min_bnb,
             [token_cs, wbnb_cs],
@@ -3059,19 +3059,9 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
 
         if "FM_BC" in _source:
             _w3_sell   = _get_w3q() or _fm_get_w3()
-            _graduated = False
+            _graduated = False  # FIX speed: BC tokens at 4-11k MC never graduated — skip RPC call
             _fm_factory = pos.get("fm_factory", _FM_FACTORY_ADDR)
-            if _w3_sell:
-                try:
-                    _info_sell = _fm_get_token_info(address, _w3_sell)
-                    if _info_sell:
-                        _graduated = _info_sell.get("liquidityAdded", False)
-                        _tm = _info_sell.get("tokenManager", "")
-                        if _tm and _tm != "0x0000000000000000000000000000000000000000":
-                            _fm_factory = _tm
-                            print(f"✅ [FM] tokenManager: {_tm[:10]} for {address[:10]}")
-                except Exception as _te:
-                    print(f"⚠️ [FM] tokenInfo sell error: {str(_te)[:40]}")
+            # NOTE: _fm_real_sell_bc internally calls getTokenInfo for version+manager — outer call was duplicate +300ms waste
 
             if not _graduated:
                 _real_sell = _fm_real_sell_bc(address, sell_pct, _fm_factory, _w3_sell)
@@ -5424,7 +5414,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         # SELL LOGIC — Curve ya PC auto
         # Fix 3+4+5: 3 retry turant, pending TX pe retry block, background tracker
         tx_hash = None
-        _sell_gas_mult = [1.2, 1.5, 2.0]  # FIX v101: per-attempt gas multiplier
+        _sell_gas_mult = [3.0, 4.0, 5.0]  # FIX speed: 1.2/1.5/2.0 → 3.0/4.0/5.0 — dump mein queue mein aage raho
         for _attempt in range(1, 4):
             try:
                 # FIX v101: Same nonce on retry — replacement TX (higher gas)
@@ -5447,7 +5437,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                     ).build_transaction({
                         "from": wallet_cs,
                         "gas": 400000,
-                        "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 1.2),  # FIX v23: was 5.5x
+                        "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 3.0),  # FIX speed: 1.2x → 3.0x
                         "nonce": _nonce,
                         "chainId": 56
 })
