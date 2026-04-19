@@ -3055,19 +3055,42 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
     if TRADE_MODE == "real":
         _buy_tax_s  = float(pos.get("buy_tax",  0) or 0)
         _sell_tax_s = float(pos.get("sell_tax", 0) or 0)
+        _source     = pos.get("source", "") or pos.get("buy_reasoning", {}).get("source", "")
 
-        # FIX v110: Seedha FM BC sell — andar graduated check + PC bhi handle hota hai
-        # PC fallback hataya — double TX = double gas waste
-        _w3_sell    = _get_w3q() or _fm_get_w3()
-        _fm_factory = pos.get("fm_factory", _FM_FACTORY_ADDR)
-        _real_sell  = _fm_real_sell_bc(address, sell_pct, _fm_factory, _w3_sell)
-        if _real_sell.get("success"):
-            _rp = auto_trade_stats.get("running_positions", {})
-            if address in _rp:
-                _rp[address]["_pending_exit_reason"] = reason
-            print(f"🔁 [FM v110] sell TX sent ({address[:10]})")
-            return
+        if "FM_BC" in _source:
+            _w3_sell   = _get_w3q() or _fm_get_w3()
+            _graduated = False
+            _fm_factory = pos.get("fm_factory", _FM_FACTORY_ADDR)
+            if _w3_sell:
+                try:
+                    _info_sell = _fm_get_token_info(address, _w3_sell)
+                    if _info_sell:
+                        _graduated = _info_sell.get("liquidityAdded", False)
+                        _tm = _info_sell.get("tokenManager", "")
+                        if _tm and _tm != "0x0000000000000000000000000000000000000000":
+                            _fm_factory = _tm
+                            print(f"✅ [FM] tokenManager: {_tm[:10]} for {address[:10]}")
+                except Exception as _te:
+                    print(f"⚠️ [FM] tokenInfo sell error: {str(_te)[:40]}")
 
+            if not _graduated:
+                _real_sell = _fm_real_sell_bc(address, sell_pct, _fm_factory, _w3_sell)
+                if _real_sell.get("success"):
+                    _rp_v97 = auto_trade_stats.get("running_positions", {})
+                    if address in _rp_v97:
+                        _rp_v97[address]["_pending_exit_reason"] = reason
+                    print(f"🔁 [FM v97] BC sell TX sent ({address[:10]}) — tracker se confirm hone pe state close hogi, position active")
+                    return
+                else:
+                    _fail_err_v97 = _real_sell.get("error", "?")
+                    print(f"❌ [FM v97] BC sell failed — position still open: {_fail_err_v97}")
+                    _push_notif("critical", "🔴 FM Sell Failed",
+                        f"{token} sell failed: {_fail_err_v97} — position still open", token, address)
+                    return
+            else:
+                _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
+        else:
+            _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
         if _real_sell.get("success"):
             real_sell_success = True
             real_sell_result = _real_sell
