@@ -3056,8 +3056,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         _buy_tax_s  = float(pos.get("buy_tax",  0) or 0)
         _sell_tax_s = float(pos.get("sell_tax", 0) or 0)
 
-        # FIX v109: Seedha FM BC sell — koi check nahi, koi RPC overhead nahi
-        # BC fail → PC fallback
+        # FIX v110: Seedha FM BC sell — andar graduated check + PC bhi handle hota hai
+        # PC fallback hataya — double TX = double gas waste
         _w3_sell    = _get_w3q() or _fm_get_w3()
         _fm_factory = pos.get("fm_factory", _FM_FACTORY_ADDR)
         _real_sell  = _fm_real_sell_bc(address, sell_pct, _fm_factory, _w3_sell)
@@ -3065,13 +3065,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
             _rp = auto_trade_stats.get("running_positions", {})
             if address in _rp:
                 _rp[address]["_pending_exit_reason"] = reason
-            print(f"🔁 [FM v109] BC sell TX sent ({address[:10]})")
+            print(f"🔁 [FM v110] sell TX sent ({address[:10]})")
             return
-        else:
-            print(f"⚠️ [FM v109] BC sell failed — PC fallback: {_real_sell.get('error','?')[:40]}")
-            _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
-            print(f"🎓 [FM v106] Token graduated — PC sell: {address[:10]}")
-            _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
 
         if _real_sell.get("success"):
             real_sell_success = True
