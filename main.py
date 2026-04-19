@@ -1104,7 +1104,7 @@ def real_buy_token(token_address: str, bnb_amount: float,
 
 
 def real_sell_token(token_address: str, sell_pct: float = 100.0,
-                    buy_tax: float = 0.0, sell_tax: float = 0.0) -> dict:
+                    buy_tax: float = 0.0, sell_tax: float = 0.0, gas_mult: float = 1.2) -> dict:
     result = {"success": False, "tx_hash": "", "bnb_received": 0.0,
               "gas_used": 0, "error": ""}
 
@@ -1163,7 +1163,7 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
         nonce        = get_next_nonce(_w3x, wallet)
 
         # GAS FIX: Sell pe 3x gas — rug se pehle fast niklo
-        _sell_gas_price = int(_get_dynamic_gas_price() * 3.0)  # FIX speed: 1.2x → 3.0x
+        _sell_gas_price = int(_get_dynamic_gas_price() * gas_mult)  # FIX speed: reason-based gas
         txn = router.functions.swapExactTokensForETHSupportingFeeOnTransferTokens(
             sell_amt, min_bnb,
             [token_cs, wbnb_cs],
@@ -3057,6 +3057,11 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         _sell_tax_s = float(pos.get("sell_tax", 0) or 0)
         _source     = pos.get("source", "") or pos.get("buy_reasoning", {}).get("source", "")
 
+        # FIX speed: reason-based gas — emergency sells 3x, normal exits 1.2x
+        _emergency = any(k in reason for k in ("SL", "Rug", "Dump", "PriceDrop", "FastDump", "EmergSL", "LiqDrop", "VolRug"))
+        _gas_mult  = 3.0 if _emergency else 1.2
+        print(f"⛽ Gas mult: {_gas_mult}x ({'emergency' if _emergency else 'normal'}) | {reason[:30]}")
+
         if "FM_BC" in _source:
             _w3_sell   = _get_w3q() or _fm_get_w3()
             _graduated = False  # FIX speed: BC tokens at 4-11k MC never graduated — skip RPC call
@@ -3064,7 +3069,7 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
             # NOTE: _fm_real_sell_bc internally calls getTokenInfo for version+manager — outer call was duplicate +300ms waste
 
             if not _graduated:
-                _real_sell = _fm_real_sell_bc(address, sell_pct, _fm_factory, _w3_sell)
+                _real_sell = _fm_real_sell_bc(address, sell_pct, _fm_factory, _w3_sell, gas_mult=_gas_mult)
                 if _real_sell.get("success"):
                     _rp_v97 = auto_trade_stats.get("running_positions", {})
                     if address in _rp_v97:
@@ -3078,9 +3083,9 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                         f"{token} sell failed: {_fail_err_v97} — position still open", token, address)
                     return
             else:
-                _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
+                _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s, gas_mult=_gas_mult)
         else:
-            _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
+            _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s, gas_mult=_gas_mult)
         if _real_sell.get("success"):
             real_sell_success = True
             real_sell_result = _real_sell
@@ -5169,7 +5174,7 @@ def _fm_track_sell_confirmation(tx_hash_hex, token_addr, token_name, w3, sell_pc
         print(f"⚠️ [FM] tracker error: {_te}")
 
 
-def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=None) -> dict:
+def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=None, gas_mult: float = 1.2) -> dict:
     """FM Bonding Curve pe real sell — background tracker + 3 retry + BC minFunds"""
     result = {"success": False, "tx_hash": "", "bnb_received": 0.0, "error": "", "status": ""}
 
@@ -5414,7 +5419,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         # SELL LOGIC — Curve ya PC auto
         # Fix 3+4+5: 3 retry turant, pending TX pe retry block, background tracker
         tx_hash = None
-        _sell_gas_mult = [3.0, 4.0, 5.0]  # FIX speed: 1.2/1.5/2.0 → 3.0/4.0/5.0 — dump mein queue mein aage raho
+        _sell_gas_mult = [gas_mult, gas_mult * 1.3, gas_mult * 1.7]  # FIX speed: reason-based gas, escalate on retry
         for _attempt in range(1, 4):
             try:
                 # FIX v101: Same nonce on retry — replacement TX (higher gas)
@@ -5437,7 +5442,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                     ).build_transaction({
                         "from": wallet_cs,
                         "gas": 400000,
-                        "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 3.0),  # FIX speed: 1.2x → 3.0x
+                        "gasPrice": int(_fm_get_cached_gas(_w3_fast) * gas_mult),  # FIX speed: reason-based gas
                         "nonce": _nonce,
                         "chainId": 56
 })
