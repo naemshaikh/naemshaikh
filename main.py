@@ -3098,7 +3098,30 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
                 _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
         else:
             _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
-        
+            # FIX v105: Pancake sell "execution reverted" → FM BC fallback
+            # Source mein FM_BC nahi tha lekin token abhi bhi BC pe hai → Pancake pair nahi → revert
+            if not _real_sell.get("success") and "execution reverted" in str(_real_sell.get("error", "")):
+                print(f"⚠️ [v105] Pancake sell reverted — FM BC fallback try karo: {address[:10]}")
+                _w3_fb = _get_w3q() or _fm_get_w3()
+                _fb_factory = pos.get("fm_factory", _FM_FACTORY_ADDR)
+                if _w3_fb:
+                    try:
+                        _info_fb = _fm_get_token_info(address, _w3_fb)
+                        if _info_fb:
+                            _tm_fb = _info_fb.get("tokenManager", "")
+                            if _tm_fb and _tm_fb != "0x0000000000000000000000000000000000000000":
+                                _fb_factory = _tm_fb
+                            if not _info_fb.get("liquidityAdded", False):
+                                _real_sell = _fm_real_sell_bc(address, sell_pct, _fb_factory, _w3_fb)
+                                if _real_sell.get("success"):
+                                    print(f"✅ [v105] FM BC fallback sell TX sent: {address[:10]}")
+                                    _rp_v105 = auto_trade_stats.get("running_positions", {})
+                                    if address in _rp_v105:
+                                        _rp_v105[address]["_pending_exit_reason"] = reason
+                                    return
+                    except Exception as _fb_e:
+                        print(f"⚠️ [v105] FM BC fallback error: {str(_fb_e)[:50]}")
+
         if _real_sell.get("success"):
             real_sell_success = True
             real_sell_result = _real_sell
