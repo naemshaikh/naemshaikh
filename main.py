@@ -6694,17 +6694,29 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                                             if _v > 0:
                                                 _tokens_got = _v / 1e18
                                                 break
+                                # FIX v102: Actual BNB from TX value (on-chain truth)
+                                # size_bnb = configured+jittered value ≠ actual BNB spent on-chain
+                                _actual_bnb = size_bnb  # fallback
+                                try:
+                                    _tx_obj = _w3b.eth.get_transaction(_th)
+                                    _actual_bnb = _tx_obj["value"] / 1e18
+                                    print(f"✅ [FM v102] Actual BNB from TX: {_actual_bnb:.6f} (configured: {size_bnb:.6f})")
+                                except Exception as _txe:
+                                    print(f"⚠️ [FM v102] TX fetch failed, using size_bnb: {str(_txe)[:40]}")
                                 _real_entry = None
-                                if _tokens_got > 0 and size_bnb > 0:
-                                    _real_entry = size_bnb / _tokens_got
-                                    print(f"✅ [FM v91] Entry from logs: {_real_entry:.6e} BNB ({_tokens_got:.0f} tokens)")
+                                if _tokens_got > 0 and _actual_bnb > 0:
+                                    _real_entry = _actual_bnb / _tokens_got
+                                    print(f"✅ [FM v102] Entry from logs: {_real_entry:.6e} BNB ({_tokens_got:.0f} tokens, {_actual_bnb:.6f} BNB actual)")
                                 else:
                                     # Fallback: lastPrice
                                     _real_info = _fm_get_token_info(_addr, _w3b)
                                     if _real_info and _real_info.get("lastPrice", 0) > 0:
                                         _real_entry = _real_info["lastPrice"] / 1e18
-                                        print(f"✅ [FM v91] Entry fallback lastPrice: {_real_entry:.6e} BNB")
+                                        print(f"✅ [FM v102] Entry fallback lastPrice: {_real_entry:.6e} BNB")
                                 if _real_entry and _real_entry > 0:
+                                    # Update bought_usd with actual on-chain BNB
+                                    _bnb_px = market_cache.get("bnb_price", 0)
+                                    _actual_usd = round(_actual_bnb * _bnb_px, 2) if _bnb_px > 0 else 0
                                     with monitor_lock:
                                         if _addr in monitored_positions:
                                             monitored_positions[_addr]["entry"] = _real_entry
@@ -6714,6 +6726,9 @@ def _fm_snipe(token_addr, dev_addr="", detected_at=0.0):
                                         if _addr in auto_trade_stats.get("running_positions", {}):
                                             auto_trade_stats["running_positions"][_addr]["entry"] = _real_entry
                                             auto_trade_stats["running_positions"][_addr]["entry_price_confirmed"] = True
+                                            if _actual_usd > 0:
+                                                auto_trade_stats["running_positions"][_addr]["bought_usd"] = _actual_usd
+                                                auto_trade_stats["running_positions"][_addr]["orig_size_bnb"] = _actual_bnb
                                     # FIX v31: DEBUG — actual fill vs intended — slippage track karo
                                     _slip = round((_real_entry - entry) / max(entry, 1e-18) * 100, 2)
                                     print(f"✅ [FM] Entry updated: {_real_entry:.10f} (was {entry:.10f})")
