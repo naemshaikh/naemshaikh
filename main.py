@@ -942,7 +942,7 @@ def _pre_approve_after_buy(token_addr):
                 "nonce": get_next_nonce(_w3x, wallet)
             })
             signed = _w3x.eth.account.sign_transaction(approve_tx, REAL_PRIVATE_KEY)
-            _w3x.eth.send_raw_transaction(signed.rawTransaction)
+            _w3x.eth.send_raw_transaction(signed.raw_transaction)
             print(f"✅ Pre-approved {token_addr[:10]}")
     except Exception as e:
         print(f"⚠️ Pre-approve error: {e}")
@@ -1053,7 +1053,7 @@ def real_buy_token(token_address: str, bnb_amount: float,
         })
 
         signed  = _w3x.eth.account.sign_transaction(txn, REAL_PRIVATE_KEY)
-        tx_hash = _w3x.eth.send_raw_transaction(signed.rawTransaction)
+        tx_hash = _w3x.eth.send_raw_transaction(signed.raw_transaction)
         print(f"🔴 REAL BUY TX: {tx_hash.hex()[:20]}... slippage={slippage_pct}%")
 
         # Wait for receipt (30 sec max)
@@ -1141,7 +1141,7 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
                 "nonce": nonce_a, "chainId": 56
             })
             signed_a = _w3x.eth.account.sign_transaction(approve_txn, REAL_PRIVATE_KEY)
-            tx_hash_a = _w3x.eth.send_raw_transaction(signed_a.rawTransaction)
+            tx_hash_a = _w3x.eth.send_raw_transaction(signed_a.raw_transaction)
             _w3x.eth.wait_for_transaction_receipt(tx_hash_a, timeout=30)
             print(f"✅ Approved token for sell")
 
@@ -1164,7 +1164,7 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
         })
 
         signed  = _w3x.eth.account.sign_transaction(txn, REAL_PRIVATE_KEY)
-        tx_hash = _w3x.eth.send_raw_transaction(signed.rawTransaction)
+        tx_hash = _w3x.eth.send_raw_transaction(signed.raw_transaction)
         print(f"🔴 REAL SELL TX: {tx_hash.hex()[:20]}... slippage={slippage_pct}%")
 
         receipt = _w3x.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
