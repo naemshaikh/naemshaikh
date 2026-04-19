@@ -879,7 +879,18 @@ def _get_dynamic_gas_price() -> int:
     Cached 30s via DataGuard._gas_cache (consistent).
     Returns: int (wei) — e.g. 1_000_000_000 = 1 gwei
     """
-    # Primary: w3 direct gas_price (already connected RPC)
+    # Primary: QuickNode (fastest, already connected)
+    try:
+        _w3qn = _get_w3q()
+        if _w3qn:
+            gp   = _w3qn.eth.gas_price
+            gwei = gp / 1e9
+            if 0.5 < gwei < 100:
+                return gp
+    except Exception as _e:
+        print(f"⚠️ _get_dynamic_gas_price QN error: {_e}")
+
+    # Fallback: global w3
     try:
         gp   = w3.eth.gas_price  # wei
         gwei = gp / 1e9
