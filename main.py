@@ -5421,16 +5421,18 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         # SELL LOGIC — Curve ya PC auto
         # Fix 3+4+5: 3 retry turant, pending TX pe retry block, background tracker
         tx_hash = None
+        _sell_gas_mult = [1.2, 1.5, 2.0]  # FIX v101: per-attempt gas multiplier
         for _attempt in range(1, 4):
             try:
-                # FIX v22: attempt 1 = approve_nonce+1, retry = fresh from chain
-                if _attempt > 1:
-                    reset_nonce(_w3_fast, wallet_cs)
-                    _nonce = get_next_nonce(_w3_fast, wallet_cs)
-                elif _sell_nonce_base is not None:
-                    _nonce = _sell_nonce_base
-                else:
-                    _nonce = get_next_nonce(_w3_fast, wallet_cs)
+                # FIX v101: Same nonce on retry — replacement TX (higher gas)
+                # Pehle reset_nonce karte the → naya nonce → Chainstack "gapped-nonce" error
+                # Ab: attempt 1 pe nonce set, retry pe same nonce + gas badha = clean replacement
+                if _attempt == 1:
+                    if _sell_nonce_base is not None:
+                        _nonce = _sell_nonce_base
+                    else:
+                        _nonce = get_next_nonce(_w3_fast, wallet_cs)
+                # _attempt > 1: same _nonce reuse — replacement TX (higher gas below)
                 if is_grad:
                     # Pancake sell
                     pr = _w3_fast.eth.contract(address=_FM_PANCAKE_ROUTER, abi=[{"name":"swapExactTokensForETH","type":"function","stateMutability":"nonpayable","inputs":[{"name":"amountIn","type":"uint256"},{"name":"amountOutMin","type":"uint256"},{"name":"path","type":"address[]"},{"name":"to","type":"address"},{"name":"deadline","type":"uint256"}],"outputs":[{"name":"amounts","type":"uint256[]"}]}])
@@ -5468,11 +5470,11 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                         ).build_transaction({
                             "from":     wallet_cs,
                             "gas":      400000,
-                            "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 1.2),  # FIX v23: was 5.5x
+                            "gasPrice": int(_fm_get_cached_gas(_w3_fast) * _sell_gas_mult[_attempt-1]),  # FIX v101: escalate gas on retry
                             "nonce":    _nonce,
                             "chainId":  56
 })
-                        print(f"[FM v18] Curve Sell V1 TX — Gwei:{int(_fm_get_cached_gas(_w3_fast)*1.2)/1e9:.1f}")
+                        print(f"[FM v18] Curve Sell V1 TX — Gwei:{int(_fm_get_cached_gas(_w3_fast)*_sell_gas_mult[_attempt-1])/1e9:.1f} attempt={_attempt}")
                     else:
                         # V2 — 7 params (with from)
                         tx = fc.functions.sellToken(
@@ -5486,11 +5488,11 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                         ).build_transaction({
                             "from":     wallet_cs,
                             "gas":      400000,
-                            "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 1.2),  # FIX v23: was 5.5x
+                            "gasPrice": int(_fm_get_cached_gas(_w3_fast) * _sell_gas_mult[_attempt-1]),  # FIX v101: escalate gas on retry
                             "nonce":    _nonce,
                             "chainId":  56
 })
-                        print(f"[FM v18] Curve Sell V2 TX — Gwei:{int(_fm_get_cached_gas(_w3_fast)*1.2)/1e9:.1f}")
+                        print(f"[FM v18] Curve Sell V2 TX — Gwei:{int(_fm_get_cached_gas(_w3_fast)*_sell_gas_mult[_attempt-1])/1e9:.1f} attempt={_attempt}")
                 from eth_account import Account
                 signed  = Account.sign_transaction(tx, pk)
                 tx_hash = _w3_fast.eth.send_raw_transaction(signed.raw_transaction)
