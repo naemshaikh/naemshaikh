@@ -3056,39 +3056,19 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
         _buy_tax_s  = float(pos.get("buy_tax",  0) or 0)
         _sell_tax_s = float(pos.get("sell_tax", 0) or 0)
 
-        # FIX v108: Hamesha FM BC pehle try karo (source ignore) — graduated ho toh PC
-        # v107 mein source check tha, FM_BC missing hone pe seedha PC jaata tha → execution reverted
+        # FIX v109: Seedha FM BC sell — koi check nahi, koi RPC overhead nahi
+        # BC fail → PC fallback
         _w3_sell    = _get_w3q() or _fm_get_w3()
-        _graduated  = False
         _fm_factory = pos.get("fm_factory", _FM_FACTORY_ADDR)
-        if _w3_sell:
-            try:
-                _info_sell = _fm_get_token_info(address, _w3_sell)
-                if _info_sell:
-                    _graduated = _info_sell.get("liquidityAdded", False)
-                    _tm = _info_sell.get("tokenManager", "")
-                    if _tm and _tm != "0x0000000000000000000000000000000000000000":
-                        _fm_factory = _tm
-                        print(f"✅ [FM] tokenManager: {_tm[:10]} for {address[:10]}")
-            except Exception as _te:
-                print(f"⚠️ [FM] tokenInfo sell error: {str(_te)[:40]}")
-
-        if not _graduated:
-            # FM BC sell
-            _real_sell = _fm_real_sell_bc(address, sell_pct, _fm_factory, _w3_sell)
-            if _real_sell.get("success"):
-                _rp_v97 = auto_trade_stats.get("running_positions", {})
-                if address in _rp_v97:
-                    _rp_v97[address]["_pending_exit_reason"] = reason
-                print(f"🔁 [FM v108] BC sell TX sent ({address[:10]}) — tracker se confirm hone pe state close hogi")
-                return
-            else:
-                _fail_err_v97 = _real_sell.get("error", "?")
-                print(f"❌ [FM v108] BC sell failed — PC fallback: {_fail_err_v97}")
-                _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
+        _real_sell  = _fm_real_sell_bc(address, sell_pct, _fm_factory, _w3_sell)
+        if _real_sell.get("success"):
+            _rp = auto_trade_stats.get("running_positions", {})
+            if address in _rp:
+                _rp[address]["_pending_exit_reason"] = reason
+            print(f"🔁 [FM v109] BC sell TX sent ({address[:10]})")
+            return
         else:
-            # Graduated → seedha PC
-            print(f"🎓 [FM v108] Token graduated — PC sell: {address[:10]}")
+            print(f"⚠️ [FM v109] BC sell failed — PC fallback: {_real_sell.get('error','?')[:40]}")
             _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
             print(f"🎓 [FM v106] Token graduated — PC sell: {address[:10]}")
             _real_sell = real_sell_token(address, sell_pct, _buy_tax_s, _sell_tax_s)
