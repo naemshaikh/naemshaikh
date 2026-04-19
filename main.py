@@ -4872,6 +4872,7 @@ _fm_sniped_ts:  dict = {}  # FIX v50: timestamp per entry — stale cleanup ke l
 
 # FIX v15: Sell dedup — ek token pe ek hi sell ek waqt mein
 _fm_selling_set  = set()
+_fm_selling_ts: dict = {}  # FIX v103: TTL — 90s ke baad lock auto-release
 # FIX v46: In-memory approve cache — sell pe allowance RPC skip karne ke liye
 # Key: "token_addr_lower:spender_addr_lower" → True agar approve confirmed hai
 _fm_approved_cache: dict = {}
@@ -5192,9 +5193,16 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
     _t_lower = token_addr.lower()
     with _fm_selling_lock:
         if _t_lower in _fm_selling_set:
-            print(f"⏭️ [FM] Sell already in progress for {token_addr[:10]} — skip")
-            result["error"] = "sell already in progress"
-            return result
+            # FIX v103: TTL check — 90s se zyada lock hai toh stale hai, force release
+            _lock_age = time.time() - _fm_selling_ts.get(_t_lower, 0)
+            if _lock_age > 90:
+                print(f"⚠️ [FM v103] Stale sell lock ({_lock_age:.0f}s) — force releasing: {token_addr[:10]}")
+                _fm_selling_set.discard(_t_lower); _fm_selling_ts.pop(_t_lower, None)
+                _fm_selling_ts.pop(_t_lower, None)
+            else:
+                print(f"⏭️ [FM] Sell already in progress for {token_addr[:10]} — skip")
+                result["error"] = "sell already in progress"
+                return result
         # FIX v45: add() TX ke baad hoga — pehle add() hoti thi TX se pehle
         # TP fire → add() → MomDead check → "already in progress" → TP skip → SL hit
         # Ab: duplicate check pass hone ke baad lock hold karo, TX ke baad add()
@@ -5203,17 +5211,18 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
     try:
         with _fm_selling_lock:
             _fm_selling_set.add(_t_lower)
+            _fm_selling_ts[_t_lower] = time.time()  # FIX v103: TTL timestamp
             _selling_lock_held = True
         pk = os.getenv("WALLET_PRIVATE_KEY", "") or os.getenv("PRIVATE_KEY", "") or os.getenv("REAL_PRIVATE_KEY", "")
         wallet_addr = BSC_WALLET or REAL_WALLET
         if not wallet_addr or not pk:
             result["error"] = "no wallet/key"
-            with _fm_selling_lock: _fm_selling_set.discard(_t_lower)
+            with _fm_selling_lock: _fm_selling_set.discard(_t_lower); _fm_selling_ts.pop(_t_lower, None)
             return result
         if not w3: w3 = _get_w3q() or _fm_get_w3()
         if not w3:
             result["error"] = "no RPC"
-            with _fm_selling_lock: _fm_selling_set.discard(_t_lower)
+            with _fm_selling_lock: _fm_selling_set.discard(_t_lower); _fm_selling_ts.pop(_t_lower, None)
             return result
 
         # Fix 7: checksum wallet
@@ -5237,7 +5246,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                     _fm_confirm_close(_zb_key, 100.0, "ZeroBalanceDetected", "")
             except Exception as _zb_e:
                 print(f"⚠️ [FM v70] Force close error: {str(_zb_e)[:40]}")
-            with _fm_selling_lock: _fm_selling_set.discard(_t_lower)
+            with _fm_selling_lock: _fm_selling_set.discard(_t_lower); _fm_selling_ts.pop(_t_lower, None)
             return result
 
         # FIX: minFunds = 0 — BC pe slippage nahi chahiye
@@ -5376,7 +5385,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                             f"{token_addr[:10]} — approve 2x fail! MANUALLY SELL KARO!",
                             token_addr[:10], token_addr)
                         result["error"] = "approve failed 2x"
-                        with _fm_selling_lock: _fm_selling_set.discard(_t_lower)
+                        with _fm_selling_lock: _fm_selling_set.discard(_t_lower); _fm_selling_ts.pop(_t_lower, None)
                         return result
                 # FIX v22 Bug2: sell nonce = approve_nonce+1 race-free
                 _sell_nonce_base = _approve_nonce + 1
@@ -5508,7 +5517,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                         f"{token_addr[:10]} — 3 TX send fail! MANUALLY SELL KARO!",
                         token_addr[:10], token_addr)
                     # FIX v16: 3 attempts fail — lock release karo
-                    with _fm_selling_lock: _fm_selling_set.discard(token_addr.lower())
+                    with _fm_selling_lock: _fm_selling_set.discard(token_addr.lower()); _fm_selling_ts.pop(token_addr.lower(), None)
                     result["error"] = "3 send attempts failed"
                     return result
 
@@ -5623,7 +5632,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                                     except Exception as _upd_e:
                                         print(f"⚠️ [FM v26] Position update error: {str(_upd_e)[:40]}")
                                     _fm_confirm_close(_t_addr, sell_pct, "BC sell confirmed", _cur_hash)
-                                    with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower())
+                                    with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower()); _fm_selling_ts.pop(_t_addr.lower(), None)
                                     return
                                 else:
                                     # Reverted — balance check before retry (v94 fix)
@@ -5634,7 +5643,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                                         if _cb_rv < int(_bal * 0.95):
                                             print(f"✅ [FM v96] Revert but bal reduced — already sold")
                                             _fm_confirm_close(_t_addr, sell_pct, "BC sell confirmed (bal check)", _cur_hash)
-                                            with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower())
+                                            with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower()); _fm_selling_ts.pop(_t_addr.lower(), None)
                                             return
                                     except Exception: pass
                                     _retries += 1
@@ -5658,7 +5667,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                             if _cb_to < int(_bal * 0.95):
                                 print(f"✅ [FM v96] No receipt but bal reduced — TX landed, skip retry")
                                 _fm_confirm_close(_t_addr, sell_pct, "BC sell confirmed (timeout bal)", _cur_hash)
-                                with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower())
+                                with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower()); _fm_selling_ts.pop(_t_addr.lower(), None)
                                 return
                         except Exception: pass
                         _nh = _retry_sell(_t_addr, _w3_qn, _retries)
@@ -5667,10 +5676,10 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                 print(f"🚨 [FM BC] Sell {_max_retry} retry fail — MANUALLY SELL!")
                 _push_notif("critical", "🚨 MANUAL SELL REQUIRED",
                     f"{_t_name} sell {_max_retry}x fail! MANUALLY SELL! TX:{_cur_hash[:12]}", _t_name, _t_addr)
-                with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower())
+                with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower()); _fm_selling_ts.pop(_t_addr.lower(), None)
             except Exception as _te:
                 print(f"⚠️ [FM BC] tracker error: {_te}")
-                with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower())
+                with _fm_selling_lock: _fm_selling_set.discard(_t_addr.lower()); _fm_selling_ts.pop(_t_addr.lower(), None)
         import threading as _th
         _th.Thread(
             target=_bc_track_and_parse,
@@ -5684,7 +5693,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         # Fix: partial sell ke baad lock release → SL/TP2 ab block nahi hoga
         if sell_pct < 100.0:
             with _fm_selling_lock:
-                _fm_selling_set.discard(_t_lower)
+                _fm_selling_set.discard(_t_lower); _fm_selling_ts.pop(_t_lower, None)
             print(f"🔓 [FM v47] Partial sell lock released: {token_addr[:10]} ({sell_pct:.0f}%) — SL ab trigger ho sakta hai")
 
         print(f"✅ [FM] Sell TX sent — background tracker active: {tx_hash.hex()[:12]}")
@@ -5694,7 +5703,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         result["error"] = str(e)[:60]
         print(f"❌ [FM] Sell error: {result['error']}")
         # FIX v15: Exception pe bhi lock release
-        with _fm_selling_lock: _fm_selling_set.discard(token_addr.lower())
+        with _fm_selling_lock: _fm_selling_set.discard(token_addr.lower()); _fm_selling_ts.pop(token_addr.lower(), None)
         return result
 
 def _fm_honeypot_sim(token_addr, factory_addr, w3=None):
