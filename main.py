@@ -1124,7 +1124,7 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
         # FIX 4: Gas balance check before sell
         try:
             _gas_bal = _w3x.eth.get_balance(wallet) / 1e18
-            if _gas_bal < 0.0005:  # FIX v104: 0.0015→0.0005 — BSC TX ~0.0003 BNB, 0.0015 too strict
+            if _gas_bal < 0.0015:  # minimum ~0.0015 BNB for sell gas
                 result["error"] = f"insufficient wallet balance {_gas_bal:.4f} BNB"
                 _push_notif("critical", "🔴 Low Balance",
                     f"insufficient wallet balance {_gas_bal:.4f} BNB — wallet top up karo!",
@@ -5269,7 +5269,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         # FIX 5: Gas balance check before BC sell
         try:
             _gas_bal_bc = w3.eth.get_balance(Web3.to_checksum_address(wallet_addr)) / 1e18
-            if _gas_bal_bc < 0.0005:  # FIX v104: 0.0015→0.0005 — BSC TX ~0.0003 BNB, 0.0015 too strict
+            if _gas_bal_bc < 0.0015:
                 result["error"] = f"insufficient wallet balance {_gas_bal_bc:.4f} BNB"
                 _push_notif("critical", "🔴 Low Balance",
                     f"insufficient wallet balance {_gas_bal_bc:.4f} BNB — wallet top up karo!",
