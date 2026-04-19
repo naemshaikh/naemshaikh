@@ -1124,7 +1124,7 @@ def real_sell_token(token_address: str, sell_pct: float = 100.0,
         # FIX 4: Gas balance check before sell
         try:
             _gas_bal = _w3x.eth.get_balance(wallet) / 1e18
-            if _gas_bal < 0.0015:  # minimum ~0.0015 BNB for sell gas
+            if _gas_bal < 0.0005:  # FIX v104: 0.0015→0.0005 — BSC TX ~0.0003 BNB, 0.0015 too strict
                 result["error"] = f"insufficient wallet balance {_gas_bal:.4f} BNB"
                 _push_notif("critical", "🔴 Low Balance",
                     f"insufficient wallet balance {_gas_bal:.4f} BNB — wallet top up karo!",
@@ -3107,6 +3107,16 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
             print(f"❌ REAL SELL FAILED — paper state NOT updated: {_fail_err}")
             _push_notif("critical", "🔴 Sell Failed",
                        f"Real sell failed: {_fail_err} — position still open", token, address)
+
+            # FIX v104: Zombie force-close — agar 5+ baar sell fail ho toh paper position close karo
+            pos["_sell_fail_count"] = pos.get("_sell_fail_count", 0) + 1
+            if pos.get("_sell_fail_count", 0) >= 5:
+                print(f"🧹 [FM v104] {pos['_sell_fail_count']}x sell fail — zombie position force-closing: {address[:10]}")
+                _push_notif("critical", "🧹 Zombie Force-Close",
+                    f"{token} — {pos['_sell_fail_count']}x sell fail! Position force-closed. MANUALLY SELL KARO!",
+                    token, address)
+                _fm_confirm_close(address, sell_pct, f"ZombieForceClosed_{_fail_err[:20]}", "")
+                return
             # FIX v24: Failed sell bhi history mein save karo
             try:
                 if not isinstance(auto_trade_stats.get("trade_history"), list):
@@ -5259,7 +5269,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         # FIX 5: Gas balance check before BC sell
         try:
             _gas_bal_bc = w3.eth.get_balance(Web3.to_checksum_address(wallet_addr)) / 1e18
-            if _gas_bal_bc < 0.0015:
+            if _gas_bal_bc < 0.0005:  # FIX v104: 0.0015→0.0005 — BSC TX ~0.0003 BNB, 0.0015 too strict
                 result["error"] = f"insufficient wallet balance {_gas_bal_bc:.4f} BNB"
                 _push_notif("critical", "🔴 Low Balance",
                     f"insufficient wallet balance {_gas_bal_bc:.4f} BNB — wallet top up karo!",
