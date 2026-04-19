@@ -3269,6 +3269,8 @@ def _auto_paper_sell(address, reason, sell_pct=100.0):
             _push_notif("warning", f"🟡 Stop Loss Hit", f"{token} | PnL: {pnl_pct:+.1f}% | Reason: {reason}", token, address)
         elif pnl_pct >= 0:
             _push_notif("success", f"🟢 Take Profit", f"{token} sold {sell_pct:.0f}% | PnL: {pnl_pct:+.1f}% | {reason}", token, address)
+        else:
+            _push_notif("warning", f"🔴 Exit at Loss", f"{token} | PnL: {pnl_pct:+.1f}% | Reason: {reason}", token, address)
         _emoji = "🟢" if pnl_pct >= 0 else "🔴"
         _log("sell", token, f"{_emoji} SELL {sell_pct:.0f}% · PnL {pnl_pct:+.1f}% · {reason}", address)
         
