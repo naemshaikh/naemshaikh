@@ -5301,7 +5301,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                         wallet_cs, Web3.to_checksum_address(_dynamic_manager)).call()
             if _allowance < _amt:
                 print(f"🔑 [FM] Approving Token Manager for sell...")
-                _approve_nonce = get_next_nonce(_w3_fast, wallet_cs)
+                _approve_nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")  # FIX v115: fresh chain nonce, March 29 match
                 _approve_tx = _tc_approve.functions.approve(
                     Web3.to_checksum_address(_dynamic_manager), 2**256 - 1
                 ).build_transaction({
