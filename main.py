@@ -5279,38 +5279,24 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
 
         # FIX v18: Approve dynamic tokenManager (factory nahi)
         # FIX v46: cache check pehle — allowance RPC call skip karo agar pehle approve ho chuka
+        # FIX v18: Approve dynamic tokenManager (factory nahi) — March 29 original logic
         try:
             _tc_approve = _w3_fast.eth.contract(
                 address=Web3.to_checksum_address(token_addr), abi=_FM_ERC20_ABI)
-            _v46_cache_key = f"{token_addr.lower()}:{_dynamic_manager.lower()}"
-            _v46_cache_hit = _fm_approved_cache.get(_v46_cache_key, False)
-            if _v46_cache_hit:
-                print(f"⚡ [FM] Approve cache HIT — allowance RPC skip: {token_addr[:10]}")
-                _allowance = 2**256 - 1  # treat as max approved
-            else:
-                # FIX v98: "pending" block pe check karo — pre-approve TX pending ho toh
-                # latest block pe 0 dikhta hai → duplicate approve bhejta tha → nonce chain stuck
-                # pending block pe max dikhega → approve skip → sell seedha N+1 pe
-                try:
-                    _allowance = _tc_approve.functions.allowance(
-                        wallet_cs, Web3.to_checksum_address(_dynamic_manager)
-                    ).call(block_identifier="pending")
-                    print(f"[FM v98] Allowance (pending block): {_allowance > 0}")
-                except Exception:
-                    _allowance = _tc_approve.functions.allowance(
-                        wallet_cs, Web3.to_checksum_address(_dynamic_manager)).call()
+            _allowance = _tc_approve.functions.allowance(
+                wallet_cs, Web3.to_checksum_address(_dynamic_manager)).call()
             if _allowance < _amt:
                 print(f"🔑 [FM] Approving Token Manager for sell...")
-                _approve_nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")  # FIX v115: fresh chain nonce, March 29 match
+                _approve_nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")
                 _approve_tx = _tc_approve.functions.approve(
                     Web3.to_checksum_address(_dynamic_manager), 2**256 - 1
                 ).build_transaction({
                     "from":     wallet_cs,
                     "gas":      100000,
-                    "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 1.5),  # FIX v23: was 3.0x
+                    "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 1.5),
                     "nonce":    _approve_nonce,
-                    "chainId":  56
-})
+                    "chainId":  56,
+                })
                 from eth_account import Account as _AccA
                 _signed_a = _AccA.sign_transaction(_approve_tx, pk)
                 _ah = _w3_fast.eth.send_raw_transaction(_signed_a.raw_transaction)
@@ -5325,10 +5311,6 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                             if _rx2["status"] == 1:
                                 _approve_confirmed = True
                                 print(f"✅ [FM] Approval confirmed ({_t22a.time()-_ap_start:.1f}s)")
-                                # FIX v46: runtime approve bhi cache karo — next sell instant hogi
-                                _v46_rt_key = f"{token_addr.lower()}:{_dynamic_manager.lower()}"
-                                _fm_approved_cache[_v46_rt_key] = True
-                                print(f"⚡ [FM] Runtime approve cached: {token_addr[:10]}")
                             else:
                                 print(f"❌ [FM] Approval TX failed onchain")
                             break
@@ -5336,17 +5318,17 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                         pass
                     _t22a.sleep(0.3)
                 if not _approve_confirmed:
-                    # FIX v22 Bug4: re-approve turant — higher gas
+                    # FIX v22 Bug4: re-approve turant — higher gas, fresh nonce
                     print(f"⚠️ [FM] Approve not confirmed — re-approving higher gas...")
                     try:
-                        _ra_nonce = _approve_nonce  # FIX: same nonce = replacement TX (higher gas)
+                        _ra_nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")
                         _ra_tx = _tc_approve.functions.approve(
                             Web3.to_checksum_address(_dynamic_manager), 2**256 - 1
                         ).build_transaction({
                             "from": wallet_cs, "gas": 100000,
-                            "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 2.0),  # FIX v23: was 5.0x
-                            "nonce": _ra_nonce, "chainId": 56
-})
+                            "gasPrice": int(_fm_get_cached_gas(_w3_fast) * 2.0),
+                            "nonce": _ra_nonce, "chainId": 56,
+                        })
                         from eth_account import Account as _AccRA
                         _rah = _w3_fast.eth.send_raw_transaction(
                             _AccRA.sign_transaction(_ra_tx, pk).raw_transaction)
@@ -5374,7 +5356,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                             f"{token_addr[:10]} — approve 2x fail! MANUALLY SELL KARO!",
                             token_addr[:10], token_addr)
                         result["error"] = "approve failed 2x"
-                        with _fm_selling_lock: _fm_selling_set.discard(_t_lower); _fm_selling_ts.pop(_t_lower, None)
+                        with _fm_selling_lock: _fm_selling_set.discard(_t_lower)
                         return result
                 # FIX v22 Bug2: sell nonce = approve_nonce+1 race-free
                 _sell_nonce_base = _approve_nonce + 1
