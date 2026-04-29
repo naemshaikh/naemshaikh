@@ -5423,13 +5423,18 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
         for _attempt in range(1, 4):
             try:
                 # FIX v101: Same nonce on retry — replacement TX (higher gas)
-                # Pehle reset_nonce karte the → naya nonce → Chainstack "gapped-nonce" error
-                # Ab: attempt 1 pe nonce set, retry pe same nonce + gas badha = clean replacement
+                # FIX v111: gapped-nonce fix — attempt 1 pe hamesha fresh chain nonce
+                # _nonce_state aage ho sakta hai (failed TX wajah se) → gap → reject
                 if _attempt == 1:
                     if _sell_nonce_base is not None:
                         _nonce = _sell_nonce_base
                     else:
-                        _nonce = get_next_nonce(_w3_fast, wallet_cs)
+                        # Fresh chain sync — _nonce_state bypass karo
+                        _nonce = _w3_fast.eth.get_transaction_count(wallet_cs, "pending")
+                        with _nonce_lock:
+                            _nonce_state["val"]    = _nonce + 1
+                            _nonce_state["wallet"] = wallet_cs.lower()
+                        print(f"🔄 [v111] Fresh chain nonce: {_nonce}")
                 # _attempt > 1: same _nonce reuse — replacement TX (higher gas below)
                 if is_grad:
                     # Pancake sell
