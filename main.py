@@ -5557,7 +5557,7 @@ def _fm_real_sell_bc(token_addr: str, sell_pct: float, factory_addr: str, w3=Non
                     _fc_r = _w3r.eth.contract(
                         address=Web3.to_checksum_address(_mgr_r),
                         abi=_FM_BC_ABI_V1 if _tv_r == 1 else _FM_BC_ABI)
-                    _nn_r = get_next_nonce(_w3r, _wc_r)
+                    _nn_r = _w3r.eth.get_transaction_count(_wc_r, "pending")  # FIX v114: fresh chain nonce, get_next_nonce stale tha
                     _gp_r = int(_fm_get_cached_gas(_w3r) * (1.2 + _attempt_num * 0.3))  # FIX v23: was 5.5+2.0x
                     _zero = "0x0000000000000000000000000000000000000000"
                     if _tv_r == 1:
